@@ -51,18 +51,20 @@ serve(async (req) => {
     
     const input: any = {
       prompt: body.prompt,
-      width: body.width || 1024,
-      height: body.height || 1024,
-      num_outputs: body.num_outputs || 1,
-      output_format: body.output_format || "webp",
-      output_quality: body.output_quality || 80,
+      size: "custom",
+      width: body.width || 2048,
+      height: body.height || 2048,
+    }
+
+    // Add image reference if provided
+    if (body.image_urls && body.image_urls.length > 0) {
+      input.image_input = body.image_urls
     }
 
     // Add optional parameters if provided
     if (body.seed) input.seed = body.seed
     if (body.guidance_scale) input.guidance_scale = body.guidance_scale
     if (body.num_inference_steps) input.num_inference_steps = body.num_inference_steps
-    if (body.image_urls && body.image_urls.length > 0) input.image_urls = body.image_urls
 
     console.log("SeedDream 4 input parameters:", input)
 

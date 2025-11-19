@@ -497,9 +497,7 @@ const Index = () => {
       const requestBody: any = {
         prompt: prompt.prompt,
         width: imageWidth,
-        height: imageHeight,
-        output_format: "webp",
-        output_quality: 80
+        height: imageHeight
       };
 
       // Add style reference if provided
@@ -546,9 +544,7 @@ const Index = () => {
         const requestBody: any = {
           prompt: prompt.prompt,
           width: imageWidth,
-          height: imageHeight,
-          output_format: "webp",
-          output_quality: 80
+          height: imageHeight
         };
 
         // Add style reference if provided
