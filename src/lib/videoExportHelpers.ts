@@ -35,10 +35,21 @@ export function generatePremiereXML(
 ): string {
   const { projectName, framerate = 25, width = 1920, height = 1080, mode } = options;
   
+  // Calculate sequential timeline positions (no gaps)
+  let timelinePosition = 0;
+  
   const clipItems = prompts.map((prompt, index) => {
-    const startFrame = Math.floor(prompt.startTime * framerate);
-    const endFrame = Math.floor(prompt.endTime * framerate);
-    const duration = endFrame - startFrame;
+    // Calculate duration based on original timecodes
+    const originalStartFrame = Math.floor(prompt.startTime * framerate);
+    const originalEndFrame = Math.floor(prompt.endTime * framerate);
+    const duration = originalEndFrame - originalStartFrame;
+    
+    // Use sequential timeline position
+    const startFrame = timelinePosition;
+    const endFrame = timelinePosition + duration;
+    
+    // Update position for next clip
+    timelinePosition = endFrame;
     
     const imagePath = mode === "with-images" 
       ? `images/scene_${(index + 1).toString().padStart(3, '0')}.jpg`
@@ -79,7 +90,7 @@ export function generatePremiereXML(
     <children>
       <sequence>
         <name>${escapeXml(projectName)} - Timeline</name>
-        <duration>${Math.floor(prompts[prompts.length - 1].endTime * framerate)}</duration>
+        <duration>${timelinePosition}</duration>
         <rate>
           <timebase>${framerate}</timebase>
         </rate>
@@ -114,12 +125,18 @@ export function generateEDL(
   
   let edl = `TITLE: ${projectName}\nFCM: NON-DROP FRAME\n\n`;
   
+  // Calculate sequential timeline positions (no gaps)
+  let timelinePosition = 0;
+  
   prompts.forEach((prompt, index) => {
     const clipNumber = (index + 1).toString().padStart(3, '0');
     const sourceIn = formatTimecode(0, framerate);
     const sourceOut = formatTimecode(prompt.duration, framerate);
-    const recordIn = formatTimecode(prompt.startTime, framerate);
-    const recordOut = formatTimecode(prompt.endTime, framerate);
+    
+    // Use sequential timeline positions instead of original timecodes
+    const recordIn = formatTimecode(timelinePosition, framerate);
+    timelinePosition += prompt.duration;
+    const recordOut = formatTimecode(timelinePosition, framerate);
     
     const imagePath = mode === "with-images"
       ? `images/scene_${clipNumber}.jpg`
