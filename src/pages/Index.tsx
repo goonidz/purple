@@ -71,7 +71,9 @@ const Index = () => {
   const [sceneDuration1to3, setSceneDuration1to3] = useState(6);
   const [sceneDuration3plus, setSceneDuration3plus] = useState(8);
   const cancelGenerationRef = useRef(false);
-  const [imageResolution, setImageResolution] = useState<string>("1024");
+  const [imageWidth, setImageWidth] = useState<number>(1920);
+  const [imageHeight, setImageHeight] = useState<number>(1080);
+  const [aspectRatio, setAspectRatio] = useState<string>("16:9");
   const [isGeneratingImages, setIsGeneratingImages] = useState(false);
   const [generatingImageIndex, setGeneratingImageIndex] = useState<number | null>(null);
 
@@ -407,6 +409,31 @@ const Index = () => {
     setTimeout(() => setCopiedIndex(null), 2000);
   };
 
+  const handleAspectRatioChange = (ratio: string) => {
+    setAspectRatio(ratio);
+    switch (ratio) {
+      case "16:9":
+        setImageWidth(1920);
+        setImageHeight(1080);
+        break;
+      case "9:16":
+        setImageWidth(1080);
+        setImageHeight(1920);
+        break;
+      case "1:1":
+        setImageWidth(1024);
+        setImageHeight(1024);
+        break;
+      case "4:3":
+        setImageWidth(1920);
+        setImageHeight(1440);
+        break;
+      case "custom":
+        // Keep current values
+        break;
+    }
+  };
+
   const generateImage = async (index: number) => {
     const prompt = generatedPrompts[index];
     if (!prompt) {
@@ -416,12 +443,11 @@ const Index = () => {
 
     setGeneratingImageIndex(index);
     try {
-      const resolution = parseInt(imageResolution);
       const { data, error } = await supabase.functions.invoke('generate-image-seedream', {
         body: {
           prompt: prompt.prompt,
-          width: resolution,
-          height: resolution,
+          width: imageWidth,
+          height: imageHeight,
           output_format: "webp",
           output_quality: 80
         }
@@ -456,15 +482,14 @@ const Index = () => {
     for (let i = 0; i < generatedPrompts.length; i++) {
       try {
         const prompt = generatedPrompts[i];
-        const resolution = parseInt(imageResolution);
         
         toast.info(`Génération de l'image ${i + 1}/${generatedPrompts.length}...`);
 
         const { data, error } = await supabase.functions.invoke('generate-image-seedream', {
           body: {
             prompt: prompt.prompt,
-            width: resolution,
-            height: resolution,
+            width: imageWidth,
+            height: imageHeight,
             output_format: "webp",
             output_quality: 80
           }
@@ -720,24 +745,66 @@ const Index = () => {
                       </div>
 
                       {generatedPrompts.length > 0 && (
-                        <div className="flex items-center gap-4 p-4 bg-muted/50 rounded-lg">
-                          <div className="flex items-center gap-2">
-                            <label className="text-sm font-medium">Résolution:</label>
-                            <Select value={imageResolution} onValueChange={setImageResolution}>
-                              <SelectTrigger className="w-32">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="1024">1K (1024px)</SelectItem>
-                                <SelectItem value="2048">2K (2048px)</SelectItem>
-                                <SelectItem value="4096">4K (4096px)</SelectItem>
-                              </SelectContent>
-                            </Select>
+                        <div className="space-y-3 p-4 bg-muted/50 rounded-lg">
+                          <div className="flex items-center gap-4 flex-wrap">
+                            <div className="flex items-center gap-2">
+                              <label className="text-sm font-medium">Format:</label>
+                              <Select value={aspectRatio} onValueChange={handleAspectRatioChange}>
+                                <SelectTrigger className="w-40">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="16:9">16:9 (Paysage)</SelectItem>
+                                  <SelectItem value="9:16">9:16 (Portrait)</SelectItem>
+                                  <SelectItem value="1:1">1:1 (Carré)</SelectItem>
+                                  <SelectItem value="4:3">4:3 (Classique)</SelectItem>
+                                  <SelectItem value="custom">Personnalisé</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            
+                            <div className="flex items-center gap-2">
+                              <label className="text-sm font-medium">Largeur:</label>
+                              <Input
+                                type="number"
+                                min="512"
+                                max="4096"
+                                step="64"
+                                value={imageWidth}
+                                onChange={(e) => {
+                                  setImageWidth(parseInt(e.target.value) || 1920);
+                                  setAspectRatio("custom");
+                                }}
+                                className="w-24"
+                              />
+                            </div>
+                            
+                            <div className="flex items-center gap-2">
+                              <label className="text-sm font-medium">Hauteur:</label>
+                              <Input
+                                type="number"
+                                min="512"
+                                max="4096"
+                                step="64"
+                                value={imageHeight}
+                                onChange={(e) => {
+                                  setImageHeight(parseInt(e.target.value) || 1080);
+                                  setAspectRatio("custom");
+                                }}
+                                className="w-24"
+                              />
+                            </div>
+                            
+                            <span className="text-xs text-muted-foreground">
+                              ({imageWidth}x{imageHeight}px)
+                            </span>
                           </div>
+                          
                           <Button
                             onClick={generateAllImages}
                             disabled={isGeneratingImages}
                             variant="default"
+                            className="w-full"
                           >
                             {isGeneratingImages ? (
                               <>
@@ -747,7 +814,7 @@ const Index = () => {
                             ) : (
                               <>
                                 <ImageIcon className="mr-2 h-4 w-4" />
-                                Générer toutes les images
+                                Générer toutes les images ({imageWidth}x{imageHeight})
                               </>
                             )}
                           </Button>
