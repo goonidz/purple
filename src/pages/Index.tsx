@@ -30,6 +30,7 @@ interface GeneratedPrompt {
   text: string;
   startTime: number;
   endTime: number;
+  duration: number;
 }
 
 const Index = () => {
@@ -169,15 +170,23 @@ const Index = () => {
     setGeneratedPrompts([]);
     
     try {
-      // Récupérer le fichier original pour le contexte global
+      // Step 1: Generate global summary
+      toast.info("Génération du résumé global...");
       const fileContent = await transcriptFile!.text();
       const transcriptData: TranscriptData = JSON.parse(fileContent);
+      const fullTranscript = transcriptData.segments.map(seg => seg.text).join(' ');
       
-      const globalContext = transcriptData.segments
-        .slice(0, 10)
-        .map(s => s.text)
-        .join(" ");
+      const { data: summaryData, error: summaryError } = await supabase.functions.invoke('generate-summary', {
+        body: { transcript: fullTranscript }
+      });
 
+      if (summaryError) throw summaryError;
+      
+      const summary = summaryData.summary;
+      console.log("Global summary:", summary);
+      toast.success("Résumé global généré !");
+
+      // Step 2: Generate prompts for each scene using the summary
       const prompts: GeneratedPrompt[] = [];
       
       for (let i = 0; i < scenes.length; i++) {
@@ -187,7 +196,7 @@ const Index = () => {
           const { data, error } = await supabase.functions.invoke("generate-prompts", {
             body: { 
               scene: scene.text,
-              globalContext,
+              summary,
               examplePrompt,
               sceneIndex: i + 1,
               totalScenes: scenes.length,
@@ -203,7 +212,8 @@ const Index = () => {
             prompt: data.prompt,
             text: scene.text,
             startTime: scene.startTime,
-            endTime: scene.endTime
+            endTime: scene.endTime,
+            duration: scene.endTime - scene.startTime
           });
 
           setGeneratedPrompts([...prompts]);
@@ -215,12 +225,15 @@ const Index = () => {
             prompt: "Erreur lors de la génération",
             text: scene.text,
             startTime: scene.startTime,
-            endTime: scene.endTime
+            endTime: scene.endTime,
+            duration: scene.endTime - scene.startTime
           });
+          
+          setGeneratedPrompts([...prompts]);
         }
       }
 
-      toast.success(`${prompts.length} prompts générés avec succès !`);
+      toast.success("Tous les prompts ont été générés avec succès !");
     } catch (error: any) {
       console.error("Error generating prompts:", error);
       toast.error(error.message || "Erreur lors de la génération des prompts");

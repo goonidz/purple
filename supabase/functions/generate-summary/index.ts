@@ -11,11 +11,11 @@ serve(async (req) => {
   }
 
   try {
-    const { scene, summary, examplePrompt, sceneIndex, totalScenes, startTime, endTime } = await req.json();
+    const { transcript } = await req.json();
 
-    if (!scene) {
+    if (!transcript) {
       return new Response(
-        JSON.stringify({ error: "Le texte de la scène est requis" }),
+        JSON.stringify({ error: "La transcription complète est requise" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -29,35 +29,20 @@ serve(async (req) => {
       );
     }
 
-    // Construct the system prompt
-    let systemPrompt = `Tu es un expert en génération de prompts pour la création d'images par IA (comme Midjourney, Stable Diffusion, DALL-E).
+    const systemPrompt = `Tu es un expert en synthèse de contenu.
 
-Ton rôle est de créer UN SEUL prompt visuel détaillé pour une scène spécifique d'une vidéo/audio.
+Ton rôle est de créer un résumé ultra-concis (1-2 phrases maximum) du contenu d'une transcription audio/vidéo.
 
-Pour cette scène, tu dois :
-1. Identifier les éléments visuels clés à partir du texte
-2. Créer un prompt descriptif et détaillé
-3. Inclure le style, l'ambiance, la composition, l'éclairage
-4. Optimiser pour la génération d'images de haute qualité
-5. Penser à la cohérence visuelle avec le contexte global de l'histoire
+Ce résumé doit :
+1. Capturer l'essence du sujet principal
+2. Être clair et précis
+3. Servir de contexte pour la génération d'images cohérentes
 
-Retourne UNIQUEMENT le texte du prompt, sans JSON, sans titre, juste le prompt optimisé.`;
+Retourne UNIQUEMENT le résumé, sans préambule, sans formatage, juste 1-2 phrases.`;
 
-    if (examplePrompt) {
-      systemPrompt += `\n\nStyle de référence à suivre : "${examplePrompt}"`;
-    }
+    const userMessage = `Voici la transcription complète :\n\n"${transcript}"\n\nGénère un résumé de 1-2 phrases maximum qui capture l'essence de ce contenu.`;
 
-    // Build user message with context
-    let userMessage = "";
-    
-    if (summary) {
-      userMessage += `Contexte global : ${summary}\n\n`;
-    }
-    
-    userMessage += `Scène ${sceneIndex}/${totalScenes} (${startTime.toFixed(1)}s - ${endTime.toFixed(1)}s) :\n"${scene}"\n\n`;
-    userMessage += `Génère un prompt visuel détaillé pour illustrer cette scène spécifique.`;
-
-    console.log(`Generating prompt for scene ${sceneIndex}/${totalScenes}`);
+    console.log("Generating global summary for transcript");
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -93,23 +78,23 @@ Retourne UNIQUEMENT le texte du prompt, sans JSON, sans titre, juste le prompt o
       }
 
       return new Response(
-        JSON.stringify({ error: "Erreur lors de la génération du prompt" }),
+        JSON.stringify({ error: "Erreur lors de la génération du résumé" }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
     const data = await response.json();
-    console.log(`Prompt generated for scene ${sceneIndex}`);
+    console.log("Global summary generated successfully");
 
-    const generatedPrompt = data.choices[0].message.content;
+    const summary = data.choices[0].message.content;
 
     return new Response(
-      JSON.stringify({ prompt: generatedPrompt }),
+      JSON.stringify({ summary }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
 
   } catch (error) {
-    console.error("Error in generate-prompts function:", error);
+    console.error("Error in generate-summary function:", error);
     const errorMessage = error instanceof Error ? error.message : "Erreur interne du serveur";
     return new Response(
       JSON.stringify({ error: errorMessage }),
