@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate, useSearchParams, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -62,6 +62,7 @@ const Index = () => {
   const [sceneDuration0to1, setSceneDuration0to1] = useState(4);
   const [sceneDuration1to3, setSceneDuration1to3] = useState(6);
   const [sceneDuration3plus, setSceneDuration3plus] = useState(8);
+  const cancelGenerationRef = useRef(false);
 
   // Check authentication
   useEffect(() => {
@@ -295,6 +296,7 @@ const Index = () => {
 
     setIsGeneratingPrompts(true);
     setGeneratedPrompts([]);
+    cancelGenerationRef.current = false;
 
     try {
       toast.info("Génération du résumé global...");
@@ -321,6 +323,11 @@ const Index = () => {
 
       // Process scenes in batches of 10 for parallel generation
       for (let batchStart = 0; batchStart < sceneCount; batchStart += BATCH_SIZE) {
+        if (cancelGenerationRef.current) {
+          toast.info(`Génération annulée. ${prompts.length} prompts générés.`);
+          break;
+        }
+
         const batchEnd = Math.min(batchStart + BATCH_SIZE, sceneCount);
         const batch = scenesToProcess.slice(batchStart, batchEnd);
         
@@ -371,7 +378,9 @@ const Index = () => {
         setGeneratedPrompts([...prompts]);
       }
 
-      toast.success(`${sceneCount} prompts générés avec succès !`);
+      if (!cancelGenerationRef.current) {
+        toast.success(`${sceneCount} prompts générés avec succès !`);
+      }
     } catch (error: any) {
       console.error("Error generating prompts:", error);
       toast.error(error.message || "Erreur lors de la génération des prompts");
@@ -600,6 +609,17 @@ const Index = () => {
                             </>
                           )}
                         </Button>
+                        {isGeneratingPrompts && (
+                          <Button
+                            onClick={() => {
+                              cancelGenerationRef.current = true;
+                              toast.info("Annulation en cours...");
+                            }}
+                            variant="destructive"
+                          >
+                            Annuler
+                          </Button>
+                        )}
                       </div>
                     </div>
                     <div className="overflow-x-auto">
