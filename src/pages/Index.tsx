@@ -1,10 +1,13 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
-import { Loader2, Sparkles, Copy, Check, Upload } from "lucide-react";
+import { Loader2, Sparkles, Copy, Check, Upload, LogOut } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import { ProjectSelector } from "@/components/ProjectSelector";
+import type { User, Session } from "@supabase/supabase-js";
 
 interface TranscriptSegment {
   text: string;
@@ -34,7 +37,12 @@ interface GeneratedPrompt {
 }
 
 const Index = () => {
+  const navigate = useNavigate();
+  const [user, setUser] = useState<User | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
+  const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
   const [transcriptFile, setTranscriptFile] = useState<File | null>(null);
+  const [transcriptData, setTranscriptData] = useState<TranscriptData | null>(null);
   const [examplePrompt, setExamplePrompt] = useState("");
   const [scenes, setScenes] = useState<Scene[]>([]);
   const [generatedPrompts, setGeneratedPrompts] = useState<GeneratedPrompt[]>([]);
@@ -45,7 +53,100 @@ const Index = () => {
   const [sceneDuration1to3, setSceneDuration1to3] = useState(6);
   const [sceneDuration3plus, setSceneDuration3plus] = useState(8);
 
-  // Convertir les secondes en timecode (MM:SS ou HH:MM:SS)
+  // Check authentication
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      setSession(session);
+      setUser(session?.user ?? null);
+      
+      if (!session) {
+        navigate("/auth");
+      }
+    });
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setUser(session?.user ?? null);
+      
+      if (!session) {
+        navigate("/auth");
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, [navigate]);
+
+  // Load project data when project is selected
+  useEffect(() => {
+    if (currentProjectId) {
+      loadProjectData(currentProjectId);
+    }
+  }, [currentProjectId]);
+
+  // Auto-save project data when it changes
+  useEffect(() => {
+    if (currentProjectId && transcriptData) {
+      const timeoutId = setTimeout(() => {
+        saveProjectData();
+      }, 1000);
+
+      return () => clearTimeout(timeoutId);
+    }
+  }, [currentProjectId, transcriptData, examplePrompt, scenes, generatedPrompts, sceneDuration0to1, sceneDuration1to3, sceneDuration3plus]);
+
+  const loadProjectData = async (projectId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from("projects")
+        .select("*")
+        .eq("id", projectId)
+        .single();
+
+      if (error) throw error;
+
+      if (data.transcript_json) {
+        setTranscriptData(data.transcript_json as unknown as TranscriptData);
+      }
+      setExamplePrompt(data.example_prompt || "");
+      setScenes((data.scenes as unknown as Scene[]) || []);
+      setGeneratedPrompts((data.prompts as unknown as GeneratedPrompt[]) || []);
+      setSceneDuration0to1(data.scene_duration_0to1 || 4);
+      setSceneDuration1to3(data.scene_duration_1to3 || 6);
+      setSceneDuration3plus(data.scene_duration_3plus || 8);
+    } catch (error: any) {
+      console.error("Error loading project:", error);
+      toast.error("Erreur lors du chargement du projet");
+    }
+  };
+
+  const saveProjectData = async () => {
+    if (!currentProjectId) return;
+
+    try {
+      const { error } = await supabase
+        .from("projects")
+        .update({
+          transcript_json: transcriptData as any,
+          example_prompt: examplePrompt,
+          scenes: scenes as any,
+          prompts: generatedPrompts as any,
+          scene_duration_0to1: sceneDuration0to1,
+          scene_duration_1to3: sceneDuration1to3,
+          scene_duration_3plus: sceneDuration3plus,
+        })
+        .eq("id", currentProjectId);
+
+      if (error) throw error;
+    } catch (error: any) {
+      console.error("Error saving project:", error);
+    }
+  };
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    navigate("/auth");
+  };
+
   const formatTimecode = (seconds: number): string => {
     const hrs = Math.floor(seconds / 3600);
     const mins = Math.floor((seconds % 3600) / 60);
@@ -66,7 +167,6 @@ const Index = () => {
     const scenes: Scene[] = [];
     let currentScene: Scene = { text: "", startTime: 0, endTime: 0 };
     
-    // Fonction pour obtenir la durée max selon le timestamp
     const getMaxDuration = (timestamp: number): number => {
       if (timestamp < 60) return duration0to1;
       if (timestamp < 180) return duration1to3;
@@ -84,27 +184,22 @@ const Index = () => {
         const potentialDuration = segment.end_time - currentScene.startTime;
         const maxDuration = getMaxDuration(currentScene.startTime);
         
-        // Si ajouter ce segment dépasserait la durée max pour cette tranche temporelle
         if (potentialDuration > maxDuration) {
-          // Sauvegarder la scène actuelle si elle n'est pas vide
           if (currentScene.text.trim()) {
             scenes.push({ ...currentScene });
           }
-          // Démarrer une nouvelle scène avec ce segment
           currentScene = {
             text: segment.text,
             startTime: segment.start_time,
             endTime: segment.end_time
           };
         } else {
-          // Ajouter le segment à la scène actuelle (ne coupe pas les phrases)
           currentScene.text += " " + segment.text;
           currentScene.endTime = segment.end_time;
         }
       }
     });
     
-    // Ajouter la dernière scène
     if (currentScene.text.trim()) {
       scenes.push(currentScene);
     }
@@ -116,45 +211,43 @@ const Index = () => {
     const file = event.target.files?.[0];
     if (file) {
       if (file.type !== "application/json") {
-        toast.error("Veuillez uploader un fichier JSON");
+        toast.error("Veuillez sélectionner un fichier JSON");
         return;
       }
       setTranscriptFile(file);
-      setScenes([]);
-      setGeneratedPrompts([]);
-      toast.success("Fichier chargé !");
+      toast.success("Fichier chargé avec succès");
     }
   };
 
   const handleGenerateScenes = async () => {
     if (!transcriptFile) {
-      toast.error("Veuillez uploader un fichier de transcription JSON");
+      toast.error("Veuillez d'abord charger un fichier de transcription");
+      return;
+    }
+
+    if (!currentProjectId) {
+      toast.error("Veuillez d'abord sélectionner ou créer un projet");
       return;
     }
 
     setIsGeneratingScenes(true);
-    setScenes([]);
-    setGeneratedPrompts([]);
-    
     try {
       const fileContent = await transcriptFile.text();
-      const transcriptData: TranscriptData = JSON.parse(fileContent);
+      const data: TranscriptData = JSON.parse(fileContent);
+      setTranscriptData(data);
       
-      if (!transcriptData.segments || transcriptData.segments.length === 0) {
-        throw new Error("Le fichier JSON ne contient pas de segments valides");
-      }
-
       const generatedScenes = parseTranscriptToScenes(
-        transcriptData, 
+        data,
         sceneDuration0to1,
         sceneDuration1to3,
         sceneDuration3plus
       );
+      
       setScenes(generatedScenes);
-      toast.success(`${generatedScenes.length} scènes générées ! Vous pouvez maintenant générer les prompts.`);
-    } catch (error: any) {
-      console.error("Error generating scenes:", error);
-      toast.error(error.message || "Erreur lors de la génération des scènes");
+      toast.success(`${generatedScenes.length} scènes générées !`);
+    } catch (error) {
+      toast.error("Erreur lors de la génération des scènes");
+      console.error(error);
     } finally {
       setIsGeneratingScenes(false);
     }
@@ -166,15 +259,17 @@ const Index = () => {
       return;
     }
 
+    if (!currentProjectId) {
+      toast.error("Veuillez d'abord sélectionner ou créer un projet");
+      return;
+    }
+
     setIsGeneratingPrompts(true);
     setGeneratedPrompts([]);
-    
+
     try {
-      // Step 1: Generate global summary
       toast.info("Génération du résumé global...");
-      const fileContent = await transcriptFile!.text();
-      const transcriptData: TranscriptData = JSON.parse(fileContent);
-      const fullTranscript = transcriptData.segments.map(seg => seg.text).join(' ');
+      const fullTranscript = transcriptData?.segments.map(seg => seg.text).join(' ') || '';
       
       const { data: summaryData, error: summaryError } = await supabase.functions.invoke('generate-summary', {
         body: { transcript: fullTranscript }
@@ -186,9 +281,13 @@ const Index = () => {
       console.log("Global summary:", summary);
       toast.success("Résumé global généré !");
 
-      // Step 2: Generate prompts for each scene using the summary
+      await supabase
+        .from("projects")
+        .update({ summary })
+        .eq("id", currentProjectId);
+
       const prompts: GeneratedPrompt[] = [];
-      
+
       for (let i = 0; i < scenes.length; i++) {
         const scene = scenes[i];
         
@@ -249,234 +348,246 @@ const Index = () => {
     setTimeout(() => setCopiedIndex(null), 2000);
   };
 
+  if (!user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-gradient-subtle">
-      <header className="border-b border-border/50 bg-card/50 backdrop-blur-sm">
-        <div className="container mx-auto px-4 py-6">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-gradient-warm">
-              <Sparkles className="h-6 w-6 text-primary-foreground" />
+    <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-secondary/5">
+      <div className="border-b bg-background/80 backdrop-blur-sm sticky top-0 z-10">
+        <div className="container mx-auto px-4 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Sparkles className="h-6 w-6 text-primary" />
+              <h1 className="text-xl font-bold">Générateur de Prompts</h1>
             </div>
-            <div>
-              <h1 className="text-2xl font-bold text-foreground">ScenePrompt AI</h1>
-              <p className="text-sm text-muted-foreground">Transformez vos transcriptions en prompts visuels</p>
+            <div className="flex items-center gap-4">
+              <span className="text-sm text-muted-foreground">{user.email}</span>
+              <Button variant="outline" size="sm" onClick={handleLogout}>
+                <LogOut className="h-4 w-4 mr-2" />
+                Déconnexion
+              </Button>
             </div>
           </div>
         </div>
-      </header>
+      </div>
 
-      <main className="container mx-auto px-4 py-8 max-w-6xl">
-        <div className="grid gap-6 lg:grid-cols-2">
-          <div className="space-y-6">
-            <Card className="p-6 shadow-card">
-              <h2 className="text-lg font-semibold mb-4 text-foreground">Fichier de transcription</h2>
-              <div className="space-y-4">
-                <div className="flex items-center gap-4">
-                  <label htmlFor="transcript-upload" className="cursor-pointer">
-                    <div className="flex items-center gap-2 px-4 py-2 bg-secondary text-secondary-foreground rounded-lg hover:bg-secondary/80 transition-colors">
-                      <Upload className="h-4 w-4" />
-                      <span>Choisir un fichier JSON</span>
-                    </div>
-                    <input
-                      id="transcript-upload"
-                      type="file"
-                      accept=".json"
-                      onChange={handleFileUpload}
-                      className="hidden"
-                    />
-                  </label>
-                  {transcriptFile && (
-                    <span className="text-sm text-muted-foreground">
-                      {transcriptFile.name}
-                    </span>
-                  )}
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Uploadez un fichier JSON avec segments et timestamps
-                </p>
-              </div>
-            </Card>
-
-            <Card className="p-6 shadow-card">
-              <h2 className="text-lg font-semibold mb-4 text-foreground">Durée des scènes (secondes)</h2>
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <label className="text-sm text-muted-foreground">
-                    0-1 minute (début captivant)
-                  </label>
-                  <Input
-                    type="number"
-                    min="3"
-                    max="10"
-                    value={sceneDuration0to1}
-                    onChange={(e) => setSceneDuration0to1(Number(e.target.value))}
-                    className="text-base"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm text-muted-foreground">
-                    1-3 minutes (développement)
-                  </label>
-                  <Input
-                    type="number"
-                    min="3"
-                    max="12"
-                    value={sceneDuration1to3}
-                    onChange={(e) => setSceneDuration1to3(Number(e.target.value))}
-                    className="text-base"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm text-muted-foreground">
-                    3+ minutes (rythme établi)
-                  </label>
-                  <Input
-                    type="number"
-                    min="4"
-                    max="15"
-                    value={sceneDuration3plus}
-                    onChange={(e) => setSceneDuration3plus(Number(e.target.value))}
-                    className="text-base"
-                  />
-                </div>
-              </div>
-            </Card>
-
-            <Card className="p-6 shadow-card">
-              <h2 className="text-lg font-semibold mb-4 text-foreground">Prompt d'exemple (optionnel)</h2>
-              <Input
-                placeholder="Ex: cinematic photograph, 8k ultra detailed, dramatic lighting"
-                value={examplePrompt}
-                onChange={(e) => setExamplePrompt(e.target.value)}
-                className="text-base"
+      <div className="container mx-auto px-4 py-8 max-w-7xl">
+        <div className="grid lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-1">
+            <Card className="p-6 sticky top-24">
+              <ProjectSelector
+                currentProjectId={currentProjectId}
+                onSelectProject={setCurrentProjectId}
+                onCreateProject={setCurrentProjectId}
               />
             </Card>
-
-            <div className="space-y-3">
-              <Button
-                onClick={handleGenerateScenes}
-                disabled={isGeneratingScenes || !transcriptFile}
-                className="w-full h-12 text-base font-semibold shadow-glow bg-gradient-warm hover:opacity-90 transition-opacity"
-              >
-                {isGeneratingScenes ? (
-                  <>
-                    <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                    Génération des scènes...
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="mr-2 h-5 w-5" />
-                    1. Générer les scènes
-                  </>
-                )}
-              </Button>
-
-              <Button
-                onClick={handleGeneratePrompts}
-                disabled={isGeneratingPrompts || scenes.length === 0}
-                variant={scenes.length > 0 ? "default" : "secondary"}
-                className="w-full h-12 text-base font-semibold"
-              >
-                {isGeneratingPrompts ? (
-                  <>
-                    <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                    Génération des prompts... ({generatedPrompts.length}/{scenes.length})
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="mr-2 h-5 w-5" />
-                    2. Générer les prompts {scenes.length > 0 && `(${scenes.length} scènes)`}
-                  </>
-                )}
-              </Button>
-            </div>
           </div>
 
-          <div className="space-y-4">
-            {/* Affichage des scènes générées */}
-            {scenes.length > 0 && generatedPrompts.length === 0 && (
+          <div className="lg:col-span-2 space-y-6">
+            {!currentProjectId ? (
+              <Card className="p-12 text-center">
+                <Sparkles className="h-16 w-16 mx-auto mb-4 text-muted-foreground" />
+                <h2 className="text-2xl font-bold mb-2">Commencez par créer un projet</h2>
+                <p className="text-muted-foreground">
+                  Sélectionnez ou créez un projet pour commencer à générer vos prompts
+                </p>
+              </Card>
+            ) : (
               <>
-                <h2 className="text-lg font-semibold text-foreground">
-                  Scènes générées ({scenes.length})
-                </h2>
-                <div className="space-y-3 max-h-[calc(100vh-12rem)] overflow-y-auto pr-2">
-                  {scenes.map((scene, index) => (
-                    <Card key={index} className="p-4 shadow-card">
-                      <div className="flex items-start gap-3">
-                        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-sm font-semibold text-primary">
-                          {index + 1}
+                <Card className="p-6">
+                  <h2 className="text-lg font-semibold mb-4">1. Importer la transcription</h2>
+                  <div className="space-y-4">
+                    <div>
+                      <label htmlFor="transcript-upload" className="cursor-pointer">
+                        <div className="border-2 border-dashed border-muted-foreground/25 rounded-lg p-8 text-center hover:border-primary/50 transition-colors">
+                          <Upload className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
+                          <p className="text-sm font-medium mb-1">
+                            {transcriptFile ? transcriptFile.name : "Cliquez pour importer un fichier JSON"}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            Format: JSON de transcription
+                          </p>
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="text-xs text-muted-foreground mb-1">
-                            {formatTimecode(scene.startTime)} - {formatTimecode(scene.endTime)} ({(scene.endTime - scene.startTime).toFixed(1)}s)
-                          </div>
-                          <p className="text-sm text-foreground/90">{scene.text}</p>
-                        </div>
-                      </div>
-                    </Card>
-                  ))}
-                </div>
-              </>
-            )}
-
-            {/* Affichage des prompts générés */}
-            {generatedPrompts.length > 0 && (
-              <>
-                <h2 className="text-lg font-semibold text-foreground">
-                  Prompts générés ({generatedPrompts.length}/{scenes.length})
-                </h2>
-                <div className="space-y-4 max-h-[calc(100vh-12rem)] overflow-y-auto pr-2">
-                  {generatedPrompts.map((item, index) => (
-                    <Card key={index} className="p-4 shadow-card hover:shadow-card-hover transition-shadow">
-                      <div className="flex items-start justify-between gap-3 mb-3">
-                        <div className="flex-1">
-                          <h3 className="font-semibold text-foreground mb-1">{item.scene}</h3>
-                          <p className="text-xs text-muted-foreground italic mb-2">"{item.text}"</p>
-                        </div>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => copyToClipboard(item.prompt, index)}
-                          className="shrink-0"
-                        >
-                          {copiedIndex === index ? (
-                            <Check className="h-4 w-4 text-green-500" />
-                          ) : (
-                            <Copy className="h-4 w-4" />
-                          )}
-                        </Button>
-                      </div>
-                      <p className="text-sm leading-relaxed text-foreground/90 bg-muted/50 p-3 rounded-lg">
-                        {item.prompt}
-                      </p>
-                    </Card>
-                  ))}
-                </div>
-              </>
-            )}
-
-            {/* État vide */}
-            {scenes.length === 0 && generatedPrompts.length === 0 && (
-              <>
-                <h2 className="text-lg font-semibold text-foreground">
-                  Résultats
-                </h2>
-                <Card className="p-12 shadow-card">
-                  <div className="text-center text-muted-foreground">
-                    <Sparkles className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                    <p className="mb-2">Commencez par générer les scènes</p>
-                    <p className="text-xs">Les scènes et prompts apparaîtront ici</p>
+                        <input
+                          id="transcript-upload"
+                          type="file"
+                          accept=".json"
+                          onChange={handleFileUpload}
+                          className="hidden"
+                        />
+                      </label>
+                    </div>
                   </div>
                 </Card>
+
+                <Card className="p-6">
+                  <h2 className="text-lg font-semibold mb-4">2. Configurer les scènes</h2>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="text-sm font-medium mb-2 block">
+                        Prompt d'exemple (optionnel)
+                      </label>
+                      <Input
+                        placeholder="Style de référence pour vos prompts..."
+                        value={examplePrompt}
+                        onChange={(e) => setExamplePrompt(e.target.value)}
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-4">
+                      <div>
+                        <label className="text-sm font-medium mb-2 block">
+                          Durée 0-1min (sec)
+                        </label>
+                        <Input
+                          type="number"
+                          min="1"
+                          max="60"
+                          value={sceneDuration0to1}
+                          onChange={(e) => setSceneDuration0to1(parseInt(e.target.value))}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium mb-2 block">
+                          Durée 1-3min (sec)
+                        </label>
+                        <Input
+                          type="number"
+                          min="1"
+                          max="180"
+                          value={sceneDuration1to3}
+                          onChange={(e) => setSceneDuration1to3(parseInt(e.target.value))}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium mb-2 block">
+                          Durée 3min+ (sec)
+                        </label>
+                        <Input
+                          type="number"
+                          min="1"
+                          max="600"
+                          value={sceneDuration3plus}
+                          onChange={(e) => setSceneDuration3plus(parseInt(e.target.value))}
+                        />
+                      </div>
+                    </div>
+
+                    <Button
+                      onClick={handleGenerateScenes}
+                      disabled={!transcriptFile || isGeneratingScenes}
+                      className="w-full"
+                    >
+                      {isGeneratingScenes ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Génération des scènes...
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="mr-2 h-4 w-4" />
+                          Générer les scènes
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </Card>
+
+                {scenes.length > 0 && (
+                  <Card className="p-6">
+                    <div className="flex items-center justify-between mb-4">
+                      <h2 className="text-lg font-semibold">
+                        Scènes générées ({scenes.length})
+                      </h2>
+                      <Button
+                        onClick={handleGeneratePrompts}
+                        disabled={isGeneratingPrompts}
+                      >
+                        {isGeneratingPrompts ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Génération...
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles className="mr-2 h-4 w-4" />
+                            Générer les prompts
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                    <div className="space-y-3 max-h-96 overflow-y-auto">
+                      {scenes.map((scene, index) => (
+                        <div
+                          key={index}
+                          className="flex gap-3 p-3 bg-muted/50 rounded-lg"
+                        >
+                          <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-sm font-semibold text-primary">
+                            {index + 1}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-xs text-muted-foreground mb-1">
+                              {formatTimecode(scene.startTime)} - {formatTimecode(scene.endTime)} ({(scene.endTime - scene.startTime).toFixed(1)}s)
+                            </div>
+                            <p className="text-sm text-foreground/90">{scene.text}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </Card>
+                )}
+
+                {generatedPrompts.length > 0 && (
+                  <Card className="p-6">
+                    <h2 className="text-lg font-semibold mb-4">
+                      Prompts générés ({generatedPrompts.length})
+                    </h2>
+                    <div className="space-y-4">
+                      {generatedPrompts.map((item, index) => (
+                        <div
+                          key={index}
+                          className="border rounded-lg p-4 space-y-3"
+                        >
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="flex-1 min-w-0">
+                              <h3 className="font-semibold text-sm mb-1">{item.scene}</h3>
+                              <p className="text-xs text-muted-foreground mb-2">
+                                Durée: {item.duration.toFixed(1)}s
+                              </p>
+                              <p className="text-xs text-muted-foreground/80 mb-3">
+                                {item.text}
+                              </p>
+                              <div className="bg-muted/50 p-3 rounded">
+                                <p className="text-sm">{item.prompt}</p>
+                              </div>
+                            </div>
+                            <Button
+                              variant="outline"
+                              size="icon"
+                              onClick={() => copyToClipboard(item.prompt, index)}
+                            >
+                              {copiedIndex === index ? (
+                                <Check className="h-4 w-4 text-green-500" />
+                              ) : (
+                                <Copy className="h-4 w-4" />
+                              )}
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </Card>
+                )}
               </>
             )}
           </div>
         </div>
-      </main>
-
-      <footer className="border-t border-border/50 mt-12 py-6 text-center text-sm text-muted-foreground">
-        Propulsé par Lovable AI ✨
-      </footer>
+      </div>
     </div>
   );
 };

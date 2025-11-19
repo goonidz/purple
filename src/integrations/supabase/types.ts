@@ -14,7 +14,54 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      projects: {
+        Row: {
+          created_at: string
+          example_prompt: string | null
+          id: string
+          name: string
+          prompts: Json | null
+          scene_duration_0to1: number | null
+          scene_duration_1to3: number | null
+          scene_duration_3plus: number | null
+          scenes: Json | null
+          summary: string | null
+          transcript_json: Json | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          example_prompt?: string | null
+          id?: string
+          name: string
+          prompts?: Json | null
+          scene_duration_0to1?: number | null
+          scene_duration_1to3?: number | null
+          scene_duration_3plus?: number | null
+          scenes?: Json | null
+          summary?: string | null
+          transcript_json?: Json | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          example_prompt?: string | null
+          id?: string
+          name?: string
+          prompts?: Json | null
+          scene_duration_0to1?: number | null
+          scene_duration_1to3?: number | null
+          scene_duration_3plus?: number | null
+          scenes?: Json | null
+          summary?: string | null
+          transcript_json?: Json | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
