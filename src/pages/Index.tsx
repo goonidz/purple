@@ -1,40 +1,160 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
-import { Loader2, Sparkles, Copy, Check } from "lucide-react";
+import { Loader2, Sparkles, Copy, Check, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+
+interface TranscriptSegment {
+  text: string;
+  start_time: number;
+  end_time: number;
+  speaker?: { id: string; name: string };
+}
+
+interface TranscriptData {
+  segments: TranscriptSegment[];
+  language_code?: string;
+}
+
+interface Scene {
+  text: string;
+  startTime: number;
+  endTime: number;
+}
 
 interface GeneratedPrompt {
   scene: string;
   prompt: string;
+  text: string;
+  startTime: number;
+  endTime: number;
 }
 
 const Index = () => {
-  const [text, setText] = useState("");
+  const [transcriptFile, setTranscriptFile] = useState<File | null>(null);
   const [examplePrompt, setExamplePrompt] = useState("");
   const [generatedPrompts, setGeneratedPrompts] = useState<GeneratedPrompt[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+  const [sceneDuration, setSceneDuration] = useState(5);
+
+  const parseTranscriptToScenes = (transcriptData: TranscriptData, maxDuration: number): Scene[] => {
+    const scenes: Scene[] = [];
+    let currentScene: Scene = { text: "", startTime: 0, endTime: 0 };
+    
+    transcriptData.segments.forEach((segment, index) => {
+      if (index === 0) {
+        currentScene = {
+          text: segment.text,
+          startTime: segment.start_time,
+          endTime: segment.end_time
+        };
+      } else {
+        const duration = segment.end_time - currentScene.startTime;
+        
+        if (duration <= maxDuration) {
+          currentScene.text += " " + segment.text;
+          currentScene.endTime = segment.end_time;
+        } else {
+          scenes.push({ ...currentScene });
+          currentScene = {
+            text: segment.text,
+            startTime: segment.start_time,
+            endTime: segment.end_time
+          };
+        }
+      }
+    });
+    
+    if (currentScene.text) {
+      scenes.push(currentScene);
+    }
+    
+    return scenes;
+  };
+
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      if (file.type !== "application/json") {
+        toast.error("Veuillez uploader un fichier JSON");
+        return;
+      }
+      setTranscriptFile(file);
+      toast.success("Fichier chargé !");
+    }
+  };
 
   const handleGenerate = async () => {
-    if (!text.trim()) {
-      toast.error("Veuillez entrer du texte à analyser");
+    if (!transcriptFile) {
+      toast.error("Veuillez uploader un fichier de transcription JSON");
       return;
     }
 
     setIsLoading(true);
+    setGeneratedPrompts([]);
+    
     try {
-      const { data, error } = await supabase.functions.invoke("generate-prompts", {
-        body: { text, examplePrompt },
-      });
+      const fileContent = await transcriptFile.text();
+      const transcriptData: TranscriptData = JSON.parse(fileContent);
+      
+      if (!transcriptData.segments || transcriptData.segments.length === 0) {
+        throw new Error("Le fichier JSON ne contient pas de segments valides");
+      }
 
-      if (error) throw error;
+      const scenes = parseTranscriptToScenes(transcriptData, sceneDuration);
+      toast.info(`${scenes.length} scènes détectées, génération en cours...`);
 
-      setGeneratedPrompts(data.prompts);
-      toast.success(`${data.prompts.length} prompts générés avec succès !`);
+      const globalContext = transcriptData.segments
+        .slice(0, 10)
+        .map(s => s.text)
+        .join(" ");
+
+      const prompts: GeneratedPrompt[] = [];
+      
+      for (let i = 0; i < scenes.length; i++) {
+        const scene = scenes[i];
+        
+        try {
+          const { data, error } = await supabase.functions.invoke("generate-prompts", {
+            body: { 
+              scene: scene.text,
+              globalContext,
+              examplePrompt,
+              sceneIndex: i + 1,
+              totalScenes: scenes.length,
+              startTime: scene.startTime,
+              endTime: scene.endTime
+            },
+          });
+
+          if (error) throw error;
+
+          prompts.push({
+            scene: `Scène ${i + 1} (${scene.startTime.toFixed(1)}s - ${scene.endTime.toFixed(1)}s)`,
+            prompt: data.prompt,
+            text: scene.text,
+            startTime: scene.startTime,
+            endTime: scene.endTime
+          });
+
+          setGeneratedPrompts([...prompts]);
+          
+        } catch (sceneError: any) {
+          console.error(`Error generating prompt for scene ${i + 1}:`, sceneError);
+          prompts.push({
+            scene: `Scène ${i + 1} (${scene.startTime.toFixed(1)}s - ${scene.endTime.toFixed(1)}s)`,
+            prompt: "Erreur lors de la génération",
+            text: scene.text,
+            startTime: scene.startTime,
+            endTime: scene.endTime
+          });
+        }
+      }
+
+      toast.success(`${prompts.length} prompts générés avec succès !`);
     } catch (error: any) {
       console.error("Error generating prompts:", error);
       toast.error(error.message || "Erreur lors de la génération des prompts");
@@ -52,7 +172,6 @@ const Index = () => {
 
   return (
     <div className="min-h-screen bg-gradient-subtle">
-      {/* Header */}
       <header className="border-b border-border/50 bg-card/50 backdrop-blur-sm">
         <div className="container mx-auto px-4 py-6">
           <div className="flex items-center gap-3">
@@ -61,49 +180,78 @@ const Index = () => {
             </div>
             <div>
               <h1 className="text-2xl font-bold text-foreground">ScenePrompt AI</h1>
-              <p className="text-sm text-muted-foreground">Transformez vos histoires en prompts visuels</p>
+              <p className="text-sm text-muted-foreground">Transformez vos transcriptions en prompts visuels</p>
             </div>
           </div>
         </div>
       </header>
 
-      {/* Main Content */}
       <main className="container mx-auto px-4 py-8 max-w-6xl">
         <div className="grid gap-6 lg:grid-cols-2">
-          {/* Input Section */}
           <div className="space-y-6">
             <Card className="p-6 shadow-card">
-              <h2 className="text-lg font-semibold mb-4 text-foreground">Votre texte</h2>
-              <Textarea
-                placeholder="Entrez votre histoire, scénario ou description narrative ici. L'IA analysera le texte et créera un prompt pour chaque scène..."
-                value={text}
-                onChange={(e) => setText(e.target.value)}
-                className="min-h-[300px] resize-none text-base"
+              <h2 className="text-lg font-semibold mb-4 text-foreground">Fichier de transcription</h2>
+              <div className="space-y-4">
+                <div className="flex items-center gap-4">
+                  <label htmlFor="transcript-upload" className="cursor-pointer">
+                    <div className="flex items-center gap-2 px-4 py-2 bg-secondary text-secondary-foreground rounded-lg hover:bg-secondary/80 transition-colors">
+                      <Upload className="h-4 w-4" />
+                      <span>Choisir un fichier JSON</span>
+                    </div>
+                    <input
+                      id="transcript-upload"
+                      type="file"
+                      accept=".json"
+                      onChange={handleFileUpload}
+                      className="hidden"
+                    />
+                  </label>
+                  {transcriptFile && (
+                    <span className="text-sm text-muted-foreground">
+                      {transcriptFile.name}
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Uploadez un fichier JSON avec segments et timestamps
+                </p>
+              </div>
+            </Card>
+
+            <Card className="p-6 shadow-card">
+              <h2 className="text-lg font-semibold mb-4 text-foreground">Durée des scènes</h2>
+              <Input
+                type="number"
+                min="3"
+                max="10"
+                value={sceneDuration}
+                onChange={(e) => setSceneDuration(Number(e.target.value))}
+                className="text-base"
               />
+              <p className="text-xs text-muted-foreground mt-2">
+                Durée maximale par scène (3-10s)
+              </p>
             </Card>
 
             <Card className="p-6 shadow-card">
               <h2 className="text-lg font-semibold mb-4 text-foreground">Prompt d'exemple (optionnel)</h2>
               <Input
-                placeholder="Ex: cinematic photograph, 8k ultra detailed, dramatic lighting, --ar 16:9"
+                placeholder="Ex: cinematic photograph, 8k ultra detailed, dramatic lighting"
                 value={examplePrompt}
                 onChange={(e) => setExamplePrompt(e.target.value)}
                 className="text-base"
               />
-              <p className="text-xs text-muted-foreground mt-2">
-                Donnez un exemple de style de prompt pour guider l'IA
-              </p>
             </Card>
 
             <Button
               onClick={handleGenerate}
-              disabled={isLoading}
+              disabled={isLoading || !transcriptFile}
               className="w-full h-12 text-base font-semibold shadow-glow bg-gradient-warm hover:opacity-90 transition-opacity"
             >
               {isLoading ? (
                 <>
                   <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                  Génération en cours...
+                  Génération...
                 </>
               ) : (
                 <>
@@ -114,49 +262,43 @@ const Index = () => {
             </Button>
           </div>
 
-          {/* Output Section */}
           <div className="space-y-4">
-            <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
-              <span className="h-px flex-1 bg-gradient-warm"></span>
-              Prompts générés
-              <span className="h-px flex-1 bg-gradient-warm"></span>
+            <h2 className="text-lg font-semibold text-foreground">
+              Prompts générés {generatedPrompts.length > 0 && `(${generatedPrompts.length})`}
             </h2>
-
+            
             {generatedPrompts.length === 0 ? (
               <Card className="p-12 shadow-card">
                 <div className="text-center text-muted-foreground">
-                  <Sparkles className="h-16 w-16 mx-auto mb-4 opacity-30" />
-                  <p className="text-lg">Les prompts générés apparaîtront ici</p>
-                  <p className="text-sm mt-2">Entrez votre texte et cliquez sur "Générer les prompts"</p>
+                  <Sparkles className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                  <p>Les prompts générés apparaîtront ici</p>
                 </div>
               </Card>
             ) : (
-              <div className="space-y-4 animate-fade-in">
+              <div className="space-y-4 max-h-[calc(100vh-12rem)] overflow-y-auto pr-2">
                 {generatedPrompts.map((item, index) => (
-                  <Card key={index} className="p-6 shadow-card hover:shadow-glow transition-shadow">
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex-1 space-y-2">
-                        <div className="flex items-center gap-2">
-                          <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-primary/10 text-primary text-sm font-semibold">
-                            {index + 1}
-                          </span>
-                          <h3 className="font-semibold text-foreground">{item.scene}</h3>
-                        </div>
-                        <p className="text-sm text-muted-foreground leading-relaxed">{item.prompt}</p>
+                  <Card key={index} className="p-4 shadow-card hover:shadow-card-hover transition-shadow">
+                    <div className="flex items-start justify-between gap-3 mb-3">
+                      <div className="flex-1">
+                        <h3 className="font-semibold text-foreground mb-1">{item.scene}</h3>
+                        <p className="text-xs text-muted-foreground italic mb-2">"{item.text}"</p>
                       </div>
                       <Button
+                        size="sm"
                         variant="ghost"
-                        size="icon"
                         onClick={() => copyToClipboard(item.prompt, index)}
-                        className="shrink-0 hover:bg-primary/10"
+                        className="shrink-0"
                       >
                         {copiedIndex === index ? (
-                          <Check className="h-4 w-4 text-primary" />
+                          <Check className="h-4 w-4 text-green-500" />
                         ) : (
                           <Copy className="h-4 w-4" />
                         )}
                       </Button>
                     </div>
+                    <p className="text-sm leading-relaxed text-foreground/90 bg-muted/50 p-3 rounded-lg">
+                      {item.prompt}
+                    </p>
                   </Card>
                 ))}
               </div>
@@ -165,11 +307,8 @@ const Index = () => {
         </div>
       </main>
 
-      {/* Footer */}
-      <footer className="mt-16 py-8 border-t border-border/50">
-        <div className="container mx-auto px-4 text-center text-sm text-muted-foreground">
-          <p>Propulsé par l'IA • Transformez vos idées en images</p>
-        </div>
+      <footer className="border-t border-border/50 mt-12 py-6 text-center text-sm text-muted-foreground">
+        Propulsé par Lovable AI ✨
       </footer>
     </div>
   );
