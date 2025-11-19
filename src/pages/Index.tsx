@@ -605,9 +605,11 @@ const Index = () => {
 
       const imageUrl = Array.isArray(data.output) ? data.output[0] : data.output;
       
-      const updatedPrompts = [...generatedPrompts];
-      updatedPrompts[index] = { ...updatedPrompts[index], imageUrl };
-      setGeneratedPrompts(updatedPrompts);
+      setGeneratedPrompts(prev => {
+        const updatedPrompts = [...prev];
+        updatedPrompts[index] = { ...updatedPrompts[index], imageUrl };
+        return updatedPrompts;
+      });
       
       toast.success("Image générée !");
     } catch (error: any) {
