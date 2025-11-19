@@ -19,7 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2, Sparkles, Copy, Check, Upload, LogOut, FolderOpen, Image as ImageIcon } from "lucide-react";
+import { Loader2, Sparkles, Copy, Check, Upload, LogOut, FolderOpen, Image as ImageIcon, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import type { User, Session } from "@supabase/supabase-js";
@@ -79,6 +79,7 @@ const Index = () => {
   const [styleReferenceUrl, setStyleReferenceUrl] = useState<string>("");
   const [uploadedStyleImageUrl, setUploadedStyleImageUrl] = useState<string>("");
   const [isUploadingStyleImage, setIsUploadingStyleImage] = useState(false);
+  const [regeneratingPromptIndex, setRegeneratingPromptIndex] = useState<number | null>(null);
 
   // Check authentication
   useEffect(() => {
@@ -402,6 +403,78 @@ const Index = () => {
       toast.error(error.message || "Erreur lors de la génération des prompts");
     } finally {
       setIsGeneratingPrompts(false);
+    }
+  };
+
+  const regenerateSinglePrompt = async (sceneIndex: number) => {
+    if (!currentProjectId) {
+      toast.error("Veuillez d'abord sélectionner ou créer un projet");
+      return;
+    }
+
+    setRegeneratingPromptIndex(sceneIndex);
+    
+    try {
+      // Get the project to retrieve the summary
+      const { data: projectData, error: projectError } = await supabase
+        .from("projects")
+        .select("summary")
+        .eq("id", currentProjectId)
+        .single();
+
+      if (projectError) throw projectError;
+
+      let summary = projectData?.summary;
+
+      // If no summary exists, generate one
+      if (!summary) {
+        const fullTranscript = transcriptData?.segments.map(seg => seg.text).join(' ') || '';
+        const { data: summaryData, error: summaryError } = await supabase.functions.invoke('generate-summary', {
+          body: { transcript: fullTranscript }
+        });
+
+        if (summaryError) throw summaryError;
+        
+        summary = summaryData.summary;
+        
+        // Save the summary for future use
+        await supabase
+          .from("projects")
+          .update({ summary })
+          .eq("id", currentProjectId);
+      }
+
+      const scene = scenes[sceneIndex];
+      const filteredPrompts = examplePrompts.filter(p => p.trim() !== "");
+
+      const { data, error } = await supabase.functions.invoke("generate-prompts", {
+        body: { 
+          scene: scene.text,
+          summary,
+          examplePrompts: filteredPrompts,
+          sceneIndex: sceneIndex + 1,
+          totalScenes: scenes.length,
+          startTime: scene.startTime,
+          endTime: scene.endTime
+        },
+      });
+
+      if (error) throw error;
+
+      // Update the prompt in the array
+      const updatedPrompts = [...generatedPrompts];
+      updatedPrompts[sceneIndex] = {
+        ...updatedPrompts[sceneIndex],
+        prompt: data.prompt,
+      };
+      setGeneratedPrompts(updatedPrompts);
+
+      toast.success("Prompt régénéré !");
+    } catch (error: any) {
+      console.error("Error regenerating prompt:", error);
+      toast.error(error.message || "Erreur lors de la régénération");
+    } finally {
+      setRegeneratingPromptIndex(null);
     }
   };
 
@@ -954,7 +1027,23 @@ const Index = () => {
                                 </TableCell>
                                 <TableCell className="max-w-md">
                                   {prompt ? (
-                                    <p className="text-sm">{prompt.prompt}</p>
+                                    <div className="group relative">
+                                      <p className="text-sm">{prompt.prompt}</p>
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="absolute top-0 right-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                                        onClick={() => regenerateSinglePrompt(index)}
+                                        disabled={regeneratingPromptIndex === index}
+                                        title="Régénérer le prompt"
+                                      >
+                                        {regeneratingPromptIndex === index ? (
+                                          <Loader2 className="h-3 w-3 animate-spin" />
+                                        ) : (
+                                          <RefreshCw className="h-3 w-3" />
+                                        )}
+                                      </Button>
+                                    </div>
                                   ) : (
                                     <span className="text-xs text-muted-foreground italic">
                                       Pas encore généré
@@ -963,13 +1052,29 @@ const Index = () => {
                                 </TableCell>
                                 <TableCell>
                                   {prompt?.imageUrl ? (
-                                    <img 
-                                      src={prompt.imageUrl} 
-                                      alt={`Scene ${index + 1}`}
-                                      className="w-24 h-24 object-cover rounded cursor-pointer hover:opacity-80 transition"
-                                      onClick={() => window.open(prompt.imageUrl, '_blank')}
-                                      title="Cliquer pour agrandir"
-                                    />
+                                    <div className="group relative">
+                                      <img 
+                                        src={prompt.imageUrl} 
+                                        alt={`Scene ${index + 1}`}
+                                        className="w-24 h-24 object-cover rounded cursor-pointer hover:opacity-80 transition"
+                                        onClick={() => window.open(prompt.imageUrl, '_blank')}
+                                        title="Cliquer pour agrandir"
+                                      />
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity bg-background/80 hover:bg-background"
+                                        onClick={() => generateImage(index)}
+                                        disabled={generatingImageIndex === index}
+                                        title="Régénérer l'image"
+                                      >
+                                        {generatingImageIndex === index ? (
+                                          <Loader2 className="h-3 w-3 animate-spin" />
+                                        ) : (
+                                          <RefreshCw className="h-3 w-3" />
+                                        )}
+                                      </Button>
+                                    </div>
                                   ) : prompt ? (
                                     <Button
                                       variant="outline"
