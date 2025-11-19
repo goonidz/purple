@@ -905,108 +905,19 @@ const Index = () => {
                       </div>
 
                       {generatedPrompts.length > 0 && (
-                        <div className="space-y-3 p-4 bg-muted/50 rounded-lg">
-                          <div className="space-y-3">
-                            <div>
-                              <label className="text-sm font-medium mb-2 block">
-                                Image de référence de style (optionnel)
-                              </label>
-                              <div className="space-y-2">
-                                <div className="flex gap-2">
-                                  <Input
-                                    type="file"
-                                    accept="image/*"
-                                    onChange={handleStyleImageUpload}
-                                    disabled={isUploadingStyleImage}
-                                    className="flex-1"
-                                  />
-                                  {isUploadingStyleImage && (
-                                    <Loader2 className="h-5 w-5 animate-spin text-primary" />
-                                  )}
-                                </div>
-                                <div className="text-xs text-center text-muted-foreground">ou</div>
-                                <Input
-                                  type="url"
-                                  placeholder="https://exemple.com/image.jpg"
-                                  value={styleReferenceUrl}
-                                  onChange={(e) => setStyleReferenceUrl(e.target.value)}
-                                  className="w-full"
-                                />
-                                {uploadedStyleImageUrl && (
-                                  <div className="mt-2">
-                                    <img 
-                                      src={uploadedStyleImageUrl} 
-                                      alt="Style reference" 
-                                      className="w-32 h-32 object-cover rounded border"
-                                    />
-                                  </div>
-                                )}
-                              </div>
-                              <p className="text-xs text-muted-foreground mt-1">
-                                Uploadez ou collez l'URL d'une image pour guider le style de génération
-                              </p>
-                            </div>
-
-                            <div className="flex items-center gap-4 flex-wrap">
-                              <div className="flex items-center gap-2">
-                                <label className="text-sm font-medium">Format:</label>
-                                <Select value={aspectRatio} onValueChange={handleAspectRatioChange}>
-                                  <SelectTrigger className="w-40">
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="16:9">16:9 (Paysage)</SelectItem>
-                                    <SelectItem value="9:16">9:16 (Portrait)</SelectItem>
-                                    <SelectItem value="1:1">1:1 (Carré)</SelectItem>
-                                    <SelectItem value="4:3">4:3 (Classique)</SelectItem>
-                                    <SelectItem value="custom">Personnalisé</SelectItem>
-                                  </SelectContent>
-                                </Select>
-                              </div>
-                              
-                              <div className="flex items-center gap-2">
-                                <label className="text-sm font-medium">Largeur:</label>
-                                <Input
-                                  type="number"
-                                  min="512"
-                                  max="4096"
-                                  step="64"
-                                  value={imageWidth}
-                                  onChange={(e) => {
-                                    setImageWidth(parseInt(e.target.value) || 1920);
-                                    setAspectRatio("custom");
-                                  }}
-                                  className="w-24"
-                                />
-                              </div>
-                              
-                              <div className="flex items-center gap-2">
-                                <label className="text-sm font-medium">Hauteur:</label>
-                                <Input
-                                  type="number"
-                                  min="512"
-                                  max="4096"
-                                  step="64"
-                                  value={imageHeight}
-                                  onChange={(e) => {
-                                    setImageHeight(parseInt(e.target.value) || 1080);
-                                    setAspectRatio("custom");
-                                  }}
-                                  className="w-24"
-                                />
-                              </div>
-                              
-                              <span className="text-xs text-muted-foreground">
-                                ({imageWidth}x{imageHeight}px)
-                              </span>
-                            </div>
-                          </div>
-                          
+                        <div className="flex gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setImageSettingsOpen(true)}
+                          >
+                            <Settings className="mr-2 h-4 w-4" />
+                            Paramètres d'image
+                          </Button>
                           <Button
                             onClick={generateAllImages}
                             disabled={isGeneratingImages}
-                            variant="default"
-                            className="w-full"
+                            className="flex-1"
                           >
                             {isGeneratingImages ? (
                               <>
