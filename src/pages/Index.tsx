@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
+import { Textarea } from "@/components/ui/textarea";
 import { Loader2, Sparkles, Copy, Check, Upload, LogOut } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -43,7 +44,7 @@ const Index = () => {
   const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
   const [transcriptFile, setTranscriptFile] = useState<File | null>(null);
   const [transcriptData, setTranscriptData] = useState<TranscriptData | null>(null);
-  const [examplePrompt, setExamplePrompt] = useState("");
+  const [examplePrompts, setExamplePrompts] = useState<string[]>(["", "", ""]);
   const [scenes, setScenes] = useState<Scene[]>([]);
   const [generatedPrompts, setGeneratedPrompts] = useState<GeneratedPrompt[]>([]);
   const [isGeneratingScenes, setIsGeneratingScenes] = useState(false);
@@ -92,7 +93,7 @@ const Index = () => {
 
       return () => clearTimeout(timeoutId);
     }
-  }, [currentProjectId, transcriptData, examplePrompt, scenes, generatedPrompts, sceneDuration0to1, sceneDuration1to3, sceneDuration3plus]);
+  }, [currentProjectId, transcriptData, examplePrompts, scenes, generatedPrompts, sceneDuration0to1, sceneDuration1to3, sceneDuration3plus]);
 
   const loadProjectData = async (projectId: string) => {
     try {
@@ -107,7 +108,8 @@ const Index = () => {
       if (data.transcript_json) {
         setTranscriptData(data.transcript_json as unknown as TranscriptData);
       }
-      setExamplePrompt(data.example_prompt || "");
+      const prompts = (data.example_prompts as string[]) || ["", "", ""];
+      setExamplePrompts(Array.isArray(prompts) ? prompts : ["", "", ""]);
       setScenes((data.scenes as unknown as Scene[]) || []);
       setGeneratedPrompts((data.prompts as unknown as GeneratedPrompt[]) || []);
       setSceneDuration0to1(data.scene_duration_0to1 || 4);
@@ -127,7 +129,7 @@ const Index = () => {
         .from("projects")
         .update({
           transcript_json: transcriptData as any,
-          example_prompt: examplePrompt,
+          example_prompts: examplePrompts as any,
           scenes: scenes as any,
           prompts: generatedPrompts as any,
           scene_duration_0to1: sceneDuration0to1,
@@ -302,11 +304,12 @@ const Index = () => {
         const originalIndex = testMode ? i : scenes.indexOf(scene);
         
         try {
+          const filteredPrompts = examplePrompts.filter(p => p.trim() !== "");
           const { data, error } = await supabase.functions.invoke("generate-prompts", {
             body: { 
               scene: scene.text,
               summary,
-              examplePrompt,
+              examplePrompts: filteredPrompts,
               sceneIndex: originalIndex + 1,
               totalScenes: scenes.length,
               startTime: scene.startTime,
@@ -438,15 +441,34 @@ const Index = () => {
                 <Card className="p-6">
                   <h2 className="text-lg font-semibold mb-4">2. Configurer les scènes</h2>
                   <div className="space-y-4">
-                    <div>
-                      <label className="text-sm font-medium mb-2 block">
-                        Prompt d'exemple (optionnel)
-                      </label>
-                      <Input
-                        placeholder="Style de référence pour vos prompts..."
-                        value={examplePrompt}
-                        onChange={(e) => setExamplePrompt(e.target.value)}
-                      />
+                    <div className="space-y-4">
+                      <div>
+                        <label className="text-sm font-medium mb-2 block">
+                          Exemples de prompts (2-3 recommandés pour la consistance)
+                        </label>
+                        <p className="text-xs text-muted-foreground mb-3">
+                          Entrez 2-3 exemples de prompts que vous avez déjà créés pour montrer le style et la structure désirée
+                        </p>
+                      </div>
+                      
+                      {[0, 1, 2].map((index) => (
+                        <div key={index}>
+                          <label className="text-xs text-muted-foreground block mb-1">
+                            Exemple {index + 1} {index === 0 ? "(recommandé)" : "(optionnel)"}
+                          </label>
+                          <Textarea
+                            placeholder={`Ex: "A cinematic scene showing... [your style]"`}
+                            value={examplePrompts[index]}
+                            onChange={(e) => {
+                              const newPrompts = [...examplePrompts];
+                              newPrompts[index] = e.target.value;
+                              setExamplePrompts(newPrompts);
+                            }}
+                            rows={3}
+                            className="resize-none"
+                          />
+                        </div>
+                      ))}
                     </div>
 
                     <div className="grid grid-cols-3 gap-4">

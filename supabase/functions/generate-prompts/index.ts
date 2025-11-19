@@ -11,7 +11,7 @@ serve(async (req) => {
   }
 
   try {
-    const { scene, summary, examplePrompt, sceneIndex, totalScenes, startTime, endTime } = await req.json();
+    const { scene, summary, examplePrompts, sceneIndex, totalScenes, startTime, endTime } = await req.json();
 
     if (!scene) {
       return new Response(
@@ -29,23 +29,38 @@ serve(async (req) => {
       );
     }
 
-    // Construct the system prompt
-    let systemPrompt = `Tu es un expert en génération de prompts pour la création d'images par IA (comme Midjourney, Stable Diffusion, DALL-E).
+    // Construct the system prompt in English
+    let systemPrompt = `You are an expert at generating prompts for AI image creation (like Midjourney, Stable Diffusion, DALL-E).
 
-Ton rôle est de créer UN SEUL prompt visuel détaillé pour une scène spécifique d'une vidéo/audio.
+STRICT RULES FOR GENERATING CONSISTENT PROMPTS:
+1. Follow EXACTLY the structure and style of the examples below
+2. Use the same tone, vocabulary, and format
+3. Respect the same approximate length (50-100 words)
+4. Include the same types of elements: main subject, visual style, composition, lighting, mood
+5. NEVER deviate from the format established by the examples
+6. Generate prompts in ENGLISH only
 
-Pour cette scène, tu dois :
-1. Identifier les éléments visuels clés à partir du texte
-2. Créer un prompt descriptif et détaillé
-3. Inclure le style, l'ambiance, la composition, l'éclairage
-4. Optimiser pour la génération d'images de haute qualité
-5. Penser à la cohérence visuelle avec le contexte global de l'histoire
+`;
 
-Retourne UNIQUEMENT le texte du prompt, sans JSON, sans titre, juste le prompt optimisé.`;
-
-    if (examplePrompt) {
-      systemPrompt += `\n\nStyle de référence à suivre : "${examplePrompt}"`;
+    // Add examples if provided
+    if (examplePrompts && Array.isArray(examplePrompts) && examplePrompts.length > 0) {
+      systemPrompt += `EXAMPLES TO FOLLOW STRICTLY:\n\n`;
+      examplePrompts.forEach((example: string, i: number) => {
+        systemPrompt += `Example ${i + 1}:\n"${example}"\n\n`;
+      });
+      systemPrompt += `You MUST generate a prompt that follows EXACTLY this structure and style.\n\n`;
     }
+
+    systemPrompt += `Your role is to create ONE detailed visual prompt for a specific scene from a video/audio.
+
+For this scene, you must:
+1. Identify key visual elements from the text
+2. Create a descriptive and detailed prompt
+3. Include style, mood, composition, lighting
+4. Optimize for high-quality image generation
+5. Think about visual coherence with the global story context
+
+Return ONLY the prompt text, no JSON, no title, just the optimized prompt in ENGLISH.`;
 
     // Build user message with context
     let userMessage = "";
@@ -54,8 +69,8 @@ Retourne UNIQUEMENT le texte du prompt, sans JSON, sans titre, juste le prompt o
       userMessage += `Contexte global : ${summary}\n\n`;
     }
     
-    userMessage += `Scène ${sceneIndex}/${totalScenes} (${startTime.toFixed(1)}s - ${endTime.toFixed(1)}s) :\n"${scene}"\n\n`;
-    userMessage += `Génère un prompt visuel détaillé pour illustrer cette scène spécifique.`;
+    userMessage += `Scene ${sceneIndex}/${totalScenes} (${startTime.toFixed(1)}s - ${endTime.toFixed(1)}s):\n"${scene}"\n\n`;
+    userMessage += `Generate a detailed visual prompt to illustrate this specific scene.`;
 
     console.log(`Generating prompt for scene ${sceneIndex}/${totalScenes}`);
 
@@ -71,6 +86,7 @@ Retourne UNIQUEMENT le texte du prompt, sans JSON, sans titre, juste le prompt o
           { role: "system", content: systemPrompt },
           { role: "user", content: userMessage }
         ],
+        temperature: 0.3,
       }),
     });
 
