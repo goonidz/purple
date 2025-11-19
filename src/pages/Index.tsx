@@ -1,13 +1,20 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2, Sparkles, Copy, Check, Upload, LogOut } from "lucide-react";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Loader2, Sparkles, Copy, Check, Upload, LogOut, FolderOpen } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { ProjectSelector } from "@/components/ProjectSelector";
 import type { User, Session } from "@supabase/supabase-js";
 
 interface TranscriptSegment {
@@ -39,9 +46,11 @@ interface GeneratedPrompt {
 
 const Index = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
+  const [projectName, setProjectName] = useState<string>("");
   const [transcriptFile, setTranscriptFile] = useState<File | null>(null);
   const [transcriptData, setTranscriptData] = useState<TranscriptData | null>(null);
   const [examplePrompts, setExamplePrompts] = useState<string[]>(["", "", ""]);
@@ -77,6 +86,14 @@ const Index = () => {
     return () => subscription.unsubscribe();
   }, [navigate]);
 
+  // Load project from URL parameter
+  useEffect(() => {
+    const projectId = searchParams.get("project");
+    if (projectId) {
+      setCurrentProjectId(projectId);
+    }
+  }, [searchParams]);
+
   // Load project data when project is selected
   useEffect(() => {
     if (currentProjectId) {
@@ -105,6 +122,7 @@ const Index = () => {
 
       if (error) throw error;
 
+      setProjectName(data.name || "");
       if (data.transcript_json) {
         setTranscriptData(data.transcript_json as unknown as TranscriptData);
       }
@@ -374,11 +392,19 @@ const Index = () => {
       <div className="border-b bg-background/80 backdrop-blur-sm sticky top-0 z-10">
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-4">
               <Sparkles className="h-6 w-6 text-primary" />
-              <h1 className="text-xl font-bold">Générateur de Prompts</h1>
+              <h1 className="text-xl font-bold">
+                {currentProjectId && projectName ? projectName : "Générateur de Prompts"}
+              </h1>
             </div>
             <div className="flex items-center gap-4">
+              <Button variant="outline" size="sm" asChild>
+                <Link to="/projects">
+                  <FolderOpen className="h-4 w-4 mr-2" />
+                  Mes projets
+                </Link>
+              </Button>
               <span className="text-sm text-muted-foreground">{user.email}</span>
               <Button variant="outline" size="sm" onClick={handleLogout}>
                 <LogOut className="h-4 w-4 mr-2" />
@@ -390,28 +416,22 @@ const Index = () => {
       </div>
 
       <div className="container mx-auto px-4 py-8 max-w-7xl">
-        <div className="grid lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-1">
-            <Card className="p-6 sticky top-24">
-              <ProjectSelector
-                currentProjectId={currentProjectId}
-                onSelectProject={setCurrentProjectId}
-                onCreateProject={setCurrentProjectId}
-              />
-            </Card>
-          </div>
-
-          <div className="lg:col-span-2 space-y-6">
-            {!currentProjectId ? (
-              <Card className="p-12 text-center">
-                <Sparkles className="h-16 w-16 mx-auto mb-4 text-muted-foreground" />
-                <h2 className="text-2xl font-bold mb-2">Commencez par créer un projet</h2>
-                <p className="text-muted-foreground">
-                  Sélectionnez ou créez un projet pour commencer à générer vos prompts
-                </p>
-              </Card>
-            ) : (
-              <>
+        {!currentProjectId ? (
+          <Card className="p-12 text-center">
+            <Sparkles className="h-16 w-16 mx-auto mb-4 text-muted-foreground" />
+            <h2 className="text-2xl font-bold mb-2">Sélectionnez un projet</h2>
+            <p className="text-muted-foreground mb-6">
+              Cliquez sur "Mes projets" pour sélectionner ou créer un projet
+            </p>
+            <Button asChild>
+              <Link to="/projects">
+                <FolderOpen className="h-4 w-4 mr-2" />
+                Voir mes projets
+              </Link>
+            </Button>
+          </Card>
+        ) : (
+          <div className="space-y-6">
                 <Card className="p-6">
                   <h2 className="text-lg font-semibold mb-4">1. Importer la transcription</h2>
                   <div className="space-y-4">
@@ -635,9 +655,8 @@ const Index = () => {
                     </div>
                   </Card>
                 )}
-              </>
-            )}
-          </div>
+              </div>
+          )}
         </div>
       </div>
     </div>
