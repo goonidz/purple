@@ -12,7 +12,14 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Loader2, Sparkles, Copy, Check, Upload, LogOut, FolderOpen } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Loader2, Sparkles, Copy, Check, Upload, LogOut, FolderOpen, Image as ImageIcon } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import type { User, Session } from "@supabase/supabase-js";
@@ -42,6 +49,7 @@ interface GeneratedPrompt {
   startTime: number;
   endTime: number;
   duration: number;
+  imageUrl?: string;
 }
 
 const Index = () => {
@@ -63,6 +71,9 @@ const Index = () => {
   const [sceneDuration1to3, setSceneDuration1to3] = useState(6);
   const [sceneDuration3plus, setSceneDuration3plus] = useState(8);
   const cancelGenerationRef = useRef(false);
+  const [imageResolution, setImageResolution] = useState<string>("1024");
+  const [isGeneratingImages, setIsGeneratingImages] = useState(false);
+  const [generatingImageIndex, setGeneratingImageIndex] = useState<number | null>(null);
 
   // Check authentication
   useEffect(() => {
@@ -396,6 +407,90 @@ const Index = () => {
     setTimeout(() => setCopiedIndex(null), 2000);
   };
 
+  const generateImage = async (index: number) => {
+    const prompt = generatedPrompts[index];
+    if (!prompt) {
+      toast.error("Aucun prompt disponible pour cette scène");
+      return;
+    }
+
+    setGeneratingImageIndex(index);
+    try {
+      const resolution = parseInt(imageResolution);
+      const { data, error } = await supabase.functions.invoke('generate-image-seedream', {
+        body: {
+          prompt: prompt.prompt,
+          width: resolution,
+          height: resolution,
+          output_format: "webp",
+          output_quality: 80
+        }
+      });
+
+      if (error) throw error;
+
+      const imageUrl = Array.isArray(data.output) ? data.output[0] : data.output;
+      
+      const updatedPrompts = [...generatedPrompts];
+      updatedPrompts[index] = { ...updatedPrompts[index], imageUrl };
+      setGeneratedPrompts(updatedPrompts);
+      
+      toast.success("Image générée !");
+    } catch (error: any) {
+      console.error("Error generating image:", error);
+      toast.error(error.message || "Erreur lors de la génération de l'image");
+    } finally {
+      setGeneratingImageIndex(null);
+    }
+  };
+
+  const generateAllImages = async () => {
+    if (generatedPrompts.length === 0) {
+      toast.error("Veuillez d'abord générer les prompts");
+      return;
+    }
+
+    setIsGeneratingImages(true);
+    let successCount = 0;
+
+    for (let i = 0; i < generatedPrompts.length; i++) {
+      try {
+        const prompt = generatedPrompts[i];
+        const resolution = parseInt(imageResolution);
+        
+        toast.info(`Génération de l'image ${i + 1}/${generatedPrompts.length}...`);
+
+        const { data, error } = await supabase.functions.invoke('generate-image-seedream', {
+          body: {
+            prompt: prompt.prompt,
+            width: resolution,
+            height: resolution,
+            output_format: "webp",
+            output_quality: 80
+          }
+        });
+
+        if (error) throw error;
+
+        const imageUrl = Array.isArray(data.output) ? data.output[0] : data.output;
+        
+        setGeneratedPrompts(prev => {
+          const updated = [...prev];
+          updated[i] = { ...updated[i], imageUrl };
+          return updated;
+        });
+
+        successCount++;
+      } catch (error: any) {
+        console.error(`Error generating image ${i + 1}:`, error);
+        toast.error(`Erreur image ${i + 1}: ${error.message}`);
+      }
+    }
+
+    setIsGeneratingImages(false);
+    toast.success(`${successCount}/${generatedPrompts.length} images générées !`);
+  };
+
   if (!user) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -569,58 +664,95 @@ const Index = () => {
 
                 {scenes.length > 0 && (
                   <Card className="p-6">
-                    <div className="flex items-center justify-between mb-4">
-                      <h2 className="text-lg font-semibold">
-                        Scènes générées ({scenes.length})
-                        {generatedPrompts.length > 0 && ` - ${generatedPrompts.length} prompts`}
-                      </h2>
-                      <div className="flex gap-2">
-                        <Button
-                          onClick={() => handleGeneratePrompts(true)}
-                          disabled={isGeneratingPrompts}
-                          variant="outline"
-                          size="sm"
-                        >
-                          {isGeneratingPrompts ? (
-                            <>
-                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                              Test...
-                            </>
-                          ) : (
-                            <>
-                              <Sparkles className="mr-2 h-4 w-4" />
-                              Tester (15 premières)
-                            </>
-                          )}
-                        </Button>
-                        <Button
-                          onClick={() => handleGeneratePrompts(false)}
-                          disabled={isGeneratingPrompts}
-                        >
-                          {isGeneratingPrompts ? (
-                            <>
-                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                              Génération...
-                            </>
-                          ) : (
-                            <>
-                              <Sparkles className="mr-2 h-4 w-4" />
-                              Générer tous les prompts
-                            </>
-                          )}
-                        </Button>
-                        {isGeneratingPrompts && (
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <h2 className="text-lg font-semibold">
+                          Scènes générées ({scenes.length})
+                          {generatedPrompts.length > 0 && ` - ${generatedPrompts.length} prompts`}
+                        </h2>
+                        <div className="flex gap-2 items-center">
                           <Button
-                            onClick={() => {
-                              cancelGenerationRef.current = true;
-                              toast.info("Annulation en cours...");
-                            }}
-                            variant="destructive"
+                            onClick={() => handleGeneratePrompts(true)}
+                            disabled={isGeneratingPrompts}
+                            variant="outline"
+                            size="sm"
                           >
-                            Annuler
+                            {isGeneratingPrompts ? (
+                              <>
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                Test...
+                              </>
+                            ) : (
+                              <>
+                                <Sparkles className="mr-2 h-4 w-4" />
+                                Tester (15 premières)
+                              </>
+                            )}
                           </Button>
-                        )}
+                          <Button
+                            onClick={() => handleGeneratePrompts(false)}
+                            disabled={isGeneratingPrompts}
+                          >
+                            {isGeneratingPrompts ? (
+                              <>
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                Génération...
+                              </>
+                            ) : (
+                              <>
+                                <Sparkles className="mr-2 h-4 w-4" />
+                                Générer tous les prompts
+                              </>
+                            )}
+                          </Button>
+                          {isGeneratingPrompts && (
+                            <Button
+                              onClick={() => {
+                                cancelGenerationRef.current = true;
+                                toast.info("Annulation en cours...");
+                              }}
+                              variant="destructive"
+                            >
+                              Annuler
+                            </Button>
+                          )}
+                        </div>
                       </div>
+
+                      {generatedPrompts.length > 0 && (
+                        <div className="flex items-center gap-4 p-4 bg-muted/50 rounded-lg">
+                          <div className="flex items-center gap-2">
+                            <label className="text-sm font-medium">Résolution:</label>
+                            <Select value={imageResolution} onValueChange={setImageResolution}>
+                              <SelectTrigger className="w-32">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="1024">1K (1024px)</SelectItem>
+                                <SelectItem value="2048">2K (2048px)</SelectItem>
+                                <SelectItem value="4096">4K (4096px)</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <Button
+                            onClick={generateAllImages}
+                            disabled={isGeneratingImages}
+                            variant="default"
+                          >
+                            {isGeneratingImages ? (
+                              <>
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                Génération des images...
+                              </>
+                            ) : (
+                              <>
+                                <ImageIcon className="mr-2 h-4 w-4" />
+                                Générer toutes les images
+                              </>
+                            )}
+                          </Button>
+                        </div>
+                      )}
                     </div>
                     <div className="overflow-x-auto">
                       <Table>
@@ -631,7 +763,8 @@ const Index = () => {
                             <TableHead>Durée</TableHead>
                             <TableHead>Texte de la scène</TableHead>
                             <TableHead>Prompt</TableHead>
-                            <TableHead className="w-20">Action</TableHead>
+                            <TableHead className="w-32">Image</TableHead>
+                            <TableHead className="w-24">Actions</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -657,6 +790,29 @@ const Index = () => {
                                       Pas encore généré
                                     </span>
                                   )}
+                                </TableCell>
+                                <TableCell>
+                                  {prompt?.imageUrl ? (
+                                    <img 
+                                      src={prompt.imageUrl} 
+                                      alt={`Scene ${index + 1}`}
+                                      className="w-24 h-24 object-cover rounded cursor-pointer"
+                                      onClick={() => window.open(prompt.imageUrl, '_blank')}
+                                    />
+                                  ) : prompt ? (
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => generateImage(index)}
+                                      disabled={generatingImageIndex === index}
+                                    >
+                                      {generatingImageIndex === index ? (
+                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                      ) : (
+                                        <ImageIcon className="h-4 w-4" />
+                                      )}
+                                    </Button>
+                                  ) : null}
                                 </TableCell>
                                 <TableCell>
                                   {prompt && (
