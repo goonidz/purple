@@ -35,8 +35,10 @@ interface GeneratedPrompt {
 const Index = () => {
   const [transcriptFile, setTranscriptFile] = useState<File | null>(null);
   const [examplePrompt, setExamplePrompt] = useState("");
+  const [scenes, setScenes] = useState<Scene[]>([]);
   const [generatedPrompts, setGeneratedPrompts] = useState<GeneratedPrompt[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isGeneratingScenes, setIsGeneratingScenes] = useState(false);
+  const [isGeneratingPrompts, setIsGeneratingPrompts] = useState(false);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [sceneDuration, setSceneDuration] = useState(5);
 
@@ -52,23 +54,30 @@ const Index = () => {
           endTime: segment.end_time
         };
       } else {
-        const duration = segment.end_time - currentScene.startTime;
+        const potentialDuration = segment.end_time - currentScene.startTime;
         
-        if (duration <= maxDuration) {
-          currentScene.text += " " + segment.text;
-          currentScene.endTime = segment.end_time;
-        } else {
-          scenes.push({ ...currentScene });
+        // Si ajouter ce segment dépasserait la durée max
+        if (potentialDuration > maxDuration) {
+          // Sauvegarder la scène actuelle si elle n'est pas vide
+          if (currentScene.text.trim()) {
+            scenes.push({ ...currentScene });
+          }
+          // Démarrer une nouvelle scène avec ce segment
           currentScene = {
             text: segment.text,
             startTime: segment.start_time,
             endTime: segment.end_time
           };
+        } else {
+          // Ajouter le segment à la scène actuelle (ne coupe pas les phrases)
+          currentScene.text += " " + segment.text;
+          currentScene.endTime = segment.end_time;
         }
       }
     });
     
-    if (currentScene.text) {
+    // Ajouter la dernière scène
+    if (currentScene.text.trim()) {
       scenes.push(currentScene);
     }
     
@@ -83,17 +92,20 @@ const Index = () => {
         return;
       }
       setTranscriptFile(file);
+      setScenes([]);
+      setGeneratedPrompts([]);
       toast.success("Fichier chargé !");
     }
   };
 
-  const handleGenerate = async () => {
+  const handleGenerateScenes = async () => {
     if (!transcriptFile) {
       toast.error("Veuillez uploader un fichier de transcription JSON");
       return;
     }
 
-    setIsLoading(true);
+    setIsGeneratingScenes(true);
+    setScenes([]);
     setGeneratedPrompts([]);
     
     try {
@@ -104,9 +116,31 @@ const Index = () => {
         throw new Error("Le fichier JSON ne contient pas de segments valides");
       }
 
-      const scenes = parseTranscriptToScenes(transcriptData, sceneDuration);
-      toast.info(`${scenes.length} scènes détectées, génération en cours...`);
+      const generatedScenes = parseTranscriptToScenes(transcriptData, sceneDuration);
+      setScenes(generatedScenes);
+      toast.success(`${generatedScenes.length} scènes générées ! Vous pouvez maintenant générer les prompts.`);
+    } catch (error: any) {
+      console.error("Error generating scenes:", error);
+      toast.error(error.message || "Erreur lors de la génération des scènes");
+    } finally {
+      setIsGeneratingScenes(false);
+    }
+  };
 
+  const handleGeneratePrompts = async () => {
+    if (scenes.length === 0) {
+      toast.error("Veuillez d'abord générer les scènes");
+      return;
+    }
+
+    setIsGeneratingPrompts(true);
+    setGeneratedPrompts([]);
+    
+    try {
+      // Récupérer le fichier original pour le contexte global
+      const fileContent = await transcriptFile!.text();
+      const transcriptData: TranscriptData = JSON.parse(fileContent);
+      
       const globalContext = transcriptData.segments
         .slice(0, 10)
         .map(s => s.text)
@@ -159,7 +193,7 @@ const Index = () => {
       console.error("Error generating prompts:", error);
       toast.error(error.message || "Erreur lors de la génération des prompts");
     } finally {
-      setIsLoading(false);
+      setIsGeneratingPrompts(false);
     }
   };
 
@@ -243,65 +277,123 @@ const Index = () => {
               />
             </Card>
 
-            <Button
-              onClick={handleGenerate}
-              disabled={isLoading || !transcriptFile}
-              className="w-full h-12 text-base font-semibold shadow-glow bg-gradient-warm hover:opacity-90 transition-opacity"
-            >
-              {isLoading ? (
-                <>
-                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                  Génération...
-                </>
-              ) : (
-                <>
-                  <Sparkles className="mr-2 h-5 w-5" />
-                  Générer les prompts
-                </>
-              )}
-            </Button>
+            <div className="space-y-3">
+              <Button
+                onClick={handleGenerateScenes}
+                disabled={isGeneratingScenes || !transcriptFile}
+                className="w-full h-12 text-base font-semibold shadow-glow bg-gradient-warm hover:opacity-90 transition-opacity"
+              >
+                {isGeneratingScenes ? (
+                  <>
+                    <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                    Génération des scènes...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="mr-2 h-5 w-5" />
+                    1. Générer les scènes
+                  </>
+                )}
+              </Button>
+
+              <Button
+                onClick={handleGeneratePrompts}
+                disabled={isGeneratingPrompts || scenes.length === 0}
+                variant={scenes.length > 0 ? "default" : "secondary"}
+                className="w-full h-12 text-base font-semibold"
+              >
+                {isGeneratingPrompts ? (
+                  <>
+                    <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                    Génération des prompts... ({generatedPrompts.length}/{scenes.length})
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="mr-2 h-5 w-5" />
+                    2. Générer les prompts {scenes.length > 0 && `(${scenes.length} scènes)`}
+                  </>
+                )}
+              </Button>
+            </div>
           </div>
 
           <div className="space-y-4">
-            <h2 className="text-lg font-semibold text-foreground">
-              Prompts générés {generatedPrompts.length > 0 && `(${generatedPrompts.length})`}
-            </h2>
-            
-            {generatedPrompts.length === 0 ? (
-              <Card className="p-12 shadow-card">
-                <div className="text-center text-muted-foreground">
-                  <Sparkles className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                  <p>Les prompts générés apparaîtront ici</p>
-                </div>
-              </Card>
-            ) : (
-              <div className="space-y-4 max-h-[calc(100vh-12rem)] overflow-y-auto pr-2">
-                {generatedPrompts.map((item, index) => (
-                  <Card key={index} className="p-4 shadow-card hover:shadow-card-hover transition-shadow">
-                    <div className="flex items-start justify-between gap-3 mb-3">
-                      <div className="flex-1">
-                        <h3 className="font-semibold text-foreground mb-1">{item.scene}</h3>
-                        <p className="text-xs text-muted-foreground italic mb-2">"{item.text}"</p>
+            {/* Affichage des scènes générées */}
+            {scenes.length > 0 && generatedPrompts.length === 0 && (
+              <>
+                <h2 className="text-lg font-semibold text-foreground">
+                  Scènes générées ({scenes.length})
+                </h2>
+                <div className="space-y-3 max-h-[calc(100vh-12rem)] overflow-y-auto pr-2">
+                  {scenes.map((scene, index) => (
+                    <Card key={index} className="p-4 shadow-card">
+                      <div className="flex items-start gap-3">
+                        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-sm font-semibold text-primary">
+                          {index + 1}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs text-muted-foreground mb-1">
+                            {scene.startTime.toFixed(1)}s - {scene.endTime.toFixed(1)}s ({(scene.endTime - scene.startTime).toFixed(1)}s)
+                          </div>
+                          <p className="text-sm text-foreground/90">{scene.text}</p>
+                        </div>
                       </div>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => copyToClipboard(item.prompt, index)}
-                        className="shrink-0"
-                      >
-                        {copiedIndex === index ? (
-                          <Check className="h-4 w-4 text-green-500" />
-                        ) : (
-                          <Copy className="h-4 w-4" />
-                        )}
-                      </Button>
-                    </div>
-                    <p className="text-sm leading-relaxed text-foreground/90 bg-muted/50 p-3 rounded-lg">
-                      {item.prompt}
-                    </p>
-                  </Card>
-                ))}
-              </div>
+                    </Card>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {/* Affichage des prompts générés */}
+            {generatedPrompts.length > 0 && (
+              <>
+                <h2 className="text-lg font-semibold text-foreground">
+                  Prompts générés ({generatedPrompts.length}/{scenes.length})
+                </h2>
+                <div className="space-y-4 max-h-[calc(100vh-12rem)] overflow-y-auto pr-2">
+                  {generatedPrompts.map((item, index) => (
+                    <Card key={index} className="p-4 shadow-card hover:shadow-card-hover transition-shadow">
+                      <div className="flex items-start justify-between gap-3 mb-3">
+                        <div className="flex-1">
+                          <h3 className="font-semibold text-foreground mb-1">{item.scene}</h3>
+                          <p className="text-xs text-muted-foreground italic mb-2">"{item.text}"</p>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => copyToClipboard(item.prompt, index)}
+                          className="shrink-0"
+                        >
+                          {copiedIndex === index ? (
+                            <Check className="h-4 w-4 text-green-500" />
+                          ) : (
+                            <Copy className="h-4 w-4" />
+                          )}
+                        </Button>
+                      </div>
+                      <p className="text-sm leading-relaxed text-foreground/90 bg-muted/50 p-3 rounded-lg">
+                        {item.prompt}
+                      </p>
+                    </Card>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {/* État vide */}
+            {scenes.length === 0 && generatedPrompts.length === 0 && (
+              <>
+                <h2 className="text-lg font-semibold text-foreground">
+                  Résultats
+                </h2>
+                <Card className="p-12 shadow-card">
+                  <div className="text-center text-muted-foreground">
+                    <Sparkles className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <p className="mb-2">Commencez par générer les scènes</p>
+                    <p className="text-xs">Les scènes et prompts apparaîtront ici</p>
+                  </div>
+                </Card>
+              </>
             )}
           </div>
         </div>
