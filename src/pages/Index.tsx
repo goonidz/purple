@@ -44,6 +44,18 @@ const Index = () => {
   const [sceneDuration1to3, setSceneDuration1to3] = useState(6);
   const [sceneDuration3plus, setSceneDuration3plus] = useState(8);
 
+  // Convertir les secondes en timecode (MM:SS ou HH:MM:SS)
+  const formatTimecode = (seconds: number): string => {
+    const hrs = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    const secs = Math.floor(seconds % 60);
+    
+    if (hrs > 0) {
+      return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    }
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
   const parseTranscriptToScenes = (
     transcriptData: TranscriptData, 
     duration0to1: number,
@@ -187,7 +199,7 @@ const Index = () => {
           if (error) throw error;
 
           prompts.push({
-            scene: `Scène ${i + 1} (${scene.startTime.toFixed(1)}s - ${scene.endTime.toFixed(1)}s)`,
+            scene: `Scène ${i + 1} (${formatTimecode(scene.startTime)} - ${formatTimecode(scene.endTime)})`,
             prompt: data.prompt,
             text: scene.text,
             startTime: scene.startTime,
@@ -199,7 +211,7 @@ const Index = () => {
         } catch (sceneError: any) {
           console.error(`Error generating prompt for scene ${i + 1}:`, sceneError);
           prompts.push({
-            scene: `Scène ${i + 1} (${scene.startTime.toFixed(1)}s - ${scene.endTime.toFixed(1)}s)`,
+            scene: `Scène ${i + 1} (${formatTimecode(scene.startTime)} - ${formatTimecode(scene.endTime)})`,
             prompt: "Erreur lors de la génération",
             text: scene.text,
             startTime: scene.startTime,
@@ -383,7 +395,7 @@ const Index = () => {
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="text-xs text-muted-foreground mb-1">
-                            {scene.startTime.toFixed(1)}s - {scene.endTime.toFixed(1)}s ({(scene.endTime - scene.startTime).toFixed(1)}s)
+                            {formatTimecode(scene.startTime)} - {formatTimecode(scene.endTime)} ({(scene.endTime - scene.startTime).toFixed(1)}s)
                           </div>
                           <p className="text-sm text-foreground/90">{scene.text}</p>
                         </div>
