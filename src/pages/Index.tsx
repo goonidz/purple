@@ -555,6 +555,7 @@ const Index = () => {
                     <div className="flex items-center justify-between mb-4">
                       <h2 className="text-lg font-semibold">
                         Scènes générées ({scenes.length})
+                        {generatedPrompts.length > 0 && ` - ${generatedPrompts.length} prompts`}
                       </h2>
                       <div className="flex gap-2">
                         <Button
@@ -593,65 +594,62 @@ const Index = () => {
                         </Button>
                       </div>
                     </div>
-                    <div className="space-y-3 max-h-96 overflow-y-auto">
-                      {scenes.map((scene, index) => (
-                        <div
-                          key={index}
-                          className="flex gap-3 p-3 bg-muted/50 rounded-lg"
-                        >
-                          <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-sm font-semibold text-primary">
-                            {index + 1}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="text-xs text-muted-foreground mb-1">
-                              {formatTimecode(scene.startTime)} - {formatTimecode(scene.endTime)} ({(scene.endTime - scene.startTime).toFixed(1)}s)
-                            </div>
-                            <p className="text-sm text-foreground/90">{scene.text}</p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </Card>
-                )}
-
-                {generatedPrompts.length > 0 && (
-                  <Card className="p-6">
-                    <h2 className="text-lg font-semibold mb-4">
-                      Prompts générés ({generatedPrompts.length})
-                    </h2>
-                    <div className="space-y-4">
-                      {generatedPrompts.map((item, index) => (
-                        <div
-                          key={index}
-                          className="border rounded-lg p-4 space-y-3"
-                        >
-                          <div className="flex items-start justify-between gap-4">
-                            <div className="flex-1 min-w-0">
-                              <h3 className="font-semibold text-sm mb-1">{item.scene}</h3>
-                              <p className="text-xs text-muted-foreground mb-2">
-                                Durée: {item.duration.toFixed(1)}s
-                              </p>
-                              <p className="text-xs text-muted-foreground/80 mb-3">
-                                {item.text}
-                              </p>
-                              <div className="bg-muted/50 p-3 rounded">
-                                <p className="text-sm">{item.prompt}</p>
-                              </div>
-                            </div>
-                            <Button
-                              variant="outline"
-                              size="icon"
-                              onClick={() => copyToClipboard(item.prompt, index)}
-                            >
-                              {copiedIndex === index ? (
-                                <Check className="h-4 w-4 text-green-500" />
-                              ) : (
-                                <Copy className="h-4 w-4" />
-                              )}
-                            </Button>
-                          </div>
-                        </div>
-                      ))}
+                    <div className="overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="w-12">#</TableHead>
+                            <TableHead>Timing</TableHead>
+                            <TableHead>Durée</TableHead>
+                            <TableHead>Texte de la scène</TableHead>
+                            <TableHead>Prompt</TableHead>
+                            <TableHead className="w-20">Action</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {scenes.map((scene, index) => {
+                            const prompt = generatedPrompts.find((p, i) => i === index);
+                            return (
+                              <TableRow key={index}>
+                                <TableCell className="font-semibold">{index + 1}</TableCell>
+                                <TableCell className="text-xs whitespace-nowrap">
+                                  {formatTimecode(scene.startTime)} - {formatTimecode(scene.endTime)}
+                                </TableCell>
+                                <TableCell className="text-xs whitespace-nowrap">
+                                  {(scene.endTime - scene.startTime).toFixed(1)}s
+                                </TableCell>
+                                <TableCell className="max-w-xs">
+                                  <p className="text-sm line-clamp-3">{scene.text}</p>
+                                </TableCell>
+                                <TableCell className="max-w-md">
+                                  {prompt ? (
+                                    <p className="text-sm">{prompt.prompt}</p>
+                                  ) : (
+                                    <span className="text-xs text-muted-foreground italic">
+                                      Pas encore généré
+                                    </span>
+                                  )}
+                                </TableCell>
+                                <TableCell>
+                                  {prompt && (
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => copyToClipboard(prompt.prompt, index)}
+                                    >
+                                      {copiedIndex === index ? (
+                                        <Check className="h-4 w-4 text-green-500" />
+                                      ) : (
+                                        <Copy className="h-4 w-4" />
+                                      )}
+                                    </Button>
+                                  )}
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
                     </div>
                   </Card>
                 )}
