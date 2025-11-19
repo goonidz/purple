@@ -52,7 +52,7 @@ export function generatePremiereXML(
     timelinePosition = endFrame;
     
     const imagePath = mode === "with-images" 
-      ? `images/clip_${(index + 1).toString().padStart(3, '0')}.jpg`
+      ? `images/clip_${(index + 1).toString().padStart(3, '0')}_img.jpg`
       : prompt.imageUrl || "";
     
     return `      <clipitem id="clipitem-${index + 1}">
@@ -66,7 +66,7 @@ export function generatePremiereXML(
         <in>0</in>
         <out>${duration}</out>
         <file id="file-${index + 1}">
-          <name>clip_${(index + 1).toString().padStart(3, '0')}.jpg</name>
+          <name>clip_${(index + 1).toString().padStart(3, '0')}_img.jpg</name>
           <pathurl>${imagePath}</pathurl>
           <duration>${duration}</duration>
           <width>${width}</width>
@@ -139,11 +139,11 @@ export function generateEDL(
     const recordOut = formatTimecode(timelinePosition, framerate);
     
     const imagePath = mode === "with-images"
-      ? `images/clip_${clipNumber}.jpg`
+      ? `images/clip_${clipNumber}_img.jpg`
       : prompt.imageUrl || "";
     
     edl += `${clipNumber}  AX       V     C        ${sourceIn} ${sourceOut} ${recordIn} ${recordOut}\n`;
-    edl += `* FROM CLIP NAME: clip_${clipNumber}.jpg\n`;
+    edl += `* FROM CLIP NAME: clip_${clipNumber}_img.jpg\n`;
     edl += `* FROM FILE: ${imagePath}\n`;
     edl += `* SCENE TEXT: ${prompt.text.substring(0, 100)}${prompt.text.length > 100 ? '...' : ''}\n`;
     edl += `* PROMPT: ${prompt.prompt.substring(0, 200)}${prompt.prompt.length > 200 ? '...' : ''}\n`;
@@ -168,7 +168,7 @@ export function generateCSV(
     const duration = prompt.duration.toFixed(2);
     
     const imagePath = mode === "with-images"
-      ? `images/clip_${sceneNum.toString().padStart(3, '0')}.jpg`
+      ? `images/clip_${sceneNum.toString().padStart(3, '0')}_img.jpg`
       : prompt.imageUrl || "";
     
     csv += `${sceneNum},"${timecodeIn}","${timecodeOut}",${duration},"${imagePath}","${escapeCsv(prompt.text)}","${escapeCsv(prompt.prompt)}"\n`;
@@ -269,7 +269,7 @@ export async function downloadImagesAsZip(
         // Convert to JPEG for DaVinci Resolve compatibility
         const jpegBlob = await convertToJpeg(blob);
         
-        const filename = `clip_${(i + 1).toString().padStart(3, '0')}.jpg`;
+        const filename = `clip_${(i + 1).toString().padStart(3, '0')}_img.jpg`;
         imagesFolder?.file(filename, jpegBlob);
       } catch (error) {
         console.error(`Failed to download image ${i + 1}:`, error);
