@@ -33,7 +33,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2, Sparkles, Copy, Check, Upload, LogOut, FolderOpen, Image as ImageIcon, RefreshCw } from "lucide-react";
+import { Loader2, Sparkles, Copy, Check, Upload, LogOut, FolderOpen, Image as ImageIcon, RefreshCw, Settings } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import type { User, Session } from "@supabase/supabase-js";
@@ -97,6 +97,7 @@ const Index = () => {
   const [confirmRegeneratePrompt, setConfirmRegeneratePrompt] = useState<number | null>(null);
   const [confirmRegenerateImage, setConfirmRegenerateImage] = useState<number | null>(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
+  const [imageSettingsOpen, setImageSettingsOpen] = useState(false);
 
   // Check authentication
   useEffect(() => {
@@ -1212,6 +1213,113 @@ const Index = () => {
                 className="w-full h-full object-contain rounded-lg"
               />
             )}
+          </DialogContent>
+        </Dialog>
+
+        {/* Image settings dialog */}
+        <Dialog open={imageSettingsOpen} onOpenChange={setImageSettingsOpen}>
+          <DialogContent className="max-w-2xl">
+            <div className="space-y-6">
+              <div>
+                <h3 className="text-lg font-semibold mb-4">Paramètres d'image</h3>
+              </div>
+
+              <div>
+                <label className="text-sm font-medium mb-2 block">
+                  Image de référence de style (optionnel)
+                </label>
+                <div className="space-y-2">
+                  <div className="flex gap-2">
+                    <Input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleStyleImageUpload}
+                      disabled={isUploadingStyleImage}
+                      className="flex-1"
+                    />
+                    {isUploadingStyleImage && (
+                      <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                    )}
+                  </div>
+                  <div className="text-xs text-center text-muted-foreground">ou</div>
+                  <Input
+                    type="url"
+                    placeholder="https://exemple.com/image.jpg"
+                    value={styleReferenceUrl}
+                    onChange={(e) => setStyleReferenceUrl(e.target.value)}
+                    className="w-full"
+                  />
+                  {uploadedStyleImageUrl && (
+                    <div className="mt-2">
+                      <img 
+                        src={uploadedStyleImageUrl} 
+                        alt="Style reference" 
+                        className="w-32 h-32 object-cover rounded border"
+                      />
+                    </div>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Uploadez ou collez l'URL d'une image pour guider le style de génération
+                </p>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="text-sm font-medium mb-2 block">Format</label>
+                  <Select value={aspectRatio} onValueChange={handleAspectRatioChange}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="16:9">16:9 (Paysage)</SelectItem>
+                      <SelectItem value="9:16">9:16 (Portrait)</SelectItem>
+                      <SelectItem value="1:1">1:1 (Carré)</SelectItem>
+                      <SelectItem value="4:3">4:3 (Classique)</SelectItem>
+                      <SelectItem value="custom">Personnalisé</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-sm font-medium mb-2 block">Largeur (px)</label>
+                    <Input
+                      type="number"
+                      min="512"
+                      max="4096"
+                      step="64"
+                      value={imageWidth}
+                      onChange={(e) => {
+                        setImageWidth(parseInt(e.target.value) || 1920);
+                        setAspectRatio("custom");
+                      }}
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="text-sm font-medium mb-2 block">Hauteur (px)</label>
+                    <Input
+                      type="number"
+                      min="512"
+                      max="4096"
+                      step="64"
+                      value={imageHeight}
+                      onChange={(e) => {
+                        setImageHeight(parseInt(e.target.value) || 1080);
+                        setAspectRatio("custom");
+                      }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end">
+                <Button onClick={() => setImageSettingsOpen(false)}>
+                  Fermer
+                </Button>
+              </div>
+            </div>
           </DialogContent>
         </Dialog>
       </div>
