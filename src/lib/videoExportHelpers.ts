@@ -41,7 +41,7 @@ export function generatePremiereXML(
     const duration = endFrame - startFrame;
     
     const imagePath = mode === "with-images" 
-      ? `images/scene_${(index + 1).toString().padStart(3, '0')}.png`
+      ? `images/scene_${(index + 1).toString().padStart(3, '0')}.jpg`
       : prompt.imageUrl || "";
     
     return `      <clipitem id="clipitem-${index + 1}">
@@ -55,7 +55,7 @@ export function generatePremiereXML(
         <in>0</in>
         <out>${duration}</out>
         <file id="file-${index + 1}">
-          <name>scene_${(index + 1).toString().padStart(3, '0')}.png</name>
+          <name>scene_${(index + 1).toString().padStart(3, '0')}.jpg</name>
           <pathurl>${imagePath}</pathurl>
           <duration>${duration}</duration>
           <width>${width}</width>
@@ -122,11 +122,11 @@ export function generateEDL(
     const recordOut = formatTimecode(prompt.endTime, framerate);
     
     const imagePath = mode === "with-images"
-      ? `images/scene_${clipNumber}.png`
+      ? `images/scene_${clipNumber}.jpg`
       : prompt.imageUrl || "";
     
     edl += `${clipNumber}  AX       V     C        ${sourceIn} ${sourceOut} ${recordIn} ${recordOut}\n`;
-    edl += `* FROM CLIP NAME: scene_${clipNumber}.png\n`;
+    edl += `* FROM CLIP NAME: scene_${clipNumber}.jpg\n`;
     edl += `* FROM FILE: ${imagePath}\n`;
     edl += `* SCENE TEXT: ${prompt.text.substring(0, 100)}${prompt.text.length > 100 ? '...' : ''}\n`;
     edl += `* PROMPT: ${prompt.prompt.substring(0, 200)}${prompt.prompt.length > 200 ? '...' : ''}\n`;
@@ -151,7 +151,7 @@ export function generateCSV(
     const duration = prompt.duration.toFixed(2);
     
     const imagePath = mode === "with-images"
-      ? `images/scene_${sceneNum.toString().padStart(3, '0')}.png`
+      ? `images/scene_${sceneNum.toString().padStart(3, '0')}.jpg`
       : prompt.imageUrl || "";
     
     csv += `${sceneNum},"${timecodeIn}","${timecodeOut}",${duration},"${imagePath}","${escapeCsv(prompt.text)}","${escapeCsv(prompt.prompt)}"\n`;
@@ -185,6 +185,47 @@ export async function downloadFile(content: string, filename: string) {
   URL.revokeObjectURL(url);
 }
 
+// Helper function to convert PNG to JPEG
+async function convertToJpeg(blob: Blob): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(blob);
+    
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        reject(new Error('Could not get canvas context'));
+        return;
+      }
+      
+      // Fill white background (JPEG doesn't support transparency)
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0);
+      
+      canvas.toBlob((jpegBlob) => {
+        URL.revokeObjectURL(url);
+        if (jpegBlob) {
+          resolve(jpegBlob);
+        } else {
+          reject(new Error('Failed to convert to JPEG'));
+        }
+      }, 'image/jpeg', 0.95); // 95% quality
+    };
+    
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('Failed to load image'));
+    };
+    
+    img.src = url;
+  });
+}
+
 export async function downloadImagesAsZip(
   prompts: GeneratedPrompt[],
   exportContent: string,
@@ -200,15 +241,19 @@ export async function downloadImagesAsZip(
   // Create images folder
   const imagesFolder = zip.folder('images');
   
-  // Download and add each image
+  // Download and add each image, converting to JPEG
   for (let i = 0; i < prompts.length; i++) {
     const prompt = prompts[i];
     if (prompt.imageUrl) {
       try {
         const response = await fetch(prompt.imageUrl);
         const blob = await response.blob();
-        const filename = `scene_${(i + 1).toString().padStart(3, '0')}.png`;
-        imagesFolder?.file(filename, blob);
+        
+        // Convert to JPEG for DaVinci Resolve compatibility
+        const jpegBlob = await convertToJpeg(blob);
+        
+        const filename = `scene_${(i + 1).toString().padStart(3, '0')}.jpg`;
+        imagesFolder?.file(filename, jpegBlob);
       } catch (error) {
         console.error(`Failed to download image ${i + 1}:`, error);
       }
