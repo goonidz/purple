@@ -628,7 +628,7 @@ const Index = () => {
     }
   };
 
-  const generateAllImages = async () => {
+  const generateAllImages = async (skipExisting: boolean = false) => {
     if (generatedPrompts.length === 0) {
       toast.error("Veuillez d'abord générer les prompts");
       return;
@@ -636,10 +636,17 @@ const Index = () => {
 
     setIsGeneratingImages(true);
     let successCount = 0;
+    let skippedCount = 0;
 
     for (let i = 0; i < generatedPrompts.length; i++) {
       try {
         const prompt = generatedPrompts[i];
+        
+        // Skip if image already exists and skipExisting is true
+        if (skipExisting && prompt.imageUrl) {
+          skippedCount++;
+          continue;
+        }
         
         toast.info(`Génération de l'image ${i + 1}/${generatedPrompts.length}...`);
 
@@ -676,7 +683,11 @@ const Index = () => {
     }
 
     setIsGeneratingImages(false);
-    toast.success(`${successCount}/${generatedPrompts.length} images générées !`);
+    if (skippedCount > 0) {
+      toast.success(`${successCount} images générées, ${skippedCount} conservées !`);
+    } else {
+      toast.success(`${successCount}/${generatedPrompts.length} images générées !`);
+    }
   };
 
   if (!user) {
@@ -1311,37 +1322,66 @@ const Index = () => {
             <AlertDialogHeader>
               <AlertDialogTitle>Confirmer la génération des images</AlertDialogTitle>
               <AlertDialogDescription className="space-y-3">
-                <p>Vous êtes sur le point de générer {generatedPrompts.length} images avec les paramètres suivants :</p>
-                <div className="bg-muted p-3 rounded-md space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className="font-medium">Résolution :</span>
-                    <span>{imageWidth}x{imageHeight} px</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="font-medium">Format :</span>
-                    <span>{aspectRatio === "custom" ? "Personnalisé" : aspectRatio}</span>
-                  </div>
-                  {styleReferenceUrl && (
-                    <div className="flex justify-between">
-                      <span className="font-medium">Référence de style :</span>
-                      <span className="text-xs text-primary">Activée</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between pt-2 border-t">
-                    <span className="font-medium">Total d'images :</span>
-                    <span className="font-semibold">{generatedPrompts.length}</span>
-                  </div>
-                </div>
-                <p className="text-xs">Cette opération peut prendre plusieurs minutes.</p>
+                {(() => {
+                  const existingImagesCount = generatedPrompts.filter(p => p.imageUrl).length;
+                  const missingImagesCount = generatedPrompts.length - existingImagesCount;
+                  
+                  return (
+                    <>
+                      {existingImagesCount > 0 && (
+                        <div className="bg-amber-500/10 border border-amber-500/20 p-3 rounded-md">
+                          <p className="text-sm font-medium text-amber-700 dark:text-amber-400">
+                            ⚠️ {existingImagesCount} image{existingImagesCount > 1 ? 's' : ''} déjà générée{existingImagesCount > 1 ? 's' : ''}
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {missingImagesCount > 0 
+                              ? `${missingImagesCount} image${missingImagesCount > 1 ? 's' : ''} restante${missingImagesCount > 1 ? 's' : ''} à générer`
+                              : "Toutes les images ont déjà été générées"}
+                          </p>
+                        </div>
+                      )}
+                      
+                      <p>Paramètres de génération :</p>
+                      <div className="bg-muted p-3 rounded-md space-y-2 text-sm">
+                        <div className="flex justify-between">
+                          <span className="font-medium">Résolution :</span>
+                          <span>{imageWidth}x{imageHeight} px</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="font-medium">Format :</span>
+                          <span>{aspectRatio === "custom" ? "Personnalisé" : aspectRatio}</span>
+                        </div>
+                        {styleReferenceUrl && (
+                          <div className="flex justify-between">
+                            <span className="font-medium">Référence de style :</span>
+                            <span className="text-xs text-primary">Activée</span>
+                          </div>
+                        )}
+                      </div>
+                      <p className="text-xs">Cette opération peut prendre plusieurs minutes.</p>
+                    </>
+                  );
+                })()}
               </AlertDialogDescription>
             </AlertDialogHeader>
-            <AlertDialogFooter>
+            <AlertDialogFooter className="flex-col sm:flex-row gap-2">
               <AlertDialogCancel>Annuler</AlertDialogCancel>
+              {generatedPrompts.filter(p => p.imageUrl).length > 0 && (
+                <AlertDialogAction
+                  className="bg-secondary text-secondary-foreground hover:bg-secondary/80"
+                  onClick={() => {
+                    setConfirmGenerateImages(false);
+                    generateAllImages(true);
+                  }}
+                >
+                  Générer uniquement les manquantes
+                </AlertDialogAction>
+              )}
               <AlertDialogAction onClick={() => {
                 setConfirmGenerateImages(false);
-                generateAllImages();
+                generateAllImages(false);
               }}>
-                Générer
+                {generatedPrompts.filter(p => p.imageUrl).length > 0 ? "Tout régénérer" : "Générer"}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
