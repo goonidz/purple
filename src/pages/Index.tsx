@@ -15,6 +15,10 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
+  Dialog,
+  DialogContent,
+} from "@/components/ui/dialog";
+import {
   Table,
   TableBody,
   TableCell,
@@ -92,6 +96,7 @@ const Index = () => {
   const [regeneratingPromptIndex, setRegeneratingPromptIndex] = useState<number | null>(null);
   const [confirmRegeneratePrompt, setConfirmRegeneratePrompt] = useState<number | null>(null);
   const [confirmRegenerateImage, setConfirmRegenerateImage] = useState<number | null>(null);
+  const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
 
   // Check authentication
   useEffect(() => {
@@ -1052,7 +1057,7 @@ const Index = () => {
                                       <Button
                                         variant="ghost"
                                         size="sm"
-                                        className="absolute top-0 right-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                                        className="absolute top-0 right-0 bg-background/80 hover:bg-background transition-all"
                                         onClick={() => setConfirmRegeneratePrompt(index)}
                                         disabled={regeneratingPromptIndex === index}
                                         title="Régénérer le prompt"
@@ -1077,13 +1082,13 @@ const Index = () => {
                                         src={prompt.imageUrl} 
                                         alt={`Scene ${index + 1}`}
                                         className="w-24 h-24 object-cover rounded cursor-pointer hover:opacity-80 transition"
-                                        onClick={() => window.open(prompt.imageUrl, '_blank')}
+                                        onClick={() => setImagePreviewUrl(prompt.imageUrl || null)}
                                         title="Cliquer pour agrandir"
                                       />
                                       <Button
                                         variant="ghost"
                                         size="sm"
-                                        className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity bg-background/80 hover:bg-background"
+                                        className="absolute top-1 right-1 bg-background/80 hover:bg-background transition-all"
                                         onClick={() => setConfirmRegenerateImage(index)}
                                         disabled={generatingImageIndex === index}
                                         title="Régénérer l'image"
@@ -1188,6 +1193,19 @@ const Index = () => {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+
+        {/* Image preview dialog */}
+        <Dialog open={imagePreviewUrl !== null} onOpenChange={(open) => !open && setImagePreviewUrl(null)}>
+          <DialogContent className="max-w-5xl max-h-[90vh] p-0">
+            {imagePreviewUrl && (
+              <img 
+                src={imagePreviewUrl} 
+                alt="Aperçu" 
+                className="w-full h-full object-contain rounded-lg"
+              />
+            )}
+          </DialogContent>
+        </Dialog>
       </div>
   );
 };
