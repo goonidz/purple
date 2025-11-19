@@ -77,6 +77,8 @@ const Index = () => {
   const [isGeneratingImages, setIsGeneratingImages] = useState(false);
   const [generatingImageIndex, setGeneratingImageIndex] = useState<number | null>(null);
   const [styleReferenceUrl, setStyleReferenceUrl] = useState<string>("");
+  const [uploadedStyleImageUrl, setUploadedStyleImageUrl] = useState<string>("");
+  const [isUploadingStyleImage, setIsUploadingStyleImage] = useState(false);
 
   // Check authentication
   useEffect(() => {
@@ -435,6 +437,54 @@ const Index = () => {
     }
   };
 
+  const handleStyleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      toast.error("Veuillez sélectionner une image");
+      return;
+    }
+
+    // Validate file size (max 10MB)
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error("L'image ne doit pas dépasser 10MB");
+      return;
+    }
+
+    setIsUploadingStyleImage(true);
+
+    try {
+      if (!user) throw new Error("User not authenticated");
+
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${user.id}/${Date.now()}.${fileExt}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('style-references')
+        .upload(fileName, file, {
+          cacheControl: '3600',
+          upsert: false
+        });
+
+      if (uploadError) throw uploadError;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('style-references')
+        .getPublicUrl(fileName);
+
+      setUploadedStyleImageUrl(publicUrl);
+      setStyleReferenceUrl(publicUrl);
+      toast.success("Image de style uploadée !");
+    } catch (error: any) {
+      console.error("Error uploading style image:", error);
+      toast.error(error.message || "Erreur lors de l'upload de l'image");
+    } finally {
+      setIsUploadingStyleImage(false);
+    }
+  };
+
   const generateImage = async (index: number) => {
     const prompt = generatedPrompts[index];
     if (!prompt) {
@@ -766,15 +816,39 @@ const Index = () => {
                               <label className="text-sm font-medium mb-2 block">
                                 Image de référence de style (optionnel)
                               </label>
-                              <Input
-                                type="url"
-                                placeholder="https://exemple.com/image.jpg"
-                                value={styleReferenceUrl}
-                                onChange={(e) => setStyleReferenceUrl(e.target.value)}
-                                className="w-full"
-                              />
+                              <div className="space-y-2">
+                                <div className="flex gap-2">
+                                  <Input
+                                    type="file"
+                                    accept="image/*"
+                                    onChange={handleStyleImageUpload}
+                                    disabled={isUploadingStyleImage}
+                                    className="flex-1"
+                                  />
+                                  {isUploadingStyleImage && (
+                                    <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                                  )}
+                                </div>
+                                <div className="text-xs text-center text-muted-foreground">ou</div>
+                                <Input
+                                  type="url"
+                                  placeholder="https://exemple.com/image.jpg"
+                                  value={styleReferenceUrl}
+                                  onChange={(e) => setStyleReferenceUrl(e.target.value)}
+                                  className="w-full"
+                                />
+                                {uploadedStyleImageUrl && (
+                                  <div className="mt-2">
+                                    <img 
+                                      src={uploadedStyleImageUrl} 
+                                      alt="Style reference" 
+                                      className="w-32 h-32 object-cover rounded border"
+                                    />
+                                  </div>
+                                )}
+                              </div>
                               <p className="text-xs text-muted-foreground mt-1">
-                                URL d'une image pour guider le style de génération
+                                Uploadez ou collez l'URL d'une image pour guider le style de génération
                               </p>
                             </div>
 
