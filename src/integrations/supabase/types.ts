@@ -25,6 +25,7 @@ export type Database = {
           scene_duration_1to3: number | null
           scene_duration_3plus: number | null
           scenes: Json | null
+          style_reference_url: string | null
           summary: string | null
           transcript_json: Json | null
           updated_at: string
@@ -40,6 +41,7 @@ export type Database = {
           scene_duration_1to3?: number | null
           scene_duration_3plus?: number | null
           scenes?: Json | null
+          style_reference_url?: string | null
           summary?: string | null
           transcript_json?: Json | null
           updated_at?: string
@@ -55,6 +57,7 @@ export type Database = {
           scene_duration_1to3?: number | null
           scene_duration_3plus?: number | null
           scenes?: Json | null
+          style_reference_url?: string | null
           summary?: string | null
           transcript_json?: Json | null
           updated_at?: string

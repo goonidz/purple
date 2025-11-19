@@ -140,7 +140,7 @@ const Index = () => {
 
       return () => clearTimeout(timeoutId);
     }
-  }, [currentProjectId, transcriptData, examplePrompts, scenes, generatedPrompts, sceneDuration0to1, sceneDuration1to3, sceneDuration3plus]);
+  }, [currentProjectId, transcriptData, examplePrompts, scenes, generatedPrompts, sceneDuration0to1, sceneDuration1to3, sceneDuration3plus, styleReferenceUrl]);
 
   const loadProjectData = async (projectId: string) => {
     try {
@@ -163,6 +163,10 @@ const Index = () => {
       setSceneDuration0to1(data.scene_duration_0to1 || 4);
       setSceneDuration1to3(data.scene_duration_1to3 || 6);
       setSceneDuration3plus(data.scene_duration_3plus || 8);
+      if (data.style_reference_url) {
+        setStyleReferenceUrl(data.style_reference_url);
+        setUploadedStyleImageUrl(data.style_reference_url);
+      }
     } catch (error: any) {
       console.error("Error loading project:", error);
       toast.error("Erreur lors du chargement du projet");
@@ -183,6 +187,7 @@ const Index = () => {
           scene_duration_0to1: sceneDuration0to1,
           scene_duration_1to3: sceneDuration1to3,
           scene_duration_3plus: sceneDuration3plus,
+          style_reference_url: styleReferenceUrl || null,
         })
         .eq("id", currentProjectId);
 
