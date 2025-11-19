@@ -76,6 +76,7 @@ const Index = () => {
   const [aspectRatio, setAspectRatio] = useState<string>("16:9");
   const [isGeneratingImages, setIsGeneratingImages] = useState(false);
   const [generatingImageIndex, setGeneratingImageIndex] = useState<number | null>(null);
+  const [styleReferenceUrl, setStyleReferenceUrl] = useState<string>("");
 
   // Check authentication
   useEffect(() => {
@@ -443,14 +444,21 @@ const Index = () => {
 
     setGeneratingImageIndex(index);
     try {
+      const requestBody: any = {
+        prompt: prompt.prompt,
+        width: imageWidth,
+        height: imageHeight,
+        output_format: "webp",
+        output_quality: 80
+      };
+
+      // Add style reference if provided
+      if (styleReferenceUrl.trim()) {
+        requestBody.image_urls = [styleReferenceUrl.trim()];
+      }
+
       const { data, error } = await supabase.functions.invoke('generate-image-seedream', {
-        body: {
-          prompt: prompt.prompt,
-          width: imageWidth,
-          height: imageHeight,
-          output_format: "webp",
-          output_quality: 80
-        }
+        body: requestBody
       });
 
       if (error) throw error;
@@ -485,14 +493,21 @@ const Index = () => {
         
         toast.info(`Génération de l'image ${i + 1}/${generatedPrompts.length}...`);
 
+        const requestBody: any = {
+          prompt: prompt.prompt,
+          width: imageWidth,
+          height: imageHeight,
+          output_format: "webp",
+          output_quality: 80
+        };
+
+        // Add style reference if provided
+        if (styleReferenceUrl.trim()) {
+          requestBody.image_urls = [styleReferenceUrl.trim()];
+        }
+
         const { data, error } = await supabase.functions.invoke('generate-image-seedream', {
-          body: {
-            prompt: prompt.prompt,
-            width: imageWidth,
-            height: imageHeight,
-            output_format: "webp",
-            output_quality: 80
-          }
+          body: requestBody
         });
 
         if (error) throw error;
@@ -746,58 +761,76 @@ const Index = () => {
 
                       {generatedPrompts.length > 0 && (
                         <div className="space-y-3 p-4 bg-muted/50 rounded-lg">
-                          <div className="flex items-center gap-4 flex-wrap">
-                            <div className="flex items-center gap-2">
-                              <label className="text-sm font-medium">Format:</label>
-                              <Select value={aspectRatio} onValueChange={handleAspectRatioChange}>
-                                <SelectTrigger className="w-40">
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="16:9">16:9 (Paysage)</SelectItem>
-                                  <SelectItem value="9:16">9:16 (Portrait)</SelectItem>
-                                  <SelectItem value="1:1">1:1 (Carré)</SelectItem>
-                                  <SelectItem value="4:3">4:3 (Classique)</SelectItem>
-                                  <SelectItem value="custom">Personnalisé</SelectItem>
-                                </SelectContent>
-                              </Select>
-                            </div>
-                            
-                            <div className="flex items-center gap-2">
-                              <label className="text-sm font-medium">Largeur:</label>
+                          <div className="space-y-3">
+                            <div>
+                              <label className="text-sm font-medium mb-2 block">
+                                Image de référence de style (optionnel)
+                              </label>
                               <Input
-                                type="number"
-                                min="512"
-                                max="4096"
-                                step="64"
-                                value={imageWidth}
-                                onChange={(e) => {
-                                  setImageWidth(parseInt(e.target.value) || 1920);
-                                  setAspectRatio("custom");
-                                }}
-                                className="w-24"
+                                type="url"
+                                placeholder="https://exemple.com/image.jpg"
+                                value={styleReferenceUrl}
+                                onChange={(e) => setStyleReferenceUrl(e.target.value)}
+                                className="w-full"
                               />
+                              <p className="text-xs text-muted-foreground mt-1">
+                                URL d'une image pour guider le style de génération
+                              </p>
                             </div>
-                            
-                            <div className="flex items-center gap-2">
-                              <label className="text-sm font-medium">Hauteur:</label>
-                              <Input
-                                type="number"
-                                min="512"
-                                max="4096"
-                                step="64"
-                                value={imageHeight}
-                                onChange={(e) => {
-                                  setImageHeight(parseInt(e.target.value) || 1080);
-                                  setAspectRatio("custom");
-                                }}
-                                className="w-24"
-                              />
+
+                            <div className="flex items-center gap-4 flex-wrap">
+                              <div className="flex items-center gap-2">
+                                <label className="text-sm font-medium">Format:</label>
+                                <Select value={aspectRatio} onValueChange={handleAspectRatioChange}>
+                                  <SelectTrigger className="w-40">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="16:9">16:9 (Paysage)</SelectItem>
+                                    <SelectItem value="9:16">9:16 (Portrait)</SelectItem>
+                                    <SelectItem value="1:1">1:1 (Carré)</SelectItem>
+                                    <SelectItem value="4:3">4:3 (Classique)</SelectItem>
+                                    <SelectItem value="custom">Personnalisé</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                              
+                              <div className="flex items-center gap-2">
+                                <label className="text-sm font-medium">Largeur:</label>
+                                <Input
+                                  type="number"
+                                  min="512"
+                                  max="4096"
+                                  step="64"
+                                  value={imageWidth}
+                                  onChange={(e) => {
+                                    setImageWidth(parseInt(e.target.value) || 1920);
+                                    setAspectRatio("custom");
+                                  }}
+                                  className="w-24"
+                                />
+                              </div>
+                              
+                              <div className="flex items-center gap-2">
+                                <label className="text-sm font-medium">Hauteur:</label>
+                                <Input
+                                  type="number"
+                                  min="512"
+                                  max="4096"
+                                  step="64"
+                                  value={imageHeight}
+                                  onChange={(e) => {
+                                    setImageHeight(parseInt(e.target.value) || 1080);
+                                    setAspectRatio("custom");
+                                  }}
+                                  className="w-24"
+                                />
+                              </div>
+                              
+                              <span className="text-xs text-muted-foreground">
+                                ({imageWidth}x{imageHeight}px)
+                              </span>
                             </div>
-                            
-                            <span className="text-xs text-muted-foreground">
-                              ({imageWidth}x{imageHeight}px)
-                            </span>
                           </div>
                           
                           <Button
@@ -863,8 +896,9 @@ const Index = () => {
                                     <img 
                                       src={prompt.imageUrl} 
                                       alt={`Scene ${index + 1}`}
-                                      className="w-24 h-24 object-cover rounded cursor-pointer"
+                                      className="w-24 h-24 object-cover rounded cursor-pointer hover:opacity-80 transition"
                                       onClick={() => window.open(prompt.imageUrl, '_blank')}
+                                      title="Cliquer pour agrandir"
                                     />
                                   ) : prompt ? (
                                     <Button
@@ -872,11 +906,18 @@ const Index = () => {
                                       size="sm"
                                       onClick={() => generateImage(index)}
                                       disabled={generatingImageIndex === index}
+                                      title="Générer l'image de cette scène"
                                     >
                                       {generatingImageIndex === index ? (
-                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                        <>
+                                          <Loader2 className="h-4 w-4 animate-spin mr-1" />
+                                          <span className="text-xs">Génération...</span>
+                                        </>
                                       ) : (
-                                        <ImageIcon className="h-4 w-4" />
+                                        <>
+                                          <ImageIcon className="h-4 w-4 mr-1" />
+                                          <span className="text-xs">Générer</span>
+                                        </>
                                       )}
                                     </Button>
                                   ) : null}
