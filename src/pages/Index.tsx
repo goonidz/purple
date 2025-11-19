@@ -736,48 +736,60 @@ const Index = () => {
     let successCount = 0;
     let skippedCount = 0;
 
-    for (let i = 0; i < generatedPrompts.length; i++) {
-      try {
-        const prompt = generatedPrompts[i];
-        
-        // Skip if image already exists and skipExisting is true
-        if (skipExisting && prompt.imageUrl) {
-          skippedCount++;
-          continue;
+    // Filter prompts to process
+    const promptsToProcess = generatedPrompts
+      .map((prompt, index) => ({ prompt, index }))
+      .filter(({ prompt }) => !skipExisting || !prompt.imageUrl);
+
+    // Count skipped images
+    skippedCount = generatedPrompts.length - promptsToProcess.length;
+
+    // Process in batches of 20
+    const batchSize = 20;
+    for (let i = 0; i < promptsToProcess.length; i += batchSize) {
+      const batch = promptsToProcess.slice(i, i + batchSize);
+      const batchNumber = Math.floor(i / batchSize) + 1;
+      const totalBatches = Math.ceil(promptsToProcess.length / batchSize);
+      
+      toast.info(`Génération batch ${batchNumber}/${totalBatches} (${batch.length} images)...`);
+
+      const batchPromises = batch.map(async ({ prompt, index }) => {
+        try {
+          const requestBody: any = {
+            prompt: prompt.prompt,
+            width: imageWidth,
+            height: imageHeight
+          };
+
+          // Add style reference if provided
+          if (styleReferenceUrl.trim()) {
+            requestBody.image_urls = [styleReferenceUrl.trim()];
+          }
+
+          const { data, error } = await supabase.functions.invoke('generate-image-seedream', {
+            body: requestBody
+          });
+
+          if (error) throw error;
+
+          const imageUrl = Array.isArray(data.output) ? data.output[0] : data.output;
+          
+          setGeneratedPrompts(prev => {
+            const updated = [...prev];
+            updated[index] = { ...updated[index], imageUrl };
+            return updated;
+          });
+
+          return { success: true, index };
+        } catch (error: any) {
+          console.error(`Error generating image ${index + 1}:`, error);
+          toast.error(`Erreur image ${index + 1}: ${error.message}`);
+          return { success: false, index };
         }
-        
-        toast.info(`Génération de l'image ${i + 1}/${generatedPrompts.length}...`);
+      });
 
-        const requestBody: any = {
-          prompt: prompt.prompt,
-          width: imageWidth,
-          height: imageHeight
-        };
-
-        // Add style reference if provided
-        if (styleReferenceUrl.trim()) {
-          requestBody.image_urls = [styleReferenceUrl.trim()];
-        }
-
-        const { data, error } = await supabase.functions.invoke('generate-image-seedream', {
-          body: requestBody
-        });
-
-        if (error) throw error;
-
-        const imageUrl = Array.isArray(data.output) ? data.output[0] : data.output;
-        
-        setGeneratedPrompts(prev => {
-          const updated = [...prev];
-          updated[i] = { ...updated[i], imageUrl };
-          return updated;
-        });
-
-        successCount++;
-      } catch (error: any) {
-        console.error(`Error generating image ${i + 1}:`, error);
-        toast.error(`Erreur image ${i + 1}: ${error.message}`);
-      }
+      const results = await Promise.all(batchPromises);
+      successCount += results.filter(r => r.success).length;
     }
 
     setIsGeneratingImages(false);
