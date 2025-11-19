@@ -316,51 +316,59 @@ const Index = () => {
         .eq("id", currentProjectId);
 
       const prompts: GeneratedPrompt[] = [];
+      const filteredPrompts = examplePrompts.filter(p => p.trim() !== "");
+      const BATCH_SIZE = 10;
 
-      for (let i = 0; i < sceneCount; i++) {
-        const scene = scenesToProcess[i];
-        const originalIndex = testMode ? i : scenes.indexOf(scene);
+      // Process scenes in batches of 10 for parallel generation
+      for (let batchStart = 0; batchStart < sceneCount; batchStart += BATCH_SIZE) {
+        const batchEnd = Math.min(batchStart + BATCH_SIZE, sceneCount);
+        const batch = scenesToProcess.slice(batchStart, batchEnd);
         
-        try {
-          const filteredPrompts = examplePrompts.filter(p => p.trim() !== "");
-          const { data, error } = await supabase.functions.invoke("generate-prompts", {
-            body: { 
-              scene: scene.text,
-              summary,
-              examplePrompts: filteredPrompts,
-              sceneIndex: originalIndex + 1,
-              totalScenes: scenes.length,
+        toast.info(`Génération des scènes ${batchStart + 1}-${batchEnd} sur ${sceneCount}...`);
+
+        const batchPromises = batch.map(async (scene, batchIndex) => {
+          const i = batchStart + batchIndex;
+          const originalIndex = testMode ? i : scenes.indexOf(scene);
+          
+          try {
+            const { data, error } = await supabase.functions.invoke("generate-prompts", {
+              body: { 
+                scene: scene.text,
+                summary,
+                examplePrompts: filteredPrompts,
+                sceneIndex: originalIndex + 1,
+                totalScenes: scenes.length,
+                startTime: scene.startTime,
+                endTime: scene.endTime
+              },
+            });
+
+            if (error) throw error;
+
+            return {
+              scene: `Scène ${originalIndex + 1} (${formatTimecode(scene.startTime)} - ${formatTimecode(scene.endTime)})`,
+              prompt: data.prompt,
+              text: scene.text,
               startTime: scene.startTime,
-              endTime: scene.endTime
-            },
-          });
+              endTime: scene.endTime,
+              duration: scene.endTime - scene.startTime
+            };
+          } catch (sceneError: any) {
+            console.error(`Error generating prompt for scene ${originalIndex + 1}:`, sceneError);
+            return {
+              scene: `Scène ${originalIndex + 1} (${formatTimecode(scene.startTime)} - ${formatTimecode(scene.endTime)})`,
+              prompt: "Erreur lors de la génération",
+              text: scene.text,
+              startTime: scene.startTime,
+              endTime: scene.endTime,
+              duration: scene.endTime - scene.startTime
+            };
+          }
+        });
 
-          if (error) throw error;
-
-          prompts.push({
-            scene: `Scène ${originalIndex + 1} (${formatTimecode(scene.startTime)} - ${formatTimecode(scene.endTime)})`,
-            prompt: data.prompt,
-            text: scene.text,
-            startTime: scene.startTime,
-            endTime: scene.endTime,
-            duration: scene.endTime - scene.startTime
-          });
-
-          setGeneratedPrompts([...prompts]);
-          
-        } catch (sceneError: any) {
-          console.error(`Error generating prompt for scene ${originalIndex + 1}:`, sceneError);
-          prompts.push({
-            scene: `Scène ${originalIndex + 1} (${formatTimecode(scene.startTime)} - ${formatTimecode(scene.endTime)})`,
-            prompt: "Erreur lors de la génération",
-            text: scene.text,
-            startTime: scene.startTime,
-            endTime: scene.endTime,
-            duration: scene.endTime - scene.startTime
-          });
-          
-          setGeneratedPrompts([...prompts]);
-        }
+        const batchResults = await Promise.all(batchPromises);
+        prompts.push(...batchResults);
+        setGeneratedPrompts([...prompts]);
       }
 
       toast.success(`${sceneCount} prompts générés avec succès !`);
