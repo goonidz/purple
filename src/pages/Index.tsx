@@ -96,6 +96,7 @@ const Index = () => {
   const [sceneDuration1to3, setSceneDuration1to3] = useState(6);
   const [sceneDuration3plus, setSceneDuration3plus] = useState(8);
   const cancelGenerationRef = useRef(false);
+  const cancelImageGenerationRef = useRef(false);
   const [imageWidth, setImageWidth] = useState<number>(1920);
   const [imageHeight, setImageHeight] = useState<number>(1080);
   const [aspectRatio, setAspectRatio] = useState<string>("16:9");
@@ -733,6 +734,7 @@ const Index = () => {
     }
 
     setIsGeneratingImages(true);
+    cancelImageGenerationRef.current = false;
     let successCount = 0;
     let skippedCount = 0;
 
@@ -747,6 +749,11 @@ const Index = () => {
     // Process in batches of 20
     const batchSize = 20;
     for (let i = 0; i < promptsToProcess.length; i += batchSize) {
+      if (cancelImageGenerationRef.current) {
+        toast.info(`Génération annulée. ${successCount} images générées.`);
+        break;
+      }
+
       const batch = promptsToProcess.slice(i, i + batchSize);
       const batchNumber = Math.floor(i / batchSize) + 1;
       const totalBatches = Math.ceil(promptsToProcess.length / batchSize);
@@ -793,10 +800,12 @@ const Index = () => {
     }
 
     setIsGeneratingImages(false);
-    if (skippedCount > 0) {
-      toast.success(`${successCount} images générées, ${skippedCount} conservées !`);
-    } else {
-      toast.success(`${successCount}/${generatedPrompts.length} images générées !`);
+    if (!cancelImageGenerationRef.current) {
+      if (skippedCount > 0) {
+        toast.success(`${successCount} images générées, ${skippedCount} conservées !`);
+      } else {
+        toast.success(`${successCount}/${generatedPrompts.length} images générées !`);
+      }
     }
   };
 
@@ -1059,23 +1068,37 @@ const Index = () => {
                       </Button>
 
                       {generatedPrompts.length > 0 && (
-                        <Button
-                          onClick={() => setConfirmGenerateImages(true)}
-                          disabled={isGeneratingImages}
-                          className="w-full"
-                        >
-                          {isGeneratingImages ? (
-                            <>
-                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                              Génération...
-                            </>
-                          ) : (
-                            <>
-                              <ImageIcon className="mr-2 h-4 w-4" />
-                              Générer toutes les images
-                            </>
+                        <>
+                          <Button
+                            onClick={() => setConfirmGenerateImages(true)}
+                            disabled={isGeneratingImages}
+                            className="w-full"
+                          >
+                            {isGeneratingImages ? (
+                              <>
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                Génération...
+                              </>
+                            ) : (
+                              <>
+                                <ImageIcon className="mr-2 h-4 w-4" />
+                                Générer toutes les images
+                              </>
+                            )}
+                          </Button>
+                          {isGeneratingImages && (
+                            <Button
+                              onClick={() => {
+                                cancelImageGenerationRef.current = true;
+                                toast.info("Annulation en cours...");
+                              }}
+                              variant="destructive"
+                              className="w-full"
+                            >
+                              Annuler
+                            </Button>
                           )}
-                        </Button>
+                        </>
                       )}
                     </div>
                   </Card>
