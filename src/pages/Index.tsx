@@ -1057,7 +1057,11 @@ const Index = () => {
                                       <Button
                                         variant="ghost"
                                         size="sm"
-                                        className="absolute top-0 right-0 bg-background/80 hover:bg-background transition-all"
+                                        className={`absolute top-0 right-0 bg-background/80 hover:bg-background transition-all ${
+                                          regeneratingPromptIndex === index 
+                                            ? 'opacity-100' 
+                                            : 'opacity-0 group-hover:opacity-100'
+                                        }`}
                                         onClick={() => setConfirmRegeneratePrompt(index)}
                                         disabled={regeneratingPromptIndex === index}
                                         title="Régénérer le prompt"
@@ -1088,7 +1092,11 @@ const Index = () => {
                                       <Button
                                         variant="ghost"
                                         size="sm"
-                                        className="absolute top-1 right-1 bg-background/80 hover:bg-background transition-all"
+                                        className={`absolute top-1 right-1 bg-background/80 hover:bg-background transition-all ${
+                                          generatingImageIndex === index 
+                                            ? 'opacity-100' 
+                                            : 'opacity-0 group-hover:opacity-100'
+                                        }`}
                                         onClick={() => setConfirmRegenerateImage(index)}
                                         disabled={generatingImageIndex === index}
                                         title="Régénérer l'image"
