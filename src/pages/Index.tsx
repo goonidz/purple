@@ -40,11 +40,25 @@ const Index = () => {
   const [isGeneratingScenes, setIsGeneratingScenes] = useState(false);
   const [isGeneratingPrompts, setIsGeneratingPrompts] = useState(false);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
-  const [sceneDuration, setSceneDuration] = useState(5);
+  const [sceneDuration0to1, setSceneDuration0to1] = useState(4);
+  const [sceneDuration1to3, setSceneDuration1to3] = useState(6);
+  const [sceneDuration3plus, setSceneDuration3plus] = useState(8);
 
-  const parseTranscriptToScenes = (transcriptData: TranscriptData, maxDuration: number): Scene[] => {
+  const parseTranscriptToScenes = (
+    transcriptData: TranscriptData, 
+    duration0to1: number,
+    duration1to3: number, 
+    duration3plus: number
+  ): Scene[] => {
     const scenes: Scene[] = [];
     let currentScene: Scene = { text: "", startTime: 0, endTime: 0 };
+    
+    // Fonction pour obtenir la durée max selon le timestamp
+    const getMaxDuration = (timestamp: number): number => {
+      if (timestamp < 60) return duration0to1;
+      if (timestamp < 180) return duration1to3;
+      return duration3plus;
+    };
     
     transcriptData.segments.forEach((segment, index) => {
       if (index === 0) {
@@ -55,8 +69,9 @@ const Index = () => {
         };
       } else {
         const potentialDuration = segment.end_time - currentScene.startTime;
+        const maxDuration = getMaxDuration(currentScene.startTime);
         
-        // Si ajouter ce segment dépasserait la durée max
+        // Si ajouter ce segment dépasserait la durée max pour cette tranche temporelle
         if (potentialDuration > maxDuration) {
           // Sauvegarder la scène actuelle si elle n'est pas vide
           if (currentScene.text.trim()) {
@@ -116,7 +131,12 @@ const Index = () => {
         throw new Error("Le fichier JSON ne contient pas de segments valides");
       }
 
-      const generatedScenes = parseTranscriptToScenes(transcriptData, sceneDuration);
+      const generatedScenes = parseTranscriptToScenes(
+        transcriptData, 
+        sceneDuration0to1,
+        sceneDuration1to3,
+        sceneDuration3plus
+      );
       setScenes(generatedScenes);
       toast.success(`${generatedScenes.length} scènes générées ! Vous pouvez maintenant générer les prompts.`);
     } catch (error: any) {
@@ -253,18 +273,48 @@ const Index = () => {
             </Card>
 
             <Card className="p-6 shadow-card">
-              <h2 className="text-lg font-semibold mb-4 text-foreground">Durée des scènes</h2>
-              <Input
-                type="number"
-                min="3"
-                max="10"
-                value={sceneDuration}
-                onChange={(e) => setSceneDuration(Number(e.target.value))}
-                className="text-base"
-              />
-              <p className="text-xs text-muted-foreground mt-2">
-                Durée maximale par scène (3-10s)
-              </p>
+              <h2 className="text-lg font-semibold mb-4 text-foreground">Durée des scènes (secondes)</h2>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-sm text-muted-foreground">
+                    0-1 minute (début captivant)
+                  </label>
+                  <Input
+                    type="number"
+                    min="3"
+                    max="10"
+                    value={sceneDuration0to1}
+                    onChange={(e) => setSceneDuration0to1(Number(e.target.value))}
+                    className="text-base"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm text-muted-foreground">
+                    1-3 minutes (développement)
+                  </label>
+                  <Input
+                    type="number"
+                    min="3"
+                    max="12"
+                    value={sceneDuration1to3}
+                    onChange={(e) => setSceneDuration1to3(Number(e.target.value))}
+                    className="text-base"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm text-muted-foreground">
+                    3+ minutes (rythme établi)
+                  </label>
+                  <Input
+                    type="number"
+                    min="4"
+                    max="15"
+                    value={sceneDuration3plus}
+                    onChange={(e) => setSceneDuration3plus(Number(e.target.value))}
+                    className="text-base"
+                  />
+                </div>
+              </div>
             </Card>
 
             <Card className="p-6 shadow-card">
