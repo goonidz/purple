@@ -98,6 +98,8 @@ const Index = () => {
   const [confirmRegenerateImage, setConfirmRegenerateImage] = useState<number | null>(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
   const [imageSettingsOpen, setImageSettingsOpen] = useState(false);
+  const [sceneSettingsOpen, setSceneSettingsOpen] = useState(false);
+  const [confirmGenerateImages, setConfirmGenerateImages] = useState(false);
 
   // Check authentication
   useEffect(() => {
@@ -758,74 +760,14 @@ const Index = () => {
                 <Card className="p-6">
                   <h2 className="text-lg font-semibold mb-4">2. Configurer les scènes</h2>
                   <div className="space-y-4">
-                    <div className="space-y-4">
-                      <div>
-                        <label className="text-sm font-medium mb-2 block">
-                          Exemples de prompts (2-3 recommandés pour la consistance)
-                        </label>
-                        <p className="text-xs text-muted-foreground mb-3">
-                          Entrez 2-3 exemples de prompts que vous avez déjà créés pour montrer le style et la structure désirée
-                        </p>
-                      </div>
-                      
-                      {[0, 1, 2].map((index) => (
-                        <div key={index}>
-                          <label className="text-xs text-muted-foreground block mb-1">
-                            Exemple {index + 1} {index === 0 ? "(recommandé)" : "(optionnel)"}
-                          </label>
-                          <Textarea
-                            placeholder={`Ex: "A cinematic scene showing... [your style]"`}
-                            value={examplePrompts[index]}
-                            onChange={(e) => {
-                              const newPrompts = [...examplePrompts];
-                              newPrompts[index] = e.target.value;
-                              setExamplePrompts(newPrompts);
-                            }}
-                            rows={3}
-                            className="resize-none"
-                          />
-                        </div>
-                      ))}
-                    </div>
-
-                    <div className="grid grid-cols-3 gap-4">
-                      <div>
-                        <label className="text-sm font-medium mb-2 block">
-                          Durée 0-1min (sec)
-                        </label>
-                        <Input
-                          type="number"
-                          min="1"
-                          max="60"
-                          value={sceneDuration0to1}
-                          onChange={(e) => setSceneDuration0to1(parseInt(e.target.value))}
-                        />
-                      </div>
-                      <div>
-                        <label className="text-sm font-medium mb-2 block">
-                          Durée 1-3min (sec)
-                        </label>
-                        <Input
-                          type="number"
-                          min="1"
-                          max="180"
-                          value={sceneDuration1to3}
-                          onChange={(e) => setSceneDuration1to3(parseInt(e.target.value))}
-                        />
-                      </div>
-                      <div>
-                        <label className="text-sm font-medium mb-2 block">
-                          Durée 3min+ (sec)
-                        </label>
-                        <Input
-                          type="number"
-                          min="1"
-                          max="600"
-                          value={sceneDuration3plus}
-                          onChange={(e) => setSceneDuration3plus(parseInt(e.target.value))}
-                        />
-                      </div>
-                    </div>
+                    <Button
+                      variant="outline"
+                      onClick={() => setSceneSettingsOpen(true)}
+                      className="w-full"
+                    >
+                      <Settings className="mr-2 h-4 w-4" />
+                      Paramètres de scènes
+                    </Button>
 
                     <Button
                       onClick={handleGenerateScenes}
@@ -909,13 +851,21 @@ const Index = () => {
                           <Button
                             variant="outline"
                             size="sm"
+                            onClick={() => setSceneSettingsOpen(true)}
+                          >
+                            <Settings className="mr-2 h-4 w-4" />
+                            Paramètres de scènes
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
                             onClick={() => setImageSettingsOpen(true)}
                           >
                             <Settings className="mr-2 h-4 w-4" />
                             Paramètres d'image
                           </Button>
                           <Button
-                            onClick={generateAllImages}
+                            onClick={() => setConfirmGenerateImages(true)}
                             disabled={isGeneratingImages}
                             className="flex-1"
                           >
@@ -1127,6 +1077,92 @@ const Index = () => {
           </DialogContent>
         </Dialog>
 
+        {/* Scene settings dialog */}
+        <Dialog open={sceneSettingsOpen} onOpenChange={setSceneSettingsOpen}>
+          <DialogContent className="max-w-2xl">
+            <div className="space-y-6">
+              <div>
+                <h3 className="text-lg font-semibold mb-4">Paramètres de scènes</h3>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="text-sm font-medium mb-2 block">
+                    Exemples de prompts (2-3 recommandés pour la consistance)
+                  </label>
+                  <p className="text-xs text-muted-foreground mb-3">
+                    Entrez 2-3 exemples de prompts que vous avez déjà créés pour montrer le style et la structure désirée
+                  </p>
+                </div>
+                
+                {[0, 1, 2].map((index) => (
+                  <div key={index}>
+                    <label className="text-xs text-muted-foreground block mb-1">
+                      Exemple {index + 1} {index === 0 ? "(recommandé)" : "(optionnel)"}
+                    </label>
+                    <Textarea
+                      placeholder={`Ex: "A cinematic scene showing... [your style]"`}
+                      value={examplePrompts[index]}
+                      onChange={(e) => {
+                        const newPrompts = [...examplePrompts];
+                        newPrompts[index] = e.target.value;
+                        setExamplePrompts(newPrompts);
+                      }}
+                      rows={3}
+                      className="resize-none"
+                    />
+                  </div>
+                ))}
+              </div>
+
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <label className="text-sm font-medium mb-2 block">
+                    Durée 0-1min (sec)
+                  </label>
+                  <Input
+                    type="number"
+                    min="1"
+                    max="60"
+                    value={sceneDuration0to1}
+                    onChange={(e) => setSceneDuration0to1(parseInt(e.target.value))}
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium mb-2 block">
+                    Durée 1-3min (sec)
+                  </label>
+                  <Input
+                    type="number"
+                    min="1"
+                    max="180"
+                    value={sceneDuration1to3}
+                    onChange={(e) => setSceneDuration1to3(parseInt(e.target.value))}
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium mb-2 block">
+                    Durée 3min+ (sec)
+                  </label>
+                  <Input
+                    type="number"
+                    min="1"
+                    max="600"
+                    value={sceneDuration3plus}
+                    onChange={(e) => setSceneDuration3plus(parseInt(e.target.value))}
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end">
+                <Button onClick={() => setSceneSettingsOpen(false)}>
+                  Fermer
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
         {/* Image settings dialog */}
         <Dialog open={imageSettingsOpen} onOpenChange={setImageSettingsOpen}>
           <DialogContent className="max-w-2xl">
@@ -1233,6 +1269,48 @@ const Index = () => {
             </div>
           </DialogContent>
         </Dialog>
+
+        {/* Confirm generate images dialog */}
+        <AlertDialog open={confirmGenerateImages} onOpenChange={setConfirmGenerateImages}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Confirmer la génération des images</AlertDialogTitle>
+              <AlertDialogDescription className="space-y-3">
+                <p>Vous êtes sur le point de générer {generatedPrompts.length} images avec les paramètres suivants :</p>
+                <div className="bg-muted p-3 rounded-md space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="font-medium">Résolution :</span>
+                    <span>{imageWidth}x{imageHeight} px</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="font-medium">Format :</span>
+                    <span>{aspectRatio === "custom" ? "Personnalisé" : aspectRatio}</span>
+                  </div>
+                  {styleReferenceUrl && (
+                    <div className="flex justify-between">
+                      <span className="font-medium">Référence de style :</span>
+                      <span className="text-xs text-primary">Activée</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between pt-2 border-t">
+                    <span className="font-medium">Total d'images :</span>
+                    <span className="font-semibold">{generatedPrompts.length}</span>
+                  </div>
+                </div>
+                <p className="text-xs">Cette opération peut prendre plusieurs minutes.</p>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Annuler</AlertDialogCancel>
+              <AlertDialogAction onClick={() => {
+                setConfirmGenerateImages(false);
+                generateAllImages();
+              }}>
+                Générer
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
   );
 };
