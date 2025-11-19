@@ -17,7 +17,7 @@ export type Database = {
       projects: {
         Row: {
           created_at: string
-          example_prompt: string | null
+          example_prompts: Json | null
           id: string
           name: string
           prompts: Json | null
@@ -32,7 +32,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
-          example_prompt?: string | null
+          example_prompts?: Json | null
           id?: string
           name: string
           prompts?: Json | null
@@ -47,7 +47,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
-          example_prompt?: string | null
+          example_prompts?: Json | null
           id?: string
           name?: string
           prompts?: Json | null
