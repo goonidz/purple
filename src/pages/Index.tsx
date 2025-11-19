@@ -478,13 +478,15 @@ const Index = () => {
 
       if (error) throw error;
 
-      // Update the prompt in the array
-      const updatedPrompts = [...generatedPrompts];
-      updatedPrompts[sceneIndex] = {
-        ...updatedPrompts[sceneIndex],
-        prompt: data.prompt,
-      };
-      setGeneratedPrompts(updatedPrompts);
+      // Update the prompt in the array using functional update to avoid race conditions
+      setGeneratedPrompts(prev => {
+        const updatedPrompts = [...prev];
+        updatedPrompts[sceneIndex] = {
+          ...updatedPrompts[sceneIndex],
+          prompt: data.prompt,
+        };
+        return updatedPrompts;
+      });
 
       toast.success("Prompt régénéré !");
     } catch (error: any) {
