@@ -14,6 +14,33 @@ export type Database = {
   }
   public: {
     Tables: {
+      generated_thumbnails: {
+        Row: {
+          created_at: string
+          id: string
+          project_id: string
+          prompts: Json
+          thumbnail_urls: Json
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          project_id: string
+          prompts?: Json
+          thumbnail_urls?: Json
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          project_id?: string
+          prompts?: Json
+          thumbnail_urls?: Json
+          user_id?: string
+        }
+        Relationships: []
+      }
       presets: {
         Row: {
           aspect_ratio: string | null

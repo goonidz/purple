@@ -33,6 +33,11 @@ serve(async (req) => {
 
 Ton rôle est d'analyser un script vidéo et de générer 3 prompts DIFFÉRENTS et CRÉATIFS pour créer des miniatures YouTube.
 
+CONTEXTE IMPORTANT:
+- L'utilisateur fournit des exemples de miniatures (style de référence)
+- L'utilisateur fournit UNE image avec UNIQUEMENT son personnage (pas d'autre élément, juste le personnage sur fond uni)
+- Tu dois utiliser CE personnage précis dans tes prompts
+
 RÈGLES STRICTES:
 1. Chaque prompt doit être UNIQUE avec une approche visuelle différente
 2. Les prompts doivent être accrocheurs et optimisés pour le CTR YouTube
@@ -40,6 +45,7 @@ RÈGLES STRICTES:
 4. Les prompts doivent être en ANGLAIS pour la génération d'images
 5. Chaque prompt doit faire 50-80 mots
 6. Pense à différentes approches: émotionnelle, dramatique, informative, intrigante
+7. IMPORTANT: Précise bien "Use the character from the reference image that shows ONLY the character with no other elements" pour identifier le bon personnage
 
 Retourne UNIQUEMENT un JSON avec ce format exact:
 {
