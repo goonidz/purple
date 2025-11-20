@@ -33,7 +33,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2, Sparkles, Copy, Check, Upload, FolderOpen, Image as ImageIcon, RefreshCw, Settings, Download, User as UserIcon } from "lucide-react";
+import { Loader2, Sparkles, Copy, Check, Upload, FolderOpen, Image as ImageIcon, RefreshCw, Settings, Download, User as UserIcon, Video } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import type { User, Session } from "@supabase/supabase-js";
@@ -52,6 +52,7 @@ import { VideoPreview } from "@/components/VideoPreview";
 import { PresetManager } from "@/components/PresetManager";
 import { ThumbnailGenerator } from "@/components/ThumbnailGenerator";
 import { DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 interface TranscriptSegment {
   text: string;
@@ -135,6 +136,7 @@ const Index = () => {
   const [isUploadingAudio, setIsUploadingAudio] = useState(false);
   const [hasTestedFirstTwo, setHasTestedFirstTwo] = useState(false);
   const [thumbnailDialogOpen, setThumbnailDialogOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<string>("video");
 
   // Check authentication
   useEffect(() => {
@@ -1416,15 +1418,6 @@ const Index = () => {
                   Mes projets
                 </Link>
               </Button>
-              <Button 
-                variant="outline" 
-                size="sm"
-                onClick={() => setThumbnailDialogOpen(true)}
-                disabled={!currentProjectId || generatedPrompts.length === 0}
-              >
-                <ImageIcon className="h-4 w-4 mr-2" />
-                Miniatures
-              </Button>
               <Button variant="outline" size="sm" asChild>
                 <Link to="/profile">
                   <UserIcon className="h-4 w-4 mr-2" />
@@ -1452,7 +1445,21 @@ const Index = () => {
             </Button>
           </Card>
         ) : (
-          <div className="space-y-6">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+            <div className="border-b">
+              <TabsList>
+                <TabsTrigger value="video" className="flex items-center gap-2">
+                  <Video className="h-4 w-4" />
+                  Vidéo
+                </TabsTrigger>
+                <TabsTrigger value="thumbnails" className="flex items-center gap-2">
+                  <ImageIcon className="h-4 w-4" />
+                  Miniatures
+                </TabsTrigger>
+              </TabsList>
+            </div>
+
+            <TabsContent value="video" className="space-y-6 m-0">
                 {transcriptData && (
                   <Card className="p-4 bg-muted/30 border-primary/20">
                     <div className="flex items-center gap-2 text-sm">
@@ -1955,9 +1962,18 @@ const Index = () => {
                     </div>
                   </Card>
                 )}
-              </div>
+              </TabsContent>
+
+              <TabsContent value="thumbnails" className="m-0">
+                <div className="max-w-5xl mx-auto">
+                  <ThumbnailGenerator
+                    projectId={currentProjectId || ""}
+                    videoScript={generatedPrompts.map(p => p.text).join(" ")}
+                  />
+                </div>
+              </TabsContent>
+            </Tabs>
           )}
-        </div>
 
         {/* Confirmation dialogs */}
         <AlertDialog open={confirmRegeneratePrompt !== null} onOpenChange={(open) => !open && setConfirmRegeneratePrompt(null)}>
@@ -2524,6 +2540,7 @@ const Index = () => {
           </div>
         )}
       </div>
+    </div>
   );
 };
 
