@@ -131,6 +131,7 @@ const Index = () => {
   const [audioUrl, setAudioUrl] = useState<string>("");
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [isUploadingAudio, setIsUploadingAudio] = useState(false);
+  const [hasTestedFirstTwo, setHasTestedFirstTwo] = useState(false);
 
   // Check authentication
   useEffect(() => {
@@ -233,6 +234,13 @@ const Index = () => {
       }
       
       setGeneratedPrompts((data.prompts as unknown as GeneratedPrompt[]) || []);
+      
+      // Check if test has already been done (at least 2 scenes with images)
+      const loadedPrompts = (data.prompts as unknown as GeneratedPrompt[]) || [];
+      const firstTwoWithImages = loadedPrompts.slice(0, 2).filter(p => p.imageUrl).length;
+      if (firstTwoWithImages >= 2) {
+        setHasTestedFirstTwo(true);
+      }
       
       // Load image dimensions and aspect ratio
       const projectData = data as any;
@@ -1133,6 +1141,7 @@ const Index = () => {
 
       setGeneratingImageIndex(null);
       setIsGeneratingImages(false);
+      setHasTestedFirstTwo(true);
       toast.success("Test terminé ! 2 scènes avec prompts et images générés.");
     } catch (error: any) {
       console.error("Error in test:", error);
@@ -1669,7 +1678,8 @@ const Index = () => {
                           </Button>
                           <Button
                             onClick={() => handleGeneratePrompts(false)}
-                            disabled={isGeneratingPrompts}
+                            disabled={isGeneratingPrompts || !hasTestedFirstTwo}
+                            title={!hasTestedFirstTwo ? "Veuillez d'abord tester avec les 2 premières scènes" : ""}
                           >
                             {isGeneratingPrompts ? (
                               <>
@@ -1686,7 +1696,8 @@ const Index = () => {
                           {generatedPrompts.length > 0 && (
                             <Button
                               onClick={() => generateAllImages(true)}
-                              disabled={isGeneratingImages}
+                              disabled={isGeneratingImages || !hasTestedFirstTwo}
+                              title={!hasTestedFirstTwo ? "Veuillez d'abord tester avec les 2 premières scènes" : ""}
                               variant="default"
                             >
                               {isGeneratingImages ? (
