@@ -5,7 +5,7 @@ import type { User } from "@supabase/supabase-js";
 import { Loader2, Settings, Play, Download, Video, Image as ImageIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SceneSidebar } from "@/components/SceneSidebar";
-import { SceneEditor } from "@/components/SceneEditor";
+
 import { TimelineBar } from "@/components/TimelineBar";
 import { VideoPreview } from "@/components/VideoPreview";
 import { SubtitleControls } from "@/components/SubtitleControls";
@@ -30,11 +30,9 @@ const Workspace = () => {
   const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
   const [projectName, setProjectName] = useState<string>("");
   const [generatedPrompts, setGeneratedPrompts] = useState<GeneratedPrompt[]>([]);
-  const [selectedSceneIndex, setSelectedSceneIndex] = useState(0);
   const [audioUrl, setAudioUrl] = useState<string>("");
   const [showPreview, setShowPreview] = useState(false);
   const [autoPlayPreview, setAutoPlayPreview] = useState(false);
-  const [startFromSceneIndex, setStartFromSceneIndex] = useState(0);
   const [isGeneratingImage, setIsGeneratingImage] = useState<number | null>(null);
   const [isGeneratingPrompt, setIsGeneratingPrompt] = useState<number | null>(null);
   const [subtitleSettings, setSubtitleSettings] = useState({
@@ -132,12 +130,6 @@ const Workspace = () => {
     }
   }, [currentProjectId, generatedPrompts, audioUrl]);
 
-  const handleUpdateScene = (updatedScene: GeneratedPrompt) => {
-    const updated = [...generatedPrompts];
-    updated[selectedSceneIndex] = updatedScene;
-    setGeneratedPrompts(updated);
-  };
-
   const handleRegenerateImage = async (sceneIndex: number) => {
     setIsGeneratingImage(sceneIndex);
     // TODO: Implement image regeneration logic
@@ -183,12 +175,6 @@ const Workspace = () => {
     } finally {
       setIsGeneratingImage(null);
     }
-  };
-
-  const handlePlayFromHere = () => {
-    setStartFromSceneIndex(selectedSceneIndex);
-    setAutoPlayPreview(true);
-    setShowPreview(true);
   };
 
   const handlePlayPreview = () => {
@@ -282,10 +268,6 @@ const Workspace = () => {
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-2 text-sm text-muted-foreground mr-4">
               <span className="flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-green-500"></span>
-                Scene duration: {generatedPrompts[selectedSceneIndex]?.duration.toFixed(1)}s
-              </span>
-              <span className="flex items-center gap-1 ml-4">
                 <span className="w-2 h-2 rounded-full bg-red-500"></span>
                 Video duration: {generatedPrompts.reduce((acc, p) => acc + p.duration, 0).toFixed(1)}s
               </span>
@@ -361,12 +343,12 @@ const Workspace = () => {
 
       {/* Main content */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Left sidebar - Scenes list */}
-        <div className="w-[400px] flex-shrink-0">
+        {/* Scenes list */}
+        <div className="flex-1 flex-shrink-0">
           <SceneSidebar
             scenes={generatedPrompts}
-            selectedSceneIndex={selectedSceneIndex}
-            onSelectScene={setSelectedSceneIndex}
+            selectedSceneIndex={0}
+            onSelectScene={() => {}}
             onRegenerateImage={handleRegenerateImage}
             onRegeneratePrompt={handleRegeneratePrompt}
             onUploadImage={handleUploadImage}
@@ -375,59 +357,46 @@ const Workspace = () => {
           />
         </div>
 
-        {/* Center/Right - Preview & Editor */}
-        <div className="flex-1 flex overflow-hidden">
-          {/* Main content area */}
-          <div className="flex-1 flex flex-col overflow-hidden">
-            {/* Preview/Editor area */}
-            <div className="flex-1 overflow-auto">
-              {showPreview && canShowPreview ? (
-                <div className="p-6">
-                  <VideoPreview 
-                    audioUrl={audioUrl} 
-                    prompts={generatedPrompts}
-                    autoPlay={autoPlayPreview}
-                    startFromScene={startFromSceneIndex}
-                    subtitleSettings={subtitleSettings}
-                    onSubtitleSettingsChange={setSubtitleSettings}
-                  />
-                </div>
-              ) : showThumbnailGenerator ? (
-                <div className="p-6">
-                  <div className="max-w-4xl mx-auto">
-                    <ThumbnailGenerator
-                      projectId={currentProjectId || ""}
-                      videoScript={generatedPrompts.map(p => p.text).join(" ")}
+        {/* Right side - Preview or Thumbnail Generator */}
+        {(showPreview || showThumbnailGenerator) && (
+          <div className="flex-1 flex overflow-hidden border-l">
+            <div className="flex-1 flex flex-col overflow-hidden">
+              <div className="flex-1 overflow-auto">
+                {showPreview && canShowPreview ? (
+                  <div className="p-6">
+                    <VideoPreview 
+                      audioUrl={audioUrl} 
+                      prompts={generatedPrompts}
+                      autoPlay={autoPlayPreview}
+                      startFromScene={0}
+                      subtitleSettings={subtitleSettings}
+                      onSubtitleSettingsChange={setSubtitleSettings}
                     />
                   </div>
-                </div>
-              ) : (
-                <div className="p-6">
-                  <div className="max-w-4xl mx-auto">
-                    <SceneEditor
-                      scene={generatedPrompts[selectedSceneIndex]}
-                      sceneIndex={selectedSceneIndex}
-                      onUpdate={handleUpdateScene}
-                      onPlayFromHere={handlePlayFromHere}
-                      userId={user.id}
-                    />
+                ) : showThumbnailGenerator ? (
+                  <div className="p-6">
+                    <div className="max-w-4xl mx-auto">
+                      <ThumbnailGenerator
+                        projectId={currentProjectId || ""}
+                        videoScript={generatedPrompts.map(p => p.text).join(" ")}
+                      />
+                    </div>
                   </div>
-                </div>
-              )}
+                ) : null}
+              </div>
             </div>
 
+            {/* Right sidebar - Subtitle controls (visible during preview) */}
+            {showPreview && (
+              <div className="w-[320px] border-l flex-shrink-0">
+                <SubtitleControls
+                  settings={subtitleSettings}
+                  onChange={setSubtitleSettings}
+                />
+              </div>
+            )}
           </div>
-
-          {/* Right sidebar - Subtitle controls (visible during preview) */}
-          {showPreview && (
-            <div className="w-[320px] border-l flex-shrink-0">
-              <SubtitleControls
-                settings={subtitleSettings}
-                onChange={setSubtitleSettings}
-              />
-            </div>
-          )}
-        </div>
+        )}
       </div>
     </div>
   );
