@@ -27,6 +27,8 @@ export type Database = {
           scene_duration_1to3: number | null
           scene_duration_3plus: number | null
           style_reference_url: string | null
+          thumbnail_character_ref_url: string | null
+          thumbnail_example_urls: Json | null
           updated_at: string
           user_id: string
         }
@@ -42,6 +44,8 @@ export type Database = {
           scene_duration_1to3?: number | null
           scene_duration_3plus?: number | null
           style_reference_url?: string | null
+          thumbnail_character_ref_url?: string | null
+          thumbnail_example_urls?: Json | null
           updated_at?: string
           user_id: string
         }
@@ -57,6 +61,8 @@ export type Database = {
           scene_duration_1to3?: number | null
           scene_duration_3plus?: number | null
           style_reference_url?: string | null
+          thumbnail_character_ref_url?: string | null
+          thumbnail_example_urls?: Json | null
           updated_at?: string
           user_id?: string
         }

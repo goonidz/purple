@@ -1,8 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
-import { Upload, X, Loader2, Image as ImageIcon } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Upload, X, Loader2, Image as ImageIcon, Save } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
@@ -11,12 +13,99 @@ interface ThumbnailGeneratorProps {
   videoScript: string;
 }
 
+interface ThumbnailPreset {
+  id: string;
+  name: string;
+  thumbnail_example_urls: string[];
+  thumbnail_character_ref_url: string | null;
+}
+
 export const ThumbnailGenerator = ({ projectId, videoScript }: ThumbnailGeneratorProps) => {
   const [exampleUrls, setExampleUrls] = useState<string[]>([]);
   const [characterRefUrl, setCharacterRefUrl] = useState<string>("");
   const [generatedThumbnails, setGeneratedThumbnails] = useState<string[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [presets, setPresets] = useState<ThumbnailPreset[]>([]);
+  const [selectedPresetId, setSelectedPresetId] = useState<string>("");
+  const [newPresetName, setNewPresetName] = useState("");
+  const [isSavingPreset, setIsSavingPreset] = useState(false);
+
+  useEffect(() => {
+    loadPresets();
+  }, []);
+
+  const loadPresets = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("presets")
+        .select("id, name, thumbnail_example_urls, thumbnail_character_ref_url")
+        .not("thumbnail_example_urls", "is", null)
+        .order("name", { ascending: true });
+
+      if (error) throw error;
+
+      const mappedPresets: ThumbnailPreset[] = (data || []).map(preset => ({
+        id: preset.id,
+        name: preset.name,
+        thumbnail_example_urls: Array.isArray(preset.thumbnail_example_urls) 
+          ? preset.thumbnail_example_urls.filter((url): url is string => typeof url === 'string')
+          : [],
+        thumbnail_character_ref_url: preset.thumbnail_character_ref_url,
+      }));
+
+      setPresets(mappedPresets);
+    } catch (error: any) {
+      console.error("Error loading presets:", error);
+    }
+  };
+
+  const loadPreset = (presetId: string) => {
+    const preset = presets.find(p => p.id === presetId);
+    if (!preset) return;
+
+    setExampleUrls(preset.thumbnail_example_urls || []);
+    setCharacterRefUrl(preset.thumbnail_character_ref_url || "");
+    toast.success("Preset chargé !");
+  };
+
+  const saveAsPreset = async () => {
+    if (!newPresetName.trim()) {
+      toast.error("Veuillez entrer un nom pour le preset");
+      return;
+    }
+
+    if (exampleUrls.length === 0) {
+      toast.error("Ajoutez au moins un exemple de miniature");
+      return;
+    }
+
+    setIsSavingPreset(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("User not authenticated");
+
+      const { error } = await supabase
+        .from("presets")
+        .insert({
+          user_id: user.id,
+          name: newPresetName.trim(),
+          thumbnail_example_urls: exampleUrls,
+          thumbnail_character_ref_url: characterRefUrl || null,
+        });
+
+      if (error) throw error;
+
+      toast.success("Preset sauvegardé !");
+      setNewPresetName("");
+      await loadPresets();
+    } catch (error: any) {
+      console.error("Error saving preset:", error);
+      toast.error("Erreur lors de la sauvegarde du preset");
+    } finally {
+      setIsSavingPreset(false);
+    }
+  };
 
   const handleExampleUpload = async (file: File) => {
     setIsUploading(true);
@@ -145,6 +234,50 @@ export const ThumbnailGenerator = ({ projectId, videoScript }: ThumbnailGenerato
     <div className="space-y-6">
       <div>
         <h3 className="text-lg font-semibold mb-4">Générer des miniatures YouTube</h3>
+        
+        {/* Gestion des presets */}
+        <Card className="p-4 mb-6 bg-muted/30">
+          <Label className="text-sm font-medium mb-3 block">Presets de miniatures</Label>
+          <div className="flex gap-2 mb-3">
+            <Select value={selectedPresetId} onValueChange={(value) => {
+              setSelectedPresetId(value);
+              loadPreset(value);
+            }}>
+              <SelectTrigger className="flex-1">
+                <SelectValue placeholder="Charger un preset..." />
+              </SelectTrigger>
+              <SelectContent>
+                {presets.map((preset) => (
+                  <SelectItem key={preset.id} value={preset.id}>
+                    {preset.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex gap-2">
+            <Input
+              placeholder="Nom du nouveau preset..."
+              value={newPresetName}
+              onChange={(e) => setNewPresetName(e.target.value)}
+              className="flex-1"
+            />
+            <Button
+              onClick={saveAsPreset}
+              disabled={isSavingPreset || !newPresetName.trim() || exampleUrls.length === 0}
+              size="sm"
+            >
+              {isSavingPreset ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <>
+                  <Save className="h-4 w-4 mr-2" />
+                  Sauvegarder
+                </>
+              )}
+            </Button>
+          </div>
+        </Card>
         
         {/* Exemples de miniatures */}
         <div className="space-y-4 mb-6">
