@@ -98,6 +98,11 @@ const Index = () => {
   const [sceneDuration1to3, setSceneDuration1to3] = useState(6);
   const [sceneDuration3plus, setSceneDuration3plus] = useState(8);
   const [sceneFormat, setSceneFormat] = useState<"long" | "short">("long");
+  
+  // Scene range boundaries (in seconds)
+  const [range1End, setRange1End] = useState(60);      // Default: 0-60s (0-1 min)
+  const [range2End, setRange2End] = useState(180);     // Default: 60-180s (1-3 min)
+  // range3 is 180+ (3+ min)
   const cancelGenerationRef = useRef(false);
   const cancelImageGenerationRef = useRef(false);
   const [imageWidth, setImageWidth] = useState<number>(1920);
@@ -212,7 +217,9 @@ const Index = () => {
           transcriptData,
           data.scene_duration_0to1 || 4,
           data.scene_duration_1to3 || 6,
-          data.scene_duration_3plus || 8
+          data.scene_duration_3plus || 8,
+          60,
+          180
         );
         setScenes(generatedScenes);
         
@@ -285,14 +292,16 @@ const Index = () => {
     transcriptData: TranscriptData, 
     duration0to1: number,
     duration1to3: number, 
-    duration3plus: number
+    duration3plus: number,
+    rangeEnd1: number = 60,
+    rangeEnd2: number = 180
   ): Scene[] => {
     const scenes: Scene[] = [];
     let currentScene: Scene = { text: "", startTime: 0, endTime: 0 };
     
     const getMaxDuration = (timestamp: number): number => {
-      if (timestamp < 60) return duration0to1;
-      if (timestamp < 180) return duration1to3;
+      if (timestamp < rangeEnd1) return duration0to1;
+      if (timestamp < rangeEnd2) return duration1to3;
       return duration3plus;
     };
     
@@ -363,7 +372,9 @@ const Index = () => {
         data,
         sceneDuration0to1,
         sceneDuration1to3,
-        sceneDuration3plus
+        sceneDuration3plus,
+        range1End,
+        range2End
       );
       
       setScenes(generatedScenes);
@@ -1197,7 +1208,9 @@ const Index = () => {
         transcriptData,
         sceneDuration0to1,
         sceneDuration1to3,
-        sceneDuration3plus
+        sceneDuration3plus,
+        range1End,
+        range2End
       );
       
       setScenes(generatedScenes);
@@ -1382,9 +1395,9 @@ const Index = () => {
                       </Button>
                     </div>
                     <div className="space-y-1 text-xs text-muted-foreground">
-                      <div>0-1 min: {sceneDuration0to1}s</div>
-                      <div>1-3 min: {sceneDuration1to3}s</div>
-                      <div>3+ min: {sceneDuration3plus}s</div>
+                      <div>0-{range1End}s: {sceneDuration0to1}s par scène</div>
+                      <div>{range1End}-{range2End}s: {sceneDuration1to3}s par scène</div>
+                      <div>{range2End}s+: {sceneDuration3plus}s par scène</div>
                     </div>
                     {!scenes.length && (
                       <Button
@@ -1784,13 +1797,33 @@ const Index = () => {
           <DialogContent className="max-w-2xl">
             <div className="space-y-6">
               <div>
-                <h3 className="text-lg font-semibold mb-4">Paramètres de scènes</h3>
+                <h3 className="text-lg font-semibold mb-4">Configuration des scènes</h3>
+                <p className="text-sm text-muted-foreground">
+                  Définissez les durées de scènes selon le contenu
+                </p>
               </div>
 
               <div className="space-y-4">
                 <div>
                   <label className="text-sm font-medium mb-2 block">Format de contenu</label>
-                  <RadioGroup value={sceneFormat} onValueChange={(value) => setSceneFormat(value as "long" | "short")}>
+                  <RadioGroup value={sceneFormat} onValueChange={(value) => {
+                    const newFormat = value as "long" | "short";
+                    setSceneFormat(newFormat);
+                    // Update range boundaries based on format
+                    if (newFormat === "short") {
+                      setRange1End(5);
+                      setRange2End(15);
+                      setSceneDuration0to1(2);
+                      setSceneDuration1to3(4);
+                      setSceneDuration3plus(6);
+                    } else {
+                      setRange1End(60);
+                      setRange2End(180);
+                      setSceneDuration0to1(4);
+                      setSceneDuration1to3(6);
+                      setSceneDuration3plus(8);
+                    }
+                  }}>
                     <div className="flex gap-4">
                       <div className="flex items-center space-x-2">
                         <RadioGroupItem value="long" id="format-long" />
@@ -1804,42 +1837,79 @@ const Index = () => {
                   </RadioGroup>
                 </div>
 
-                <div className="grid grid-cols-3 gap-4">
-                  <div>
-                    <label className="text-sm font-medium mb-2 block">
-                      {sceneFormat === "long" ? "Durée 0-1min (sec)" : "Durée 0-5sec (sec)"}
-                    </label>
-                    <Input
-                      type="number"
-                      min="1"
-                      max={sceneFormat === "long" ? "60" : "5"}
-                      value={sceneDuration0to1}
-                      onChange={(e) => setSceneDuration0to1(parseInt(e.target.value))}
-                    />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium mb-2 block">
-                      {sceneFormat === "long" ? "Durée 1-3min (sec)" : "Durée 5-15sec (sec)"}
-                    </label>
-                    <Input
-                      type="number"
-                      min="1"
-                      max={sceneFormat === "long" ? "180" : "15"}
-                      value={sceneDuration1to3}
-                      onChange={(e) => setSceneDuration1to3(parseInt(e.target.value))}
-                    />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium mb-2 block">
-                      {sceneFormat === "long" ? "Durée 3min+ (sec)" : "Durée 15+sec (sec)"}
-                    </label>
-                    <Input
-                      type="number"
-                      min="1"
-                      max={sceneFormat === "long" ? "600" : "60"}
-                      value={sceneDuration3plus}
-                      onChange={(e) => setSceneDuration3plus(parseInt(e.target.value))}
-                    />
+                <div className="space-y-4 p-4 border rounded-lg bg-muted/30">
+                  <div className="space-y-3">
+                    <div>
+                      <Label className="text-sm font-medium mb-2 block">Plage 1 : 0 à {range1End}s</Label>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <Label className="text-xs text-muted-foreground">Fin de plage (secondes)</Label>
+                          <Input
+                            type="number"
+                            min="1"
+                            max={sceneFormat === "long" ? "120" : "30"}
+                            value={range1End}
+                            onChange={(e) => setRange1End(parseInt(e.target.value) || 1)}
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs text-muted-foreground">Durée de scène (sec)</Label>
+                          <Input
+                            type="number"
+                            min="1"
+                            max="60"
+                            value={sceneDuration0to1}
+                            onChange={(e) => setSceneDuration0to1(parseInt(e.target.value))}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <Label className="text-sm font-medium mb-2 block">Plage 2 : {range1End}s à {range2End}s</Label>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <Label className="text-xs text-muted-foreground">Fin de plage (secondes)</Label>
+                          <Input
+                            type="number"
+                            min={range1End + 1}
+                            max={sceneFormat === "long" ? "600" : "60"}
+                            value={range2End}
+                            onChange={(e) => setRange2End(parseInt(e.target.value) || range1End + 1)}
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs text-muted-foreground">Durée de scène (sec)</Label>
+                          <Input
+                            type="number"
+                            min="1"
+                            max="180"
+                            value={sceneDuration1to3}
+                            onChange={(e) => setSceneDuration1to3(parseInt(e.target.value))}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <Label className="text-sm font-medium mb-2 block">Plage 3 : {range2End}s et plus</Label>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="opacity-50">
+                          <Label className="text-xs text-muted-foreground">Sans limite</Label>
+                          <Input disabled value="∞" className="bg-muted" />
+                        </div>
+                        <div>
+                          <Label className="text-xs text-muted-foreground">Durée de scène (sec)</Label>
+                          <Input
+                            type="number"
+                            min="1"
+                            max="600"
+                            value={sceneDuration3plus}
+                            onChange={(e) => setSceneDuration3plus(parseInt(e.target.value))}
+                          />
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
