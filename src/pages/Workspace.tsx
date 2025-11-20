@@ -340,7 +340,13 @@ const Workspace = () => {
 
             <Button
               variant="outline"
-              onClick={() => setShowThumbnailGenerator(!showThumbnailGenerator)}
+              onClick={() => {
+                if (showPreview) {
+                  setShowPreview(false);
+                  setAutoPlayPreview(false);
+                }
+                setShowThumbnailGenerator(!showThumbnailGenerator);
+              }}
             >
               <ImageIcon className="mr-2 h-4 w-4" />
               Miniatures YouTube
