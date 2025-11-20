@@ -139,10 +139,60 @@ const Workspace = () => {
   }, [currentProjectId, generatedPrompts, audioUrl]);
 
   const handleRegenerateImage = async (sceneIndex: number) => {
+    const prompt = generatedPrompts[sceneIndex];
+    if (!prompt) {
+      toast.error("Aucun prompt disponible pour cette scène");
+      return;
+    }
+
     setIsGeneratingImage(sceneIndex);
-    // TODO: Implement image regeneration logic
-    toast.info("Régénération d'image à implémenter");
-    setIsGeneratingImage(null);
+    try {
+      const requestBody: any = {
+        prompt: prompt.prompt,
+        width: imageWidth,
+        height: imageHeight
+      };
+
+      const { data, error } = await supabase.functions.invoke('generate-image-seedream', {
+        body: requestBody
+      });
+
+      if (error) throw error;
+
+      const replicateUrl = Array.isArray(data.output) ? data.output[0] : data.output;
+      
+      // Save image to Supabase Storage for permanent access
+      const response = await fetch(replicateUrl);
+      if (!response.ok) throw new Error("Failed to download image");
+      
+      const blob = await response.blob();
+      const timestamp = Date.now();
+      const filename = `${currentProjectId}/scene_${sceneIndex + 1}_${timestamp}.jpg`;
+      
+      const { error: uploadError } = await supabase.storage
+        .from('generated-images')
+        .upload(filename, blob, {
+          contentType: 'image/jpeg',
+          upsert: true
+        });
+      
+      if (uploadError) throw uploadError;
+      
+      const { data: { publicUrl } } = supabase.storage
+        .from('generated-images')
+        .getPublicUrl(filename);
+      
+      const updated = [...generatedPrompts];
+      updated[sceneIndex] = { ...updated[sceneIndex], imageUrl: publicUrl };
+      setGeneratedPrompts(updated);
+      
+      toast.success("Image régénérée !");
+    } catch (error: any) {
+      console.error("Error generating image:", error);
+      toast.error(error.message || "Erreur lors de la génération de l'image");
+    } finally {
+      setIsGeneratingImage(null);
+    }
   };
 
   const handleRegeneratePrompt = async (sceneIndex: number) => {
