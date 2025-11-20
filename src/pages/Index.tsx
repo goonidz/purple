@@ -1409,15 +1409,25 @@ const Index = () => {
                           {generatedPrompts.length > 0 && ` - ${generatedPrompts.length} prompts`}
                         </h2>
                         <div className="flex gap-2 items-center">
-                          {generatedPrompts.length > 0 && generatedPrompts.filter(p => p.imageUrl).length > 0 && (
-                            <Button
-                              onClick={() => setExportDialogOpen(true)}
-                              variant="outline"
-                              size="sm"
-                            >
-                              <Download className="mr-2 h-4 w-4" />
-                              Exporter pour montage
-                            </Button>
+                          {generatedPrompts.length > 0 && (
+                            <>
+                              <Button
+                                onClick={() => navigate(`/workspace?project=${currentProjectId}`)}
+                                size="sm"
+                              >
+                                Ouvrir l'éditeur
+                              </Button>
+                              {generatedPrompts.filter(p => p.imageUrl).length > 0 && (
+                                <Button
+                                  onClick={() => setExportDialogOpen(true)}
+                                  variant="outline"
+                                  size="sm"
+                                >
+                                  <Download className="mr-2 h-4 w-4" />
+                                  Exporter pour montage
+                                </Button>
+                              )}
+                            </>
                           )}
                           <Button
                             onClick={() => handleGeneratePrompts(true)}
