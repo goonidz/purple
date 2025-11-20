@@ -87,7 +87,7 @@ export function generatePremiereXML(
   // Generate audio track if audio is provided
   const audioTrack = audioUrl ? `          <audio>
             <track>
-              <clipitem id="audio-clip-1">
+              <clipitem id="audio-clip-1" enabled="TRUE">
                 <name>Audio</name>
                 <duration>${totalDurationFrames}</duration>
                 <rate>
@@ -228,8 +228,14 @@ export function generateSRT(prompts: GeneratedPrompt[]): string {
   
   prompts.forEach((prompt, index) => {
     const sequenceNumber = index + 1;
-    const startTimecode = formatSrtTimecode(prompt.startTime);
-    const endTimecode = formatSrtTimecode(prompt.endTime);
+    
+    // Use same logic as XML: extend to next scene's start, or use scene end if last
+    const startTime = index === 0 ? 0 : prompt.startTime;
+    const nextPrompt = prompts[index + 1];
+    const endTime = nextPrompt ? nextPrompt.startTime : prompt.endTime;
+    
+    const startTimecode = formatSrtTimecode(startTime);
+    const endTimecode = formatSrtTimecode(endTime);
     
     srt += `${sequenceNumber}\n`;
     srt += `${startTimecode} --> ${endTimecode}\n`;
