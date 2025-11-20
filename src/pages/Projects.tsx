@@ -200,36 +200,149 @@ const Projects = () => {
     }
   };
 
+  const generateScenesFromTranscript = (transcript: any, durations: { d1: number, d2: number, d3: number }) => {
+    if (!transcript || !transcript.segments || !Array.isArray(transcript.segments)) {
+      console.error("Invalid transcript data");
+      return [];
+    }
+
+    const segments = transcript.segments;
+    const scenes: any[] = [];
+    let currentScene: string[] = [];
+    let sceneStartTime = 0;
+    let currentDuration = 0;
+
+    segments.forEach((segment: any, index: number) => {
+      const segmentDuration = (segment.end || 0) - (segment.start || 0);
+      currentScene.push(segment.text || "");
+      currentDuration += segmentDuration;
+
+      // Determine target duration based on current duration
+      let targetDuration = durations.d3; // 3+ range
+      if (currentDuration < range1End) {
+        targetDuration = durations.d1;
+      } else if (currentDuration < range2End) {
+        targetDuration = durations.d2;
+      }
+
+      // Create scene if we reached target duration or it's the last segment
+      if (currentDuration >= targetDuration || index === segments.length - 1) {
+        const sceneText = currentScene.join(" ").trim();
+        if (sceneText) {
+          scenes.push({
+            scene: sceneText,
+            prompt: "", // Will be generated later
+            text: sceneText,
+            startTime: sceneStartTime,
+            endTime: segment.end || sceneStartTime + currentDuration,
+            duration: currentDuration,
+          });
+        }
+        
+        // Reset for next scene
+        currentScene = [];
+        sceneStartTime = segment.end || sceneStartTime + currentDuration;
+        currentDuration = 0;
+      }
+    });
+
+    return scenes;
+  };
+
   const handleFinalizeConfiguration = async () => {
-    if (!currentProjectId) return;
+    if (!currentProjectId || !transcriptData) return;
     
     setIsCreating(true);
     try {
-      // Save all configuration to database
-      const { error } = await supabase
+      // 1. Save configuration to database
+      const { error: configError } = await supabase
         .from("projects")
         .update({
           scene_duration_0to1: sceneDuration0to1,
           scene_duration_1to3: sceneDuration1to3,
           scene_duration_3plus: sceneDuration3plus,
           example_prompts: examplePrompts,
+          image_width: imageWidth,
+          image_height: imageHeight,
+          aspect_ratio: aspectRatio,
           style_reference_url: styleReferenceUrl || null,
         })
         .eq("id", currentProjectId);
 
-      if (error) throw error;
+      if (configError) throw configError;
 
-      toast.success("Configuration enregistrée !");
+      toast.info("Génération des scènes en cours...");
+
+      // 2. Generate scenes from transcript
+      const generatedScenes = generateScenesFromTranscript(transcriptData, {
+        d1: sceneDuration0to1,
+        d2: sceneDuration1to3,
+        d3: sceneDuration3plus,
+      });
+
+      if (generatedScenes.length === 0) {
+        throw new Error("Aucune scène n'a pu être générée");
+      }
+
+      // 3. Generate global summary
+      const fullText = transcriptData.segments?.map((s: any) => s.text).join(" ") || "";
+      const summaryResponse = await supabase.functions.invoke("generate-summary", {
+        body: { transcript: fullText },
+      });
+
+      const summary = summaryResponse.data?.summary || "";
+
+      // 4. Generate prompts for each scene in parallel (batches of 10)
+      const batchSize = 10;
+      const scenesWithPrompts = [...generatedScenes];
+      
+      for (let i = 0; i < scenesWithPrompts.length; i += batchSize) {
+        const batch = scenesWithPrompts.slice(i, i + batchSize);
+        const promises = batch.map(async (scene, batchIndex) => {
+          const sceneIndex = i + batchIndex;
+          const response = await supabase.functions.invoke("generate-prompts", {
+            body: {
+              scene: scene.text,
+              summary,
+              examplePrompts: examplePrompts.filter(p => p.trim()),
+              sceneIndex: sceneIndex + 1,
+              totalScenes: scenesWithPrompts.length,
+              startTime: scene.startTime,
+              endTime: scene.endTime,
+            },
+          });
+
+          if (response.data?.prompt) {
+            scenesWithPrompts[sceneIndex].prompt = response.data.prompt;
+          }
+        });
+
+        await Promise.all(promises);
+        toast.info(`Prompts générés: ${Math.min(i + batchSize, scenesWithPrompts.length)}/${scenesWithPrompts.length}`);
+      }
+
+      // 5. Save scenes and summary to database
+      const { error: saveError } = await supabase
+        .from("projects")
+        .update({
+          prompts: scenesWithPrompts,
+          summary,
+        })
+        .eq("id", currentProjectId);
+
+      if (saveError) throw saveError;
+
+      toast.success("Projet créé avec succès !");
       setIsDialogOpen(false);
       setWorkflowStep("upload");
       setNewProjectName("");
       setTranscriptData(null);
       setCurrentProjectId(null);
       await loadProjects();
-      navigate(`/?project=${currentProjectId}`);
+      navigate(`/workspace?project=${currentProjectId}`);
     } catch (error: any) {
-      console.error("Error saving configuration:", error);
-      toast.error("Erreur lors de l'enregistrement");
+      console.error("Error finalizing configuration:", error);
+      toast.error(error.message || "Erreur lors de la création du projet");
     } finally {
       setIsCreating(false);
     }
