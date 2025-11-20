@@ -21,6 +21,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Loader2, Save, Trash2, Plus } from "lucide-react";
 import { toast } from "sonner";
+import { Textarea } from "@/components/ui/textarea";
 
 interface Preset {
   id: string;
@@ -58,6 +59,17 @@ export const PresetManager = ({ currentConfig, onLoadPreset }: PresetManagerProp
   const [selectedPresetId, setSelectedPresetId] = useState<string>("");
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [editFormData, setEditFormData] = useState<{
+    name: string;
+    sceneDuration0to1: number;
+    sceneDuration1to3: number;
+    sceneDuration3plus: number;
+    examplePrompts: string[];
+    imageWidth: number;
+    imageHeight: number;
+    aspectRatio: string;
+    styleReferenceUrl: string;
+  } | null>(null);
 
   useEffect(() => {
     loadPresets();
@@ -170,33 +182,31 @@ export const PresetManager = ({ currentConfig, onLoadPreset }: PresetManagerProp
   };
 
   const handleUpdatePreset = async () => {
-    if (!selectedPresetId) {
+    if (!selectedPresetId || !editFormData) {
       toast.error("Aucun preset sélectionné");
       return;
     }
-
-    const selectedPreset = presets.find(p => p.id === selectedPresetId);
-    if (!selectedPreset) return;
 
     setIsUpdating(true);
     try {
       const { error } = await supabase
         .from("presets")
         .update({
-          scene_duration_0to1: currentConfig.sceneDuration0to1,
-          scene_duration_1to3: currentConfig.sceneDuration1to3,
-          scene_duration_3plus: currentConfig.sceneDuration3plus,
-          example_prompts: currentConfig.examplePrompts,
-          image_width: currentConfig.imageWidth,
-          image_height: currentConfig.imageHeight,
-          aspect_ratio: currentConfig.aspectRatio,
-          style_reference_url: currentConfig.styleReferenceUrl || null,
+          name: editFormData.name,
+          scene_duration_0to1: editFormData.sceneDuration0to1,
+          scene_duration_1to3: editFormData.sceneDuration1to3,
+          scene_duration_3plus: editFormData.sceneDuration3plus,
+          example_prompts: editFormData.examplePrompts,
+          image_width: editFormData.imageWidth,
+          image_height: editFormData.imageHeight,
+          aspect_ratio: editFormData.aspectRatio,
+          style_reference_url: editFormData.styleReferenceUrl || null,
         })
         .eq("id", selectedPresetId);
 
       if (error) throw error;
 
-      toast.success(`Preset "${selectedPreset.name}" mis à jour !`);
+      toast.success(`Preset "${editFormData.name}" mis à jour !`);
       setIsEditDialogOpen(false);
       await loadPresets();
     } catch (error: any) {
@@ -205,6 +215,24 @@ export const PresetManager = ({ currentConfig, onLoadPreset }: PresetManagerProp
     } finally {
       setIsUpdating(false);
     }
+  };
+
+  const openEditDialog = () => {
+    const preset = presets.find(p => p.id === selectedPresetId);
+    if (!preset) return;
+
+    setEditFormData({
+      name: preset.name,
+      sceneDuration0to1: preset.scene_duration_0to1,
+      sceneDuration1to3: preset.scene_duration_1to3,
+      sceneDuration3plus: preset.scene_duration_3plus,
+      examplePrompts: preset.example_prompts,
+      imageWidth: preset.image_width,
+      imageHeight: preset.image_height,
+      aspectRatio: preset.aspect_ratio,
+      styleReferenceUrl: preset.style_reference_url || "",
+    });
+    setIsEditDialogOpen(true);
   };
 
   return (
@@ -292,7 +320,7 @@ export const PresetManager = ({ currentConfig, onLoadPreset }: PresetManagerProp
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setIsEditDialogOpen(true)}
+                onClick={openEditDialog}
                 disabled={!selectedPresetId}
               >
                 Modifier
@@ -320,42 +348,178 @@ export const PresetManager = ({ currentConfig, onLoadPreset }: PresetManagerProp
         )}
 
         <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-          <DialogContent>
+          <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Modifier le preset</DialogTitle>
               <DialogDescription>
-                Mettre à jour "{presets.find(p => p.id === selectedPresetId)?.name}" avec la configuration actuelle
+                Modifiez les paramètres du preset "{editFormData?.name}"
               </DialogDescription>
             </DialogHeader>
-            <div className="space-y-4">
-              <div className="p-4 bg-muted rounded-lg space-y-2">
-                <p className="text-sm font-medium">Configuration actuelle:</p>
-                <ul className="text-xs text-muted-foreground space-y-1">
-                  <li>• Durées de scène: {currentConfig.sceneDuration0to1}s / {currentConfig.sceneDuration1to3}s / {currentConfig.sceneDuration3plus}s</li>
-                  <li>• Exemples de prompts: {currentConfig.examplePrompts.filter(p => p.trim()).length}</li>
-                  <li>• Dimensions: {currentConfig.imageWidth}x{currentConfig.imageHeight} ({currentConfig.aspectRatio})</li>
-                  <li>• Style de référence: {currentConfig.styleReferenceUrl ? "Oui" : "Non"}</li>
-                </ul>
-              </div>
-              <div className="flex justify-end gap-2">
-                <Button
-                  variant="outline"
-                  onClick={() => setIsEditDialogOpen(false)}
-                >
-                  Annuler
-                </Button>
-                <Button onClick={handleUpdatePreset} disabled={isUpdating}>
-                  {isUpdating ? (
-                    <>
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      Mise à jour...
-                    </>
-                  ) : (
-                    "Mettre à jour"
+            {editFormData && (
+              <div className="space-y-6">
+                <div>
+                  <Label htmlFor="edit-preset-name">Nom du preset</Label>
+                  <Input
+                    id="edit-preset-name"
+                    value={editFormData.name}
+                    onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
+                  />
+                </div>
+
+                <div className="space-y-4">
+                  <h3 className="text-sm font-semibold">Durées de scène</h3>
+                  <div className="grid grid-cols-3 gap-4">
+                    <div>
+                      <Label htmlFor="edit-duration-0to1">0-1 min (sec)</Label>
+                      <Input
+                        id="edit-duration-0to1"
+                        type="number"
+                        min="1"
+                        max="600"
+                        value={editFormData.sceneDuration0to1}
+                        onChange={(e) => setEditFormData({ ...editFormData, sceneDuration0to1: parseInt(e.target.value) })}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="edit-duration-1to3">1-3 min (sec)</Label>
+                      <Input
+                        id="edit-duration-1to3"
+                        type="number"
+                        min="1"
+                        max="600"
+                        value={editFormData.sceneDuration1to3}
+                        onChange={(e) => setEditFormData({ ...editFormData, sceneDuration1to3: parseInt(e.target.value) })}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="edit-duration-3plus">3+ min (sec)</Label>
+                      <Input
+                        id="edit-duration-3plus"
+                        type="number"
+                        min="1"
+                        max="600"
+                        value={editFormData.sceneDuration3plus}
+                        onChange={(e) => setEditFormData({ ...editFormData, sceneDuration3plus: parseInt(e.target.value) })}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <h3 className="text-sm font-semibold">Exemples de prompts</h3>
+                  {[0, 1, 2].map((index) => (
+                    <div key={index}>
+                      <Label htmlFor={`edit-prompt-${index}`}>
+                        Exemple {index + 1} {index === 0 ? "(recommandé)" : "(optionnel)"}
+                      </Label>
+                      <Input
+                        id={`edit-prompt-${index}`}
+                        placeholder={`Ex: "A cinematic scene showing... [your style]"`}
+                        value={editFormData.examplePrompts[index] || ""}
+                        onChange={(e) => {
+                          const newPrompts = [...editFormData.examplePrompts];
+                          newPrompts[index] = e.target.value;
+                          setEditFormData({ ...editFormData, examplePrompts: newPrompts });
+                        }}
+                      />
+                    </div>
+                  ))}
+                </div>
+
+                <div className="space-y-4">
+                  <h3 className="text-sm font-semibold">Dimensions d'image</h3>
+                  <div className="grid grid-cols-3 gap-4">
+                    <div>
+                      <Label htmlFor="edit-aspect-ratio">Ratio</Label>
+                      <Select 
+                        value={editFormData.aspectRatio} 
+                        onValueChange={(value) => {
+                          setEditFormData({ ...editFormData, aspectRatio: value });
+                          if (value === "16:9") {
+                            setEditFormData({ ...editFormData, aspectRatio: value, imageWidth: 1920, imageHeight: 1080 });
+                          } else if (value === "9:16") {
+                            setEditFormData({ ...editFormData, aspectRatio: value, imageWidth: 1080, imageHeight: 1920 });
+                          }
+                        }}
+                      >
+                        <SelectTrigger id="edit-aspect-ratio">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="16:9">16:9 (Paysage)</SelectItem>
+                          <SelectItem value="9:16">9:16 (Portrait)</SelectItem>
+                          <SelectItem value="custom">Personnalisé</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label htmlFor="edit-width">Largeur (px)</Label>
+                      <Input
+                        id="edit-width"
+                        type="number"
+                        min="512"
+                        max="2048"
+                        value={editFormData.imageWidth}
+                        onChange={(e) => setEditFormData({ ...editFormData, imageWidth: parseInt(e.target.value) })}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="edit-height">Hauteur (px)</Label>
+                      <Input
+                        id="edit-height"
+                        type="number"
+                        min="512"
+                        max="2048"
+                        value={editFormData.imageHeight}
+                        onChange={(e) => setEditFormData({ ...editFormData, imageHeight: parseInt(e.target.value) })}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="edit-style-ref">URL de l'image de référence de style</Label>
+                  <Input
+                    id="edit-style-ref"
+                    placeholder="https://..."
+                    value={editFormData.styleReferenceUrl}
+                    onChange={(e) => setEditFormData({ ...editFormData, styleReferenceUrl: e.target.value })}
+                  />
+                  {editFormData.styleReferenceUrl && (
+                    <div className="mt-2 border rounded-lg p-2">
+                      <img 
+                        src={editFormData.styleReferenceUrl} 
+                        alt="Style de référence" 
+                        className="max-h-32 mx-auto rounded"
+                        onError={(e) => {
+                          e.currentTarget.src = "";
+                          e.currentTarget.alt = "Image non disponible";
+                        }}
+                      />
+                    </div>
                   )}
-                </Button>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-4 border-t">
+                  <Button
+                    variant="outline"
+                    onClick={() => setIsEditDialogOpen(false)}
+                  >
+                    Annuler
+                  </Button>
+                  <Button onClick={handleUpdatePreset} disabled={isUpdating}>
+                    {isUpdating ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Mise à jour...
+                      </>
+                    ) : (
+                      "Mettre à jour"
+                    )}
+                  </Button>
+                </div>
               </div>
-            </div>
+            )}
           </DialogContent>
         </Dialog>
       </div>
