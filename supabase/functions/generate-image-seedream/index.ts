@@ -69,9 +69,9 @@ Deno.serve(async (req) => {
 
     let output;
     let lastError;
-    const MAX_RETRIES = 2;
+    const MAX_RETRIES = 4;
 
-    // Try up to MAX_RETRIES times
+    // Try up to MAX_RETRIES times with exponential backoff
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       try {
         console.log(`Generation attempt ${attempt}/${MAX_RETRIES}`)
@@ -86,8 +86,10 @@ Deno.serve(async (req) => {
         console.error(`Attempt ${attempt} failed:`, error.message)
         
         if (attempt < MAX_RETRIES) {
-          console.log(`Retrying in 2 seconds...`)
-          await new Promise(resolve => setTimeout(resolve, 2000));
+          // Exponential backoff: 3s, 6s, 12s
+          const delayMs = 3000 * Math.pow(2, attempt - 1);
+          console.log(`Retrying in ${delayMs / 1000} seconds...`)
+          await new Promise(resolve => setTimeout(resolve, delayMs));
         }
       }
     }
