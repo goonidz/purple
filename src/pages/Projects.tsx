@@ -805,7 +805,7 @@ const Projects = () => {
               <Card
                 key={project.id}
                 className="group cursor-pointer hover:shadow-lg transition-all duration-300 hover:scale-105 border-2 hover:border-primary/50 bg-card/50 backdrop-blur"
-                onClick={() => navigate(`/project/${project.id}`)}
+                onClick={() => navigate(`/project?project=${project.id}`)}
               >
                 <div className="p-6">
                   <div className="flex items-start justify-between mb-4">
