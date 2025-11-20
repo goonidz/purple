@@ -24,6 +24,8 @@ interface SceneEditorProps {
   onUpdate: (updatedScene: GeneratedPrompt) => void;
   onPlayFromHere: () => void;
   userId: string;
+  subtitleSettings?: { size: "small" | "medium" | "large"; position: "top" | "bottom" };
+  onSubtitleSettingsChange?: (settings: { size: "small" | "medium" | "large"; position: "top" | "bottom" }) => void;
 }
 
 export const SceneEditor = ({
@@ -31,7 +33,9 @@ export const SceneEditor = ({
   sceneIndex,
   onUpdate,
   onPlayFromHere,
-  userId
+  userId,
+  subtitleSettings = { size: "medium", position: "bottom" },
+  onSubtitleSettingsChange
 }: SceneEditorProps) => {
   const [localScene, setLocalScene] = useState(scene);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
@@ -180,6 +184,52 @@ export const SceneEditor = ({
             />
           </div>
         </div>
+
+        {/* Subtitle Settings */}
+        {onSubtitleSettingsChange && (
+          <div className="space-y-3 mt-4 pt-4 border-t">
+            <Label>Paramètres des sous-titres</Label>
+            <div className="flex gap-2">
+              <Button
+                variant={subtitleSettings.size === "small" ? "default" : "outline"}
+                size="sm"
+                onClick={() => onSubtitleSettingsChange({ ...subtitleSettings, size: "small" })}
+              >
+                Petit
+              </Button>
+              <Button
+                variant={subtitleSettings.size === "medium" ? "default" : "outline"}
+                size="sm"
+                onClick={() => onSubtitleSettingsChange({ ...subtitleSettings, size: "medium" })}
+              >
+                Moyen
+              </Button>
+              <Button
+                variant={subtitleSettings.size === "large" ? "default" : "outline"}
+                size="sm"
+                onClick={() => onSubtitleSettingsChange({ ...subtitleSettings, size: "large" })}
+              >
+                Grand
+              </Button>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant={subtitleSettings.position === "top" ? "default" : "outline"}
+                size="sm"
+                onClick={() => onSubtitleSettingsChange({ ...subtitleSettings, position: "top" })}
+              >
+                Haut
+              </Button>
+              <Button
+                variant={subtitleSettings.position === "bottom" ? "default" : "outline"}
+                size="sm"
+                onClick={() => onSubtitleSettingsChange({ ...subtitleSettings, position: "bottom" })}
+              >
+                Bas
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
     </Card>
   );

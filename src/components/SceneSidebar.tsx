@@ -2,8 +2,15 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Search, Image as ImageIcon, Trash2, RefreshCw, Upload, Loader2 } from "lucide-react";
+import { Search, Image as ImageIcon, Trash2, RefreshCw, Upload, Loader2, Eye } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useState } from "react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 interface GeneratedPrompt {
   scene: string;
@@ -38,10 +45,18 @@ export const SceneSidebar = ({
   isGeneratingImage,
   isGeneratingPrompt
 }: SceneSidebarProps) => {
+  const [promptDialogOpen, setPromptDialogOpen] = useState(false);
+  const [selectedPrompt, setSelectedPrompt] = useState("");
+
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const handleViewPrompt = (prompt: string) => {
+    setSelectedPrompt(prompt);
+    setPromptDialogOpen(true);
   };
 
   return (
@@ -105,6 +120,19 @@ export const SceneSidebar = ({
                   {/* Actions - shown only if scene is selected */}
                   {selectedSceneIndex === index && (
                     <div className="flex gap-1 flex-wrap">
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        className="h-7 text-xs"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleViewPrompt(scene.prompt);
+                        }}
+                      >
+                        <Eye className="h-3 w-3 mr-1" />
+                        Voir prompt
+                      </Button>
+                      
                       {onUploadImage && (
                         <label onClick={(e) => e.stopPropagation()}>
                           <Button variant="ghost" size="sm" className="h-7 text-xs" asChild>
@@ -189,6 +217,18 @@ export const SceneSidebar = ({
           ))}
         </div>
       </ScrollArea>
+
+      {/* Prompt Dialog */}
+      <Dialog open={promptDialogOpen} onOpenChange={setPromptDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Prompt de l'image</DialogTitle>
+          </DialogHeader>
+          <div className="bg-muted p-4 rounded-lg">
+            <p className="text-sm whitespace-pre-wrap">{selectedPrompt}</p>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

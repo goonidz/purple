@@ -20,9 +20,20 @@ interface VideoPreviewProps {
   prompts: GeneratedPrompt[];
   autoPlay?: boolean;
   startFromScene?: number;
+  subtitleSize?: "small" | "medium" | "large";
+  subtitlePosition?: "top" | "bottom";
+  onSubtitleSettingsChange?: (settings: { size: "small" | "medium" | "large"; position: "top" | "bottom" }) => void;
 }
 
-export const VideoPreview = ({ audioUrl, prompts, autoPlay = false, startFromScene = 0 }: VideoPreviewProps) => {
+export const VideoPreview = ({ 
+  audioUrl, 
+  prompts, 
+  autoPlay = false, 
+  startFromScene = 0,
+  subtitleSize: initialSize = "medium",
+  subtitlePosition: initialPosition = "bottom",
+  onSubtitleSettingsChange
+}: VideoPreviewProps) => {
   const audioRef = useRef<HTMLAudioElement>(null);
   const animationFrameRef = useRef<number>();
 
@@ -32,8 +43,15 @@ export const VideoPreview = ({ audioUrl, prompts, autoPlay = false, startFromSce
   const [currentSceneIndex, setCurrentSceneIndex] = useState(startFromScene);
   const [playbackRate, setPlaybackRate] = useState(1);
   const [showSubtitles, setShowSubtitles] = useState(true);
-  const [subtitleSize, setSubtitleSize] = useState<"small" | "medium" | "large">("medium");
-  const [subtitlePosition, setSubtitlePosition] = useState<"top" | "bottom">("bottom");
+  const [subtitleSize, setSubtitleSize] = useState<"small" | "medium" | "large">(initialSize);
+  const [subtitlePosition, setSubtitlePosition] = useState<"top" | "bottom">(initialPosition);
+
+  // Notify parent of subtitle settings changes
+  const updateSubtitleSettings = (size: "small" | "medium" | "large", position: "top" | "bottom") => {
+    setSubtitleSize(size);
+    setSubtitlePosition(position);
+    onSubtitleSettingsChange?.({ size, position });
+  };
 
   // Find which scene we're currently in based on time
   const getCurrentSceneIndex = (time: number) => {
@@ -349,7 +367,8 @@ export const VideoPreview = ({ audioUrl, prompts, autoPlay = false, startFromSce
               onClick={() => {
                 const sizes: Array<"small" | "medium" | "large"> = ["small", "medium", "large"];
                 const currentIndex = sizes.indexOf(subtitleSize);
-                setSubtitleSize(sizes[(currentIndex + 1) % sizes.length]);
+                const newSize = sizes[(currentIndex + 1) % sizes.length];
+                updateSubtitleSettings(newSize, subtitlePosition);
               }}
             >
               Taille: {subtitleSize === "small" ? "P" : subtitleSize === "medium" ? "M" : "G"}
@@ -357,7 +376,10 @@ export const VideoPreview = ({ audioUrl, prompts, autoPlay = false, startFromSce
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setSubtitlePosition(subtitlePosition === "bottom" ? "top" : "bottom")}
+              onClick={() => {
+                const newPosition = subtitlePosition === "bottom" ? "top" : "bottom";
+                updateSubtitleSettings(subtitleSize, newPosition);
+              }}
             >
               Position: {subtitlePosition === "bottom" ? "Bas" : "Haut"}
             </Button>

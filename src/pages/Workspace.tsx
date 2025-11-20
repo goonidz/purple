@@ -34,6 +34,10 @@ const Workspace = () => {
   const [startFromSceneIndex, setStartFromSceneIndex] = useState(0);
   const [isGeneratingImage, setIsGeneratingImage] = useState<number | null>(null);
   const [isGeneratingPrompt, setIsGeneratingPrompt] = useState<number | null>(null);
+  const [subtitleSettings, setSubtitleSettings] = useState<{ size: "small" | "medium" | "large"; position: "top" | "bottom" }>({
+    size: "medium",
+    position: "bottom"
+  });
 
   // Check authentication
   useEffect(() => {
@@ -295,6 +299,9 @@ const Workspace = () => {
                   prompts={generatedPrompts}
                   autoPlay={autoPlayPreview}
                   startFromScene={startFromSceneIndex}
+                  subtitleSize={subtitleSettings.size}
+                  subtitlePosition={subtitleSettings.position}
+                  onSubtitleSettingsChange={setSubtitleSettings}
                 />
               </div>
             ) : (
@@ -306,6 +313,8 @@ const Workspace = () => {
                     onUpdate={handleUpdateScene}
                     onPlayFromHere={handlePlayFromHere}
                     userId={user.id}
+                    subtitleSettings={subtitleSettings}
+                    onSubtitleSettingsChange={setSubtitleSettings}
                   />
                 </div>
               </div>
