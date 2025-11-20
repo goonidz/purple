@@ -11,11 +11,18 @@ serve(async (req) => {
   }
 
   try {
-    const { videoScript } = await req.json();
+    const { videoScript, exampleUrls, characterRefUrl } = await req.json();
 
     if (!videoScript) {
       return new Response(
         JSON.stringify({ error: "Le script vidéo est requis" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    if (!exampleUrls || !Array.isArray(exampleUrls) || exampleUrls.length === 0) {
+      return new Response(
+        JSON.stringify({ error: "Les exemples de miniatures sont requis" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -31,34 +38,65 @@ serve(async (req) => {
 
     const systemPrompt = `Tu es un expert en création de miniatures YouTube accrocheuses et performantes.
 
-Ton rôle est d'analyser un script vidéo et de générer 3 prompts DIFFÉRENTS et CRÉATIFS pour créer des miniatures YouTube.
+Ton rôle est d'ANALYSER les exemples de miniatures fournis et de générer 3 prompts SIMILAIRES mais DIFFÉRENTS pour créer des miniatures YouTube.
 
 CONTEXTE IMPORTANT:
-- L'utilisateur fournit des exemples de miniatures (style de référence)
-- L'utilisateur fournit UNE image avec UNIQUEMENT son personnage (pas d'autre élément, juste le personnage sur fond uni)
-- Tu dois utiliser CE personnage précis dans tes prompts
+- Tu vas recevoir plusieurs images d'exemples de miniatures (style de référence à REPRODUIRE)
+- Tu vas recevoir UNE image avec UNIQUEMENT le personnage (pas d'autre élément, juste le personnage sur fond uni)
+- Tu dois ANALYSER le style, la composition, les couleurs, le texte des exemples
+- Tu dois créer des prompts qui REPRODUISENT ce style tout en variant le contenu
 
 RÈGLES STRICTES:
-1. Chaque prompt doit être UNIQUE avec une approche visuelle différente
-2. Les prompts doivent être accrocheurs et optimisés pour le CTR YouTube
-3. Inclure des éléments visuels précis: composition, couleurs, texte, émotions
-4. Les prompts doivent être en ANGLAIS pour la génération d'images
-5. Chaque prompt doit faire 50-80 mots
-6. Pense à différentes approches: émotionnelle, dramatique, informative, intrigante
-7. IMPORTANT: Précise bien "Use the character from the reference image that shows ONLY the character with no other elements" pour identifier le bon personnage
+1. OBSERVE ATTENTIVEMENT les exemples: composition, couleurs, typographie, style d'illustration, mise en page
+2. Tes 3 prompts doivent SUIVRE LE MÊME STYLE que les exemples
+3. Chaque prompt doit rester UNIQUE avec des variations sur le contenu mais PAS sur le style global
+4. Utilise "the character from the single-person reference image" pour le personnage
+5. Les prompts doivent être en ANGLAIS pour la génération d'images
+6. Chaque prompt doit faire 60-100 mots et être très détaillé sur le style visuel
+7. Mentionne explicitement les éléments de style observés dans les exemples
 
 Retourne UNIQUEMENT un JSON avec ce format exact:
 {
   "prompts": [
-    "premier prompt détaillé...",
-    "deuxième prompt avec approche différente...",
-    "troisième prompt avec encore une autre approche..."
+    "premier prompt détaillé reprenant le style des exemples...",
+    "deuxième prompt avec même style mais contenu différent...",
+    "troisième prompt toujours dans le même style..."
   ]
 }`;
 
-    const userMessage = `Voici le script de la vidéo:\n\n${videoScript}\n\nGénère 3 prompts de miniatures YouTube différents et créatifs pour cette vidéo.`;
+    // Build content array with images
+    const userContent: any[] = [
+      { type: "text", text: "EXEMPLES DE MINIATURES À REPRODUIRE (analyse le style, la composition, les couleurs):" }
+    ];
 
-    console.log("Generating thumbnail prompts with Gemini...");
+    // Add example images
+    for (const url of exampleUrls) {
+      userContent.push({
+        type: "image_url",
+        image_url: { url }
+      });
+    }
+
+    // Add character reference if provided
+    if (characterRefUrl) {
+      userContent.push({
+        type: "text",
+        text: "PERSONNAGE À UTILISER (celui-ci uniquement, pas les autres personnages des exemples):"
+      });
+      userContent.push({
+        type: "image_url",
+        image_url: { url: characterRefUrl }
+      });
+    }
+
+    // Add video script
+    userContent.push({
+      type: "text",
+      text: `\n\nSCRIPT DE LA VIDÉO:\n${videoScript}\n\nGénère 3 prompts de miniatures en REPRODUISANT LE STYLE des exemples ci-dessus, mais avec des variations de contenu basées sur le script.`
+    });
+
+    console.log("Generating thumbnail prompts with Gemini (with images)...");
+    console.log(`Sending ${exampleUrls.length} example images and ${characterRefUrl ? '1' : '0'} character image`);
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -70,9 +108,9 @@ Retourne UNIQUEMENT un JSON avec ce format exact:
         model: "google/gemini-2.5-flash",
         messages: [
           { role: "system", content: systemPrompt },
-          { role: "user", content: userMessage }
+          { role: "user", content: userContent }
         ],
-        temperature: 0.8,
+        temperature: 0.7,
       }),
     });
 

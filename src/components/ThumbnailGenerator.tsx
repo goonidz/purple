@@ -275,7 +275,11 @@ export const ThumbnailGenerator = ({ projectId, videoScript }: ThumbnailGenerato
       // Étape 1: Générer 3 prompts créatifs avec Gemini
       toast.info("Génération de 3 prompts créatifs avec Gemini...");
       const { data: promptsData, error: promptsError } = await supabase.functions.invoke("generate-thumbnail-prompts", {
-        body: { videoScript }
+        body: { 
+          videoScript,
+          exampleUrls,
+          characterRefUrl 
+        }
       });
 
       if (promptsError) throw promptsError;
