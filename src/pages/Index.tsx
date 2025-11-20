@@ -2011,6 +2011,16 @@ const Index = () => {
                 </div>
               </div>
 
+              {exportMode === "with-images" && (
+                <div className="rounded-lg bg-muted/50 p-4 text-sm text-muted-foreground border border-border/50">
+                  <p className="font-medium mb-1">ℹ️ À l'import dans votre logiciel de montage</p>
+                  <p>
+                    Il sera nécessaire de sélectionner manuellement le dossier <code className="px-1 py-0.5 bg-background rounded text-xs">images/</code> lors de l'import. 
+                    C'est normal que le logiciel ne trouve pas automatiquement les images.
+                  </p>
+                </div>
+              )}
+
               <div className="flex justify-end gap-3 pt-4 border-t">
                 <Button variant="outline" onClick={() => setExportDialogOpen(false)}>
                   Annuler
