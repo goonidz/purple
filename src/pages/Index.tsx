@@ -444,7 +444,7 @@ const Index = () => {
 
     try {
       toast.info("Génération du résumé global...");
-      const fullTranscript = transcriptData?.segments.map(seg => seg.text).join(' ') || '';
+      const fullTranscript = transcriptData?.segments?.filter(seg => seg).map(seg => seg.text).join(' ') || '';
       
       const { data: summaryData, error: summaryError } = await supabase.functions.invoke('generate-summary', {
         body: { transcript: fullTranscript }
@@ -555,7 +555,7 @@ const Index = () => {
 
       // If no summary exists, generate one
       if (!summary) {
-        const fullTranscript = transcriptData?.segments.map(seg => seg.text).join(' ') || '';
+        const fullTranscript = transcriptData?.segments?.filter(seg => seg).map(seg => seg.text).join(' ') || '';
         const { data: summaryData, error: summaryError } = await supabase.functions.invoke('generate-summary', {
           body: { transcript: fullTranscript }
         });
@@ -629,7 +629,7 @@ const Index = () => {
 
       // If no summary exists, generate one
       if (!summary) {
-        const fullTranscript = transcriptData?.segments.map(seg => seg.text).join(' ') || '';
+        const fullTranscript = transcriptData?.segments?.filter(seg => seg).map(seg => seg.text).join(' ') || '';
         const { data: summaryData, error: summaryError } = await supabase.functions.invoke('generate-summary', {
           body: { transcript: fullTranscript }
         });
@@ -1098,7 +1098,7 @@ const Index = () => {
     try {
       // Step 1: Generate summary
       toast.info("Génération du résumé global...");
-      const fullTranscript = transcriptData?.segments.map(seg => seg.text).join(' ') || '';
+      const fullTranscript = transcriptData?.segments?.filter(seg => seg).map(seg => seg.text).join(' ') || '';
       
       const { data: summaryData, error: summaryError } = await supabase.functions.invoke('generate-summary', {
         body: { transcript: fullTranscript }
@@ -2079,7 +2079,7 @@ const Index = () => {
                 <div className="max-w-5xl mx-auto">
                   <ThumbnailGenerator
                     projectId={currentProjectId || ""}
-                    videoScript={generatedPrompts.map(p => p.text).join(" ")}
+                    videoScript={generatedPrompts.filter(p => p).map(p => p.text).join(" ")}
                   />
                 </div>
               </TabsContent>
@@ -2088,7 +2088,7 @@ const Index = () => {
                 <div className="max-w-5xl mx-auto">
                   <TitleGenerator
                     projectId={currentProjectId || ""}
-                    videoScript={generatedPrompts.map(p => p.text).join(" ")}
+                    videoScript={generatedPrompts.filter(p => p).map(p => p.text).join(" ")}
                   />
                 </div>
               </TabsContent>
@@ -2703,7 +2703,7 @@ const Index = () => {
             </DialogHeader>
             <ThumbnailGenerator
               projectId={currentProjectId || ""}
-              videoScript={generatedPrompts.map(p => p.text).join(" ")}
+              videoScript={generatedPrompts.filter(p => p).map(p => p.text).join(" ")}
             />
           </DialogContent>
         </Dialog>
