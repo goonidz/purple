@@ -19,7 +19,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { Loader2, Save, Trash2, Plus } from "lucide-react";
+import { Loader2, Save, Trash2, Plus, Copy } from "lucide-react";
 import { toast } from "sonner";
 import { Textarea } from "@/components/ui/textarea";
 
@@ -59,6 +59,9 @@ export const PresetManager = ({ currentConfig, onLoadPreset }: PresetManagerProp
   const [selectedPresetId, setSelectedPresetId] = useState<string>("");
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [isDuplicateDialogOpen, setIsDuplicateDialogOpen] = useState(false);
+  const [duplicatePresetName, setDuplicatePresetName] = useState("");
+  const [isDuplicating, setIsDuplicating] = useState(false);
   const [editFormData, setEditFormData] = useState<{
     name: string;
     sceneDuration0to1: number;
@@ -235,6 +238,57 @@ export const PresetManager = ({ currentConfig, onLoadPreset }: PresetManagerProp
     setIsEditDialogOpen(true);
   };
 
+  const openDuplicateDialog = () => {
+    const preset = presets.find(p => p.id === selectedPresetId);
+    if (!preset) return;
+
+    setDuplicatePresetName(`${preset.name} (copie)`);
+    setIsDuplicateDialogOpen(true);
+  };
+
+  const handleDuplicatePreset = async () => {
+    if (!selectedPresetId || !duplicatePresetName.trim()) {
+      toast.error("Veuillez entrer un nom pour le nouveau preset");
+      return;
+    }
+
+    const sourcePreset = presets.find(p => p.id === selectedPresetId);
+    if (!sourcePreset) return;
+
+    setIsDuplicating(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("User not authenticated");
+
+      const { error } = await supabase.from("presets").insert([
+        {
+          user_id: user.id,
+          name: duplicatePresetName.trim(),
+          scene_duration_0to1: sourcePreset.scene_duration_0to1,
+          scene_duration_1to3: sourcePreset.scene_duration_1to3,
+          scene_duration_3plus: sourcePreset.scene_duration_3plus,
+          example_prompts: sourcePreset.example_prompts,
+          image_width: sourcePreset.image_width,
+          image_height: sourcePreset.image_height,
+          aspect_ratio: sourcePreset.aspect_ratio,
+          style_reference_url: sourcePreset.style_reference_url,
+        },
+      ]);
+
+      if (error) throw error;
+
+      toast.success(`Preset "${duplicatePresetName}" créé !`);
+      setDuplicatePresetName("");
+      setIsDuplicateDialogOpen(false);
+      await loadPresets();
+    } catch (error: any) {
+      console.error("Error duplicating preset:", error);
+      toast.error("Erreur lors de la duplication du preset");
+    } finally {
+      setIsDuplicating(false);
+    }
+  };
+
   return (
     <Card className="p-4">
       <div className="space-y-4">
@@ -317,15 +371,29 @@ export const PresetManager = ({ currentConfig, onLoadPreset }: PresetManagerProp
               >
                 Charger
               </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={openEditDialog}
-                disabled={!selectedPresetId}
-              >
-                Modifier
-              </Button>
             </div>
+
+            {selectedPresetId && (
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={openEditDialog}
+                  className="flex-1"
+                >
+                  Modifier
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={openDuplicateDialog}
+                  className="flex-1"
+                >
+                  <Copy className="h-4 w-4 mr-2" />
+                  Dupliquer
+                </Button>
+              </div>
+            )}
 
             {selectedPresetId && (
               <div className="flex items-center justify-between p-2 bg-muted rounded-lg">
@@ -609,6 +677,54 @@ export const PresetManager = ({ currentConfig, onLoadPreset }: PresetManagerProp
                 </div>
               </div>
             )}
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={isDuplicateDialogOpen} onOpenChange={setIsDuplicateDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Dupliquer le preset</DialogTitle>
+              <DialogDescription>
+                Créer une copie de "{presets.find(p => p.id === selectedPresetId)?.name}"
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="duplicate-preset-name">Nom du nouveau preset</Label>
+                <Input
+                  id="duplicate-preset-name"
+                  placeholder="Ex: Mon nouveau preset"
+                  value={duplicatePresetName}
+                  onChange={(e) => setDuplicatePresetName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !isDuplicating) {
+                      handleDuplicatePreset();
+                    }
+                  }}
+                />
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setIsDuplicateDialogOpen(false)}
+                >
+                  Annuler
+                </Button>
+                <Button onClick={handleDuplicatePreset} disabled={isDuplicating}>
+                  {isDuplicating ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Duplication...
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="h-4 w-4 mr-2" />
+                      Dupliquer
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
           </DialogContent>
         </Dialog>
       </div>
