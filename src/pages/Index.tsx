@@ -786,6 +786,7 @@ const Index = () => {
 
     setIsUploadingAudio(true);
     setAudioFile(file);
+    toast.info("Upload du fichier audio en cours...");
 
     try {
       if (!user) throw new Error("User not authenticated");
@@ -1614,8 +1615,9 @@ const Index = () => {
                                 Format: MP3, WAV, M4A, etc.
                               </p>
                               {isUploadingAudio && (
-                                <div className="mt-2">
-                                  <Loader2 className="h-5 w-5 animate-spin mx-auto text-primary" />
+                                <div className="mt-4 flex flex-col items-center gap-2">
+                                  <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                                  <p className="text-sm font-medium text-primary">Upload en cours...</p>
                                 </div>
                               )}
                             </div>

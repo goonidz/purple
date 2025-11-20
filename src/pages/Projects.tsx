@@ -139,6 +139,8 @@ const Projects = () => {
     }
 
     setIsCreating(true);
+    toast.info("Upload du fichier audio en cours...");
+    
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("User not authenticated");
@@ -423,13 +425,25 @@ const Projects = () => {
                       />
                       <label htmlFor="audio-upload-mobile" className="cursor-pointer">
                         <div className="flex flex-col items-center gap-2">
-                          <Plus className="h-8 w-8 text-muted-foreground" />
-                          <p className="text-sm text-muted-foreground">
-                            Cliquez pour importer un fichier audio
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            MP3 ou WAV
-                          </p>
+                          {isCreating ? (
+                            <>
+                              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                              <p className="text-sm font-medium text-primary">Upload en cours...</p>
+                              <p className="text-xs text-muted-foreground">
+                                Veuillez patienter pendant l'upload et la transcription
+                              </p>
+                            </>
+                          ) : (
+                            <>
+                              <Plus className="h-8 w-8 text-muted-foreground" />
+                              <p className="text-sm text-muted-foreground">
+                                Cliquez pour importer un fichier audio
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                MP3 ou WAV
+                              </p>
+                            </>
+                          )}
                         </div>
                       </label>
                     </div>
