@@ -108,6 +108,7 @@ const Index = () => {
   const [styleReferenceUrl, setStyleReferenceUrl] = useState<string>("");
   const [uploadedStyleImageUrl, setUploadedStyleImageUrl] = useState<string>("");
   const [isUploadingStyleImage, setIsUploadingStyleImage] = useState(false);
+  const [activePresetName, setActivePresetName] = useState<string | null>(null);
   const [regeneratingPromptIndex, setRegeneratingPromptIndex] = useState<number | null>(null);
   const [confirmRegeneratePrompt, setConfirmRegeneratePrompt] = useState<number | null>(null);
   const [confirmRegenerateImage, setConfirmRegenerateImage] = useState<number | null>(null);
@@ -1148,6 +1149,7 @@ const Index = () => {
   };
 
   const handleLoadPreset = async (preset: {
+    name: string;
     scene_duration_0to1: number;
     scene_duration_1to3: number;
     scene_duration_3plus: number;
@@ -1164,9 +1166,39 @@ const Index = () => {
     setImageWidth(preset.image_width);
     setImageHeight(preset.image_height);
     setAspectRatio(preset.aspect_ratio);
+    setActivePresetName(preset.name);
     if (preset.style_reference_url) {
       setUploadedStyleImageUrl(preset.style_reference_url);
       setStyleReferenceUrl(preset.style_reference_url);
+    }
+  };
+
+  const handleRegenerateScenes = async () => {
+    if (!transcriptData) {
+      toast.error("Aucune transcription disponible");
+      return;
+    }
+    
+    setIsGeneratingScenes(true);
+    try {
+      const generatedScenes = parseTranscriptToScenes(
+        transcriptData,
+        sceneDuration0to1,
+        sceneDuration1to3,
+        sceneDuration3plus
+      );
+      
+      setScenes(generatedScenes);
+      
+      // Clear existing prompts and images since scene structure changed
+      setGeneratedPrompts([]);
+      
+      toast.success(`${generatedScenes.length} scènes regénérées !`);
+    } catch (error: any) {
+      console.error("Error regenerating scenes:", error);
+      toast.error("Erreur lors de la regénération des scènes");
+    } finally {
+      setIsGeneratingScenes(false);
     }
   };
 
@@ -1325,6 +1357,16 @@ const Index = () => {
                   onLoadPreset={handleLoadPreset}
                 />
 
+                {activePresetName && (
+                  <Card className="p-4 bg-primary/10 border-primary/30">
+                    <div className="flex items-center gap-2 text-sm">
+                      <Check className="h-4 w-4 text-primary" />
+                      <span className="font-medium">Preset actif :</span>
+                      <span className="text-primary">{activePresetName}</span>
+                    </div>
+                  </Card>
+                )}
+
                 <div className="grid grid-cols-3 gap-6">
                   {/* Configuration des scènes */}
                   <Card className="p-6">
@@ -1353,6 +1395,27 @@ const Index = () => {
                         <Settings className="mr-2 h-4 w-4" />
                         Modifier les paramètres
                       </Button>
+
+                      {scenes.length > 0 && (
+                        <Button
+                          variant="outline"
+                          onClick={handleRegenerateScenes}
+                          disabled={!transcriptData || isGeneratingScenes}
+                          className="w-full"
+                        >
+                          {isGeneratingScenes ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Regénération...
+                            </>
+                          ) : (
+                            <>
+                              <RefreshCw className="mr-2 h-4 w-4" />
+                              Regénérer les scènes
+                            </>
+                          )}
+                        </Button>
+                      )}
 
                       <Button
                         onClick={handleGenerateScenes}
