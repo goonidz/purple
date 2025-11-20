@@ -1076,7 +1076,8 @@ const Index = () => {
         projectName: projectName || "projet_sans_nom",
         framerate: exportFramerate,
         width: imageWidth,
-        height: imageHeight
+        height: imageHeight,
+        audioUrl: audioUrl || undefined
       };
 
       let content: string;
@@ -1099,7 +1100,7 @@ const Index = () => {
 
       if (exportMode === "with-images") {
         toast.info("Préparation du ZIP avec les images...");
-        await downloadImagesAsZip(generatedPrompts, content, filename);
+        await downloadImagesAsZip(generatedPrompts, content, filename, audioUrl || undefined);
         toast.success("Export ZIP téléchargé avec succès !");
       } else {
         await downloadFile(content, filename);
