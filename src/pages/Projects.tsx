@@ -41,6 +41,9 @@ const Projects = () => {
   const [isCreating, setIsCreating] = useState(false);
   const [newProjectName, setNewProjectName] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [workflowStep, setWorkflowStep] = useState<"upload" | "transcription" | "configure">("upload");
+  const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
+  const [transcriptData, setTranscriptData] = useState<any>(null);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -117,10 +120,12 @@ const Projects = () => {
 
       if (projectError) throw projectError;
 
+      setCurrentProjectId(projectData.id);
+      setWorkflowStep("transcription");
       toast.success("Audio importé, transcription en cours...");
 
       // Call transcription edge function
-      const { data: transcriptData, error: transcriptError } = await supabase.functions.invoke(
+      const { data: transcriptionResult, error: transcriptError } = await supabase.functions.invoke(
         "transcribe-audio",
         {
           body: { audioUrl: publicUrl },
@@ -132,16 +137,14 @@ const Projects = () => {
       // Update project with transcript
       const { error: updateError } = await supabase
         .from("projects")
-        .update({ transcript_json: transcriptData })
+        .update({ transcript_json: transcriptionResult })
         .eq("id", projectData.id);
 
       if (updateError) throw updateError;
 
+      setTranscriptData(transcriptionResult);
+      setWorkflowStep("configure");
       toast.success("Transcription terminée !");
-      setNewProjectName("");
-      setIsDialogOpen(false);
-      await loadProjects();
-      navigate(`/?project=${projectData.id}`);
     } catch (error: any) {
       console.error("Error creating project:", error);
       toast.error("Erreur : " + (error.message || "Erreur inconnue"));
@@ -240,58 +243,120 @@ const Projects = () => {
                   Nouveau projet
                 </Button>
               </DialogTrigger>
-              <DialogContent>
+              <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
                 <DialogHeader>
-                  <DialogTitle>Créer un nouveau projet</DialogTitle>
+                  <DialogTitle>
+                    {workflowStep === "upload" && "Créer un nouveau projet"}
+                    {workflowStep === "transcription" && "Transcription en cours..."}
+                    {workflowStep === "configure" && "Transcription terminée"}
+                  </DialogTitle>
                   <DialogDescription>
-                    Donnez un nom à votre projet pour commencer
+                    {workflowStep === "upload" && "Importez un fichier audio (MP3 ou WAV) pour créer votre vidéo"}
+                    {workflowStep === "transcription" && "Veuillez patienter pendant que nous transcrivons votre audio"}
+                    {workflowStep === "configure" && "Vérifiez la transcription et continuez vers la configuration"}
                   </DialogDescription>
                 </DialogHeader>
-                <div className="space-y-4 pt-4">
-                  <Input
-                    placeholder="Nom du projet"
-                    value={newProjectName}
-                    onChange={(e) => setNewProjectName(e.target.value)}
-                    disabled={isCreating}
-                  />
-                  <div className="border-2 border-dashed rounded-lg p-8 text-center">
+
+                {workflowStep === "upload" && (
+                  <div className="space-y-4 py-4">
                     <Input
-                      type="file"
-                      accept="audio/mp3,audio/wav,audio/mpeg"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) {
-                          handleAudioUpload(file);
-                        }
-                      }}
-                      className="hidden"
-                      id="audio-upload-mobile"
+                      placeholder="Nom du projet"
+                      value={newProjectName}
+                      onChange={(e) => setNewProjectName(e.target.value)}
                       disabled={isCreating}
                     />
-                    <label htmlFor="audio-upload-mobile" className="cursor-pointer">
-                      <div className="flex flex-col items-center gap-2">
-                        {isCreating ? (
-                          <>
-                            <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                            <p className="text-sm text-muted-foreground">
-                              Transcription en cours...
-                            </p>
-                          </>
-                        ) : (
-                          <>
-                            <Plus className="h-8 w-8 text-muted-foreground" />
-                            <p className="text-sm text-muted-foreground">
-                              Cliquez pour importer un fichier audio
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              MP3 ou WAV
-                            </p>
-                          </>
-                        )}
-                      </div>
-                    </label>
+                    <div className="border-2 border-dashed rounded-lg p-8 text-center">
+                      <Input
+                        type="file"
+                        accept="audio/mp3,audio/wav,audio/mpeg"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            handleAudioUpload(file);
+                          }
+                        }}
+                        className="hidden"
+                        id="audio-upload-mobile"
+                        disabled={isCreating}
+                      />
+                      <label htmlFor="audio-upload-mobile" className="cursor-pointer">
+                        <div className="flex flex-col items-center gap-2">
+                          <Plus className="h-8 w-8 text-muted-foreground" />
+                          <p className="text-sm text-muted-foreground">
+                            Cliquez pour importer un fichier audio
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            MP3 ou WAV
+                          </p>
+                        </div>
+                      </label>
+                    </div>
+                    <div className="flex justify-end gap-2">
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          setIsDialogOpen(false);
+                          setNewProjectName("");
+                        }}
+                        disabled={isCreating}
+                      >
+                        Annuler
+                      </Button>
+                    </div>
                   </div>
-                </div>
+                )}
+
+                {workflowStep === "transcription" && (
+                  <div className="flex flex-col items-center justify-center py-12 gap-4">
+                    <Loader2 className="h-12 w-12 animate-spin text-primary" />
+                    <p className="text-sm text-muted-foreground">
+                      Transcription en cours...
+                    </p>
+                  </div>
+                )}
+
+                {workflowStep === "configure" && transcriptData && (
+                  <div className="space-y-4 py-4">
+                    <div className="rounded-lg border p-4 max-h-60 overflow-y-auto bg-muted/30">
+                      <h3 className="font-semibold mb-2 text-sm">Transcription :</h3>
+                      <div className="space-y-2 text-sm">
+                        {transcriptData.segments?.map((segment: any, index: number) => (
+                          <p key={index} className="text-muted-foreground">
+                            {segment.text}
+                          </p>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="flex justify-end gap-2">
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          setIsDialogOpen(false);
+                          setWorkflowStep("upload");
+                          setNewProjectName("");
+                          setTranscriptData(null);
+                          setCurrentProjectId(null);
+                        }}
+                      >
+                        Annuler
+                      </Button>
+                      <Button
+                        onClick={() => {
+                          if (currentProjectId) {
+                            navigate(`/?project=${currentProjectId}`);
+                            setIsDialogOpen(false);
+                            setWorkflowStep("upload");
+                            setNewProjectName("");
+                            setTranscriptData(null);
+                            setCurrentProjectId(null);
+                          }
+                        }}
+                      >
+                        Continuer la configuration
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </DialogContent>
             </Dialog>
           </div>
