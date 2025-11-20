@@ -252,6 +252,8 @@ const Projects = () => {
   const handleFinalizeConfiguration = async () => {
     if (!currentProjectId) return;
     
+    const projectId = currentProjectId; // Sauvegarder l'ID avant de réinitialiser
+    
     setIsCreating(true);
     try {
       // Save all configuration to database
@@ -264,7 +266,7 @@ const Projects = () => {
           example_prompts: examplePrompts,
           style_reference_url: serializeStyleReferenceUrls(styleReferenceUrls),
         })
-        .eq("id", currentProjectId);
+        .eq("id", projectId);
 
       if (error) throw error;
 
@@ -274,8 +276,9 @@ const Projects = () => {
       setNewProjectName("");
       setTranscriptData(null);
       setCurrentProjectId(null);
-      await loadProjects();
-      navigate(`/?project=${currentProjectId}`);
+      
+      // Naviguer vers le projet APRÈS avoir réinitialisé l'état
+      navigate(`/project?project=${projectId}`);
     } catch (error: any) {
       console.error("Error saving configuration:", error);
       toast.error("Erreur lors de l'enregistrement");
