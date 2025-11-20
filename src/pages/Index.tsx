@@ -179,7 +179,7 @@ const Index = () => {
 
       return () => clearTimeout(timeoutId);
     }
-  }, [currentProjectId, transcriptData, examplePrompts, scenes, generatedPrompts, sceneDuration0to1, sceneDuration1to3, sceneDuration3plus, styleReferenceUrl, audioUrl]);
+  }, [currentProjectId, transcriptData, examplePrompts, scenes, generatedPrompts, sceneDuration0to1, sceneDuration1to3, sceneDuration3plus, styleReferenceUrl, audioUrl, imageWidth, imageHeight, aspectRatio]);
 
   const loadProjectData = async (projectId: string) => {
     try {
