@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import type { User } from "@supabase/supabase-js";
-import { Loader2, Settings, Play, Download, Video, Image as ImageIcon } from "lucide-react";
+import { Loader2, Settings, Download, Image as ImageIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SceneSidebar } from "@/components/SceneSidebar";
 import { SceneEditor } from "@/components/SceneEditor";
@@ -12,7 +12,6 @@ import { SubtitleControls } from "@/components/SubtitleControls";
 import { ThumbnailGenerator } from "@/components/ThumbnailGenerator";
 import { ProjectSettingsDialog } from "@/components/ProjectSettingsDialog";
 import { toast } from "sonner";
-import { exportToVideo } from "@/lib/videoExportHelpers";
 
 interface GeneratedPrompt {
   scene: string;
@@ -49,8 +48,6 @@ const Workspace = () => {
     x: 50,
     y: 85
   });
-  const [isExportingVideo, setIsExportingVideo] = useState(false);
-  const [exportProgress, setExportProgress] = useState(0);
   const [showThumbnailGenerator, setShowThumbnailGenerator] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
 
@@ -193,16 +190,7 @@ const Workspace = () => {
     setShowPreview(true);
   };
 
-  const handlePlayPreview = () => {
-    setShowPreview(true);
-    setAutoPlayPreview(true);
-  };
-
-  const handleExport = () => {
-    navigate(`/?project=${currentProjectId}`);
-  };
-
-  const handleVideoExport = async () => {
+  const handleExport = async () => {
     if (!audioUrl) {
       toast.error("Aucun audio trouvé dans le projet");
       return;
@@ -214,31 +202,42 @@ const Workspace = () => {
       return;
     }
 
-    setIsExportingVideo(true);
-    setExportProgress(0);
-
     try {
-      toast.info("Génération de la vidéo en cours...");
-      
-      await exportToVideo({
-        scenes: generatedPrompts,
-        audioUrl,
-        subtitleSettings,
+      // Import helper functions
+      const { generatePremiereXML, generateSRT, downloadImagesAsZip } = await import("@/lib/videoExportHelpers");
+
+      toast.info("Préparation de l'export...");
+
+      // Generate XML
+      const xmlContent = generatePremiereXML(generatedPrompts, {
+        format: "premiere-xml",
+        mode: "with-images",
+        projectName: projectName || "project",
+        framerate: 25,
         width: 1920,
         height: 1080,
-        framerate: 25,
-        onProgress: (progress) => {
-          setExportProgress(progress);
-        }
+        audioUrl,
       });
 
-      toast.success("Vidéo exportée avec succès !");
+      // Generate SRT
+      const srtContent = generateSRT(generatedPrompts);
+
+      // Download as ZIP with images
+      await downloadImagesAsZip(
+        generatedPrompts,
+        xmlContent,
+        `${projectName || "project"}_export.xml`,
+        audioUrl
+      );
+
+      // Also download SRT separately
+      const { downloadFile } = await import("@/lib/videoExportHelpers");
+      await downloadFile(srtContent, `${projectName || "project"}_subtitles.srt`);
+
+      toast.success("Export terminé !");
     } catch (error: any) {
-      console.error("Video export error:", error);
-      toast.error("Erreur lors de l'export vidéo: " + error.message);
-    } finally {
-      setIsExportingVideo(false);
-      setExportProgress(0);
+      console.error("Export error:", error);
+      toast.error("Erreur lors de l'export: " + error.message);
     }
   };
 
@@ -292,28 +291,6 @@ const Workspace = () => {
                 Video duration: {generatedPrompts.reduce((acc, p) => acc + p.duration, 0).toFixed(1)}s
               </span>
             </div>
-
-            {canShowPreview && (
-              <>
-                <Button
-                  onClick={handlePlayPreview}
-                >
-                  <Play className="mr-2 h-4 w-4" />
-                  Play
-                </Button>
-                {showPreview && (
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      setShowPreview(false);
-                      setAutoPlayPreview(false);
-                    }}
-                  >
-                    Fermer la preview
-                  </Button>
-                )}
-              </>
-            )}
             
             <Button
               variant="outline"
@@ -321,23 +298,6 @@ const Workspace = () => {
             >
               <Download className="mr-2 h-4 w-4" />
               Export XML
-            </Button>
-
-            <Button
-              onClick={handleVideoExport}
-              disabled={isExportingVideo || !canShowPreview}
-            >
-              {isExportingVideo ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  {exportProgress > 0 ? `${Math.round(exportProgress)}%` : "Export..."}
-                </>
-              ) : (
-                <>
-                  <Video className="mr-2 h-4 w-4" />
-                  Export Vidéo
-                </>
-              )}
             </Button>
 
             <Button
