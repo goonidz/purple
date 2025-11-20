@@ -74,6 +74,8 @@ const Profile = () => {
           user_id: user.id,
           replicate_api_key: replicateApiKey.trim() || null,
           eleven_labs_api_key: elevenLabsApiKey.trim() || null,
+        }, {
+          onConflict: 'user_id'
         });
 
       if (error) throw error;
@@ -81,7 +83,7 @@ const Profile = () => {
       toast.success("Clés API sauvegardées avec succès !");
     } catch (error: any) {
       console.error("Error saving API keys:", error);
-      toast.error("Erreur lors de la sauvegarde des clés API");
+      toast.error(`Erreur lors de la sauvegarde: ${error.message || 'Erreur inconnue'}`);
     } finally {
       setIsSaving(false);
     }
