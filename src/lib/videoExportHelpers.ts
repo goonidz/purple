@@ -50,7 +50,7 @@ export function generatePremiereXML(
     
     const duration = endFrame - startFrame;
     
-    const filename = `clip_${(index + 1).toString().padStart(3, '0')}_img.jpg`;
+    const filename = `scene_${(index + 1).toString().padStart(3, '0')}_image.jpg`;
     const imagePath = `media/${filename}`;
     
     return `      <clipitem id="clipitem-${index + 1}">
@@ -174,7 +174,7 @@ export function generateEDL(
     const recordOut = formatTimecode(prompt.endTime, framerate);
     
     const imagePath = mode === "with-images"
-      ? `images/clip_${clipNumber}_img.jpg`
+      ? `images/scene_${clipNumber}_image.jpg`
       : prompt.imageUrl || "";
     
     edl += `${clipNumber}  AX       V     C        ${sourceIn} ${sourceOut} ${recordIn} ${recordOut}\n`;
@@ -203,7 +203,7 @@ export function generateCSV(
     const duration = prompt.duration.toFixed(2);
     
     const imagePath = mode === "with-images"
-      ? `images/clip_${sceneNum.toString().padStart(3, '0')}_img.jpg`
+      ? `images/scene_${sceneNum.toString().padStart(3, '0')}_image.jpg`
       : prompt.imageUrl || "";
     
     csv += `${sceneNum},"${timecodeIn}","${timecodeOut}",${duration},"${imagePath}","${escapeCsv(prompt.text)}","${escapeCsv(prompt.prompt)}"\n`;
@@ -352,7 +352,7 @@ export async function downloadImagesAsZip(
         // Convert to JPEG for DaVinci Resolve compatibility
         const jpegBlob = await convertToJpeg(blob);
         
-        const filename = `clip_${(i + 1).toString().padStart(3, '0')}_img.jpg`;
+        const filename = `scene_${(i + 1).toString().padStart(3, '0')}_image.jpg`;
         mediaFolder?.file(filename, jpegBlob);
       } catch (error) {
         console.error(`Failed to download image ${i + 1}:`, error);
