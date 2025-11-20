@@ -18,6 +18,7 @@ interface ExportOptions {
   framerate?: number;
   width?: number;
   height?: number;
+  audioUrl?: string;
 }
 
 export function formatTimecode(seconds: number, framerate: number = 25): string {
@@ -35,7 +36,7 @@ export function generatePremiereXML(
   prompts: GeneratedPrompt[],
   options: ExportOptions
 ): string {
-  const { projectName, framerate = 25, width = 1920, height = 1080, mode } = options;
+  const { projectName, framerate = 25, width = 1920, height = 1080, mode, audioUrl } = options;
   
   const clipItems = prompts.map((prompt, index) => {
     // First image always starts at frame 0, others use leur timecode réel
@@ -83,6 +84,31 @@ export function generatePremiereXML(
   const lastEndTime = Math.max(...prompts.map(p => p.endTime));
   const totalDurationFrames = Math.round(lastEndTime * framerate);
 
+  // Generate audio track if audio is provided
+  const audioTrack = audioUrl ? `          <audio>
+            <track>
+              <clipitem id="audio-clip-1">
+                <name>Audio</name>
+                <duration>${totalDurationFrames}</duration>
+                <rate>
+                  <timebase>${framerate}</timebase>
+                </rate>
+                <start>0</start>
+                <end>${totalDurationFrames}</end>
+                <in>0</in>
+                <out>${totalDurationFrames}</out>
+                <file id="audio-file-1">
+                  <name>audio</name>
+                  <pathurl>audio/audio.mp3</pathurl>
+                  <duration>${totalDurationFrames}</duration>
+                </file>
+                <sourcetrack>
+                  <mediatype>audio</mediatype>
+                </sourcetrack>
+              </clipitem>
+            </track>
+          </audio>` : '';
+
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE xmeml>
 <xmeml version="5">
@@ -111,6 +137,7 @@ export function generatePremiereXML(
 ${clipItems}
             </track>
           </video>
+${audioTrack}
         </media>
       </sequence>
     </children>
@@ -268,7 +295,8 @@ async function convertToJpeg(blob: Blob): Promise<Blob> {
 export async function downloadImagesAsZip(
   prompts: GeneratedPrompt[],
   exportContent: string,
-  exportFilename: string
+  exportFilename: string,
+  audioUrl?: string
 ): Promise<void> {
   // Dynamically import JSZip
   const JSZip = (await import('jszip')).default;
@@ -281,6 +309,18 @@ export async function downloadImagesAsZip(
   const srtContent = generateSRT(prompts);
   const srtFilename = exportFilename.replace(/\.(xml|edl|csv)$/, '.srt');
   zip.file(srtFilename, srtContent);
+  
+  // Add audio file if provided
+  if (audioUrl) {
+    try {
+      const audioResponse = await fetch(audioUrl);
+      const audioBlob = await audioResponse.blob();
+      const audioFolder = zip.folder('audio');
+      audioFolder?.file('audio.mp3', audioBlob);
+    } catch (error) {
+      console.error('Failed to download audio file:', error);
+    }
+  }
   
   // Create images folder
   const imagesFolder = zip.folder('images');
