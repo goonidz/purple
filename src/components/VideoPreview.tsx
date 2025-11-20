@@ -18,18 +18,19 @@ interface VideoPreviewProps {
   audioUrl: string;
   prompts: GeneratedPrompt[];
   autoPlay?: boolean;
+  startFromScene?: number;
 }
 
-export const VideoPreview = ({ audioUrl, prompts, autoPlay = false }: VideoPreviewProps) => {
+export const VideoPreview = ({ audioUrl, prompts, autoPlay = false, startFromScene = 0 }: VideoPreviewProps) => {
   const audioRef = useRef<HTMLAudioElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationFrameRef = useRef<number>();
 
   const [isPlaying, setIsPlaying] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
+  const [currentTime, setCurrentTime] = useState(startFromScene > 0 ? prompts[startFromScene].startTime : 0);
   const [duration, setDuration] = useState(0);
-  const [currentSceneIndex, setCurrentSceneIndex] = useState(0);
+  const [currentSceneIndex, setCurrentSceneIndex] = useState(startFromScene);
   const [playbackRate, setPlaybackRate] = useState(1);
 
   // Find which scene we're currently in based on time
@@ -154,6 +155,13 @@ export const VideoPreview = ({ audioUrl, prompts, autoPlay = false }: VideoPrevi
 
     const handleLoadedMetadata = () => {
       setDuration(audio.duration);
+      
+      // Set start time if starting from a specific scene
+      if (startFromScene > 0) {
+        audio.currentTime = prompts[startFromScene].startTime;
+        setCurrentTime(prompts[startFromScene].startTime);
+        setCurrentSceneIndex(startFromScene);
+      }
       
       // Auto-play if requested
       if (autoPlay && !isPlaying) {

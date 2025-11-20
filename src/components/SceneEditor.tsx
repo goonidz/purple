@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Loader2, Upload, RefreshCw, Trash2 } from "lucide-react";
+import { Play, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -22,10 +22,7 @@ interface SceneEditorProps {
   scene: GeneratedPrompt;
   sceneIndex: number;
   onUpdate: (updatedScene: GeneratedPrompt) => void;
-  onRegenerateImage: (sceneIndex: number) => void;
-  onRegeneratePrompt: (sceneIndex: number) => void;
-  isGeneratingImage?: boolean;
-  isGeneratingPrompt?: boolean;
+  onPlayFromHere: () => void;
   userId: string;
 }
 
@@ -33,10 +30,7 @@ export const SceneEditor = ({
   scene,
   sceneIndex,
   onUpdate,
-  onRegenerateImage,
-  onRegeneratePrompt,
-  isGeneratingImage,
-  isGeneratingPrompt,
+  onPlayFromHere,
   userId
 }: SceneEditorProps) => {
   const [localScene, setLocalScene] = useState(scene);
@@ -110,42 +104,14 @@ export const SceneEditor = ({
                 alt={`Scene ${sceneIndex + 1}`}
                 className="w-full aspect-video object-cover rounded-lg"
               />
-              <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
-                <label>
-                  <Button variant="secondary" size="sm" asChild>
-                    <span>
-                      <Upload className="h-4 w-4 mr-2" />
-                      Remplacer
-                    </span>
-                  </Button>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleImageUpload}
-                    className="hidden"
-                    disabled={isUploadingImage}
-                  />
-                </label>
+              <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                 <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => onRegenerateImage(sceneIndex)}
-                  disabled={isGeneratingImage}
+                  size="lg"
+                  onClick={onPlayFromHere}
+                  className="gap-2"
                 >
-                  {isGeneratingImage ? (
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  ) : (
-                    <RefreshCw className="h-4 w-4 mr-2" />
-                  )}
-                  Régénérer
-                </Button>
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  onClick={handleDeleteImage}
-                >
-                  <Trash2 className="h-4 w-4 mr-2" />
-                  Supprimer
+                  <Play className="h-6 w-6" />
+                  Play
                 </Button>
               </div>
             </div>
@@ -156,23 +122,9 @@ export const SceneEditor = ({
                 <p className="text-sm text-muted-foreground mb-3">
                   {isUploadingImage ? "Upload en cours..." : "Cliquez pour uploader une image"}
                 </p>
-                <div className="flex gap-2 justify-center">
-                  <Button size="sm" variant="outline" asChild>
-                    <span>Parcourir</span>
-                  </Button>
-                  <Button
-                    size="sm"
-                    onClick={() => onRegenerateImage(sceneIndex)}
-                    disabled={isGeneratingImage}
-                  >
-                    {isGeneratingImage ? (
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    ) : (
-                      <RefreshCw className="h-4 w-4 mr-2" />
-                    )}
-                    Générer
-                  </Button>
-                </div>
+                <Button size="sm" variant="outline" asChild>
+                  <span>Parcourir</span>
+                </Button>
                 <input
                   type="file"
                   accept="image/*"
@@ -198,22 +150,7 @@ export const SceneEditor = ({
 
         {/* Prompt */}
         <div className="space-y-2 mt-4">
-          <div className="flex items-center justify-between">
-            <Label>Prompt d'image</Label>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => onRegeneratePrompt(sceneIndex)}
-              disabled={isGeneratingPrompt}
-            >
-              {isGeneratingPrompt ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              ) : (
-                <RefreshCw className="h-4 w-4 mr-2" />
-              )}
-              Régénérer le prompt
-            </Button>
-          </div>
+          <Label>Prompt d'image</Label>
           <Textarea
             value={localScene.prompt}
             onChange={(e) => handleTextChange('prompt', e.target.value)}

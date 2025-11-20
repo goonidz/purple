@@ -31,8 +31,9 @@ const Workspace = () => {
   const [audioUrl, setAudioUrl] = useState<string>("");
   const [showPreview, setShowPreview] = useState(false);
   const [autoPlayPreview, setAutoPlayPreview] = useState(false);
-  const [isGeneratingImage, setIsGeneratingImage] = useState(false);
-  const [isGeneratingPrompt, setIsGeneratingPrompt] = useState(false);
+  const [startFromSceneIndex, setStartFromSceneIndex] = useState(0);
+  const [isGeneratingImage, setIsGeneratingImage] = useState<number | null>(null);
+  const [isGeneratingPrompt, setIsGeneratingPrompt] = useState<number | null>(null);
 
   // Check authentication
   useEffect(() => {
@@ -121,17 +122,56 @@ const Workspace = () => {
   };
 
   const handleRegenerateImage = async (sceneIndex: number) => {
-    setIsGeneratingImage(true);
+    setIsGeneratingImage(sceneIndex);
     // TODO: Implement image regeneration logic
     toast.info("Régénération d'image à implémenter");
-    setIsGeneratingImage(false);
+    setIsGeneratingImage(null);
   };
 
   const handleRegeneratePrompt = async (sceneIndex: number) => {
-    setIsGeneratingPrompt(true);
+    setIsGeneratingPrompt(sceneIndex);
     // TODO: Implement prompt regeneration logic
     toast.info("Régénération de prompt à implémenter");
-    setIsGeneratingPrompt(false);
+    setIsGeneratingPrompt(null);
+  };
+
+  const handleUploadImage = async (sceneIndex: number, file: File) => {
+    setIsGeneratingImage(sceneIndex);
+    try {
+      if (!user) throw new Error("User not authenticated");
+
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${user.id}/${Date.now()}-scene-${sceneIndex}.${fileExt}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('generated-images')
+        .upload(fileName, file, {
+          cacheControl: '3600',
+          upsert: false
+        });
+
+      if (uploadError) throw uploadError;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('generated-images')
+        .getPublicUrl(fileName);
+
+      const updated = [...generatedPrompts];
+      updated[sceneIndex] = { ...updated[sceneIndex], imageUrl: publicUrl };
+      setGeneratedPrompts(updated);
+      toast.success("Image uploadée !");
+    } catch (error: any) {
+      console.error("Error uploading image:", error);
+      toast.error(error.message || "Erreur lors de l'upload de l'image");
+    } finally {
+      setIsGeneratingImage(null);
+    }
+  };
+
+  const handlePlayFromHere = () => {
+    setStartFromSceneIndex(selectedSceneIndex);
+    setAutoPlayPreview(true);
+    setShowPreview(true);
   };
 
   const handlePlayPreview = () => {
@@ -236,6 +276,11 @@ const Workspace = () => {
             scenes={generatedPrompts}
             selectedSceneIndex={selectedSceneIndex}
             onSelectScene={setSelectedSceneIndex}
+            onRegenerateImage={handleRegenerateImage}
+            onRegeneratePrompt={handleRegeneratePrompt}
+            onUploadImage={handleUploadImage}
+            isGeneratingImage={isGeneratingImage}
+            isGeneratingPrompt={isGeneratingPrompt}
           />
         </div>
 
@@ -249,6 +294,7 @@ const Workspace = () => {
                   audioUrl={audioUrl} 
                   prompts={generatedPrompts}
                   autoPlay={autoPlayPreview}
+                  startFromScene={startFromSceneIndex}
                 />
               </div>
             ) : (
@@ -258,10 +304,7 @@ const Workspace = () => {
                     scene={generatedPrompts[selectedSceneIndex]}
                     sceneIndex={selectedSceneIndex}
                     onUpdate={handleUpdateScene}
-                    onRegenerateImage={handleRegenerateImage}
-                    onRegeneratePrompt={handleRegeneratePrompt}
-                    isGeneratingImage={isGeneratingImage}
-                    isGeneratingPrompt={isGeneratingPrompt}
+                    onPlayFromHere={handlePlayFromHere}
                     userId={user.id}
                   />
                 </div>
