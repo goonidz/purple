@@ -5,7 +5,7 @@ import type { User } from "@supabase/supabase-js";
 import { Loader2, Settings, Play, Download, Video, Image as ImageIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SceneSidebar } from "@/components/SceneSidebar";
-
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { TimelineBar } from "@/components/TimelineBar";
 import { VideoPreview } from "@/components/VideoPreview";
 import { SubtitleControls } from "@/components/SubtitleControls";
