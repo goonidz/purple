@@ -51,7 +51,7 @@ export function generatePremiereXML(
     const duration = endFrame - startFrame;
     
     const filename = `clip_${(index + 1).toString().padStart(3, '0')}_img.jpg`;
-    const imagePath = `images/${filename}`;
+    const imagePath = `media/${filename}`;
     
     return `      <clipitem id="clipitem-${index + 1}">
         <name>Scene ${index + 1}</name>
@@ -99,7 +99,7 @@ export function generatePremiereXML(
                 <out>${totalDurationFrames}</out>
                 <file id="audio-file-1">
                   <name>audio</name>
-                  <pathurl>audio/audio.mp3</pathurl>
+                  <pathurl>media/audio.mp3</pathurl>
                   <duration>${totalDurationFrames}</duration>
                 </file>
                 <sourcetrack>
@@ -310,22 +310,21 @@ export async function downloadImagesAsZip(
   const srtFilename = exportFilename.replace(/\.(xml|edl|csv)$/, '.srt');
   zip.file(srtFilename, srtContent);
   
+  // Create media folder for both images and audio
+  const mediaFolder = zip.folder('media');
+  
   // Add audio file if provided
   if (audioUrl) {
     try {
       const audioResponse = await fetch(audioUrl);
       const audioBlob = await audioResponse.blob();
-      const audioFolder = zip.folder('audio');
-      audioFolder?.file('audio.mp3', audioBlob);
+      mediaFolder?.file('audio.mp3', audioBlob);
     } catch (error) {
       console.error('Failed to download audio file:', error);
     }
   }
   
-  // Create images folder
-  const imagesFolder = zip.folder('images');
-  
-  // Download and add each image into images/ subfolder, converting to JPEG
+  // Download and add each image into media/ subfolder, converting to JPEG
   for (let i = 0; i < prompts.length; i++) {
     const prompt = prompts[i];
     if (prompt.imageUrl) {
@@ -337,7 +336,7 @@ export async function downloadImagesAsZip(
         const jpegBlob = await convertToJpeg(blob);
         
         const filename = `clip_${(i + 1).toString().padStart(3, '0')}_img.jpg`;
-        imagesFolder?.file(filename, jpegBlob);
+        mediaFolder?.file(filename, jpegBlob);
       } catch (error) {
         console.error(`Failed to download image ${i + 1}:`, error);
       }
