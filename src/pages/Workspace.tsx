@@ -30,6 +30,7 @@ const Workspace = () => {
   const [selectedSceneIndex, setSelectedSceneIndex] = useState(0);
   const [audioUrl, setAudioUrl] = useState<string>("");
   const [showPreview, setShowPreview] = useState(false);
+  const [autoPlayPreview, setAutoPlayPreview] = useState(false);
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
   const [isGeneratingPrompt, setIsGeneratingPrompt] = useState(false);
 
@@ -133,6 +134,11 @@ const Workspace = () => {
     setIsGeneratingPrompt(false);
   };
 
+  const handlePlayPreview = () => {
+    setShowPreview(true);
+    setAutoPlayPreview(true);
+  };
+
   const handleExport = () => {
     navigate(`/?project=${currentProjectId}`);
   };
@@ -189,13 +195,25 @@ const Workspace = () => {
             </div>
 
             {canShowPreview && (
-              <Button
-                variant="outline"
-                onClick={() => setShowPreview(!showPreview)}
-              >
-                <Play className="mr-2 h-4 w-4" />
-                {showPreview ? "Masquer" : "Preview"}
-              </Button>
+              <>
+                <Button
+                  onClick={handlePlayPreview}
+                >
+                  <Play className="mr-2 h-4 w-4" />
+                  Play
+                </Button>
+                {showPreview && (
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setShowPreview(false);
+                      setAutoPlayPreview(false);
+                    }}
+                  >
+                    Fermer la preview
+                  </Button>
+                )}
+              </>
             )}
             
             <Button variant="outline" onClick={handleExport}>
@@ -227,7 +245,11 @@ const Workspace = () => {
           <div className="flex-1 overflow-auto">
             {showPreview && canShowPreview ? (
               <div className="p-6">
-                <VideoPreview audioUrl={audioUrl} prompts={generatedPrompts} />
+                <VideoPreview 
+                  audioUrl={audioUrl} 
+                  prompts={generatedPrompts}
+                  autoPlay={autoPlayPreview}
+                />
               </div>
             ) : (
               <div className="p-6">
