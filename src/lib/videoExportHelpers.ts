@@ -187,6 +187,31 @@ function escapeCsv(text: string): string {
   return text.replace(/"/g, '""');
 }
 
+function formatSrtTimecode(seconds: number): string {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = Math.floor(seconds % 60);
+  const milliseconds = Math.floor((seconds % 1) * 1000);
+  
+  return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')},${milliseconds.toString().padStart(3, '0')}`;
+}
+
+export function generateSRT(prompts: GeneratedPrompt[]): string {
+  let srt = '';
+  
+  prompts.forEach((prompt, index) => {
+    const sequenceNumber = index + 1;
+    const startTimecode = formatSrtTimecode(prompt.startTime);
+    const endTimecode = formatSrtTimecode(prompt.endTime);
+    
+    srt += `${sequenceNumber}\n`;
+    srt += `${startTimecode} --> ${endTimecode}\n`;
+    srt += `${prompt.text}\n\n`;
+  });
+  
+  return srt;
+}
+
 export async function downloadFile(content: string, filename: string) {
   const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
   const url = URL.createObjectURL(blob);
@@ -251,6 +276,11 @@ export async function downloadImagesAsZip(
   
   // Add the export file
   zip.file(exportFilename, exportContent);
+  
+  // Add SRT subtitle file
+  const srtContent = generateSRT(prompts);
+  const srtFilename = exportFilename.replace(/\.(xml|edl|csv)$/, '.srt');
+  zip.file(srtFilename, srtContent);
   
   // Create images folder
   const imagesFolder = zip.folder('images');
