@@ -5,6 +5,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Upload, X, Loader2, Image as ImageIcon, Save, Download, Trash2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -41,6 +42,7 @@ export const ThumbnailGenerator = ({ projectId, videoScript }: ThumbnailGenerato
   const [isSavingPreset, setIsSavingPreset] = useState(false);
   const [isDraggingExamples, setIsDraggingExamples] = useState(false);
   const [isDraggingCharacter, setIsDraggingCharacter] = useState(false);
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
 
   useEffect(() => {
     loadPresets();
@@ -375,14 +377,30 @@ export const ThumbnailGenerator = ({ projectId, videoScript }: ThumbnailGenerato
     }
   };
 
-  const downloadThumbnail = (url: string, index: number) => {
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `thumbnail_${index + 1}.jpg`;
-    link.target = "_blank";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  const downloadThumbnail = async (url: string, index: number) => {
+    try {
+      // Fetch l'image depuis l'URL
+      const response = await fetch(url);
+      const blob = await response.blob();
+      
+      // Créer un URL temporaire pour le blob
+      const blobUrl = window.URL.createObjectURL(blob);
+      
+      // Créer un lien et télécharger
+      const link = document.createElement("a");
+      link.href = blobUrl;
+      link.download = `thumbnail_${index + 1}.jpg`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      // Nettoyer l'URL temporaire
+      window.URL.revokeObjectURL(blobUrl);
+      toast.success("Miniature téléchargée !");
+    } catch (error) {
+      console.error("Error downloading thumbnail:", error);
+      toast.error("Erreur lors du téléchargement");
+    }
   };
 
   return (
@@ -560,7 +578,8 @@ export const ThumbnailGenerator = ({ projectId, videoScript }: ThumbnailGenerato
                     <img
                       src={url}
                       alt={`Generated ${index + 1}`}
-                      className="w-full aspect-video object-cover rounded-lg border"
+                      className="w-full aspect-video object-cover rounded-lg border cursor-pointer hover:opacity-80 transition-opacity"
+                      onClick={() => setPreviewImage(url)}
                     />
                     <Button
                       variant="outline"
@@ -613,7 +632,7 @@ export const ThumbnailGenerator = ({ projectId, videoScript }: ThumbnailGenerato
                         src={url}
                         alt={`History ${index + 1}`}
                         className="w-full aspect-video object-cover rounded-lg border cursor-pointer hover:opacity-80 transition-opacity"
-                        onClick={() => window.open(url, '_blank')}
+                        onClick={() => setPreviewImage(url)}
                       />
                       <Button
                         variant="outline"
@@ -632,6 +651,22 @@ export const ThumbnailGenerator = ({ projectId, videoScript }: ThumbnailGenerato
           )}
         </TabsContent>
       </Tabs>
+
+      {/* Dialog pour prévisualiser l'image en grand */}
+      <Dialog open={previewImage !== null} onOpenChange={() => setPreviewImage(null)}>
+        <DialogContent className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>Aperçu de la miniature</DialogTitle>
+          </DialogHeader>
+          {previewImage && (
+            <img
+              src={previewImage}
+              alt="Preview"
+              className="w-full h-auto rounded-lg"
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
