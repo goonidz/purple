@@ -58,11 +58,12 @@ export const VideoPreview = ({ audioUrl, prompts, autoPlay = false, startFromSce
 
     setCurrentTime(time);
 
-    if (isPlaying) {
+    if (!audioRef.current.paused) {
       animationFrameRef.current = requestAnimationFrame(syncImageWithAudio);
+    } else {
+      setIsPlaying(false);
     }
   };
-
   // Handle play/pause
   const togglePlayPause = () => {
     if (!audioRef.current) return;
