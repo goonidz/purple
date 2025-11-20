@@ -4,7 +4,8 @@ import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Upload, X, Loader2, Image as ImageIcon, Save } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Upload, X, Loader2, Image as ImageIcon, Save, Download, Trash2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
@@ -20,10 +21,18 @@ interface ThumbnailPreset {
   character_ref_url: string | null;
 }
 
+interface GeneratedThumbnailHistory {
+  id: string;
+  thumbnail_urls: string[];
+  prompts: string[];
+  created_at: string;
+}
+
 export const ThumbnailGenerator = ({ projectId, videoScript }: ThumbnailGeneratorProps) => {
   const [exampleUrls, setExampleUrls] = useState<string[]>([]);
   const [characterRefUrl, setCharacterRefUrl] = useState<string>("");
   const [generatedThumbnails, setGeneratedThumbnails] = useState<string[]>([]);
+  const [thumbnailHistory, setThumbnailHistory] = useState<GeneratedThumbnailHistory[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [presets, setPresets] = useState<ThumbnailPreset[]>([]);
@@ -35,6 +44,7 @@ export const ThumbnailGenerator = ({ projectId, videoScript }: ThumbnailGenerato
 
   useEffect(() => {
     loadPresets();
+    loadThumbnailHistory();
   }, []);
 
   const loadPresets = async () => {
@@ -58,6 +68,36 @@ export const ThumbnailGenerator = ({ projectId, videoScript }: ThumbnailGenerato
       setPresets(mappedPresets);
     } catch (error: any) {
       console.error("Error loading presets:", error);
+    }
+  };
+
+  const loadThumbnailHistory = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data, error } = await supabase
+        .from("generated_thumbnails")
+        .select("*")
+        .eq("project_id", projectId)
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+
+      const mappedHistory: GeneratedThumbnailHistory[] = (data || []).map(item => ({
+        id: item.id,
+        thumbnail_urls: Array.isArray(item.thumbnail_urls)
+          ? item.thumbnail_urls.filter((url): url is string => typeof url === 'string')
+          : [],
+        prompts: Array.isArray(item.prompts)
+          ? item.prompts.filter((p): p is string => typeof p === 'string')
+          : [],
+        created_at: item.created_at,
+      }));
+
+      setThumbnailHistory(mappedHistory);
+    } catch (error: any) {
+      console.error("Error loading thumbnail history:", error);
     }
   };
 
@@ -108,16 +148,20 @@ export const ThumbnailGenerator = ({ projectId, videoScript }: ThumbnailGenerato
     }
   };
 
-  const handleExampleUpload = async (files: FileList | File[]) => {
-    setIsUploading(true);
-    const fileArray = Array.from(files);
+  const handleExampleUpload = async (files: FileList) => {
+    if (files.length === 0) return;
     
+    setIsUploading(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("User not authenticated");
 
-      const uploadPromises = fileArray.map(async (file) => {
+      const uploadedUrls: string[] = [];
+
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
         const fileName = `${user.id}/thumbnails/examples/${Date.now()}_${file.name}`;
+        
         const { error: uploadError } = await supabase.storage
           .from("style-references")
           .upload(fileName, file);
@@ -128,14 +172,41 @@ export const ThumbnailGenerator = ({ projectId, videoScript }: ThumbnailGenerato
           .from("style-references")
           .getPublicUrl(fileName);
 
-        return publicUrl;
-      });
+        uploadedUrls.push(publicUrl);
+      }
 
-      const urls = await Promise.all(uploadPromises);
-      setExampleUrls(prev => [...prev, ...urls]);
-      toast.success(`${urls.length} exemple(s) ajouté(s) !`);
+      setExampleUrls(prev => [...prev, ...uploadedUrls]);
+      toast.success(`${uploadedUrls.length} exemple(s) ajouté(s) !`);
     } catch (error: any) {
       console.error("Error uploading examples:", error);
+      toast.error("Erreur lors de l'upload");
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleCharacterUpload = async (file: File) => {
+    setIsUploading(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("User not authenticated");
+
+      const fileName = `${user.id}/thumbnails/character/${Date.now()}_${file.name}`;
+      
+      const { error: uploadError } = await supabase.storage
+        .from("style-references")
+        .upload(fileName, file);
+
+      if (uploadError) throw uploadError;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from("style-references")
+        .getPublicUrl(fileName);
+
+      setCharacterRefUrl(publicUrl);
+      toast.success("Personnage ajouté !");
+    } catch (error: any) {
+      console.error("Error uploading character:", error);
       toast.error("Erreur lors de l'upload");
     } finally {
       setIsUploading(false);
@@ -158,33 +229,6 @@ export const ThumbnailGenerator = ({ projectId, videoScript }: ThumbnailGenerato
     const files = e.dataTransfer.files;
     if (files.length > 0) {
       await handleExampleUpload(files);
-    }
-  };
-
-  const handleCharacterUpload = async (file: File) => {
-    setIsUploading(true);
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("User not authenticated");
-
-      const fileName = `${user.id}/thumbnails/character/${Date.now()}_${file.name}`;
-      const { error: uploadError } = await supabase.storage
-        .from("style-references")
-        .upload(fileName, file);
-
-      if (uploadError) throw uploadError;
-
-      const { data: { publicUrl } } = supabase.storage
-        .from("style-references")
-        .getPublicUrl(fileName);
-
-      setCharacterRefUrl(publicUrl);
-      toast.success("Référence du personnage uploadée !");
-    } catch (error: any) {
-      console.error("Error uploading character:", error);
-      toast.error("Erreur lors de l'upload");
-    } finally {
-      setIsUploading(false);
     }
   };
 
@@ -243,13 +287,13 @@ export const ThumbnailGenerator = ({ projectId, videoScript }: ThumbnailGenerato
       console.log("Generated creative prompts:", creativePrompts);
       toast.success("Prompts créatifs générés !");
 
-      // Étape 2: Générer les 3 miniatures avec les prompts créatifs
-      for (let i = 0; i < 3; i++) {
-        toast.info(`Génération de la miniature ${i + 1}/3...`);
-        
+      // Étape 2: Générer les 3 miniatures EN PARALLÈLE
+      toast.info("Génération des 3 miniatures en parallèle...");
+      
+      const generationPromises = creativePrompts.map(async (prompt, i) => {
         const { data, error } = await supabase.functions.invoke("generate-image-seedream", {
           body: {
-            prompt: creativePrompts[i],
+            prompt,
             image_urls: [...exampleUrls, characterRefUrl],
             width: 1920,
             height: 1080,
@@ -276,13 +320,32 @@ export const ThumbnailGenerator = ({ projectId, videoScript }: ThumbnailGenerato
             .from("generated-images")
             .getPublicUrl(fileName);
 
-          generated.push(publicUrl);
-          toast.success(`Miniature ${i + 1}/3 générée !`);
+          return publicUrl;
         }
-      }
+        throw new Error(`Failed to generate thumbnail ${i + 1}`);
+      });
+
+      const results = await Promise.all(generationPromises);
+      generated.push(...results);
 
       setGeneratedThumbnails(generated);
       toast.success("Toutes les miniatures sont générées !");
+
+      // Sauvegarder dans l'historique
+      const { error: saveError } = await supabase
+        .from("generated_thumbnails")
+        .insert({
+          project_id: projectId,
+          user_id: user.id,
+          thumbnail_urls: generated,
+          prompts: creativePrompts,
+        });
+
+      if (saveError) {
+        console.error("Error saving to history:", saveError);
+      } else {
+        await loadThumbnailHistory();
+      }
     } catch (error: any) {
       console.error("Error generating thumbnails:", error);
       toast.error("Erreur lors de la génération");
@@ -291,201 +354,280 @@ export const ThumbnailGenerator = ({ projectId, videoScript }: ThumbnailGenerato
     }
   };
 
+  const deleteHistoryItem = async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from("generated_thumbnails")
+        .delete()
+        .eq("id", id);
+
+      if (error) throw error;
+
+      toast.success("Génération supprimée !");
+      await loadThumbnailHistory();
+    } catch (error: any) {
+      console.error("Error deleting history item:", error);
+      toast.error("Erreur lors de la suppression");
+    }
+  };
+
+  const downloadThumbnail = (url: string, index: number) => {
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `thumbnail_${index + 1}.jpg`;
+    link.target = "_blank";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <div className="space-y-6">
-      <div>
-        <h3 className="text-lg font-semibold mb-4">Générer des miniatures YouTube</h3>
-        
-        {/* Gestion des presets */}
-        <Card className="p-4 mb-6 bg-muted/30">
-          <Label className="text-sm font-medium mb-3 block">Presets de miniatures</Label>
-          <div className="flex gap-2 mb-3">
-            <Select value={selectedPresetId} onValueChange={(value) => {
-              setSelectedPresetId(value);
-              loadPreset(value);
-            }}>
-              <SelectTrigger className="flex-1">
-                <SelectValue placeholder="Charger un preset..." />
-              </SelectTrigger>
-              <SelectContent>
-                {presets.map((preset) => (
-                  <SelectItem key={preset.id} value={preset.id}>
-                    {preset.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex gap-2">
-            <Input
-              placeholder="Nom du nouveau preset..."
-              value={newPresetName}
-              onChange={(e) => setNewPresetName(e.target.value)}
-              className="flex-1"
-            />
-            <Button
-              onClick={saveAsPreset}
-              disabled={isSavingPreset || !newPresetName.trim() || exampleUrls.length === 0}
-              size="sm"
+      <h3 className="text-lg font-semibold">Générer des miniatures YouTube</h3>
+      
+      <Tabs defaultValue="generate" className="w-full">
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="generate">Générer</TabsTrigger>
+          <TabsTrigger value="history">Historique ({thumbnailHistory.length})</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="generate" className="space-y-6">
+          {/* Gestion des presets */}
+          <Card className="p-4 bg-muted/30">
+            <Label className="text-sm font-medium mb-2 block">Presets</Label>
+            <div className="flex gap-2">
+              <Select value={selectedPresetId} onValueChange={(value) => {
+                setSelectedPresetId(value);
+                loadPreset(value);
+              }}>
+                <SelectTrigger className="flex-1">
+                  <SelectValue placeholder="Sélectionner un preset" />
+                </SelectTrigger>
+                <SelectContent>
+                  {presets.map((preset) => (
+                    <SelectItem key={preset.id} value={preset.id}>
+                      {preset.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex gap-2 mt-4">
+              <Input
+                placeholder="Nom du preset"
+                value={newPresetName}
+                onChange={(e) => setNewPresetName(e.target.value)}
+                className="flex-1"
+              />
+              <Button
+                onClick={saveAsPreset}
+                disabled={isSavingPreset || !newPresetName.trim()}
+                size="sm"
+              >
+                {isSavingPreset ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Save className="w-4 h-4" />
+                )}
+              </Button>
+            </div>
+          </Card>
+
+          {/* Exemples de miniatures */}
+          <div>
+            <Label className="mb-2">Exemples de miniatures (style)</Label>
+            <div
+              className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors ${
+                isDraggingExamples ? 'border-primary bg-primary/10' : 'border-muted-foreground/25'
+              }`}
+              onDragOver={handleDragOverExamples}
+              onDragLeave={handleDragLeaveExamples}
+              onDrop={handleDropExamples}
+              onClick={() => document.getElementById('example-upload')?.click()}
             >
-              {isSavingPreset ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <>
-                  <Save className="h-4 w-4 mr-2" />
-                  Sauvegarder
-                </>
-              )}
-            </Button>
+              <input
+                id="example-upload"
+                type="file"
+                multiple
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => e.target.files && handleExampleUpload(e.target.files)}
+              />
+              <Upload className="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
+              <p className="text-sm text-muted-foreground">
+                Glisse ou clique pour ajouter des exemples
+              </p>
+            </div>
+
+            {exampleUrls.length > 0 && (
+              <div className="grid grid-cols-3 gap-4 mt-4">
+                {exampleUrls.map((url, index) => (
+                  <div key={index} className="relative group">
+                    <img
+                      src={url}
+                      alt={`Example ${index + 1}`}
+                      className="w-full h-32 object-cover rounded-lg border"
+                    />
+                    <Button
+                      variant="destructive"
+                      size="icon"
+                      className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity"
+                      onClick={() => removeExample(index)}
+                    >
+                      <X className="w-4 h-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-        </Card>
-        
-        {/* Exemples de miniatures */}
-        <div className="space-y-4 mb-6">
-          <Label>Exemples de miniatures (3-5 recommandés)</Label>
-          <div 
-            className="grid grid-cols-2 md:grid-cols-3 gap-4"
-            onDragOver={handleDragOverExamples}
-            onDragLeave={handleDragLeaveExamples}
-            onDrop={handleDropExamples}
-          >
-            {exampleUrls.map((url, index) => (
-              <div key={index} className="relative group">
+
+          {/* Référence du personnage */}
+          <div>
+            <Label className="mb-2">
+              Personnage de référence (UNIQUEMENT le personnage)
+            </Label>
+            <div
+              className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors ${
+                isDraggingCharacter ? 'border-primary bg-primary/10' : 'border-muted-foreground/25'
+              }`}
+              onDragOver={handleDragOverCharacter}
+              onDragLeave={handleDragLeaveCharacter}
+              onDrop={handleDropCharacter}
+              onClick={() => document.getElementById('character-upload')?.click()}
+            >
+              <input
+                id="character-upload"
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => e.target.files?.[0] && handleCharacterUpload(e.target.files[0])}
+              />
+              <ImageIcon className="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
+              <p className="text-sm text-muted-foreground">
+                Ajoute une image avec uniquement ton personnage
+              </p>
+            </div>
+
+            {characterRefUrl && (
+              <div className="relative group mt-4 inline-block">
                 <img
-                  src={url}
-                  alt={`Exemple ${index + 1}`}
-                  className="w-full h-32 object-cover rounded-lg border"
+                  src={characterRefUrl}
+                  alt="Character reference"
+                  className="w-48 h-48 object-cover rounded-lg border"
                 />
                 <Button
                   variant="destructive"
                   size="icon"
                   className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity"
-                  onClick={() => removeExample(index)}
+                  onClick={() => setCharacterRefUrl("")}
                 >
                   <X className="w-4 h-4" />
                 </Button>
               </div>
-            ))}
-            <label className="cursor-pointer">
-              <div className={`w-full h-32 border-2 border-dashed rounded-lg flex flex-col items-center justify-center hover:bg-accent transition-colors ${isDraggingExamples ? 'bg-accent border-primary' : ''}`}>
-                {isUploading ? (
-                  <Loader2 className="w-6 h-6 animate-spin" />
-                ) : (
-                  <>
-                    <Upload className="w-6 h-6 mb-2" />
-                    <span className="text-sm">{isDraggingExamples ? 'Déposez ici' : 'Ajouter (ou glisser-déposer)'}</span>
-                  </>
-                )}
-              </div>
-              <input
-                type="file"
-                accept="image/*"
-                multiple
-                className="hidden"
-                onChange={(e) => e.target.files && e.target.files.length > 0 && handleExampleUpload(e.target.files)}
-                disabled={isUploading}
-              />
-            </label>
+            )}
           </div>
-        </div>
 
-        {/* Référence du personnage */}
-        <div className="space-y-4 mb-6">
-          <Label>Référence du personnage</Label>
-          {characterRefUrl ? (
-            <div className="relative group w-fit">
-              <img
-                src={characterRefUrl}
-                alt="Personnage"
-                className="w-48 h-48 object-cover rounded-lg border"
-              />
-              <Button
-                variant="destructive"
-                size="icon"
-                className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity"
-                onClick={() => setCharacterRefUrl("")}
-              >
-                <X className="w-4 h-4" />
-              </Button>
-            </div>
-          ) : (
-            <label 
-              className="cursor-pointer"
-              onDragOver={handleDragOverCharacter}
-              onDragLeave={handleDragLeaveCharacter}
-              onDrop={handleDropCharacter}
-            >
-              <div className={`w-48 h-48 border-2 border-dashed rounded-lg flex flex-col items-center justify-center hover:bg-accent transition-colors ${isDraggingCharacter ? 'bg-accent border-primary' : ''}`}>
-                {isUploading ? (
-                  <Loader2 className="w-6 h-6 animate-spin" />
-                ) : (
-                  <>
-                    <Upload className="w-6 h-6 mb-2" />
-                    <span className="text-sm text-center px-2">{isDraggingCharacter ? 'Déposez ici' : 'Uploader (ou glisser-déposer)'}</span>
-                  </>
-                )}
+          {/* Bouton de génération */}
+          <Button
+            onClick={generateThumbnails}
+            disabled={isGenerating || exampleUrls.length === 0 || !characterRefUrl}
+            className="w-full"
+            size="lg"
+          >
+            {isGenerating ? (
+              <>
+                <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                Génération en cours...
+              </>
+            ) : (
+              "Générer 3 miniatures"
+            )}
+          </Button>
+
+          {/* Résultats de génération */}
+          {generatedThumbnails.length > 0 && (
+            <div className="space-y-4">
+              <h4 className="font-semibold">Miniatures générées</h4>
+              <div className="grid grid-cols-3 gap-4">
+                {generatedThumbnails.map((url, index) => (
+                  <div key={index} className="space-y-2">
+                    <img
+                      src={url}
+                      alt={`Generated ${index + 1}`}
+                      className="w-full aspect-video object-cover rounded-lg border"
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full"
+                      onClick={() => downloadThumbnail(url, index)}
+                    >
+                      <Download className="w-4 h-4 mr-2" />
+                      Télécharger
+                    </Button>
+                  </div>
+                ))}
               </div>
-              <input
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={(e) => e.target.files?.[0] && handleCharacterUpload(e.target.files[0])}
-                disabled={isUploading}
-              />
-            </label>
+            </div>
           )}
-        </div>
+        </TabsContent>
 
-        {/* Bouton de génération */}
-        <Button
-          onClick={generateThumbnails}
-          disabled={isGenerating || exampleUrls.length === 0 || !characterRefUrl}
-          className="w-full"
-        >
-          {isGenerating ? (
-            <>
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              Génération en cours...
-            </>
+        <TabsContent value="history" className="space-y-4">
+          {thumbnailHistory.length === 0 ? (
+            <Card className="p-8 text-center">
+              <p className="text-muted-foreground">Aucune génération précédente</p>
+            </Card>
           ) : (
-            <>
-              <ImageIcon className="w-4 h-4 mr-2" />
-              Générer 3 miniatures
-            </>
-          )}
-        </Button>
-
-        {/* Miniatures générées */}
-        {generatedThumbnails.length > 0 && (
-          <div className="mt-8">
-            <h4 className="font-semibold mb-4">Miniatures générées</h4>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {generatedThumbnails.map((url, index) => (
-                <Card key={index} className="p-4">
-                  <img
-                    src={url}
-                    alt={`Miniature ${index + 1}`}
-                    className="w-full h-auto rounded-lg mb-2"
-                  />
+            thumbnailHistory.map((item) => (
+              <Card key={item.id} className="p-4">
+                <div className="flex justify-between items-start mb-4">
+                  <div>
+                    <p className="text-sm text-muted-foreground">
+                      {new Date(item.created_at).toLocaleDateString('fr-FR', {
+                        year: 'numeric',
+                        month: 'long',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </p>
+                  </div>
                   <Button
-                    variant="outline"
-                    size="sm"
-                    className="w-full"
-                    onClick={() => {
-                      const link = document.createElement("a");
-                      link.href = url;
-                      link.download = `thumbnail_v${index + 1}.jpg`;
-                      link.click();
-                    }}
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => deleteHistoryItem(item.id)}
                   >
-                    Télécharger
+                    <Trash2 className="w-4 h-4" />
                   </Button>
-                </Card>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
+                </div>
+                <div className="grid grid-cols-3 gap-4">
+                  {item.thumbnail_urls.map((url, index) => (
+                    <div key={index} className="space-y-2">
+                      <img
+                        src={url}
+                        alt={`History ${index + 1}`}
+                        className="w-full aspect-video object-cover rounded-lg border cursor-pointer hover:opacity-80 transition-opacity"
+                        onClick={() => window.open(url, '_blank')}
+                      />
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full"
+                        onClick={() => downloadThumbnail(url, index)}
+                      >
+                        <Download className="w-4 h-4 mr-2" />
+                        Télécharger
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            ))
+          )}
+        </TabsContent>
+      </Tabs>
     </div>
   );
 };
