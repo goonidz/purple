@@ -684,6 +684,47 @@ const Index = () => {
     }
   };
 
+  // Helper function to upload manual image
+  const uploadManualImage = async (file: File, sceneIndex: number) => {
+    try {
+      setGeneratingImageIndex(sceneIndex);
+      
+      // Generate unique filename
+      const timestamp = Date.now();
+      const fileExt = file.name.split('.').pop();
+      const filename = `${currentProjectId || 'temp'}/scene_${sceneIndex + 1}_${timestamp}.${fileExt}`;
+      
+      // Upload to Supabase Storage
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('generated-images')
+        .upload(filename, file, {
+          contentType: file.type,
+          upsert: true
+        });
+      
+      if (uploadError) throw uploadError;
+      
+      // Get public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('generated-images')
+        .getPublicUrl(filename);
+      
+      // Update the prompt with new image URL
+      setGeneratedPrompts(prev => {
+        const updated = [...prev];
+        updated[sceneIndex] = { ...updated[sceneIndex], imageUrl: publicUrl };
+        return updated;
+      });
+      
+      toast.success("Image importée !");
+    } catch (error: any) {
+      console.error("Error uploading image:", error);
+      toast.error(error.message || "Erreur lors de l'upload de l'image");
+    } finally {
+      setGeneratingImageIndex(null);
+    }
+  };
+
   // Helper function to save image to Supabase Storage
   const saveImageToStorage = async (replicateUrl: string, sceneIndex: number): Promise<string> => {
     try {
@@ -1318,45 +1359,87 @@ const Index = () => {
                                         onClick={() => setImagePreviewUrl(prompt.imageUrl || null)}
                                         title="Cliquer pour agrandir"
                                       />
+                                      <div className="absolute top-1 right-1 flex gap-1">
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          className="bg-background/80 hover:bg-background opacity-0 group-hover:opacity-100 transition-all"
+                                          onClick={() => {
+                                            const input = document.createElement('input');
+                                            input.type = 'file';
+                                            input.accept = 'image/*';
+                                            input.onchange = (e) => {
+                                              const file = (e.target as HTMLInputElement).files?.[0];
+                                              if (file) uploadManualImage(file, index);
+                                            };
+                                            input.click();
+                                          }}
+                                          disabled={generatingImageIndex === index}
+                                          title="Importer une image"
+                                        >
+                                          <Upload className="h-3 w-3" />
+                                        </Button>
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          className={`bg-background/80 hover:bg-background transition-all ${
+                                            generatingImageIndex === index 
+                                              ? 'opacity-100' 
+                                              : 'opacity-0 group-hover:opacity-100'
+                                          }`}
+                                          onClick={() => setConfirmRegenerateImage(index)}
+                                          disabled={generatingImageIndex === index}
+                                          title="Régénérer l'image"
+                                        >
+                                          {generatingImageIndex === index ? (
+                                            <Loader2 className="h-3 w-3 animate-spin" />
+                                          ) : (
+                                            <RefreshCw className="h-3 w-3" />
+                                          )}
+                                        </Button>
+                                      </div>
+                                    </div>
+                                  ) : prompt ? (
+                                    <div className="flex gap-2">
                                       <Button
-                                        variant="ghost"
+                                        variant="outline"
                                         size="sm"
-                                        className={`absolute top-1 right-1 bg-background/80 hover:bg-background transition-all ${
-                                          generatingImageIndex === index 
-                                            ? 'opacity-100' 
-                                            : 'opacity-0 group-hover:opacity-100'
-                                        }`}
-                                        onClick={() => setConfirmRegenerateImage(index)}
+                                        onClick={() => {
+                                          const input = document.createElement('input');
+                                          input.type = 'file';
+                                          input.accept = 'image/*';
+                                          input.onchange = (e) => {
+                                            const file = (e.target as HTMLInputElement).files?.[0];
+                                            if (file) uploadManualImage(file, index);
+                                          };
+                                          input.click();
+                                        }}
                                         disabled={generatingImageIndex === index}
-                                        title="Régénérer l'image"
+                                        title="Importer une image"
+                                      >
+                                        <Upload className="h-4 w-4 mr-1" />
+                                        <span className="text-xs">Importer</span>
+                                      </Button>
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => generateImage(index)}
+                                        disabled={generatingImageIndex === index}
+                                        title="Générer l'image de cette scène"
                                       >
                                         {generatingImageIndex === index ? (
-                                          <Loader2 className="h-3 w-3 animate-spin" />
+                                          <>
+                                            <Loader2 className="h-4 w-4 animate-spin mr-1" />
+                                            <span className="text-xs">Génération...</span>
+                                          </>
                                         ) : (
-                                          <RefreshCw className="h-3 w-3" />
+                                          <>
+                                            <ImageIcon className="h-4 w-4 mr-1" />
+                                            <span className="text-xs">Générer</span>
+                                          </>
                                         )}
                                       </Button>
                                     </div>
-                                  ) : prompt ? (
-                                    <Button
-                                      variant="outline"
-                                      size="sm"
-                                      onClick={() => generateImage(index)}
-                                      disabled={generatingImageIndex === index}
-                                      title="Générer l'image de cette scène"
-                                    >
-                                      {generatingImageIndex === index ? (
-                                        <>
-                                          <Loader2 className="h-4 w-4 animate-spin mr-1" />
-                                          <span className="text-xs">Génération...</span>
-                                        </>
-                                      ) : (
-                                        <>
-                                          <ImageIcon className="h-4 w-4 mr-1" />
-                                          <span className="text-xs">Générer</span>
-                                        </>
-                                      )}
-                                    </Button>
                                   ) : null}
                                 </TableCell>
                                 <TableCell>
