@@ -11,6 +11,7 @@ import { useNavigate } from "react-router-dom";
 import { Key, Video, Image, Mic, ChevronRight, ChevronLeft, CheckCircle2 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import elevenLabsSetup from "@/assets/elevenlabs-api-setup.png";
+import replicateSetup from "@/assets/replicate-api-setup.png";
 
 interface OnboardingDialogProps {
   open: boolean;
@@ -48,14 +49,15 @@ const OnboardingDialog = ({ open, onOpenChange }: OnboardingDialogProps) => {
       description: "Utilisée pour générer les images de vos scènes avec SeedDream 4.",
       icon: Image,
       color: "text-purple-500",
-      link: "https://replicate.com/account/api-tokens",
+      link: "https://replicate.com/bytedance/seedream-4/api",
       linkText: "Aller sur Replicate",
       detailedSteps: [
-        "Connectez-vous à votre compte Replicate",
-        "Accédez à la section 'API tokens'",
-        "Créez un nouveau token API",
-        "Copiez le token généré (commence par 'r8_')"
-      ]
+        "Rendez-vous sur la page du modèle SeedDream 4",
+        "Cliquez sur l'onglet 'API'",
+        "Cliquez sur 'Show' pour afficher votre clé",
+        "Copiez tout ce qui commence par 'r8_' (voir image ci-dessous)"
+      ],
+      image: replicateSetup
     },
     {
       title: "Eleven Labs API Key",
