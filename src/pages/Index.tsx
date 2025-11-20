@@ -131,6 +131,8 @@ const Index = () => {
   const [confirmGenerateImages, setConfirmGenerateImages] = useState(false);
   const [editingPromptIndex, setEditingPromptIndex] = useState<number | null>(null);
   const [editingPromptText, setEditingPromptText] = useState<string>("");
+  const [editingSceneIndex, setEditingSceneIndex] = useState<number | null>(null);
+  const [editingSceneText, setEditingSceneText] = useState<string>("");
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [exportFormat, setExportFormat] = useState<ExportFormat>("premiere-xml");
   const [exportMode, setExportMode] = useState<ExportMode>("with-images");
@@ -880,6 +882,31 @@ const Index = () => {
     setEditingPromptIndex(null);
     setEditingPromptText("");
     toast.success("Prompt modifié avec succès");
+  };
+
+  const handleEditScene = (index: number) => {
+    const prompt = generatedPrompts[index];
+    if (prompt) {
+      setEditingSceneIndex(index);
+      setEditingSceneText(prompt.text);
+    }
+  };
+
+  const handleSaveEditedScene = () => {
+    if (editingSceneIndex === null) return;
+    
+    setGeneratedPrompts(prev => {
+      const updated = [...prev];
+      updated[editingSceneIndex] = {
+        ...updated[editingSceneIndex],
+        text: editingSceneText
+      };
+      return updated;
+    });
+    
+    setEditingSceneIndex(null);
+    setEditingSceneText("");
+    toast.success("Texte de la scène mis à jour");
   };
 
   // Helper function to upload multiple images at once
@@ -1845,7 +1872,23 @@ const Index = () => {
                                   {(scene.endTime - scene.startTime).toFixed(1)}s
                                 </TableCell>
                                 <TableCell className="max-w-xs">
-                                  <p className="text-sm line-clamp-3">{scene.text}</p>
+                                  <div className="group relative">
+                                    <p className="text-sm line-clamp-3">{scene.text}</p>
+                                    <div className={`absolute top-0 right-0 flex gap-1 transition-opacity rounded p-1 ${
+                                      editingSceneIndex === index
+                                        ? 'opacity-100 bg-background/80 backdrop-blur-sm'
+                                        : 'opacity-0 group-hover:opacity-100 group-hover:bg-background/80 group-hover:backdrop-blur-sm'
+                                    }`}>
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => handleEditScene(index)}
+                                        title="Modifier le texte"
+                                      >
+                                        <Pencil className="h-3 w-3" />
+                                      </Button>
+                                    </div>
+                                  </div>
                                 </TableCell>
                                 <TableCell className="max-w-md">
                                   {prompt ? (
@@ -2607,6 +2650,33 @@ const Index = () => {
                 Annuler
               </Button>
               <Button onClick={handleSaveEditedPrompt}>
+                Enregistrer
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Edit Scene Text Dialog */}
+        <Dialog open={editingSceneIndex !== null} onOpenChange={(open) => !open && setEditingSceneIndex(null)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Modifier le texte de la scène</DialogTitle>
+              <DialogDescription>
+                Modifiez le texte pour la scène {editingSceneIndex !== null ? editingSceneIndex + 1 : ''}
+              </DialogDescription>
+            </DialogHeader>
+            <Textarea
+              value={editingSceneText}
+              onChange={(e) => setEditingSceneText(e.target.value)}
+              rows={6}
+              className="w-full"
+              placeholder="Entrez le nouveau texte..."
+            />
+            <div className="flex justify-end gap-2 pt-4">
+              <Button variant="outline" onClick={() => setEditingSceneIndex(null)}>
+                Annuler
+              </Button>
+              <Button onClick={handleSaveEditedScene}>
                 Enregistrer
               </Button>
             </div>
