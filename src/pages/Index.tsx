@@ -48,6 +48,7 @@ import {
 } from "@/lib/videoExportHelpers";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { VideoPreview } from "@/components/VideoPreview";
 
 interface TranscriptSegment {
   text: string;
@@ -119,6 +120,9 @@ const Index = () => {
   const [exportMode, setExportMode] = useState<ExportMode>("with-images");
   const [exportFramerate, setExportFramerate] = useState<number>(25);
   const [isExporting, setIsExporting] = useState(false);
+  const [audioUrl, setAudioUrl] = useState<string>("");
+  const [audioFile, setAudioFile] = useState<File | null>(null);
+  const [isUploadingAudio, setIsUploadingAudio] = useState(false);
 
   // Check authentication
   useEffect(() => {
@@ -167,7 +171,7 @@ const Index = () => {
 
       return () => clearTimeout(timeoutId);
     }
-  }, [currentProjectId, transcriptData, examplePrompts, scenes, generatedPrompts, sceneDuration0to1, sceneDuration1to3, sceneDuration3plus, styleReferenceUrl]);
+  }, [currentProjectId, transcriptData, examplePrompts, scenes, generatedPrompts, sceneDuration0to1, sceneDuration1to3, sceneDuration3plus, styleReferenceUrl, audioUrl]);
 
   const loadProjectData = async (projectId: string) => {
     try {
@@ -194,6 +198,9 @@ const Index = () => {
         setStyleReferenceUrl(data.style_reference_url);
         setUploadedStyleImageUrl(data.style_reference_url);
       }
+      if (data.audio_url) {
+        setAudioUrl(data.audio_url);
+      }
     } catch (error: any) {
       console.error("Error loading project:", error);
       toast.error("Erreur lors du chargement du projet");
@@ -215,6 +222,7 @@ const Index = () => {
           scene_duration_1to3: sceneDuration1to3,
           scene_duration_3plus: sceneDuration3plus,
           style_reference_url: styleReferenceUrl || null,
+          audio_url: audioUrl || null,
         })
         .eq("id", currentProjectId);
 
@@ -685,6 +693,54 @@ const Index = () => {
     }
   };
 
+  const handleAudioUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.startsWith('audio/')) {
+      toast.error("Veuillez sélectionner un fichier audio");
+      return;
+    }
+
+    // Validate file size (max 50MB)
+    if (file.size > 50 * 1024 * 1024) {
+      toast.error("Le fichier audio ne doit pas dépasser 50MB");
+      return;
+    }
+
+    setIsUploadingAudio(true);
+    setAudioFile(file);
+
+    try {
+      if (!user) throw new Error("User not authenticated");
+
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${user.id}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('audio-files')
+        .upload(fileName, file, {
+          cacheControl: '3600',
+          upsert: false
+        });
+
+      if (uploadError) throw uploadError;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('audio-files')
+        .getPublicUrl(fileName);
+
+      setAudioUrl(publicUrl);
+      toast.success("Fichier audio uploadé !");
+    } catch (error: any) {
+      console.error("Error uploading audio:", error);
+      toast.error(error.message || "Erreur lors de l'upload du fichier audio");
+    } finally {
+      setIsUploadingAudio(false);
+    }
+  };
+
   // Helper function to upload manual image
   const uploadManualImage = async (file: File, sceneIndex: number) => {
     try {
@@ -1131,6 +1187,38 @@ const Index = () => {
                           accept=".json"
                           onChange={handleFileUpload}
                           className="hidden"
+                        />
+                      </label>
+                    </div>
+                  </div>
+                </Card>
+
+                <Card className="p-6">
+                  <h2 className="text-lg font-semibold mb-4">1b. Importer l'audio (optionnel)</h2>
+                  <div className="space-y-4">
+                    <div>
+                      <label htmlFor="audio-upload" className="cursor-pointer">
+                        <div className="border-2 border-dashed border-muted-foreground/25 rounded-lg p-8 text-center hover:border-primary/50 transition-colors">
+                          <Upload className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
+                          <p className="text-sm font-medium mb-1">
+                            {audioFile ? audioFile.name : audioUrl ? "Audio chargé" : "Cliquez pour importer un fichier audio"}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            Format: MP3, WAV, M4A, etc.
+                          </p>
+                          {isUploadingAudio && (
+                            <div className="mt-2">
+                              <Loader2 className="h-5 w-5 animate-spin mx-auto text-primary" />
+                            </div>
+                          )}
+                        </div>
+                        <input
+                          id="audio-upload"
+                          type="file"
+                          accept="audio/*"
+                          onChange={handleAudioUpload}
+                          className="hidden"
+                          disabled={isUploadingAudio}
                         />
                       </label>
                     </div>
@@ -2042,6 +2130,13 @@ const Index = () => {
             </div>
           </DialogContent>
         </Dialog>
+
+        {/* Video Preview */}
+        {audioUrl && generatedPrompts.length > 0 && generatedPrompts.every(p => p.imageUrl) && (
+          <div className="mt-8">
+            <VideoPreview audioUrl={audioUrl} prompts={generatedPrompts} />
+          </div>
+        )}
       </div>
   );
 };
