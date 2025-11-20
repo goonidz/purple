@@ -8,6 +8,7 @@ import { SceneSidebar } from "@/components/SceneSidebar";
 import { SceneEditor } from "@/components/SceneEditor";
 import { TimelineBar } from "@/components/TimelineBar";
 import { VideoPreview } from "@/components/VideoPreview";
+import { SubtitleControls } from "@/components/SubtitleControls";
 import { toast } from "sonner";
 
 interface GeneratedPrompt {
@@ -296,43 +297,54 @@ const Workspace = () => {
         </div>
 
         {/* Center/Right - Preview & Editor */}
-        <div className="flex-1 flex flex-col overflow-hidden">
-          {/* Preview area */}
-          <div className="flex-1 overflow-auto">
-            {showPreview && canShowPreview ? (
-              <div className="p-6">
-                <VideoPreview 
-                  audioUrl={audioUrl} 
-                  prompts={generatedPrompts}
-                  autoPlay={autoPlayPreview}
-                  startFromScene={startFromSceneIndex}
-                  subtitleSettings={subtitleSettings}
-                  onSubtitleSettingsChange={setSubtitleSettings}
-                />
-              </div>
-            ) : (
-              <div className="p-6">
-                <div className="max-w-4xl mx-auto">
-                  <SceneEditor
-                    scene={generatedPrompts[selectedSceneIndex]}
-                    sceneIndex={selectedSceneIndex}
-                    onUpdate={handleUpdateScene}
-                    onPlayFromHere={handlePlayFromHere}
-                    userId={user.id}
+        <div className="flex-1 flex overflow-hidden">
+          {/* Main content area */}
+          <div className="flex-1 flex flex-col overflow-hidden">
+            {/* Preview/Editor area */}
+            <div className="flex-1 overflow-auto">
+              {showPreview && canShowPreview ? (
+                <div className="p-6">
+                  <VideoPreview 
+                    audioUrl={audioUrl} 
+                    prompts={generatedPrompts}
+                    autoPlay={autoPlayPreview}
+                    startFromScene={startFromSceneIndex}
                     subtitleSettings={subtitleSettings}
                     onSubtitleSettingsChange={setSubtitleSettings}
                   />
                 </div>
-              </div>
-            )}
+              ) : (
+                <div className="p-6">
+                  <div className="max-w-4xl mx-auto">
+                    <SceneEditor
+                      scene={generatedPrompts[selectedSceneIndex]}
+                      sceneIndex={selectedSceneIndex}
+                      onUpdate={handleUpdateScene}
+                      onPlayFromHere={handlePlayFromHere}
+                      userId={user.id}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Timeline at bottom */}
+            <TimelineBar
+              scenes={generatedPrompts}
+              selectedSceneIndex={selectedSceneIndex}
+              onSelectScene={setSelectedSceneIndex}
+            />
           </div>
 
-          {/* Timeline at bottom */}
-          <TimelineBar
-            scenes={generatedPrompts}
-            selectedSceneIndex={selectedSceneIndex}
-            onSelectScene={setSelectedSceneIndex}
-          />
+          {/* Right sidebar - Subtitle controls (visible during preview) */}
+          {showPreview && (
+            <div className="w-[320px] border-l flex-shrink-0">
+              <SubtitleControls
+                settings={subtitleSettings}
+                onChange={setSubtitleSettings}
+              />
+            </div>
+          )}
         </div>
       </div>
     </div>
