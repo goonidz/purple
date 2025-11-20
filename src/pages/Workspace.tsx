@@ -10,6 +10,7 @@ import { TimelineBar } from "@/components/TimelineBar";
 import { VideoPreview } from "@/components/VideoPreview";
 import { SubtitleControls } from "@/components/SubtitleControls";
 import { ThumbnailGenerator } from "@/components/ThumbnailGenerator";
+import { ProjectSettingsDialog } from "@/components/ProjectSettingsDialog";
 import { toast } from "sonner";
 import { exportToVideo } from "@/lib/videoExportHelpers";
 
@@ -51,6 +52,7 @@ const Workspace = () => {
   const [isExportingVideo, setIsExportingVideo] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
   const [showThumbnailGenerator, setShowThumbnailGenerator] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
 
   // Check authentication
   useEffect(() => {
@@ -352,12 +354,24 @@ const Workspace = () => {
               Miniatures YouTube
             </Button>
             
-            <Button variant="outline" size="icon">
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => setShowSettings(true)}
+            >
               <Settings className="h-4 w-4" />
             </Button>
           </div>
         </div>
       </div>
+
+      {/* Project Settings Dialog */}
+      <ProjectSettingsDialog
+        open={showSettings}
+        onOpenChange={setShowSettings}
+        projectId={currentProjectId || ""}
+        onSave={() => loadProjectData(currentProjectId || "")}
+      />
 
       {/* Main content */}
       <div className="flex-1 flex overflow-hidden">
