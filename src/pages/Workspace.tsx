@@ -311,9 +311,29 @@ const Workspace = () => {
               </>
             )}
             
-            <Button variant="outline" onClick={handleExport}>
+            <Button
+              variant="outline"
+              onClick={handleExport}
+            >
               <Download className="mr-2 h-4 w-4" />
-              Exporter
+              Export XML
+            </Button>
+
+            <Button
+              onClick={handleVideoExport}
+              disabled={isExportingVideo || !canShowPreview}
+            >
+              {isExportingVideo ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  {exportProgress > 0 ? `${Math.round(exportProgress)}%` : "Export..."}
+                </>
+              ) : (
+                <>
+                  <Video className="mr-2 h-4 w-4" />
+                  Export Vidéo
+                </>
+              )}
             </Button>
             
             <Button variant="outline" size="icon">
