@@ -4,6 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Loader2, Plus, Upload } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -25,6 +26,7 @@ export const ProjectConfigurationModal = ({
   const [sceneDuration0to1, setSceneDuration0to1] = useState(4);
   const [sceneDuration1to3, setSceneDuration1to3] = useState(6);
   const [sceneDuration3plus, setSceneDuration3plus] = useState(8);
+  const [sceneFormat, setSceneFormat] = useState<"long" | "short">("long");
   const [examplePrompts, setExamplePrompts] = useState<string[]>(["", "", ""]);
   const [imageWidth, setImageWidth] = useState(1920);
   const [imageHeight, setImageHeight] = useState(1080);
@@ -162,33 +164,48 @@ export const ProjectConfigurationModal = ({
       {step === "scene-config" && (
         <div className="space-y-4">
           <div className="space-y-2">
-            <Label>Durée pour scènes de 0-1 seconde (en secondes)</Label>
+            <Label>Format de contenu</Label>
+            <RadioGroup value={sceneFormat} onValueChange={(value) => setSceneFormat(value as "long" | "short")}>
+              <div className="flex gap-4">
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="long" id="modal-format-long" />
+                  <Label htmlFor="modal-format-long" className="font-normal cursor-pointer">Long form</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="short" id="modal-format-short" />
+                  <Label htmlFor="modal-format-short" className="font-normal cursor-pointer">Short form</Label>
+                </div>
+              </div>
+            </RadioGroup>
+          </div>
+          <div className="space-y-2">
+            <Label>{sceneFormat === "long" ? "Durée pour scènes de 0-1 minute (en secondes)" : "Durée pour scènes de 0-5 secondes (en secondes)"}</Label>
             <Input
               type="number"
               value={sceneDuration0to1}
               onChange={(e) => setSceneDuration0to1(parseInt(e.target.value))}
               min={1}
-              max={30}
+              max={sceneFormat === "long" ? 60 : 5}
             />
           </div>
           <div className="space-y-2">
-            <Label>Durée pour scènes de 1-3 secondes</Label>
+            <Label>{sceneFormat === "long" ? "Durée pour scènes de 1-3 minutes" : "Durée pour scènes de 5-15 secondes"}</Label>
             <Input
               type="number"
               value={sceneDuration1to3}
               onChange={(e) => setSceneDuration1to3(parseInt(e.target.value))}
               min={1}
-              max={30}
+              max={sceneFormat === "long" ? 180 : 15}
             />
           </div>
           <div className="space-y-2">
-            <Label>Durée pour scènes de 3+ secondes</Label>
+            <Label>{sceneFormat === "long" ? "Durée pour scènes de 3+ minutes" : "Durée pour scènes de 15+ secondes"}</Label>
             <Input
               type="number"
               value={sceneDuration3plus}
               onChange={(e) => setSceneDuration3plus(parseInt(e.target.value))}
               min={1}
-              max={30}
+              max={sceneFormat === "long" ? 600 : 60}
             />
           </div>
         </div>

@@ -97,6 +97,7 @@ const Index = () => {
   const [sceneDuration0to1, setSceneDuration0to1] = useState(4);
   const [sceneDuration1to3, setSceneDuration1to3] = useState(6);
   const [sceneDuration3plus, setSceneDuration3plus] = useState(8);
+  const [sceneFormat, setSceneFormat] = useState<"long" | "short">("long");
   const cancelGenerationRef = useRef(false);
   const cancelImageGenerationRef = useRef(false);
   const [imageWidth, setImageWidth] = useState<number>(1920);
@@ -1786,42 +1787,60 @@ const Index = () => {
                 <h3 className="text-lg font-semibold mb-4">Paramètres de scènes</h3>
               </div>
 
-              <div className="grid grid-cols-3 gap-4">
+              <div className="space-y-4">
                 <div>
-                  <label className="text-sm font-medium mb-2 block">
-                    Durée 0-1min (sec)
-                  </label>
-                  <Input
-                    type="number"
-                    min="1"
-                    max="60"
-                    value={sceneDuration0to1}
-                    onChange={(e) => setSceneDuration0to1(parseInt(e.target.value))}
-                  />
+                  <label className="text-sm font-medium mb-2 block">Format de contenu</label>
+                  <RadioGroup value={sceneFormat} onValueChange={(value) => setSceneFormat(value as "long" | "short")}>
+                    <div className="flex gap-4">
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="long" id="format-long" />
+                        <Label htmlFor="format-long" className="font-normal cursor-pointer">Long form</Label>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="short" id="format-short" />
+                        <Label htmlFor="format-short" className="font-normal cursor-pointer">Short form</Label>
+                      </div>
+                    </div>
+                  </RadioGroup>
                 </div>
-                <div>
-                  <label className="text-sm font-medium mb-2 block">
-                    Durée 1-3min (sec)
-                  </label>
-                  <Input
-                    type="number"
-                    min="1"
-                    max="180"
-                    value={sceneDuration1to3}
-                    onChange={(e) => setSceneDuration1to3(parseInt(e.target.value))}
-                  />
-                </div>
-                <div>
-                  <label className="text-sm font-medium mb-2 block">
-                    Durée 3min+ (sec)
-                  </label>
-                  <Input
-                    type="number"
-                    min="1"
-                    max="600"
-                    value={sceneDuration3plus}
-                    onChange={(e) => setSceneDuration3plus(parseInt(e.target.value))}
-                  />
+
+                <div className="grid grid-cols-3 gap-4">
+                  <div>
+                    <label className="text-sm font-medium mb-2 block">
+                      {sceneFormat === "long" ? "Durée 0-1min (sec)" : "Durée 0-5sec (sec)"}
+                    </label>
+                    <Input
+                      type="number"
+                      min="1"
+                      max={sceneFormat === "long" ? "60" : "5"}
+                      value={sceneDuration0to1}
+                      onChange={(e) => setSceneDuration0to1(parseInt(e.target.value))}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium mb-2 block">
+                      {sceneFormat === "long" ? "Durée 1-3min (sec)" : "Durée 5-15sec (sec)"}
+                    </label>
+                    <Input
+                      type="number"
+                      min="1"
+                      max={sceneFormat === "long" ? "180" : "15"}
+                      value={sceneDuration1to3}
+                      onChange={(e) => setSceneDuration1to3(parseInt(e.target.value))}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium mb-2 block">
+                      {sceneFormat === "long" ? "Durée 3min+ (sec)" : "Durée 15+sec (sec)"}
+                    </label>
+                    <Input
+                      type="number"
+                      min="1"
+                      max={sceneFormat === "long" ? "600" : "60"}
+                      value={sceneDuration3plus}
+                      onChange={(e) => setSceneDuration3plus(parseInt(e.target.value))}
+                    />
+                  </div>
                 </div>
               </div>
 
