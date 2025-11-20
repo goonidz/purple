@@ -9,11 +9,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Card } from "@/components/ui/card";
-import { Loader2, Upload, X } from "lucide-react";
+import { Loader2, Upload, X, Plus } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { PresetManager } from "@/components/PresetManager";
 
 interface ProjectSettingsDialogProps {
   open: boolean;
@@ -31,6 +34,9 @@ export const ProjectSettingsDialog = ({
   const [sceneDuration0to1, setSceneDuration0to1] = useState(4);
   const [sceneDuration1to3, setSceneDuration1to3] = useState(6);
   const [sceneDuration3plus, setSceneDuration3plus] = useState(8);
+  const [sceneFormat, setSceneFormat] = useState<"long" | "short">("long");
+  const [range1End, setRange1End] = useState(60);
+  const [range2End, setRange2End] = useState(180);
   const [examplePrompts, setExamplePrompts] = useState<string[]>(["", "", ""]);
   const [imageWidth, setImageWidth] = useState(1920);
   const [imageHeight, setImageHeight] = useState(1080);
@@ -141,171 +147,330 @@ export const ProjectSettingsDialog = ({
     }
   };
 
+  const updatePrompt = (index: number, value: string) => {
+    const newPrompts = [...examplePrompts];
+    newPrompts[index] = value;
+    setExamplePrompts(newPrompts);
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+      <DialogContent className="max-w-4xl max-h-[85vh] overflow-hidden flex flex-col">
         <DialogHeader>
-          <DialogTitle>Paramètres du projet</DialogTitle>
+          <DialogTitle className="text-2xl">Paramètres du projet</DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-6 py-4">
-          {/* Configuration des scènes */}
-          <Card className="p-4">
-            <h3 className="font-semibold mb-4">Configuration des scènes</h3>
-            <div className="space-y-4">
-              <div>
-                <Label>Durée scènes courtes (0-1 mot)</Label>
-                <Input
-                  type="number"
-                  value={sceneDuration0to1}
-                  onChange={(e) => setSceneDuration0to1(Number(e.target.value))}
-                  min={1}
-                />
-              </div>
-              <div>
-                <Label>Durée scènes moyennes (1-3 mots)</Label>
-                <Input
-                  type="number"
-                  value={sceneDuration1to3}
-                  onChange={(e) => setSceneDuration1to3(Number(e.target.value))}
-                  min={1}
-                />
-              </div>
-              <div>
-                <Label>Durée scènes longues (3+ mots)</Label>
-                <Input
-                  type="number"
-                  value={sceneDuration3plus}
-                  onChange={(e) => setSceneDuration3plus(Number(e.target.value))}
-                  min={1}
-                />
-              </div>
-            </div>
-          </Card>
+        <div className="flex-1 overflow-y-auto">
+          <Tabs defaultValue="presets" className="w-full">
+            <TabsList className="grid w-full grid-cols-4">
+              <TabsTrigger value="presets">Presets</TabsTrigger>
+              <TabsTrigger value="scenes">Scènes</TabsTrigger>
+              <TabsTrigger value="prompts">Prompts</TabsTrigger>
+              <TabsTrigger value="images">Images</TabsTrigger>
+            </TabsList>
 
-          {/* Exemples de prompts */}
-          <Card className="p-4">
-            <h3 className="font-semibold mb-4">Exemples de prompts</h3>
-            <div className="space-y-4">
-              {examplePrompts.map((prompt, index) => (
-                <div key={index}>
-                  <Label>Exemple {index + 1}</Label>
-                  <Textarea
-                    value={prompt}
-                    onChange={(e) => {
-                      const newPrompts = [...examplePrompts];
-                      newPrompts[index] = e.target.value;
-                      setExamplePrompts(newPrompts);
+            <div className="mt-6">
+              {/* Presets */}
+              <TabsContent value="presets" className="space-y-4">
+                <Card className="p-6 bg-gradient-to-br from-primary/5 to-primary/10">
+                  <h3 className="text-lg font-semibold mb-2">Charger un preset</h3>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    Les presets vous permettent de sauvegarder et réutiliser vos configurations préférées
+                  </p>
+                  <PresetManager
+                    currentConfig={{
+                      sceneDuration0to1,
+                      sceneDuration1to3,
+                      sceneDuration3plus,
+                      examplePrompts,
+                      imageWidth,
+                      imageHeight,
+                      aspectRatio,
+                      styleReferenceUrl,
                     }}
-                    rows={3}
+                    onLoadPreset={(preset) => {
+                      setSceneDuration0to1(preset.scene_duration_0to1);
+                      setSceneDuration1to3(preset.scene_duration_1to3);
+                      setSceneDuration3plus(preset.scene_duration_3plus);
+                      setExamplePrompts(preset.example_prompts);
+                      setImageWidth(preset.image_width);
+                      setImageHeight(preset.image_height);
+                      setAspectRatio(preset.aspect_ratio);
+                      setStyleReferenceUrl(preset.style_reference_url || "");
+                      toast.success(`Preset "${preset.name}" chargé !`);
+                    }}
                   />
-                </div>
-              ))}
-            </div>
-          </Card>
+                </Card>
+              </TabsContent>
 
-          {/* Configuration des images */}
-          <Card className="p-4">
-            <h3 className="font-semibold mb-4">Configuration des images</h3>
-            <div className="space-y-4">
-              <div>
-                <Label>Ratio d'aspect</Label>
-                <Select value={aspectRatio} onValueChange={handleAspectRatioChange}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="16:9">16:9 (Landscape)</SelectItem>
-                    <SelectItem value="9:16">9:16 (Portrait)</SelectItem>
-                    <SelectItem value="1:1">1:1 (Carré)</SelectItem>
-                    <SelectItem value="4:3">4:3</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label>Largeur</Label>
-                  <Input
-                    type="number"
-                    value={imageWidth}
-                    onChange={(e) => setImageWidth(Number(e.target.value))}
-                    min={512}
-                    max={2048}
-                  />
-                </div>
-                <div>
-                  <Label>Hauteur</Label>
-                  <Input
-                    type="number"
-                    value={imageHeight}
-                    onChange={(e) => setImageHeight(Number(e.target.value))}
-                    min={512}
-                    max={2048}
-                  />
-                </div>
-              </div>
-            </div>
-          </Card>
+              {/* Scènes */}
+              <TabsContent value="scenes" className="space-y-4">
+                <Card className="p-6">
+                  <h3 className="text-lg font-semibold mb-4">Configuration des durées de scènes</h3>
+                  
+                  <div className="space-y-4 mb-6">
+                    <div>
+                      <Label className="text-base">Format du contenu</Label>
+                      <RadioGroup
+                        value={sceneFormat}
+                        onValueChange={(value: "long" | "short") => {
+                          setSceneFormat(value);
+                          if (value === "long") {
+                            setRange1End(60);
+                            setRange2End(180);
+                          } else {
+                            setRange1End(5);
+                            setRange2End(15);
+                          }
+                        }}
+                        className="flex gap-4 mt-2"
+                      >
+                        <div className="flex items-center space-x-2">
+                          <RadioGroupItem value="long" id="long" />
+                          <Label htmlFor="long" className="font-normal cursor-pointer">
+                            Long format (vidéos standard)
+                          </Label>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <RadioGroupItem value="short" id="short" />
+                          <Label htmlFor="short" className="font-normal cursor-pointer">
+                            Court format (shorts, reels)
+                          </Label>
+                        </div>
+                      </RadioGroup>
+                    </div>
 
-          {/* Image de référence */}
-          <Card className="p-4">
-            <h3 className="font-semibold mb-4">Image de référence de style</h3>
-            {styleReferenceUrl ? (
-              <div className="relative group">
-                <img
-                  src={styleReferenceUrl}
-                  alt="Style reference"
-                  className="w-full h-48 object-cover rounded-lg"
-                />
-                <Button
-                  variant="destructive"
-                  size="icon"
-                  className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity"
-                  onClick={() => setStyleReferenceUrl("")}
-                >
-                  <X className="w-4 h-4" />
-                </Button>
-              </div>
-            ) : (
-              <label className="cursor-pointer">
-                <div className="border-2 border-dashed rounded-lg p-8 text-center hover:bg-accent transition-colors">
-                  {isUploading ? (
-                    <Loader2 className="w-8 h-8 animate-spin mx-auto" />
-                  ) : (
-                    <>
-                      <Upload className="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label>Limite intervalle 1 (secondes)</Label>
+                        <Input
+                          type="number"
+                          value={range1End}
+                          onChange={(e) => setRange1End(Number(e.target.value))}
+                          min={1}
+                        />
+                      </div>
+                      <div>
+                        <Label>Limite intervalle 2 (secondes)</Label>
+                        <Input
+                          type="number"
+                          value={range2End}
+                          onChange={(e) => setRange2End(Number(e.target.value))}
+                          min={range1End + 1}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-4">
+                    <div className="p-4 bg-muted/50 rounded-lg">
+                      <Label className="text-base">Scènes courtes (0-{range1End}s)</Label>
+                      <p className="text-sm text-muted-foreground mb-2">Durée d'affichage par scène</p>
+                      <Input
+                        type="number"
+                        value={sceneDuration0to1}
+                        onChange={(e) => setSceneDuration0to1(Number(e.target.value))}
+                        min={1}
+                        className="mt-2"
+                      />
+                    </div>
+                    
+                    <div className="p-4 bg-muted/50 rounded-lg">
+                      <Label className="text-base">Scènes moyennes ({range1End}-{range2End}s)</Label>
+                      <p className="text-sm text-muted-foreground mb-2">Durée d'affichage par scène</p>
+                      <Input
+                        type="number"
+                        value={sceneDuration1to3}
+                        onChange={(e) => setSceneDuration1to3(Number(e.target.value))}
+                        min={1}
+                        className="mt-2"
+                      />
+                    </div>
+                    
+                    <div className="p-4 bg-muted/50 rounded-lg">
+                      <Label className="text-base">Scènes longues ({range2End}s+)</Label>
+                      <p className="text-sm text-muted-foreground mb-2">Durée d'affichage par scène</p>
+                      <Input
+                        type="number"
+                        value={sceneDuration3plus}
+                        onChange={(e) => setSceneDuration3plus(Number(e.target.value))}
+                        min={1}
+                        className="mt-2"
+                      />
+                    </div>
+                  </div>
+                </Card>
+              </TabsContent>
+
+              {/* Prompts */}
+              <TabsContent value="prompts" className="space-y-4">
+                <Card className="p-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <h3 className="text-lg font-semibold">Exemples de prompts</h3>
                       <p className="text-sm text-muted-foreground">
-                        Cliquez pour uploader une image
+                        Fournissez 2-3 exemples pour guider le style de génération
                       </p>
-                    </>
-                  )}
-                </div>
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={(e) => e.target.files?.[0] && handleStyleImageUpload(e.target.files[0])}
-                  disabled={isUploading}
-                />
-              </label>
-            )}
-          </Card>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setExamplePrompts([...examplePrompts, ""])}
+                    >
+                      <Plus className="w-4 h-4 mr-2" />
+                      Ajouter
+                    </Button>
+                  </div>
+                  
+                  <div className="space-y-4">
+                    {examplePrompts.map((prompt, index) => (
+                      <div key={index} className="relative">
+                        <Label className="text-sm font-medium">Exemple {index + 1}</Label>
+                        <div className="relative mt-2">
+                          <Textarea
+                            value={prompt}
+                            onChange={(e) => updatePrompt(index, e.target.value)}
+                            rows={4}
+                            placeholder="Décrivez le style et le format souhaités pour les prompts..."
+                            className="pr-10"
+                          />
+                          {examplePrompts.length > 1 && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="absolute top-2 right-2"
+                              onClick={() => {
+                                const newPrompts = examplePrompts.filter((_, i) => i !== index);
+                                setExamplePrompts(newPrompts);
+                              }}
+                            >
+                              <X className="w-4 h-4" />
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+              </TabsContent>
 
-          <div className="flex justify-end gap-2 pt-4">
-            <Button variant="outline" onClick={() => onOpenChange(false)}>
-              Annuler
-            </Button>
-            <Button onClick={handleSave} disabled={isSaving}>
-              {isSaving ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Enregistrement...
-                </>
-              ) : (
-                "Enregistrer"
-              )}
-            </Button>
-          </div>
+              {/* Images */}
+              <TabsContent value="images" className="space-y-4">
+                <Card className="p-6">
+                  <h3 className="text-lg font-semibold mb-4">Paramètres des images</h3>
+                  
+                  <div className="space-y-6">
+                    <div>
+                      <Label className="text-base">Format d'image</Label>
+                      <Select value={aspectRatio} onValueChange={handleAspectRatioChange}>
+                        <SelectTrigger className="mt-2">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="16:9">16:9 - Paysage (YouTube, TV)</SelectItem>
+                          <SelectItem value="9:16">9:16 - Portrait (Stories, Shorts)</SelectItem>
+                          <SelectItem value="1:1">1:1 - Carré (Instagram)</SelectItem>
+                          <SelectItem value="4:3">4:3 - Standard</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label>Largeur (px)</Label>
+                        <Input
+                          type="number"
+                          value={imageWidth}
+                          onChange={(e) => setImageWidth(Number(e.target.value))}
+                          min={512}
+                          max={2048}
+                          step={64}
+                          className="mt-2"
+                        />
+                      </div>
+                      <div>
+                        <Label>Hauteur (px)</Label>
+                        <Input
+                          type="number"
+                          value={imageHeight}
+                          onChange={(e) => setImageHeight(Number(e.target.value))}
+                          min={512}
+                          max={2048}
+                          step={64}
+                          className="mt-2"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="border-t pt-6">
+                      <Label className="text-base">Image de référence de style</Label>
+                      <p className="text-sm text-muted-foreground mb-4">
+                        Uploadez une image pour guider le style visuel de toutes vos générations
+                      </p>
+                      
+                      {styleReferenceUrl ? (
+                        <div className="relative group">
+                          <img
+                            src={styleReferenceUrl}
+                            alt="Style reference"
+                            className="w-full h-64 object-cover rounded-lg border-2"
+                          />
+                          <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg flex items-center justify-center">
+                            <Button
+                              variant="destructive"
+                              onClick={() => setStyleReferenceUrl("")}
+                            >
+                              <X className="w-4 h-4 mr-2" />
+                              Supprimer
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <label className="cursor-pointer block">
+                          <div className="border-2 border-dashed rounded-lg p-12 text-center hover:bg-accent/50 transition-colors">
+                            {isUploading ? (
+                              <Loader2 className="w-12 h-12 animate-spin mx-auto text-primary" />
+                            ) : (
+                              <>
+                                <Upload className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
+                                <p className="text-sm font-medium">Cliquez pour uploader</p>
+                                <p className="text-xs text-muted-foreground mt-1">
+                                  PNG, JPG ou WEBP
+                                </p>
+                              </>
+                            )}
+                          </div>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={(e) => e.target.files?.[0] && handleStyleImageUpload(e.target.files[0])}
+                            disabled={isUploading}
+                          />
+                        </label>
+                      )}
+                    </div>
+                  </div>
+                </Card>
+              </TabsContent>
+            </div>
+          </Tabs>
+        </div>
+
+        <div className="flex justify-end gap-3 pt-4 border-t">
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Annuler
+          </Button>
+          <Button onClick={handleSave} disabled={isSaving}>
+            {isSaving ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Enregistrement...
+              </>
+            ) : (
+              "Enregistrer les modifications"
+            )}
+          </Button>
         </div>
       </DialogContent>
     </Dialog>
