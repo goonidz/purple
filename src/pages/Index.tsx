@@ -695,33 +695,115 @@ const Index = () => {
       const filename = `${currentProjectId || 'temp'}/scene_${sceneIndex + 1}_${timestamp}.${fileExt}`;
       
       // Upload to Supabase Storage
-      const { data: uploadData, error: uploadError } = await supabase.storage
+      const { error: uploadError } = await supabase.storage
         .from('generated-images')
         .upload(filename, file, {
-          contentType: file.type,
+          cacheControl: '3600',
           upsert: true
         });
-      
+
       if (uploadError) throw uploadError;
-      
+
       // Get public URL
       const { data: { publicUrl } } = supabase.storage
         .from('generated-images')
         .getPublicUrl(filename);
-      
-      // Update the prompt with new image URL
+
+      // Update the state
       setGeneratedPrompts(prev => {
         const updated = [...prev];
-        updated[sceneIndex] = { ...updated[sceneIndex], imageUrl: publicUrl };
+        updated[sceneIndex] = {
+          ...updated[sceneIndex],
+          imageUrl: publicUrl
+        };
         return updated;
       });
-      
-      toast.success("Image importée !");
+
+      toast.success("Image importée avec succès");
     } catch (error: any) {
-      console.error("Error uploading image:", error);
-      toast.error(error.message || "Erreur lors de l'upload de l'image");
+      console.error("Error uploading manual image:", error);
+      toast.error(error.message || "Erreur lors de l'import de l'image");
     } finally {
       setGeneratingImageIndex(null);
+    }
+  };
+
+  // Helper function to upload multiple images at once
+  const uploadMultipleImages = async (files: FileList) => {
+    try {
+      setIsGeneratingImages(true);
+      
+      const fileArray = Array.from(files);
+      
+      // Parse filenames to extract scene numbers (e.g., clip_001.jpg -> 1)
+      const fileMapping = fileArray.map(file => {
+        const match = file.name.match(/clip_(\d+)/i);
+        if (!match) return null;
+        
+        const sceneNumber = parseInt(match[1], 10);
+        const sceneIndex = sceneNumber - 1; // Convert to 0-based index
+        
+        return { file, sceneIndex };
+      }).filter((item): item is { file: File; sceneIndex: number } => 
+        item !== null && item.sceneIndex >= 0 && item.sceneIndex < generatedPrompts.length
+      );
+
+      if (fileMapping.length === 0) {
+        toast.error("Aucune image valide trouvée. Vérifiez le format des noms (clip_001.jpg, clip_002.jpg, etc.)");
+        return;
+      }
+
+      let successCount = 0;
+      const uploadPromises = fileMapping.map(async ({ file, sceneIndex }) => {
+        try {
+          // Generate unique filename
+          const timestamp = Date.now();
+          const fileExt = file.name.split('.').pop();
+          const filename = `${currentProjectId || 'temp'}/scene_${sceneIndex + 1}_${timestamp}.${fileExt}`;
+          
+          // Upload to Supabase Storage
+          const { error: uploadError } = await supabase.storage
+            .from('generated-images')
+            .upload(filename, file, {
+              cacheControl: '3600',
+              upsert: true
+            });
+
+          if (uploadError) throw uploadError;
+
+          // Get public URL
+          const { data: { publicUrl } } = supabase.storage
+            .from('generated-images')
+            .getPublicUrl(filename);
+
+          // Update the state
+          setGeneratedPrompts(prev => {
+            const updated = [...prev];
+            updated[sceneIndex] = {
+              ...updated[sceneIndex],
+              imageUrl: publicUrl
+            };
+            return updated;
+          });
+
+          successCount++;
+        } catch (error) {
+          console.error(`Error uploading ${file.name}:`, error);
+        }
+      });
+
+      await Promise.all(uploadPromises);
+
+      if (successCount > 0) {
+        toast.success(`${successCount} image${successCount > 1 ? 's' : ''} importée${successCount > 1 ? 's' : ''} avec succès`);
+      } else {
+        toast.error("Aucune image n'a pu être importée");
+      }
+    } catch (error: any) {
+      console.error("Error uploading multiple images:", error);
+      toast.error(error.message || "Erreur lors de l'import des images");
+    } finally {
+      setIsGeneratingImages(false);
     }
   };
 
@@ -1189,6 +1271,27 @@ const Index = () => {
                                 Générer toutes les images
                               </>
                             )}
+                          </Button>
+                          <Button
+                            onClick={() => {
+                              const input = document.createElement('input');
+                              input.type = 'file';
+                              input.accept = 'image/*';
+                              input.multiple = true;
+                              input.onchange = (e) => {
+                                const files = (e.target as HTMLInputElement).files;
+                                if (files && files.length > 0) {
+                                  uploadMultipleImages(files);
+                                }
+                              };
+                              input.click();
+                            }}
+                            variant="outline"
+                            disabled={isGeneratingImages}
+                            className="w-full"
+                          >
+                            <Upload className="mr-2 h-4 w-4" />
+                            Importer toutes les images
                           </Button>
                           {isGeneratingImages && (
                             <Button
