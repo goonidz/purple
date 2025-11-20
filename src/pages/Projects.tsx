@@ -41,9 +41,18 @@ const Projects = () => {
   const [isCreating, setIsCreating] = useState(false);
   const [newProjectName, setNewProjectName] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [workflowStep, setWorkflowStep] = useState<"upload" | "transcription" | "configure">("upload");
+  const [workflowStep, setWorkflowStep] = useState<"upload" | "transcription" | "review" | "scene-config" | "prompt-config" | "image-config" | "final">("upload");
   const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
   const [transcriptData, setTranscriptData] = useState<any>(null);
+  const [sceneDuration0to1, setSceneDuration0to1] = useState(4);
+  const [sceneDuration1to3, setSceneDuration1to3] = useState(6);
+  const [sceneDuration3plus, setSceneDuration3plus] = useState(8);
+  const [examplePrompts, setExamplePrompts] = useState<string[]>(["", "", ""]);
+  const [imageWidth, setImageWidth] = useState(1920);
+  const [imageHeight, setImageHeight] = useState(1080);
+  const [aspectRatio, setAspectRatio] = useState("16:9");
+  const [styleReferenceFile, setStyleReferenceFile] = useState<File | null>(null);
+  const [styleReferenceUrl, setStyleReferenceUrl] = useState("");
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -143,11 +152,78 @@ const Projects = () => {
       if (updateError) throw updateError;
 
       setTranscriptData(transcriptionResult);
-      setWorkflowStep("configure");
+      setWorkflowStep("review");
       toast.success("Transcription terminée !");
     } catch (error: any) {
       console.error("Error creating project:", error);
       toast.error("Erreur : " + (error.message || "Erreur inconnue"));
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
+  const handleStyleImageUpload = async (file: File) => {
+    if (!currentProjectId) return;
+    
+    setIsCreating(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("User not authenticated");
+
+      const fileName = `${user.id}/${Date.now()}_${file.name}`;
+      const { error: uploadError } = await supabase.storage
+        .from("style-references")
+        .upload(fileName, file);
+
+      if (uploadError) throw uploadError;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from("style-references")
+        .getPublicUrl(fileName);
+
+      setStyleReferenceUrl(publicUrl);
+      toast.success("Image de référence uploadée !");
+    } catch (error: any) {
+      console.error("Error uploading style image:", error);
+      toast.error("Erreur lors de l'upload de l'image");
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
+  const handleFinalizeConfiguration = async () => {
+    if (!currentProjectId) return;
+    
+    setIsCreating(true);
+    try {
+      // Save all configuration to database
+      const { error } = await supabase
+        .from("projects")
+        .update({
+          scene_duration_0to1: sceneDuration0to1,
+          scene_duration_1to3: sceneDuration1to3,
+          scene_duration_3plus: sceneDuration3plus,
+          example_prompts: examplePrompts,
+          image_width: imageWidth,
+          image_height: imageHeight,
+          aspect_ratio: aspectRatio,
+          style_reference_url: styleReferenceUrl || null,
+        })
+        .eq("id", currentProjectId);
+
+      if (error) throw error;
+
+      toast.success("Configuration enregistrée !");
+      setIsDialogOpen(false);
+      setWorkflowStep("upload");
+      setNewProjectName("");
+      setTranscriptData(null);
+      setCurrentProjectId(null);
+      await loadProjects();
+      navigate(`/?project=${currentProjectId}`);
+    } catch (error: any) {
+      console.error("Error saving configuration:", error);
+      toast.error("Erreur lors de l'enregistrement");
     } finally {
       setIsCreating(false);
     }
@@ -248,12 +324,12 @@ const Projects = () => {
                   <DialogTitle>
                     {workflowStep === "upload" && "Créer un nouveau projet"}
                     {workflowStep === "transcription" && "Transcription en cours..."}
-                    {workflowStep === "configure" && "Transcription terminée"}
+                    {workflowStep === "review" && "Transcription terminée"}
                   </DialogTitle>
                   <DialogDescription>
                     {workflowStep === "upload" && "Importez un fichier audio (MP3 ou WAV) pour créer votre vidéo"}
                     {workflowStep === "transcription" && "Veuillez patienter pendant que nous transcrivons votre audio"}
-                    {workflowStep === "configure" && "Vérifiez la transcription et continuez vers la configuration"}
+                    {workflowStep === "review" && "Vérifiez la transcription et continuez vers la configuration"}
                   </DialogDescription>
                 </DialogHeader>
 
@@ -315,7 +391,7 @@ const Projects = () => {
                   </div>
                 )}
 
-                {workflowStep === "configure" && transcriptData && (
+                {workflowStep === "review" && transcriptData && (
                   <div className="space-y-4 py-4">
                     <div className="rounded-lg border p-4 max-h-60 overflow-y-auto bg-muted/30">
                       <h3 className="font-semibold mb-2 text-sm">Transcription :</h3>

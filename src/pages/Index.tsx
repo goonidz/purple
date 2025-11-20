@@ -186,7 +186,7 @@ const Index = () => {
 
       setProjectName(data.name || "");
       
-      // Load transcript data
+      // Load transcript data without auto-generating scenes
       if (data.transcript_json) {
         setTranscriptData(data.transcript_json as unknown as TranscriptData);
       }
@@ -194,33 +194,8 @@ const Index = () => {
       const prompts = (data.example_prompts as string[]) || ["", "", ""];
       setExamplePrompts(Array.isArray(prompts) ? prompts : ["", "", ""]);
       
-      // Load or generate scenes
-      const existingScenes = (data.scenes as unknown as Scene[]) || [];
-      if (existingScenes.length > 0) {
-        setScenes(existingScenes);
-      } else if (data.transcript_json) {
-        // Auto-generate scenes from transcript if they don't exist
-        const transcriptData = data.transcript_json as unknown as TranscriptData;
-        const duration0to1 = data.scene_duration_0to1 || 4;
-        const duration1to3 = data.scene_duration_1to3 || 6;
-        const duration3plus = data.scene_duration_3plus || 8;
-        
-        const generatedScenes = parseTranscriptToScenes(
-          transcriptData,
-          duration0to1,
-          duration1to3,
-          duration3plus
-        );
-        
-        setScenes(generatedScenes);
-        toast.success(`${generatedScenes.length} scènes générées automatiquement !`);
-        
-        // Save generated scenes to database
-        await supabase
-          .from("projects")
-          .update({ scenes: generatedScenes as any })
-          .eq("id", projectId);
-      }
+      // Load existing scenes
+      setScenes((data.scenes as unknown as Scene[]) || []);
       
       setGeneratedPrompts((data.prompts as unknown as GeneratedPrompt[]) || []);
       setSceneDuration0to1(data.scene_duration_0to1 || 4);
