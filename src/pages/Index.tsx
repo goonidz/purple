@@ -50,6 +50,8 @@ import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { VideoPreview } from "@/components/VideoPreview";
 import { PresetManager } from "@/components/PresetManager";
+import { ThumbnailGenerator } from "@/components/ThumbnailGenerator";
+import { DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 interface TranscriptSegment {
   text: string;
@@ -132,6 +134,7 @@ const Index = () => {
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [isUploadingAudio, setIsUploadingAudio] = useState(false);
   const [hasTestedFirstTwo, setHasTestedFirstTwo] = useState(false);
+  const [thumbnailDialogOpen, setThumbnailDialogOpen] = useState(false);
 
   // Check authentication
   useEffect(() => {
@@ -1413,6 +1416,15 @@ const Index = () => {
                   Mes projets
                 </Link>
               </Button>
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={() => setThumbnailDialogOpen(true)}
+                disabled={!currentProjectId || generatedPrompts.length === 0}
+              >
+                <ImageIcon className="h-4 w-4 mr-2" />
+                Miniatures
+              </Button>
               <Button variant="outline" size="sm" asChild>
                 <Link to="/profile">
                   <UserIcon className="h-4 w-4 mr-2" />
@@ -2489,6 +2501,19 @@ const Index = () => {
                 </Button>
               </div>
             </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Thumbnail Generator Dialog */}
+        <Dialog open={thumbnailDialogOpen} onOpenChange={setThumbnailDialogOpen}>
+          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Générateur de Miniatures YouTube</DialogTitle>
+            </DialogHeader>
+            <ThumbnailGenerator
+              projectId={currentProjectId || ""}
+              videoScript={generatedPrompts.map(p => p.text).join(" ")}
+            />
           </DialogContent>
         </Dialog>
 
