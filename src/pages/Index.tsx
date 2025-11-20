@@ -18,6 +18,7 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
 } from "@/components/ui/dialog";
 import {
   Table,
@@ -34,7 +35,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Upload, X, Loader2, Image as ImageIcon, RefreshCw, Settings, Download, User as UserIcon, Video, Type, Sparkles, Check, Copy, FolderOpen } from "lucide-react";
+import { Upload, X, Loader2, Image as ImageIcon, RefreshCw, Settings, Download, User as UserIcon, Video, Type, Sparkles, Check, Copy, FolderOpen, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import type { User, Session } from "@supabase/supabase-js";
@@ -128,6 +129,8 @@ const Index = () => {
   const [sceneSettingsOpen, setSceneSettingsOpen] = useState(false);
   const [promptSettingsOpen, setPromptSettingsOpen] = useState(false);
   const [confirmGenerateImages, setConfirmGenerateImages] = useState(false);
+  const [editingPromptIndex, setEditingPromptIndex] = useState<number | null>(null);
+  const [editingPromptText, setEditingPromptText] = useState<string>("");
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [exportFormat, setExportFormat] = useState<ExportFormat>("premiere-xml");
   const [exportMode, setExportMode] = useState<ExportMode>("with-images");
@@ -852,6 +855,31 @@ const Index = () => {
     } finally {
       setGeneratingImageIndex(null);
     }
+  };
+
+  const handleEditPrompt = (index: number) => {
+    const prompt = generatedPrompts[index];
+    if (prompt) {
+      setEditingPromptIndex(index);
+      setEditingPromptText(prompt.prompt);
+    }
+  };
+
+  const handleSaveEditedPrompt = () => {
+    if (editingPromptIndex === null) return;
+    
+    setGeneratedPrompts(prev => {
+      const updated = [...prev];
+      updated[editingPromptIndex] = {
+        ...updated[editingPromptIndex],
+        prompt: editingPromptText
+      };
+      return updated;
+    });
+    
+    setEditingPromptIndex(null);
+    setEditingPromptText("");
+    toast.success("Prompt modifié avec succès");
   };
 
   // Helper function to upload multiple images at once
@@ -1823,24 +1851,40 @@ const Index = () => {
                                   {prompt ? (
                                     <div className="group relative">
                                       <p className="text-sm">{prompt.prompt}</p>
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        className={`absolute top-0 right-0 bg-background/80 hover:bg-background transition-all ${
-                                          regeneratingPromptIndex === index 
-                                            ? 'opacity-100' 
-                                            : 'opacity-0 group-hover:opacity-100'
-                                        }`}
-                                        onClick={() => setConfirmRegeneratePrompt(index)}
-                                        disabled={regeneratingPromptIndex === index}
-                                        title="Régénérer le prompt"
-                                      >
-                                        {regeneratingPromptIndex === index ? (
-                                          <Loader2 className="h-3 w-3 animate-spin" />
-                                        ) : (
-                                          <RefreshCw className="h-3 w-3" />
-                                        )}
-                                      </Button>
+                                      <div className="absolute top-0 right-0 flex gap-1 bg-background/80 backdrop-blur-sm rounded">
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          className={`transition-all ${
+                                            editingPromptIndex === index || regeneratingPromptIndex === index
+                                              ? 'opacity-100' 
+                                              : 'opacity-0 group-hover:opacity-100'
+                                          }`}
+                                          onClick={() => handleEditPrompt(index)}
+                                          disabled={regeneratingPromptIndex === index}
+                                          title="Modifier le prompt"
+                                        >
+                                          <Pencil className="h-3 w-3" />
+                                        </Button>
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          className={`transition-all ${
+                                            regeneratingPromptIndex === index 
+                                              ? 'opacity-100' 
+                                              : 'opacity-0 group-hover:opacity-100'
+                                          }`}
+                                          onClick={() => setConfirmRegeneratePrompt(index)}
+                                          disabled={regeneratingPromptIndex === index}
+                                          title="Régénérer le prompt"
+                                        >
+                                          {regeneratingPromptIndex === index ? (
+                                            <Loader2 className="h-3 w-3 animate-spin" />
+                                          ) : (
+                                            <RefreshCw className="h-3 w-3" />
+                                          )}
+                                        </Button>
+                                      </div>
                                     </div>
                                   ) : (
                                     <Button
@@ -2543,6 +2587,34 @@ const Index = () => {
                   )}
                 </Button>
               </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+
+        {/* Edit Prompt Dialog */}
+        <Dialog open={editingPromptIndex !== null} onOpenChange={(open) => !open && setEditingPromptIndex(null)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Modifier le prompt</DialogTitle>
+              <DialogDescription>
+                Modifiez le texte du prompt pour la scène {editingPromptIndex !== null ? editingPromptIndex + 1 : ''}
+              </DialogDescription>
+            </DialogHeader>
+            <Textarea
+              value={editingPromptText}
+              onChange={(e) => setEditingPromptText(e.target.value)}
+              rows={6}
+              className="w-full"
+              placeholder="Entrez le nouveau prompt..."
+            />
+            <div className="flex justify-end gap-2 pt-4">
+              <Button variant="outline" onClick={() => setEditingPromptIndex(null)}>
+                Annuler
+              </Button>
+              <Button onClick={handleSaveEditedPrompt}>
+                Enregistrer
+              </Button>
             </div>
           </DialogContent>
         </Dialog>
