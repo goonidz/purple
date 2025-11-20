@@ -285,3 +285,240 @@ export async function downloadImagesAsZip(
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
 }
+
+// Video export functionality
+interface SubtitleSettings {
+  enabled: boolean;
+  fontSize: number;
+  fontFamily: string;
+  color: string;
+  backgroundColor: string;
+  opacity: number;
+  textShadow: string;
+  x: number;
+  y: number;
+}
+
+interface VideoExportOptions {
+  scenes: GeneratedPrompt[];
+  audioUrl: string;
+  subtitleSettings: SubtitleSettings;
+  width?: number;
+  height?: number;
+  framerate?: number;
+  onProgress?: (progress: number) => void;
+}
+
+export async function exportToVideo({
+  scenes,
+  audioUrl,
+  subtitleSettings,
+  width = 1920,
+  height = 1080,
+  framerate = 25,
+  onProgress,
+}: VideoExportOptions): Promise<void> {
+  // Create canvas for rendering
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d")!;
+
+  // Load audio
+  const audio = new Audio(audioUrl);
+  await new Promise((resolve) => {
+    audio.addEventListener("loadedmetadata", resolve);
+    audio.load();
+  });
+
+  const duration = audio.duration;
+
+  // Load all images
+  const imageElements = await Promise.all(
+    scenes.map((scene) => {
+      return new Promise<HTMLImageElement>((resolve, reject) => {
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        img.onload = () => resolve(img);
+        img.onerror = reject;
+        img.src = scene.imageUrl!;
+      });
+    })
+  );
+
+  // Create MediaRecorder
+  const stream = canvas.captureStream(framerate);
+  
+  // Add audio track from the audio element
+  const audioCtx = new AudioContext();
+  const audioSource = audioCtx.createMediaElementSource(audio);
+  const dest = audioCtx.createMediaStreamDestination();
+  audioSource.connect(dest);
+  audioSource.connect(audioCtx.destination);
+  
+  stream.addTrack(dest.stream.getAudioTracks()[0]);
+
+  const chunks: Blob[] = [];
+  const mediaRecorder = new MediaRecorder(stream, {
+    mimeType: "video/webm;codecs=vp9",
+    videoBitsPerSecond: 5000000,
+  });
+
+  mediaRecorder.ondataavailable = (e) => {
+    if (e.data.size > 0) {
+      chunks.push(e.data);
+    }
+  };
+
+  // Start recording
+  mediaRecorder.start();
+  audio.play();
+
+  // Render loop
+  const frameTime = 1000 / framerate;
+  let currentTime = 0;
+
+  const renderFrame = () => {
+    currentTime = audio.currentTime;
+
+    // Find current scene
+    const currentSceneIndex = scenes.findIndex(
+      (s) => currentTime >= s.startTime && currentTime < s.endTime
+    );
+
+    if (currentSceneIndex >= 0) {
+      const scene = scenes[currentSceneIndex];
+      const img = imageElements[currentSceneIndex];
+
+      // Draw image
+      ctx.fillStyle = "#000000";
+      ctx.fillRect(0, 0, width, height);
+      
+      // Calculate image dimensions to fit canvas while maintaining aspect ratio
+      const imgAspect = img.width / img.height;
+      const canvasAspect = width / height;
+      
+      let drawWidth, drawHeight, offsetX, offsetY;
+      
+      if (imgAspect > canvasAspect) {
+        drawWidth = width;
+        drawHeight = width / imgAspect;
+        offsetX = 0;
+        offsetY = (height - drawHeight) / 2;
+      } else {
+        drawHeight = height;
+        drawWidth = height * imgAspect;
+        offsetX = (width - drawWidth) / 2;
+        offsetY = 0;
+      }
+      
+      ctx.drawImage(img, offsetX, offsetY, drawWidth, drawHeight);
+
+      // Draw subtitles
+      if (subtitleSettings.enabled && scene.text) {
+        const x = (width * subtitleSettings.x) / 100;
+        const y = (height * subtitleSettings.y) / 100;
+
+        ctx.save();
+        
+        // Set font
+        ctx.font = `${subtitleSettings.fontSize}px ${subtitleSettings.fontFamily}`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+
+        // Measure text
+        const lines = wrapCanvasText(ctx, scene.text, width * 0.9);
+        const lineHeight = subtitleSettings.fontSize * 1.2;
+        const totalHeight = lines.length * lineHeight;
+        const padding = 8;
+
+        // Draw background
+        const maxWidth = Math.max(...lines.map(line => ctx.measureText(line).width));
+        ctx.globalAlpha = subtitleSettings.opacity;
+        ctx.fillStyle = subtitleSettings.backgroundColor;
+        ctx.fillRect(
+          x - maxWidth / 2 - padding,
+          y - totalHeight / 2 - padding,
+          maxWidth + padding * 2,
+          totalHeight + padding * 2
+        );
+
+        // Draw text with shadow
+        ctx.globalAlpha = 1;
+        ctx.shadowColor = "rgba(0,0,0,0.8)";
+        ctx.shadowBlur = 4;
+        ctx.shadowOffsetX = 2;
+        ctx.shadowOffsetY = 2;
+        ctx.fillStyle = subtitleSettings.color;
+
+        lines.forEach((line, i) => {
+          ctx.fillText(
+            line,
+            x,
+            y - totalHeight / 2 + i * lineHeight + lineHeight / 2
+          );
+        });
+
+        ctx.restore();
+      }
+    }
+
+    // Update progress
+    if (onProgress) {
+      onProgress((currentTime / duration) * 100);
+    }
+
+    // Continue rendering
+    if (currentTime < duration && !audio.paused) {
+      setTimeout(renderFrame, frameTime);
+    } else {
+      // Stop recording
+      mediaRecorder.stop();
+      audio.pause();
+      audio.currentTime = 0;
+    }
+  };
+
+  // Wait for recording to finish
+  await new Promise<void>((resolve) => {
+    mediaRecorder.onstop = () => {
+      const blob = new Blob(chunks, { type: "video/webm" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `video-export-${Date.now()}.webm`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      resolve();
+    };
+
+    // Start rendering
+    renderFrame();
+  });
+}
+
+function wrapCanvasText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
+  const words = text.split(" ");
+  const lines: string[] = [];
+  let currentLine = "";
+
+  for (const word of words) {
+    const testLine = currentLine + (currentLine ? " " : "") + word;
+    const metrics = ctx.measureText(testLine);
+
+    if (metrics.width > maxWidth && currentLine) {
+      lines.push(currentLine);
+      currentLine = word;
+    } else {
+      currentLine = testLine;
+    }
+  }
+
+  if (currentLine) {
+    lines.push(currentLine);
+  }
+
+  return lines;
+}

@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import type { User } from "@supabase/supabase-js";
-import { Loader2, Settings, Play, Download } from "lucide-react";
+import { Loader2, Settings, Play, Download, Video } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SceneSidebar } from "@/components/SceneSidebar";
 import { SceneEditor } from "@/components/SceneEditor";
@@ -10,6 +10,7 @@ import { TimelineBar } from "@/components/TimelineBar";
 import { VideoPreview } from "@/components/VideoPreview";
 import { SubtitleControls } from "@/components/SubtitleControls";
 import { toast } from "sonner";
+import { exportToVideo } from "@/lib/videoExportHelpers";
 
 interface GeneratedPrompt {
   scene: string;
@@ -46,6 +47,8 @@ const Workspace = () => {
     x: 50,
     y: 85
   });
+  const [isExportingVideo, setIsExportingVideo] = useState(false);
+  const [exportProgress, setExportProgress] = useState(0);
 
   // Check authentication
   useEffect(() => {
@@ -193,6 +196,46 @@ const Workspace = () => {
 
   const handleExport = () => {
     navigate(`/?project=${currentProjectId}`);
+  };
+
+  const handleVideoExport = async () => {
+    if (!audioUrl) {
+      toast.error("Aucun audio trouvé dans le projet");
+      return;
+    }
+
+    const missingImages = generatedPrompts.filter(p => !p.imageUrl);
+    if (missingImages.length > 0) {
+      toast.error(`${missingImages.length} scène(s) n'ont pas d'image`);
+      return;
+    }
+
+    setIsExportingVideo(true);
+    setExportProgress(0);
+
+    try {
+      toast.info("Génération de la vidéo en cours...");
+      
+      await exportToVideo({
+        scenes: generatedPrompts,
+        audioUrl,
+        subtitleSettings,
+        width: 1920,
+        height: 1080,
+        framerate: 25,
+        onProgress: (progress) => {
+          setExportProgress(progress);
+        }
+      });
+
+      toast.success("Vidéo exportée avec succès !");
+    } catch (error: any) {
+      console.error("Video export error:", error);
+      toast.error("Erreur lors de l'export vidéo: " + error.message);
+    } finally {
+      setIsExportingVideo(false);
+      setExportProgress(0);
+    }
   };
 
   if (!user || !currentProjectId) {
