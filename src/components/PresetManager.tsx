@@ -56,6 +56,8 @@ export const PresetManager = ({ currentConfig, onLoadPreset }: PresetManagerProp
   const [newPresetName, setNewPresetName] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [selectedPresetId, setSelectedPresetId] = useState<string>("");
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
 
   useEffect(() => {
     loadPresets();
@@ -167,6 +169,44 @@ export const PresetManager = ({ currentConfig, onLoadPreset }: PresetManagerProp
     }
   };
 
+  const handleUpdatePreset = async () => {
+    if (!selectedPresetId) {
+      toast.error("Aucun preset sélectionné");
+      return;
+    }
+
+    const selectedPreset = presets.find(p => p.id === selectedPresetId);
+    if (!selectedPreset) return;
+
+    setIsUpdating(true);
+    try {
+      const { error } = await supabase
+        .from("presets")
+        .update({
+          scene_duration_0to1: currentConfig.sceneDuration0to1,
+          scene_duration_1to3: currentConfig.sceneDuration1to3,
+          scene_duration_3plus: currentConfig.sceneDuration3plus,
+          example_prompts: currentConfig.examplePrompts,
+          image_width: currentConfig.imageWidth,
+          image_height: currentConfig.imageHeight,
+          aspect_ratio: currentConfig.aspectRatio,
+          style_reference_url: currentConfig.styleReferenceUrl || null,
+        })
+        .eq("id", selectedPresetId);
+
+      if (error) throw error;
+
+      toast.success(`Preset "${selectedPreset.name}" mis à jour !`);
+      setIsEditDialogOpen(false);
+      await loadPresets();
+    } catch (error: any) {
+      console.error("Error updating preset:", error);
+      toast.error("Erreur lors de la mise à jour du preset");
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
   return (
     <Card className="p-4">
       <div className="space-y-4">
@@ -249,6 +289,14 @@ export const PresetManager = ({ currentConfig, onLoadPreset }: PresetManagerProp
               >
                 Charger
               </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsEditDialogOpen(true)}
+                disabled={!selectedPresetId}
+              >
+                Modifier
+              </Button>
             </div>
 
             {selectedPresetId && (
@@ -270,6 +318,46 @@ export const PresetManager = ({ currentConfig, onLoadPreset }: PresetManagerProp
             )}
           </div>
         )}
+
+        <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Modifier le preset</DialogTitle>
+              <DialogDescription>
+                Mettre à jour "{presets.find(p => p.id === selectedPresetId)?.name}" avec la configuration actuelle
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="p-4 bg-muted rounded-lg space-y-2">
+                <p className="text-sm font-medium">Configuration actuelle:</p>
+                <ul className="text-xs text-muted-foreground space-y-1">
+                  <li>• Durées de scène: {currentConfig.sceneDuration0to1}s / {currentConfig.sceneDuration1to3}s / {currentConfig.sceneDuration3plus}s</li>
+                  <li>• Exemples de prompts: {currentConfig.examplePrompts.filter(p => p.trim()).length}</li>
+                  <li>• Dimensions: {currentConfig.imageWidth}x{currentConfig.imageHeight} ({currentConfig.aspectRatio})</li>
+                  <li>• Style de référence: {currentConfig.styleReferenceUrl ? "Oui" : "Non"}</li>
+                </ul>
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setIsEditDialogOpen(false)}
+                >
+                  Annuler
+                </Button>
+                <Button onClick={handleUpdatePreset} disabled={isUpdating}>
+                  {isUpdating ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Mise à jour...
+                    </>
+                  ) : (
+                    "Mettre à jour"
+                  )}
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </Card>
   );
