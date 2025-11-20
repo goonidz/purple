@@ -16,8 +16,8 @@ interface ThumbnailGeneratorProps {
 interface ThumbnailPreset {
   id: string;
   name: string;
-  thumbnail_example_urls: string[];
-  thumbnail_character_ref_url: string | null;
+  example_urls: string[];
+  character_ref_url: string | null;
 }
 
 export const ThumbnailGenerator = ({ projectId, videoScript }: ThumbnailGeneratorProps) => {
@@ -30,6 +30,8 @@ export const ThumbnailGenerator = ({ projectId, videoScript }: ThumbnailGenerato
   const [selectedPresetId, setSelectedPresetId] = useState<string>("");
   const [newPresetName, setNewPresetName] = useState("");
   const [isSavingPreset, setIsSavingPreset] = useState(false);
+  const [isDraggingExamples, setIsDraggingExamples] = useState(false);
+  const [isDraggingCharacter, setIsDraggingCharacter] = useState(false);
 
   useEffect(() => {
     loadPresets();
@@ -38,9 +40,8 @@ export const ThumbnailGenerator = ({ projectId, videoScript }: ThumbnailGenerato
   const loadPresets = async () => {
     try {
       const { data, error } = await supabase
-        .from("presets")
-        .select("id, name, thumbnail_example_urls, thumbnail_character_ref_url")
-        .not("thumbnail_example_urls", "is", null)
+        .from("thumbnail_presets")
+        .select("*")
         .order("name", { ascending: true });
 
       if (error) throw error;
@@ -48,10 +49,10 @@ export const ThumbnailGenerator = ({ projectId, videoScript }: ThumbnailGenerato
       const mappedPresets: ThumbnailPreset[] = (data || []).map(preset => ({
         id: preset.id,
         name: preset.name,
-        thumbnail_example_urls: Array.isArray(preset.thumbnail_example_urls) 
-          ? preset.thumbnail_example_urls.filter((url): url is string => typeof url === 'string')
+        example_urls: Array.isArray(preset.example_urls) 
+          ? preset.example_urls.filter((url): url is string => typeof url === 'string')
           : [],
-        thumbnail_character_ref_url: preset.thumbnail_character_ref_url,
+        character_ref_url: preset.character_ref_url,
       }));
 
       setPresets(mappedPresets);
@@ -64,8 +65,8 @@ export const ThumbnailGenerator = ({ projectId, videoScript }: ThumbnailGenerato
     const preset = presets.find(p => p.id === presetId);
     if (!preset) return;
 
-    setExampleUrls(preset.thumbnail_example_urls || []);
-    setCharacterRefUrl(preset.thumbnail_character_ref_url || "");
+    setExampleUrls(preset.example_urls || []);
+    setCharacterRefUrl(preset.character_ref_url || "");
     toast.success("Preset chargé !");
   };
 
@@ -86,12 +87,12 @@ export const ThumbnailGenerator = ({ projectId, videoScript }: ThumbnailGenerato
       if (!user) throw new Error("User not authenticated");
 
       const { error } = await supabase
-        .from("presets")
+        .from("thumbnail_presets")
         .insert({
           user_id: user.id,
           name: newPresetName.trim(),
-          thumbnail_example_urls: exampleUrls,
-          thumbnail_character_ref_url: characterRefUrl || null,
+          example_urls: exampleUrls,
+          character_ref_url: characterRefUrl || null,
         });
 
       if (error) throw error;
@@ -107,30 +108,56 @@ export const ThumbnailGenerator = ({ projectId, videoScript }: ThumbnailGenerato
     }
   };
 
-  const handleExampleUpload = async (file: File) => {
+  const handleExampleUpload = async (files: FileList | File[]) => {
     setIsUploading(true);
+    const fileArray = Array.from(files);
+    
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("User not authenticated");
 
-      const fileName = `${user.id}/thumbnails/examples/${Date.now()}_${file.name}`;
-      const { error: uploadError } = await supabase.storage
-        .from("style-references")
-        .upload(fileName, file);
+      const uploadPromises = fileArray.map(async (file) => {
+        const fileName = `${user.id}/thumbnails/examples/${Date.now()}_${file.name}`;
+        const { error: uploadError } = await supabase.storage
+          .from("style-references")
+          .upload(fileName, file);
 
-      if (uploadError) throw uploadError;
+        if (uploadError) throw uploadError;
 
-      const { data: { publicUrl } } = supabase.storage
-        .from("style-references")
-        .getPublicUrl(fileName);
+        const { data: { publicUrl } } = supabase.storage
+          .from("style-references")
+          .getPublicUrl(fileName);
 
-      setExampleUrls(prev => [...prev, publicUrl]);
-      toast.success("Exemple ajouté !");
+        return publicUrl;
+      });
+
+      const urls = await Promise.all(uploadPromises);
+      setExampleUrls(prev => [...prev, ...urls]);
+      toast.success(`${urls.length} exemple(s) ajouté(s) !`);
     } catch (error: any) {
-      console.error("Error uploading example:", error);
+      console.error("Error uploading examples:", error);
       toast.error("Erreur lors de l'upload");
     } finally {
       setIsUploading(false);
+    }
+  };
+
+  const handleDragOverExamples = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDraggingExamples(true);
+  };
+
+  const handleDragLeaveExamples = () => {
+    setIsDraggingExamples(false);
+  };
+
+  const handleDropExamples = async (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDraggingExamples(false);
+    
+    const files = e.dataTransfer.files;
+    if (files.length > 0) {
+      await handleExampleUpload(files);
     }
   };
 
@@ -158,6 +185,25 @@ export const ThumbnailGenerator = ({ projectId, videoScript }: ThumbnailGenerato
       toast.error("Erreur lors de l'upload");
     } finally {
       setIsUploading(false);
+    }
+  };
+
+  const handleDragOverCharacter = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDraggingCharacter(true);
+  };
+
+  const handleDragLeaveCharacter = () => {
+    setIsDraggingCharacter(false);
+  };
+
+  const handleDropCharacter = async (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDraggingCharacter(false);
+    
+    const files = e.dataTransfer.files;
+    if (files.length > 0) {
+      await handleCharacterUpload(files[0]);
     }
   };
 
@@ -282,7 +328,12 @@ export const ThumbnailGenerator = ({ projectId, videoScript }: ThumbnailGenerato
         {/* Exemples de miniatures */}
         <div className="space-y-4 mb-6">
           <Label>Exemples de miniatures (3-5 recommandés)</Label>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+          <div 
+            className="grid grid-cols-2 md:grid-cols-3 gap-4"
+            onDragOver={handleDragOverExamples}
+            onDragLeave={handleDragLeaveExamples}
+            onDrop={handleDropExamples}
+          >
             {exampleUrls.map((url, index) => (
               <div key={index} className="relative group">
                 <img
@@ -301,21 +352,22 @@ export const ThumbnailGenerator = ({ projectId, videoScript }: ThumbnailGenerato
               </div>
             ))}
             <label className="cursor-pointer">
-              <div className="w-full h-32 border-2 border-dashed rounded-lg flex flex-col items-center justify-center hover:bg-accent transition-colors">
+              <div className={`w-full h-32 border-2 border-dashed rounded-lg flex flex-col items-center justify-center hover:bg-accent transition-colors ${isDraggingExamples ? 'bg-accent border-primary' : ''}`}>
                 {isUploading ? (
                   <Loader2 className="w-6 h-6 animate-spin" />
                 ) : (
                   <>
                     <Upload className="w-6 h-6 mb-2" />
-                    <span className="text-sm">Ajouter</span>
+                    <span className="text-sm">{isDraggingExamples ? 'Déposez ici' : 'Ajouter (ou glisser-déposer)'}</span>
                   </>
                 )}
               </div>
               <input
                 type="file"
                 accept="image/*"
+                multiple
                 className="hidden"
-                onChange={(e) => e.target.files?.[0] && handleExampleUpload(e.target.files[0])}
+                onChange={(e) => e.target.files && e.target.files.length > 0 && handleExampleUpload(e.target.files)}
                 disabled={isUploading}
               />
             </label>
@@ -342,14 +394,19 @@ export const ThumbnailGenerator = ({ projectId, videoScript }: ThumbnailGenerato
               </Button>
             </div>
           ) : (
-            <label className="cursor-pointer">
-              <div className="w-48 h-48 border-2 border-dashed rounded-lg flex flex-col items-center justify-center hover:bg-accent transition-colors">
+            <label 
+              className="cursor-pointer"
+              onDragOver={handleDragOverCharacter}
+              onDragLeave={handleDragLeaveCharacter}
+              onDrop={handleDropCharacter}
+            >
+              <div className={`w-48 h-48 border-2 border-dashed rounded-lg flex flex-col items-center justify-center hover:bg-accent transition-colors ${isDraggingCharacter ? 'bg-accent border-primary' : ''}`}>
                 {isUploading ? (
                   <Loader2 className="w-6 h-6 animate-spin" />
                 ) : (
                   <>
                     <Upload className="w-6 h-6 mb-2" />
-                    <span className="text-sm">Uploader</span>
+                    <span className="text-sm text-center px-2">{isDraggingCharacter ? 'Déposez ici' : 'Uploader (ou glisser-déposer)'}</span>
                   </>
                 )}
               </div>

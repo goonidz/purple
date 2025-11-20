@@ -27,8 +27,6 @@ export type Database = {
           scene_duration_1to3: number | null
           scene_duration_3plus: number | null
           style_reference_url: string | null
-          thumbnail_character_ref_url: string | null
-          thumbnail_example_urls: Json | null
           updated_at: string
           user_id: string
         }
@@ -44,8 +42,6 @@ export type Database = {
           scene_duration_1to3?: number | null
           scene_duration_3plus?: number | null
           style_reference_url?: string | null
-          thumbnail_character_ref_url?: string | null
-          thumbnail_example_urls?: Json | null
           updated_at?: string
           user_id: string
         }
@@ -61,8 +57,6 @@ export type Database = {
           scene_duration_1to3?: number | null
           scene_duration_3plus?: number | null
           style_reference_url?: string | null
-          thumbnail_character_ref_url?: string | null
-          thumbnail_example_urls?: Json | null
           updated_at?: string
           user_id?: string
         }
@@ -126,6 +120,36 @@ export type Database = {
           style_reference_url?: string | null
           summary?: string | null
           transcript_json?: Json | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      thumbnail_presets: {
+        Row: {
+          character_ref_url: string | null
+          created_at: string
+          example_urls: Json | null
+          id: string
+          name: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          character_ref_url?: string | null
+          created_at?: string
+          example_urls?: Json | null
+          id?: string
+          name: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          character_ref_url?: string | null
+          created_at?: string
+          example_urls?: Json | null
+          id?: string
+          name?: string
           updated_at?: string
           user_id?: string
         }
