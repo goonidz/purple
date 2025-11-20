@@ -17,9 +17,10 @@ interface GeneratedPrompt {
 interface VideoPreviewProps {
   audioUrl: string;
   prompts: GeneratedPrompt[];
+  autoPlay?: boolean;
 }
 
-export const VideoPreview = ({ audioUrl, prompts }: VideoPreviewProps) => {
+export const VideoPreview = ({ audioUrl, prompts, autoPlay = false }: VideoPreviewProps) => {
   const audioRef = useRef<HTMLAudioElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -153,6 +154,13 @@ export const VideoPreview = ({ audioUrl, prompts }: VideoPreviewProps) => {
 
     const handleLoadedMetadata = () => {
       setDuration(audio.duration);
+      
+      // Auto-play if requested
+      if (autoPlay && !isPlaying) {
+        audio.play();
+        setIsPlaying(true);
+        syncImageWithAudio();
+      }
     };
 
     const handleEnded = () => {
@@ -172,7 +180,7 @@ export const VideoPreview = ({ audioUrl, prompts }: VideoPreviewProps) => {
         cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, []);
+  }, [autoPlay]);
 
   // Update canvas when image changes
   useEffect(() => {
