@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
 import { Key, Video, Image, Mic, ChevronRight, ChevronLeft, CheckCircle2 } from "lucide-react";
 import { Card } from "@/components/ui/card";
+import elevenLabsSetup from "@/assets/elevenlabs-api-setup.png";
 
 interface OnboardingDialogProps {
   open: boolean;
@@ -20,7 +21,16 @@ const OnboardingDialog = ({ open, onOpenChange }: OnboardingDialogProps) => {
   const navigate = useNavigate();
   const [step, setStep] = useState(0);
 
-  const steps = [
+  const steps: Array<{
+    title: string;
+    description: string;
+    icon: any;
+    color: string;
+    link?: string;
+    linkText?: string;
+    detailedSteps?: string[];
+    image?: string;
+  }> = [
     {
       title: "Bienvenue sur votre plateforme audio-to-video ! 🎉",
       description: "Transformez vos contenus audio en vidéos captivantes avec des images générées par IA.",
@@ -35,19 +45,32 @@ const OnboardingDialog = ({ open, onOpenChange }: OnboardingDialogProps) => {
     },
     {
       title: "Replicate API Key",
-      description: "Utilisée pour générer les images de vos scènes avec SeedDream 4. Cette clé permet de créer des visuels époustouflants pour chaque moment de votre contenu.",
+      description: "Utilisée pour générer les images de vos scènes avec SeedDream 4.",
       icon: Image,
       color: "text-purple-500",
       link: "https://replicate.com/account/api-tokens",
-      linkText: "Obtenir ma clé Replicate"
+      linkText: "Aller sur Replicate",
+      detailedSteps: [
+        "Connectez-vous à votre compte Replicate",
+        "Accédez à la section 'API tokens'",
+        "Créez un nouveau token API",
+        "Copiez le token généré (commence par 'r8_')"
+      ]
     },
     {
       title: "Eleven Labs API Key",
-      description: "Utilisée pour transcrire automatiquement vos fichiers audio en texte. Cette clé permet d'analyser votre contenu et de créer des scènes intelligentes basées sur votre audio.",
+      description: "Utilisée pour transcrire automatiquement vos fichiers audio en texte.",
       icon: Mic,
       color: "text-blue-500",
       link: "https://elevenlabs.io/app/settings/api-keys",
-      linkText: "Obtenir ma clé Eleven Labs"
+      linkText: "Aller sur Eleven Labs",
+      detailedSteps: [
+        "Connectez-vous à votre compte Eleven Labs",
+        "Cliquez sur 'Developer' en bas à gauche",
+        "Créez une nouvelle clé API",
+        "Activez l'option 'Speech to Text' (voir image ci-dessous)"
+      ],
+      image: elevenLabsSetup
     },
     {
       title: "C'est parti ! 🚀",
@@ -97,6 +120,27 @@ const OnboardingDialog = ({ open, onOpenChange }: OnboardingDialogProps) => {
         </DialogHeader>
 
         <div className="space-y-4 py-4">
+          {currentStep.detailedSteps && (
+            <div className="space-y-3">
+              <p className="text-sm font-semibold text-foreground">Étapes à suivre :</p>
+              <ol className="space-y-2 text-sm text-muted-foreground list-decimal list-inside">
+                {currentStep.detailedSteps.map((stepText, idx) => (
+                  <li key={idx}>{stepText}</li>
+                ))}
+              </ol>
+            </div>
+          )}
+
+          {currentStep.image && (
+            <Card className="p-2 overflow-hidden">
+              <img 
+                src={currentStep.image} 
+                alt="Configuration Eleven Labs" 
+                className="w-full h-auto rounded border"
+              />
+            </Card>
+          )}
+
           {currentStep.link && (
             <Card className="p-4 bg-muted/50 border-2 border-dashed">
               <div className="flex items-center justify-between">
