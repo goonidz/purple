@@ -208,9 +208,6 @@ const Projects = () => {
           scene_duration_1to3: sceneDuration1to3,
           scene_duration_3plus: sceneDuration3plus,
           example_prompts: examplePrompts,
-          image_width: imageWidth,
-          image_height: imageHeight,
-          aspect_ratio: aspectRatio,
           style_reference_url: styleReferenceUrl || null,
         })
         .eq("id", currentProjectId);
