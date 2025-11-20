@@ -23,6 +23,10 @@ import {
 import { Loader2, Plus, Trash2, Eye, ArrowLeft, LogOut } from "lucide-react";
 import { toast } from "sonner";
 import type { User } from "@supabase/supabase-js";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { PresetManager } from "@/components/PresetManager";
 
 interface Project {
   id: string;
@@ -325,11 +329,17 @@ const Projects = () => {
                     {workflowStep === "upload" && "Créer un nouveau projet"}
                     {workflowStep === "transcription" && "Transcription en cours..."}
                     {workflowStep === "review" && "Transcription terminée"}
+                    {workflowStep === "scene-config" && "Configuration des scènes"}
+                    {workflowStep === "prompt-config" && "Configuration des prompts"}
+                    {workflowStep === "image-config" && "Configuration des images"}
                   </DialogTitle>
                   <DialogDescription>
                     {workflowStep === "upload" && "Importez un fichier audio (MP3 ou WAV) pour créer votre vidéo"}
                     {workflowStep === "transcription" && "Veuillez patienter pendant que nous transcrivons votre audio"}
                     {workflowStep === "review" && "Vérifiez la transcription et continuez vers la configuration"}
+                    {workflowStep === "scene-config" && "Définissez les durées de scènes selon le contenu"}
+                    {workflowStep === "prompt-config" && "Ajoutez 2-3 exemples de prompts pour guider l'IA"}
+                    {workflowStep === "image-config" && "Configurez les dimensions et le style des images"}
                   </DialogDescription>
                 </DialogHeader>
 
@@ -426,19 +436,219 @@ const Projects = () => {
                       >
                         Annuler
                       </Button>
-                      <Button
-                        onClick={() => {
-                          if (currentProjectId) {
-                            navigate(`/?project=${currentProjectId}`);
-                            setIsDialogOpen(false);
-                            setWorkflowStep("upload");
-                            setNewProjectName("");
-                            setTranscriptData(null);
-                            setCurrentProjectId(null);
+                      <Button onClick={() => setWorkflowStep("scene-config")}>
+                        Continuer la configuration
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {workflowStep === "scene-config" && (
+                  <div className="space-y-4 py-4">
+                    <div className="mb-4">
+                      <PresetManager
+                        currentConfig={{
+                          sceneDuration0to1,
+                          sceneDuration1to3,
+                          sceneDuration3plus,
+                          examplePrompts,
+                          imageWidth,
+                          imageHeight,
+                          aspectRatio,
+                          styleReferenceUrl,
+                        }}
+                        onLoadPreset={(preset) => {
+                          setSceneDuration0to1(preset.scene_duration_0to1);
+                          setSceneDuration1to3(preset.scene_duration_1to3);
+                          setSceneDuration3plus(preset.scene_duration_3plus);
+                          setExamplePrompts(preset.example_prompts);
+                          setImageWidth(preset.image_width);
+                          setImageHeight(preset.image_height);
+                          setAspectRatio(preset.aspect_ratio);
+                          setStyleReferenceUrl(preset.style_reference_url || "");
+                          toast.success("Preset chargé !");
+                        }}
+                      />
+                    </div>
+                    <div className="space-y-4">
+                      <div>
+                        <Label>Durée pour scènes de 0-1 seconde</Label>
+                        <Input
+                          type="number"
+                          value={sceneDuration0to1}
+                          onChange={(e) => setSceneDuration0to1(parseInt(e.target.value))}
+                          min={1}
+                          max={30}
+                        />
+                      </div>
+                      <div>
+                        <Label>Durée pour scènes de 1-3 secondes</Label>
+                        <Input
+                          type="number"
+                          value={sceneDuration1to3}
+                          onChange={(e) => setSceneDuration1to3(parseInt(e.target.value))}
+                          min={1}
+                          max={30}
+                        />
+                      </div>
+                      <div>
+                        <Label>Durée pour scènes de 3+ secondes</Label>
+                        <Input
+                          type="number"
+                          value={sceneDuration3plus}
+                          onChange={(e) => setSceneDuration3plus(parseInt(e.target.value))}
+                          min={1}
+                          max={30}
+                        />
+                      </div>
+                    </div>
+                    <div className="flex justify-between pt-4">
+                      <Button variant="outline" onClick={() => setWorkflowStep("review")}>
+                        Précédent
+                      </Button>
+                      <Button onClick={() => setWorkflowStep("prompt-config")}>
+                        Suivant
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {workflowStep === "prompt-config" && (
+                  <div className="space-y-4 py-4">
+                    <p className="text-sm text-muted-foreground">
+                      Ajoutez 2-3 exemples de prompts pour que l'IA comprenne le style souhaité
+                    </p>
+                    {examplePrompts.map((prompt, index) => (
+                      <div key={index}>
+                        <Label>Exemple de prompt {index + 1}</Label>
+                        <Textarea
+                          value={prompt}
+                          onChange={(e) => {
+                            const newPrompts = [...examplePrompts];
+                            newPrompts[index] = e.target.value;
+                            setExamplePrompts(newPrompts);
+                          }}
+                          placeholder="Exemple: Un paysage montagneux au coucher du soleil, style photographique réaliste"
+                          rows={3}
+                        />
+                      </div>
+                    ))}
+                    <div className="flex justify-between pt-4">
+                      <Button variant="outline" onClick={() => setWorkflowStep("scene-config")}>
+                        Précédent
+                      </Button>
+                      <Button onClick={() => setWorkflowStep("image-config")}>
+                        Suivant
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {workflowStep === "image-config" && (
+                  <div className="space-y-4 py-4">
+                    <div>
+                      <Label>Aspect Ratio</Label>
+                      <Select 
+                        value={aspectRatio} 
+                        onValueChange={(value) => {
+                          setAspectRatio(value);
+                          const ratios: Record<string, [number, number]> = {
+                            "16:9": [1920, 1080],
+                            "9:16": [1080, 1920],
+                            "1:1": [1080, 1080],
+                            "4:3": [1440, 1080],
+                          };
+                          if (ratios[value]) {
+                            const [w, h] = ratios[value];
+                            setImageWidth(w);
+                            setImageHeight(h);
                           }
                         }}
                       >
-                        Continuer la configuration
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="16:9">16:9 (Paysage)</SelectItem>
+                          <SelectItem value="9:16">9:16 (Portrait)</SelectItem>
+                          <SelectItem value="1:1">1:1 (Carré)</SelectItem>
+                          <SelectItem value="4:3">4:3 (Standard)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label>Largeur (px)</Label>
+                        <Input
+                          type="number"
+                          value={imageWidth}
+                          onChange={(e) => setImageWidth(parseInt(e.target.value))}
+                          min={512}
+                          max={1920}
+                        />
+                      </div>
+                      <div>
+                        <Label>Hauteur (px)</Label>
+                        <Input
+                          type="number"
+                          value={imageHeight}
+                          onChange={(e) => setImageHeight(parseInt(e.target.value))}
+                          min={512}
+                          max={1920}
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <Label>Image de référence de style (optionnel)</Label>
+                      <div className="border-2 border-dashed rounded-lg p-4 text-center">
+                        <Input
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              handleStyleImageUpload(file);
+                            }
+                          }}
+                          className="hidden"
+                          id="style-upload"
+                          disabled={isCreating}
+                        />
+                        <label htmlFor="style-upload" className="cursor-pointer">
+                          <div className="flex flex-col items-center gap-2">
+                            {isCreating ? (
+                              <>
+                                <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                                <p className="text-sm text-muted-foreground">Upload en cours...</p>
+                              </>
+                            ) : styleReferenceUrl ? (
+                              <>
+                                <img src={styleReferenceUrl} alt="Style reference" className="h-24 w-24 object-cover rounded" />
+                                <p className="text-xs text-muted-foreground">Cliquez pour changer</p>
+                              </>
+                            ) : (
+                              <>
+                                <Plus className="h-6 w-6 text-muted-foreground" />
+                                <p className="text-sm text-muted-foreground">Cliquez pour uploader une image</p>
+                              </>
+                            )}
+                          </div>
+                        </label>
+                      </div>
+                    </div>
+                    <div className="flex justify-between pt-4">
+                      <Button variant="outline" onClick={() => setWorkflowStep("prompt-config")}>
+                        Précédent
+                      </Button>
+                      <Button onClick={handleFinalizeConfiguration} disabled={isCreating}>
+                        {isCreating ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Création du projet...
+                          </>
+                        ) : (
+                          "Créer le projet"
+                        )}
                       </Button>
                     </div>
                   </div>
