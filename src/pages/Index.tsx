@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
+import { Progress } from "@/components/ui/progress";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -144,6 +145,8 @@ const Index = () => {
   const [hasTestedFirstTwo, setHasTestedFirstTwo] = useState(false);
   const [thumbnailDialogOpen, setThumbnailDialogOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<string>("video");
+  const [imageGenerationProgress, setImageGenerationProgress] = useState(0);
+  const [imageGenerationTotal, setImageGenerationTotal] = useState(0);
 
   // Check authentication
   useEffect(() => {
@@ -429,17 +432,20 @@ const Index = () => {
       return;
     }
 
-    const scenesToProcess = testMode ? scenes.slice(0, 15) : scenes;
-    const sceneCount = scenesToProcess.length;
-
-    if (testMode && scenes.length < 15) {
-      toast.info(`Mode test : génération des ${scenes.length} scènes disponibles`);
-    } else if (testMode) {
-      toast.info(`Mode test : génération des 15 premières scènes sur ${scenes.length}`);
+    // Identifier les scènes qui n'ont pas encore de prompts
+    const scenesToProcess = testMode 
+      ? scenes.slice(0, 15)
+      : scenes.filter((scene, index) => !generatedPrompts[index] || !generatedPrompts[index].prompt || generatedPrompts[index].prompt === "Erreur lors de la génération");
+    
+    if (scenesToProcess.length === 0) {
+      toast.info("Tous les prompts ont déjà été générés !");
+      return;
     }
 
+    const sceneCount = scenesToProcess.length;
+    toast.info(`Génération de ${sceneCount} prompt(s) manquant(s)...`);
+
     setIsGeneratingPrompts(true);
-    setGeneratedPrompts([]);
     cancelGenerationRef.current = false;
 
     try {
@@ -461,14 +467,15 @@ const Index = () => {
         .update({ summary })
         .eq("id", currentProjectId);
 
-      const prompts: GeneratedPrompt[] = [];
+      // Créer une copie des prompts existants
+      const updatedPrompts = [...generatedPrompts];
       const filteredPrompts = examplePrompts.filter(p => p.trim() !== "");
       const BATCH_SIZE = 10;
 
       // Process scenes in batches of 10 for parallel generation
       for (let batchStart = 0; batchStart < sceneCount; batchStart += BATCH_SIZE) {
         if (cancelGenerationRef.current) {
-          toast.info(`Génération annulée. ${prompts.length} prompts générés.`);
+          toast.info(`Génération annulée.`);
           break;
         }
 
@@ -478,8 +485,7 @@ const Index = () => {
         toast.info(`Génération des scènes ${batchStart + 1}-${batchEnd} sur ${sceneCount}...`);
 
         const batchPromises = batch.map(async (scene, batchIndex) => {
-          const i = batchStart + batchIndex;
-          const originalIndex = testMode ? i : scenes.indexOf(scene);
+          const originalIndex = scenes.indexOf(scene);
           
           try {
             const { data, error } = await supabase.functions.invoke("generate-prompts", {
@@ -496,7 +502,7 @@ const Index = () => {
 
             if (error) throw error;
 
-            return {
+            const newPrompt = {
               scene: `Scène ${originalIndex + 1} (${formatTimecode(scene.startTime)} - ${formatTimecode(scene.endTime)})`,
               prompt: data.prompt,
               text: scene.text,
@@ -504,9 +510,10 @@ const Index = () => {
               endTime: scene.endTime,
               duration: scene.endTime - scene.startTime
             };
+            return { index: originalIndex, prompt: newPrompt };
           } catch (sceneError: any) {
             console.error(`Error generating prompt for scene ${originalIndex + 1}:`, sceneError);
-            return {
+            const errorPrompt = {
               scene: `Scène ${originalIndex + 1} (${formatTimecode(scene.startTime)} - ${formatTimecode(scene.endTime)})`,
               prompt: "Erreur lors de la génération",
               text: scene.text,
@@ -514,12 +521,18 @@ const Index = () => {
               endTime: scene.endTime,
               duration: scene.endTime - scene.startTime
             };
+            return { index: originalIndex, prompt: errorPrompt };
           }
         });
 
         const batchResults = await Promise.all(batchPromises);
-        prompts.push(...batchResults);
-        setGeneratedPrompts([...prompts]);
+        
+        // Mettre à jour uniquement les prompts générés dans le tableau
+        batchResults.forEach(result => {
+          updatedPrompts[result.index] = result.prompt;
+        });
+        
+        setGeneratedPrompts([...updatedPrompts]);
       }
 
       if (!cancelGenerationRef.current) {
@@ -1237,9 +1250,13 @@ const Index = () => {
 
     // Count skipped images
     skippedCount = generatedPrompts.length - promptsToProcess.length;
+    
+    // Initialiser la progression
+    setImageGenerationProgress(0);
+    setImageGenerationTotal(promptsToProcess.length);
 
-    // Process in batches of 20
-    const batchSize = 20;
+    // Process in batches of 40
+    const batchSize = 40;
     for (let i = 0; i < promptsToProcess.length; i += batchSize) {
       if (cancelImageGenerationRef.current) {
         toast.info(`Génération annulée. ${successCount} images générées.`);
@@ -1283,6 +1300,9 @@ const Index = () => {
               updated[index] = { ...updated[index], imageUrl: permanentUrl };
               return updated;
             });
+            
+            // Mettre à jour la progression
+            setImageGenerationProgress(prev => prev + 1);
 
             return { success: true, index };
           } catch (error: any) {
@@ -1295,6 +1315,10 @@ const Index = () => {
             
             console.error(`Error generating image ${index + 1}:`, error);
             toast.error(`Erreur image ${index + 1}: ${error.message}`);
+            
+            // Mettre à jour la progression même en cas d'échec
+            setImageGenerationProgress(prev => prev + 1);
+            
             return { success: false, index };
           }
         };
@@ -1307,6 +1331,10 @@ const Index = () => {
     }
 
     setIsGeneratingImages(false);
+    
+    // Réinitialiser la progression
+    setImageGenerationProgress(0);
+    setImageGenerationTotal(0);
     
     // Check for missing images
     const missingCount = generatedPrompts.filter(p => p && !p.imageUrl).length;
@@ -1856,6 +1884,22 @@ const Index = () => {
                               <AlertCircle className="mr-2 h-4 w-4" />
                               Vérifier les images manquantes
                             </Button>
+                           )}
+                          {isGeneratingImages && imageGenerationTotal > 0 && (
+                            <Card className="p-4 bg-muted/30 border-primary/20">
+                              <div className="space-y-2">
+                                <div className="flex items-center justify-between text-sm">
+                                  <span className="font-medium">Génération en cours...</span>
+                                  <span className="text-muted-foreground">
+                                    {imageGenerationProgress} / {imageGenerationTotal} images
+                                  </span>
+                                </div>
+                                <Progress 
+                                  value={(imageGenerationProgress / imageGenerationTotal) * 100} 
+                                  className="h-2"
+                                />
+                              </div>
+                            </Card>
                           )}
                           {isGeneratingPrompts && (
                             <Button
