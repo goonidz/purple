@@ -50,7 +50,7 @@ export function generatePremiereXML(
     const duration = endFrame - startFrame;
     
     const imagePath = mode === "with-images" 
-      ? `images/clip_${(index + 1).toString().padStart(3, '0')}_img.jpg`
+      ? `clip_${(index + 1).toString().padStart(3, '0')}_img.jpg`
       : prompt.imageUrl || "";
     
     return `      <clipitem id="clipitem-${index + 1}">
@@ -137,7 +137,7 @@ export function generateEDL(
     const recordOut = formatTimecode(prompt.endTime, framerate);
     
     const imagePath = mode === "with-images"
-      ? `images/clip_${clipNumber}_img.jpg`
+      ? `clip_${clipNumber}_img.jpg`
       : prompt.imageUrl || "";
     
     edl += `${clipNumber}  AX       V     C        ${sourceIn} ${sourceOut} ${recordIn} ${recordOut}\n`;
@@ -166,7 +166,7 @@ export function generateCSV(
     const duration = prompt.duration.toFixed(2);
     
     const imagePath = mode === "with-images"
-      ? `images/clip_${sceneNum.toString().padStart(3, '0')}_img.jpg`
+      ? `clip_${sceneNum.toString().padStart(3, '0')}_img.jpg`
       : prompt.imageUrl || "";
     
     csv += `${sceneNum},"${timecodeIn}","${timecodeOut}",${duration},"${imagePath}","${escapeCsv(prompt.text)}","${escapeCsv(prompt.prompt)}"\n`;
@@ -253,10 +253,7 @@ export async function downloadImagesAsZip(
   // Add the export file
   zip.file(exportFilename, exportContent);
   
-  // Create images folder
-  const imagesFolder = zip.folder('images');
-  
-  // Download and add each image, converting to JPEG
+  // Download and add each image at root level (not in subfolder), converting to JPEG
   for (let i = 0; i < prompts.length; i++) {
     const prompt = prompts[i];
     if (prompt.imageUrl) {
@@ -268,7 +265,7 @@ export async function downloadImagesAsZip(
         const jpegBlob = await convertToJpeg(blob);
         
         const filename = `clip_${(i + 1).toString().padStart(3, '0')}_img.jpg`;
-        imagesFolder?.file(filename, jpegBlob);
+        zip.file(filename, jpegBlob);
       } catch (error) {
         console.error(`Failed to download image ${i + 1}:`, error);
       }
