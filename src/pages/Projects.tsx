@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { parseStyleReferenceUrls, serializeStyleReferenceUrls } from "@/lib/styleReferenceHelpers";
 import { useNavigate, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -52,8 +53,8 @@ const Projects = () => {
   const [imageWidth, setImageWidth] = useState(1920);
   const [imageHeight, setImageHeight] = useState(1080);
   const [aspectRatio, setAspectRatio] = useState("16:9");
-  const [styleReferenceFile, setStyleReferenceFile] = useState<File | null>(null);
-  const [styleReferenceUrl, setStyleReferenceUrl] = useState("");
+  const [styleReferenceFiles, setStyleReferenceFiles] = useState<File[]>([]);
+  const [styleReferenceUrls, setStyleReferenceUrls] = useState<string[]>([]);
   const [activePresetName, setActivePresetName] = useState<string | null>(null);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [hasCheckedApiKeys, setHasCheckedApiKeys] = useState(false);
@@ -221,7 +222,7 @@ const Projects = () => {
         .from("style-references")
         .getPublicUrl(fileName);
 
-      setStyleReferenceUrl(publicUrl);
+      setStyleReferenceUrls([publicUrl]);
       toast.success("Image de référence uploadée !");
     } catch (error: any) {
       console.error("Error uploading style image:", error);
@@ -244,7 +245,7 @@ const Projects = () => {
           scene_duration_1to3: sceneDuration1to3,
           scene_duration_3plus: sceneDuration3plus,
           example_prompts: examplePrompts,
-          style_reference_url: styleReferenceUrl || null,
+          style_reference_url: serializeStyleReferenceUrls(styleReferenceUrls),
         })
         .eq("id", currentProjectId);
 
@@ -490,7 +491,7 @@ const Projects = () => {
                           imageWidth,
                           imageHeight,
                           aspectRatio,
-                          styleReferenceUrl,
+                          styleReferenceUrls,
                         }}
                         onLoadPreset={(preset) => {
                           setSceneDuration0to1(preset.scene_duration_0to1);
@@ -500,7 +501,7 @@ const Projects = () => {
                           setImageWidth(preset.image_width);
                           setImageHeight(preset.image_height);
                           setAspectRatio(preset.aspect_ratio);
-                          setStyleReferenceUrl(preset.style_reference_url || "");
+                          setStyleReferenceUrls(parseStyleReferenceUrls(preset.style_reference_url));
                           setActivePresetName(preset.name);
                           toast.success("Preset chargé !");
                         }}
@@ -755,10 +756,10 @@ const Projects = () => {
                                 <Loader2 className="h-6 w-6 animate-spin text-primary" />
                                 <p className="text-sm text-muted-foreground">Upload en cours...</p>
                               </>
-                            ) : styleReferenceUrl ? (
+                            ) : styleReferenceUrls.length > 0 ? (
                               <>
-                                <img src={styleReferenceUrl} alt="Style reference" className="h-24 w-24 object-cover rounded" />
-                                <p className="text-xs text-muted-foreground">Cliquez pour changer</p>
+                                <img src={styleReferenceUrls[0]} alt="Style reference" className="h-24 w-24 object-cover rounded" />
+                                <p className="text-xs text-muted-foreground">Cliquez pour changer ({styleReferenceUrls.length} image{styleReferenceUrls.length > 1 ? 's' : ''})</p>
                               </>
                             ) : (
                               <>

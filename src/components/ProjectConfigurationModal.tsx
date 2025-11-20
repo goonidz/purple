@@ -33,35 +33,52 @@ export const ProjectConfigurationModal = ({
   const [imageWidth, setImageWidth] = useState(1920);
   const [imageHeight, setImageHeight] = useState(1080);
   const [aspectRatio, setAspectRatio] = useState("16:9");
-  const [styleReferenceUrl, setStyleReferenceUrl] = useState("");
+  const [styleReferenceUrls, setStyleReferenceUrls] = useState<string[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
-  const handleStyleImageUpload = async (file: File) => {
+  const handleStyleImageUpload = async (files: FileList) => {
+    if (styleReferenceUrls.length >= 15) {
+      toast.error("Vous ne pouvez pas uploader plus de 15 images");
+      return;
+    }
+
+    const filesToUpload = Array.from(files).slice(0, 15 - styleReferenceUrls.length);
     setIsUploading(true);
+    
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("User not authenticated");
 
-      const fileName = `${user.id}/${Date.now()}_${file.name}`;
-      const { error: uploadError } = await supabase.storage
-        .from("style-references")
-        .upload(fileName, file);
+      const uploadPromises = filesToUpload.map(async (file) => {
+        const fileName = `${user.id}/${Date.now()}_${file.name}`;
+        const { error: uploadError } = await supabase.storage
+          .from("style-references")
+          .upload(fileName, file);
 
-      if (uploadError) throw uploadError;
+        if (uploadError) throw uploadError;
 
-      const { data: { publicUrl } } = supabase.storage
-        .from("style-references")
-        .getPublicUrl(fileName);
+        const { data: { publicUrl } } = supabase.storage
+          .from("style-references")
+          .getPublicUrl(fileName);
 
-      setStyleReferenceUrl(publicUrl);
-      toast.success("Image de référence uploadée !");
+        return publicUrl;
+      });
+
+      const uploadedUrls = await Promise.all(uploadPromises);
+      setStyleReferenceUrls([...styleReferenceUrls, ...uploadedUrls]);
+      toast.success(`${uploadedUrls.length} image(s) de référence uploadée(s) !`);
     } catch (error: any) {
-      console.error("Error uploading style image:", error);
-      toast.error("Erreur lors de l'upload de l'image");
+      console.error("Error uploading style images:", error);
+      toast.error("Erreur lors de l'upload des images");
     } finally {
       setIsUploading(false);
     }
+  };
+
+  const handleRemoveStyleImage = (indexToRemove: number) => {
+    setStyleReferenceUrls(styleReferenceUrls.filter((_, index) => index !== indexToRemove));
+    toast.success("Image supprimée");
   };
 
   const handleAspectRatioChange = (value: string) => {
@@ -92,7 +109,7 @@ export const ProjectConfigurationModal = ({
           image_width: imageWidth,
           image_height: imageHeight,
           aspect_ratio: aspectRatio,
-          style_reference_url: styleReferenceUrl || null,
+          style_reference_url: styleReferenceUrls.length > 0 ? JSON.stringify(styleReferenceUrls) : null,
         })
         .eq("id", currentProjectId);
 
@@ -337,41 +354,67 @@ export const ProjectConfigurationModal = ({
             </div>
           </div>
           <div className="space-y-2">
-            <Label>Image de référence de style (optionnel)</Label>
-            <div className="border-2 border-dashed rounded-lg p-4 text-center">
+            <Label>Images de référence de style (optionnel - max 15)</Label>
+            <div className="border-2 border-dashed rounded-lg p-4">
               <Input
                 type="file"
                 accept="image/*"
+                multiple
                 onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) {
-                    handleStyleImageUpload(file);
+                  const files = e.target.files;
+                  if (files && files.length > 0) {
+                    handleStyleImageUpload(files);
                   }
                 }}
                 className="hidden"
                 id="style-upload"
-                disabled={isUploading}
+                disabled={isUploading || styleReferenceUrls.length >= 15}
               />
-              <label htmlFor="style-upload" className="cursor-pointer">
-                <div className="flex flex-col items-center gap-2">
+              <label htmlFor="style-upload" className={`cursor-pointer block ${styleReferenceUrls.length >= 15 ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                <div className="flex flex-col items-center gap-2 mb-4">
                   {isUploading ? (
                     <>
                       <Loader2 className="h-6 w-6 animate-spin text-primary" />
                       <p className="text-sm text-muted-foreground">Upload en cours...</p>
                     </>
-                  ) : styleReferenceUrl ? (
-                    <>
-                      <img src={styleReferenceUrl} alt="Style reference" className="h-24 w-24 object-cover rounded" />
-                      <p className="text-xs text-muted-foreground">Cliquez pour changer</p>
-                    </>
                   ) : (
                     <>
                       <Upload className="h-6 w-6 text-muted-foreground" />
-                      <p className="text-sm text-muted-foreground">Cliquez pour uploader une image</p>
+                      <p className="text-sm text-muted-foreground">
+                        {styleReferenceUrls.length >= 15 
+                          ? "Maximum atteint (15 images)"
+                          : `Cliquez pour uploader des images (${styleReferenceUrls.length}/15)`
+                        }
+                      </p>
                     </>
                   )}
                 </div>
               </label>
+              {styleReferenceUrls.length > 0 && (
+                <div className="grid grid-cols-3 gap-2 mt-4">
+                  {styleReferenceUrls.map((url, index) => (
+                    <div key={index} className="relative group">
+                      <img 
+                        src={url} 
+                        alt={`Style reference ${index + 1}`} 
+                        className="h-20 w-full object-cover rounded border-2 border-border"
+                      />
+                      <button
+                        onClick={(e) => {
+                          e.preventDefault();
+                          handleRemoveStyleImage(index);
+                        }}
+                        className="absolute top-1 right-1 bg-destructive text-destructive-foreground rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                        type="button"
+                      >
+                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>

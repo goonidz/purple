@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { parseStyleReferenceUrls } from "@/lib/styleReferenceHelpers";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -45,7 +46,7 @@ interface PresetManagerProps {
     imageWidth: number;
     imageHeight: number;
     aspectRatio: string;
-    styleReferenceUrl: string;
+    styleReferenceUrls: string[];
   };
   onLoadPreset: (preset: Preset) => void;
 }
@@ -134,7 +135,7 @@ export const PresetManager = ({ currentConfig, onLoadPreset }: PresetManagerProp
           image_width: currentConfig.imageWidth,
           image_height: currentConfig.imageHeight,
           aspect_ratio: currentConfig.aspectRatio,
-          style_reference_url: currentConfig.styleReferenceUrl || null,
+          style_reference_url: JSON.stringify(currentConfig.styleReferenceUrls),
         },
       ]);
 
@@ -233,7 +234,7 @@ export const PresetManager = ({ currentConfig, onLoadPreset }: PresetManagerProp
       imageWidth: preset.image_width,
       imageHeight: preset.image_height,
       aspectRatio: preset.aspect_ratio,
-      styleReferenceUrl: preset.style_reference_url || "",
+      styleReferenceUrls: parseStyleReferenceUrls(preset.style_reference_url),
     });
     setIsEditDialogOpen(true);
   };

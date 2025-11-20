@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { parseStyleReferenceUrls, serializeStyleReferenceUrls } from "@/lib/styleReferenceHelpers";
 import { useNavigate, useSearchParams, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -115,7 +116,7 @@ const Index = () => {
   const [isGeneratingImages, setIsGeneratingImages] = useState(false);
   const [generatingImageIndex, setGeneratingImageIndex] = useState<number | null>(null);
   const [generatingPromptIndex, setGeneratingPromptIndex] = useState<number | null>(null);
-  const [styleReferenceUrl, setStyleReferenceUrl] = useState<string>("");
+  const [styleReferenceUrls, setStyleReferenceUrls] = useState<string[]>([]);
   const [uploadedStyleImageUrl, setUploadedStyleImageUrl] = useState<string>("");
   const [isUploadingStyleImage, setIsUploadingStyleImage] = useState(false);
   const [activePresetName, setActivePresetName] = useState<string | null>(null);
@@ -186,7 +187,7 @@ const Index = () => {
 
       return () => clearTimeout(timeoutId);
     }
-  }, [currentProjectId, transcriptData, examplePrompts, scenes, generatedPrompts, sceneDuration0to1, sceneDuration1to3, sceneDuration3plus, styleReferenceUrl, audioUrl, imageWidth, imageHeight, aspectRatio]);
+  }, [currentProjectId, transcriptData, examplePrompts, scenes, generatedPrompts, sceneDuration0to1, sceneDuration1to3, sceneDuration3plus, styleReferenceUrls, audioUrl, imageWidth, imageHeight, aspectRatio]);
 
   const loadProjectData = async (projectId: string) => {
     try {
@@ -254,9 +255,10 @@ const Index = () => {
       if (projectData.image_height) setImageHeight(projectData.image_height);
       if (projectData.aspect_ratio) setAspectRatio(projectData.aspect_ratio);
       
-      if (data.style_reference_url) {
-        setStyleReferenceUrl(data.style_reference_url);
-        setUploadedStyleImageUrl(data.style_reference_url);
+      const parsedUrls = parseStyleReferenceUrls(data.style_reference_url);
+      setStyleReferenceUrls(parsedUrls);
+      if (parsedUrls.length > 0) {
+        setUploadedStyleImageUrl(parsedUrls[0]);
       }
       if (data.audio_url) {
         setAudioUrl(data.audio_url);
@@ -284,7 +286,7 @@ const Index = () => {
           image_width: imageWidth,
           image_height: imageHeight,
           aspect_ratio: aspectRatio,
-          style_reference_url: styleReferenceUrl || null,
+          style_reference_url: serializeStyleReferenceUrls(styleReferenceUrls),
           audio_url: audioUrl || null,
         })
         .eq("id", currentProjectId);
@@ -750,7 +752,7 @@ const Index = () => {
         .getPublicUrl(fileName);
 
       setUploadedStyleImageUrl(publicUrl);
-      setStyleReferenceUrl(publicUrl);
+      setStyleReferenceUrls([publicUrl]);
       toast.success("Image de style uploadée !");
     } catch (error: any) {
       console.error("Error uploading style image:", error);
@@ -982,9 +984,9 @@ const Index = () => {
         height: imageHeight
       };
 
-      // Add style reference if provided
-      if (styleReferenceUrl.trim()) {
-        requestBody.image_urls = [styleReferenceUrl.trim()];
+      // Add style references if provided
+      if (styleReferenceUrls.length > 0) {
+        requestBody.image_urls = styleReferenceUrls;
       }
 
       const { data, error } = await supabase.functions.invoke('generate-image-seedream', {
@@ -1119,8 +1121,8 @@ const Index = () => {
             height: imageHeight
           };
 
-          if (styleReferenceUrl.trim()) {
-            requestBody.image_urls = [styleReferenceUrl.trim()];
+          if (styleReferenceUrls.length > 0) {
+            requestBody.image_urls = styleReferenceUrls;
           }
 
           const { data, error } = await supabase.functions.invoke('generate-image-seedream', {
@@ -1203,9 +1205,9 @@ const Index = () => {
               height: imageHeight
             };
 
-            // Add style reference if provided
-            if (styleReferenceUrl.trim()) {
-              requestBody.image_urls = [styleReferenceUrl.trim()];
+            // Add style references if provided
+            if (styleReferenceUrls.length > 0) {
+              requestBody.image_urls = styleReferenceUrls;
             }
 
             const { data, error } = await supabase.functions.invoke('generate-image-seedream', {
@@ -1349,9 +1351,10 @@ const Index = () => {
     setImageHeight(preset.image_height);
     setAspectRatio(preset.aspect_ratio);
     setActivePresetName(preset.name);
-    if (preset.style_reference_url) {
-      setUploadedStyleImageUrl(preset.style_reference_url);
-      setStyleReferenceUrl(preset.style_reference_url);
+    const parsedUrls = parseStyleReferenceUrls(preset.style_reference_url);
+    setStyleReferenceUrls(parsedUrls);
+    if (parsedUrls.length > 0) {
+      setUploadedStyleImageUrl(parsedUrls[0]);
     }
   };
 
@@ -1573,7 +1576,7 @@ const Index = () => {
                     imageWidth,
                     imageHeight,
                     aspectRatio,
-                    styleReferenceUrl: uploadedStyleImageUrl,
+                    styleReferenceUrls,
                   }}
                   onLoadPreset={handleLoadPreset}
                 />
@@ -1669,7 +1672,7 @@ const Index = () => {
                     </div>
                     <div className="space-y-1 text-xs text-muted-foreground">
                       <div>{imageWidth}x{imageHeight} ({aspectRatio})</div>
-                      <div>{styleReferenceUrl ? "Style de référence défini" : "Pas de référence"}</div>
+                      <div>{styleReferenceUrls.length > 0 ? `${styleReferenceUrls.length} image(s) de référence` : "Pas de référence"}</div>
                     </div>
                   </Card>
                 </div>
@@ -2264,8 +2267,8 @@ const Index = () => {
                   <Input
                     type="url"
                     placeholder="https://exemple.com/image.jpg"
-                    value={styleReferenceUrl}
-                    onChange={(e) => setStyleReferenceUrl(e.target.value)}
+                    value={styleReferenceUrls[0] || ""}
+                    onChange={(e) => setStyleReferenceUrls(e.target.value ? [e.target.value] : [])}
                     className="w-full"
                   />
                   {uploadedStyleImageUrl && (
@@ -2377,10 +2380,10 @@ const Index = () => {
                           <span className="font-medium">Format :</span>
                           <span>{aspectRatio === "custom" ? "Personnalisé" : aspectRatio}</span>
                         </div>
-                        {styleReferenceUrl && (
+                        {styleReferenceUrls.length > 0 && (
                           <div className="flex justify-between">
                             <span className="font-medium">Référence de style :</span>
-                            <span className="text-xs text-primary">Activée</span>
+                            <span className="text-xs text-primary">{styleReferenceUrls.length} image(s)</span>
                           </div>
                         )}
                       </div>
