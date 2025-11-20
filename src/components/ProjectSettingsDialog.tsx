@@ -208,95 +208,126 @@ export const ProjectSettingsDialog = ({
                 <Card className="p-6">
                   <h3 className="text-lg font-semibold mb-4">Configuration des durées de scènes</h3>
                   
-                  <div className="space-y-4 mb-6">
-                    <div>
-                      <Label className="text-base">Format du contenu</Label>
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label>Format de contenu</Label>
                       <RadioGroup
                         value={sceneFormat}
-                        onValueChange={(value: "long" | "short") => {
-                          setSceneFormat(value);
-                          if (value === "long") {
-                            setRange1End(60);
-                            setRange2End(180);
-                          } else {
+                        onValueChange={(value) => {
+                          const newFormat = value as "long" | "short";
+                          setSceneFormat(newFormat);
+                          if (newFormat === "short") {
                             setRange1End(5);
                             setRange2End(15);
+                            setSceneDuration0to1(2);
+                            setSceneDuration1to3(4);
+                            setSceneDuration3plus(6);
+                          } else {
+                            setRange1End(60);
+                            setRange2End(180);
+                            setSceneDuration0to1(4);
+                            setSceneDuration1to3(6);
+                            setSceneDuration3plus(8);
                           }
                         }}
-                        className="flex gap-4 mt-2"
                       >
-                        <div className="flex items-center space-x-2">
-                          <RadioGroupItem value="long" id="long" />
-                          <Label htmlFor="long" className="font-normal cursor-pointer">
-                            Long format (vidéos standard)
-                          </Label>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          <RadioGroupItem value="short" id="short" />
-                          <Label htmlFor="short" className="font-normal cursor-pointer">
-                            Court format (shorts, reels)
-                          </Label>
+                        <div className="flex gap-4">
+                          <div className="flex items-center space-x-2">
+                            <RadioGroupItem value="long" id="scene-format-long" />
+                            <Label htmlFor="scene-format-long" className="font-normal cursor-pointer">
+                              Long form
+                            </Label>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <RadioGroupItem value="short" id="scene-format-short" />
+                            <Label htmlFor="scene-format-short" className="font-normal cursor-pointer">
+                              Short form
+                            </Label>
+                          </div>
                         </div>
                       </RadioGroup>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <Label>Limite intervalle 1 (secondes)</Label>
-                        <Input
-                          type="number"
-                          value={range1End}
-                          onChange={(e) => setRange1End(Number(e.target.value))}
-                          min={1}
-                        />
-                      </div>
-                      <div>
-                        <Label>Limite intervalle 2 (secondes)</Label>
-                        <Input
-                          type="number"
-                          value={range2End}
-                          onChange={(e) => setRange2End(Number(e.target.value))}
-                          min={range1End + 1}
-                        />
-                      </div>
-                    </div>
-                  </div>
+                    <div className="space-y-4 p-4 border rounded-lg bg-muted/30">
+                      <div className="space-y-3">
+                        <div>
+                          <Label className="text-sm font-medium mb-2 block">
+                            Plage 1 : 0 à {range1End}s
+                          </Label>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <Label className="text-xs text-muted-foreground">Fin de plage (sec)</Label>
+                              <Input
+                                type="number"
+                                min="1"
+                                max={sceneFormat === "long" ? "120" : "30"}
+                                value={range1End}
+                                onChange={(e) => setRange1End(parseInt(e.target.value) || 1)}
+                              />
+                            </div>
+                            <div>
+                              <Label className="text-xs text-muted-foreground">Durée de scène (sec)</Label>
+                              <Input
+                                type="number"
+                                min="1"
+                                max="60"
+                                value={sceneDuration0to1}
+                                onChange={(e) => setSceneDuration0to1(parseInt(e.target.value))}
+                              />
+                            </div>
+                          </div>
+                        </div>
 
-                  <div className="grid gap-4">
-                    <div className="p-4 bg-muted/50 rounded-lg">
-                      <Label className="text-base">Scènes courtes (0-{range1End}s)</Label>
-                      <p className="text-sm text-muted-foreground mb-2">Durée d'affichage par scène</p>
-                      <Input
-                        type="number"
-                        value={sceneDuration0to1}
-                        onChange={(e) => setSceneDuration0to1(Number(e.target.value))}
-                        min={1}
-                        className="mt-2"
-                      />
-                    </div>
-                    
-                    <div className="p-4 bg-muted/50 rounded-lg">
-                      <Label className="text-base">Scènes moyennes ({range1End}-{range2End}s)</Label>
-                      <p className="text-sm text-muted-foreground mb-2">Durée d'affichage par scène</p>
-                      <Input
-                        type="number"
-                        value={sceneDuration1to3}
-                        onChange={(e) => setSceneDuration1to3(Number(e.target.value))}
-                        min={1}
-                        className="mt-2"
-                      />
-                    </div>
-                    
-                    <div className="p-4 bg-muted/50 rounded-lg">
-                      <Label className="text-base">Scènes longues ({range2End}s+)</Label>
-                      <p className="text-sm text-muted-foreground mb-2">Durée d'affichage par scène</p>
-                      <Input
-                        type="number"
-                        value={sceneDuration3plus}
-                        onChange={(e) => setSceneDuration3plus(Number(e.target.value))}
-                        min={1}
-                        className="mt-2"
-                      />
+                        <div>
+                          <Label className="text-sm font-medium mb-2 block">
+                            Plage 2 : {range1End}s à {range2End}s
+                          </Label>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <Label className="text-xs text-muted-foreground">Fin de plage (sec)</Label>
+                              <Input
+                                type="number"
+                                min={range1End + 1}
+                                max={sceneFormat === "long" ? "600" : "60"}
+                                value={range2End}
+                                onChange={(e) => setRange2End(parseInt(e.target.value) || range1End + 1)}
+                              />
+                            </div>
+                            <div>
+                              <Label className="text-xs text-muted-foreground">Durée de scène (sec)</Label>
+                              <Input
+                                type="number"
+                                min="1"
+                                max="180"
+                                value={sceneDuration1to3}
+                                onChange={(e) => setSceneDuration1to3(parseInt(e.target.value))}
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        <div>
+                          <Label className="text-sm font-medium mb-2 block">
+                            Plage 3 : {range2End}s et plus
+                          </Label>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="opacity-50">
+                              <Label className="text-xs text-muted-foreground">Sans limite</Label>
+                              <Input disabled value="∞" className="bg-muted" />
+                            </div>
+                            <div>
+                              <Label className="text-xs text-muted-foreground">Durée de scène (sec)</Label>
+                              <Input
+                                type="number"
+                                min="1"
+                                max="600"
+                                value={sceneDuration3plus}
+                                onChange={(e) => setSceneDuration3plus(parseInt(e.target.value))}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </Card>
