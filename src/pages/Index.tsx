@@ -49,6 +49,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { VideoPreview } from "@/components/VideoPreview";
+import { PresetManager } from "@/components/PresetManager";
 
 interface TranscriptSegment {
   text: string;
@@ -1116,6 +1117,29 @@ const Index = () => {
     }
   };
 
+  const handleLoadPreset = async (preset: {
+    scene_duration_0to1: number;
+    scene_duration_1to3: number;
+    scene_duration_3plus: number;
+    example_prompts: string[];
+    image_width: number;
+    image_height: number;
+    aspect_ratio: string;
+    style_reference_url: string | null;
+  }) => {
+    setSceneDuration0to1(preset.scene_duration_0to1);
+    setSceneDuration1to3(preset.scene_duration_1to3);
+    setSceneDuration3plus(preset.scene_duration_3plus);
+    setExamplePrompts(preset.example_prompts);
+    setImageWidth(preset.image_width);
+    setImageHeight(preset.image_height);
+    setAspectRatio(preset.aspect_ratio);
+    if (preset.style_reference_url) {
+      setUploadedStyleImageUrl(preset.style_reference_url);
+      setStyleReferenceUrl(preset.style_reference_url);
+    }
+  };
+
   if (!user) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -1225,6 +1249,20 @@ const Index = () => {
                     </div>
                   </div>
                 </Card>
+
+                <PresetManager
+                  currentConfig={{
+                    sceneDuration0to1,
+                    sceneDuration1to3,
+                    sceneDuration3plus,
+                    examplePrompts,
+                    imageWidth,
+                    imageHeight,
+                    aspectRatio,
+                    styleReferenceUrl: uploadedStyleImageUrl,
+                  }}
+                  onLoadPreset={handleLoadPreset}
+                />
 
                 <div className="grid grid-cols-3 gap-6">
                   {/* Configuration des scènes */}

@@ -14,6 +14,54 @@ export type Database = {
   }
   public: {
     Tables: {
+      presets: {
+        Row: {
+          aspect_ratio: string | null
+          created_at: string
+          example_prompts: Json | null
+          id: string
+          image_height: number | null
+          image_width: number | null
+          name: string
+          scene_duration_0to1: number | null
+          scene_duration_1to3: number | null
+          scene_duration_3plus: number | null
+          style_reference_url: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          aspect_ratio?: string | null
+          created_at?: string
+          example_prompts?: Json | null
+          id?: string
+          image_height?: number | null
+          image_width?: number | null
+          name: string
+          scene_duration_0to1?: number | null
+          scene_duration_1to3?: number | null
+          scene_duration_3plus?: number | null
+          style_reference_url?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          aspect_ratio?: string | null
+          created_at?: string
+          example_prompts?: Json | null
+          id?: string
+          image_height?: number | null
+          image_width?: number | null
+          name?: string
+          scene_duration_0to1?: number | null
+          scene_duration_1to3?: number | null
+          scene_duration_3plus?: number | null
+          style_reference_url?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       projects: {
         Row: {
           audio_url: string | null
