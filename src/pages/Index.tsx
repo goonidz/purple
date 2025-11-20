@@ -1173,10 +1173,21 @@ const Index = () => {
     }
   };
 
-  const handleRegenerateScenes = async () => {
+  const handleGenerateScenesClick = async () => {
     if (!transcriptData) {
       toast.error("Aucune transcription disponible");
       return;
+    }
+    
+    // If scenes already exist, ask for confirmation
+    if (scenes.length > 0) {
+      const confirmed = window.confirm(
+        `Des scènes existent déjà (${scenes.length}). Voulez-vous les regénérer ? Cela supprimera également les prompts et images existants.`
+      );
+      if (!confirmed) return;
+      
+      // Clear existing prompts and images
+      setGeneratedPrompts([]);
     }
     
     setIsGeneratingScenes(true);
@@ -1189,14 +1200,10 @@ const Index = () => {
       );
       
       setScenes(generatedScenes);
-      
-      // Clear existing prompts and images since scene structure changed
-      setGeneratedPrompts([]);
-      
-      toast.success(`${generatedScenes.length} scènes regénérées !`);
+      toast.success(`${generatedScenes.length} scènes générées !`);
     } catch (error: any) {
-      console.error("Error regenerating scenes:", error);
-      toast.error("Erreur lors de la regénération des scènes");
+      console.error("Error generating scenes:", error);
+      toast.error("Erreur lors de la génération des scènes");
     } finally {
       setIsGeneratingScenes(false);
     }
@@ -1357,75 +1364,38 @@ const Index = () => {
                   onLoadPreset={handleLoadPreset}
                 />
 
-                {activePresetName && (
-                  <Card className="p-4 bg-primary/10 border-primary/30">
-                    <div className="flex items-center gap-2 text-sm">
-                      <Check className="h-4 w-4 text-primary" />
-                      <span className="font-medium">Preset actif :</span>
-                      <span className="text-primary">{activePresetName}</span>
-                    </div>
-                  </Card>
-                )}
-
                 <div className="grid grid-cols-3 gap-6">
                   {/* Configuration des scènes */}
-                  <Card className="p-6">
-                    <h2 className="text-lg font-semibold mb-4">2. Configurer les scènes</h2>
-                    <div className="space-y-4">
-                      <div className="space-y-2 text-sm">
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">Durée max (0-1 min):</span>
-                          <span className="font-medium">{sceneDuration0to1}s</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">Durée max (1-3 min):</span>
-                          <span className="font-medium">{sceneDuration1to3}s</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">Durée max (3+ min):</span>
-                          <span className="font-medium">{sceneDuration3plus}s</span>
-                        </div>
+                  <Card className="p-4 bg-muted/30 border-primary/20">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <Check className="h-4 w-4 text-primary" />
+                        <span className="font-medium text-sm">Scènes configurées</span>
                       </div>
-
                       <Button
-                        variant="outline"
+                        variant="ghost"
+                        size="sm"
                         onClick={() => setSceneSettingsOpen(true)}
-                        className="w-full"
                       >
-                        <Settings className="mr-2 h-4 w-4" />
-                        Modifier les paramètres
+                        <Settings className="h-4 w-4" />
                       </Button>
-
-                      {scenes.length > 0 && (
-                        <Button
-                          variant="outline"
-                          onClick={handleRegenerateScenes}
-                          disabled={!transcriptData || isGeneratingScenes}
-                          className="w-full"
-                        >
-                          {isGeneratingScenes ? (
-                            <>
-                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                              Regénération...
-                            </>
-                          ) : (
-                            <>
-                              <RefreshCw className="mr-2 h-4 w-4" />
-                              Regénérer les scènes
-                            </>
-                          )}
-                        </Button>
-                      )}
-
+                    </div>
+                    <div className="space-y-1 text-xs text-muted-foreground">
+                      <div>0-1 min: {sceneDuration0to1}s</div>
+                      <div>1-3 min: {sceneDuration1to3}s</div>
+                      <div>3+ min: {sceneDuration3plus}s</div>
+                    </div>
+                    {!scenes.length && (
                       <Button
-                        onClick={handleGenerateScenes}
-                        disabled={!transcriptFile || isGeneratingScenes}
-                        className="w-full"
+                        onClick={handleGenerateScenesClick}
+                        disabled={!transcriptData || isGeneratingScenes}
+                        className="w-full mt-3"
+                        size="sm"
                       >
                         {isGeneratingScenes ? (
                           <>
                             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            Génération des scènes...
+                            Génération...
                           </>
                         ) : (
                           <>
@@ -1434,131 +1404,47 @@ const Index = () => {
                           </>
                         )}
                       </Button>
-                    </div>
+                    )}
                   </Card>
 
                   {/* Configuration des prompts */}
-                  <Card className="p-6">
-                    <h2 className="text-lg font-semibold mb-4">3. Configurer les prompts</h2>
-                    <div className="space-y-4">
-                      <div className="space-y-2 text-sm">
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">Exemples de prompts:</span>
-                          <span className="font-medium">{examplePrompts.filter(p => p.trim()).length}/3</span>
-                        </div>
+                  <Card className="p-4 bg-muted/30 border-primary/20">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <Check className="h-4 w-4 text-primary" />
+                        <span className="font-medium text-sm">Prompts configurés</span>
                       </div>
-
                       <Button
-                        variant="outline"
+                        variant="ghost"
+                        size="sm"
                         onClick={() => setPromptSettingsOpen(true)}
-                        className="w-full"
                       >
-                        <Settings className="mr-2 h-4 w-4" />
-                        Modifier les paramètres
+                        <Settings className="h-4 w-4" />
                       </Button>
-
-                      <Button
-                        onClick={() => handleGeneratePrompts()}
-                        disabled={scenes.length === 0 || isGeneratingPrompts}
-                        className="w-full"
-                      >
-                        {isGeneratingPrompts ? (
-                          <>
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            Génération des prompts...
-                          </>
-                        ) : (
-                          <>
-                            <Sparkles className="mr-2 h-4 w-4" />
-                            Générer les prompts
-                          </>
-                        )}
-                      </Button>
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {examplePrompts.filter(p => p.trim()).length}/3 exemples définis
                     </div>
                   </Card>
 
                   {/* Configuration des images */}
-                  <Card className="p-6">
-                    <h2 className="text-lg font-semibold mb-4">4. Configurer les images</h2>
-                    <div className="space-y-4">
-                      <div className="space-y-2 text-sm">
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">Résolution:</span>
-                          <span className="font-medium">{imageWidth}x{imageHeight}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">Format:</span>
-                          <span className="font-medium">{aspectRatio === "custom" ? "Personnalisé" : aspectRatio}</span>
-                        </div>
-                        <div className="flex justify-between pt-2 border-t">
-                          <span className="text-muted-foreground">Référence de style:</span>
-                          <span className="font-medium">{styleReferenceUrl ? "✓ Définie" : "Non définie"}</span>
-                        </div>
+                  <Card className="p-4 bg-muted/30 border-primary/20">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <Check className="h-4 w-4 text-primary" />
+                        <span className="font-medium text-sm">Images configurées</span>
                       </div>
-
                       <Button
-                        variant="outline"
+                        variant="ghost"
+                        size="sm"
                         onClick={() => setImageSettingsOpen(true)}
-                        className="w-full"
                       >
-                        <Settings className="mr-2 h-4 w-4" />
-                        Modifier les paramètres
+                        <Settings className="h-4 w-4" />
                       </Button>
-
-                      {generatedPrompts.length > 0 && (
-                        <>
-                          <Button
-                            onClick={() => setConfirmGenerateImages(true)}
-                            disabled={isGeneratingImages}
-                            className="w-full"
-                          >
-                            {isGeneratingImages ? (
-                              <>
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                Génération...
-                              </>
-                            ) : (
-                              <>
-                                <ImageIcon className="mr-2 h-4 w-4" />
-                                Générer toutes les images
-                              </>
-                            )}
-                          </Button>
-                          <Button
-                            onClick={() => {
-                              const input = document.createElement('input');
-                              input.type = 'file';
-                              input.accept = 'image/*';
-                              input.multiple = true;
-                              input.onchange = (e) => {
-                                const files = (e.target as HTMLInputElement).files;
-                                if (files && files.length > 0) {
-                                  uploadMultipleImages(files);
-                                }
-                              };
-                              input.click();
-                            }}
-                            variant="outline"
-                            disabled={isGeneratingImages}
-                            className="w-full"
-                          >
-                            <Upload className="mr-2 h-4 w-4" />
-                            Importer toutes les images
-                          </Button>
-                          {isGeneratingImages && (
-                            <Button
-                              onClick={() => {
-                                cancelImageGenerationRef.current = true;
-                                toast.info("Annulation en cours...");
-                              }}
-                              variant="destructive"
-                              className="w-full"
-                            >
-                              Annuler
-                            </Button>
-                          )}
-                        </>
-                      )}
+                    </div>
+                    <div className="space-y-1 text-xs text-muted-foreground">
+                      <div>{imageWidth}x{imageHeight} ({aspectRatio})</div>
+                      <div>{styleReferenceUrl ? "Style de référence défini" : "Pas de référence"}</div>
                     </div>
                   </Card>
                 </div>
