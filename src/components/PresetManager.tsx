@@ -348,89 +348,144 @@ export const PresetManager = ({ currentConfig, onLoadPreset }: PresetManagerProp
         )}
 
         <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-          <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>Modifier le preset</DialogTitle>
+          <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto">
+            <DialogHeader className="border-b pb-4">
+              <DialogTitle className="text-xl">Modifier le preset</DialogTitle>
               <DialogDescription>
                 Modifiez les paramètres du preset "{editFormData?.name}"
               </DialogDescription>
             </DialogHeader>
             {editFormData && (
-              <div className="space-y-6">
-                <div>
-                  <Label htmlFor="edit-preset-name">Nom du preset</Label>
-                  <Input
-                    id="edit-preset-name"
-                    value={editFormData.name}
-                    onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
-                  />
+              <div className="space-y-8 py-4">
+                {/* Nom du preset */}
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <div className="h-1 w-1 rounded-full bg-primary" />
+                    <h3 className="text-base font-semibold">Informations générales</h3>
+                  </div>
+                  <div>
+                    <Label htmlFor="edit-preset-name" className="text-sm font-medium">
+                      Nom du preset
+                    </Label>
+                    <Input
+                      id="edit-preset-name"
+                      value={editFormData.name}
+                      onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
+                      className="mt-1.5"
+                    />
+                  </div>
                 </div>
 
-                <div className="space-y-4">
-                  <h3 className="text-sm font-semibold">Durées de scène</h3>
+                {/* Durées de scène */}
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <div className="h-1 w-1 rounded-full bg-primary" />
+                    <h3 className="text-base font-semibold">Durées de scène</h3>
+                  </div>
                   <div className="grid grid-cols-3 gap-4">
-                    <div>
-                      <Label htmlFor="edit-duration-0to1">0-1 min (sec)</Label>
-                      <Input
-                        id="edit-duration-0to1"
-                        type="number"
-                        min="1"
-                        max="600"
-                        value={editFormData.sceneDuration0to1}
-                        onChange={(e) => setEditFormData({ ...editFormData, sceneDuration0to1: parseInt(e.target.value) })}
-                      />
+                    <div className="space-y-1.5">
+                      <Label htmlFor="edit-duration-0to1" className="text-sm">
+                        0-1 min
+                      </Label>
+                      <div className="relative">
+                        <Input
+                          id="edit-duration-0to1"
+                          type="number"
+                          min="1"
+                          max="600"
+                          value={editFormData.sceneDuration0to1}
+                          onChange={(e) => setEditFormData({ ...editFormData, sceneDuration0to1: parseInt(e.target.value) })}
+                          className="pr-12"
+                        />
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+                          sec
+                        </span>
+                      </div>
                     </div>
-                    <div>
-                      <Label htmlFor="edit-duration-1to3">1-3 min (sec)</Label>
-                      <Input
-                        id="edit-duration-1to3"
-                        type="number"
-                        min="1"
-                        max="600"
-                        value={editFormData.sceneDuration1to3}
-                        onChange={(e) => setEditFormData({ ...editFormData, sceneDuration1to3: parseInt(e.target.value) })}
-                      />
+                    <div className="space-y-1.5">
+                      <Label htmlFor="edit-duration-1to3" className="text-sm">
+                        1-3 min
+                      </Label>
+                      <div className="relative">
+                        <Input
+                          id="edit-duration-1to3"
+                          type="number"
+                          min="1"
+                          max="600"
+                          value={editFormData.sceneDuration1to3}
+                          onChange={(e) => setEditFormData({ ...editFormData, sceneDuration1to3: parseInt(e.target.value) })}
+                          className="pr-12"
+                        />
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+                          sec
+                        </span>
+                      </div>
                     </div>
-                    <div>
-                      <Label htmlFor="edit-duration-3plus">3+ min (sec)</Label>
-                      <Input
-                        id="edit-duration-3plus"
-                        type="number"
-                        min="1"
-                        max="600"
-                        value={editFormData.sceneDuration3plus}
-                        onChange={(e) => setEditFormData({ ...editFormData, sceneDuration3plus: parseInt(e.target.value) })}
-                      />
+                    <div className="space-y-1.5">
+                      <Label htmlFor="edit-duration-3plus" className="text-sm">
+                        3+ min
+                      </Label>
+                      <div className="relative">
+                        <Input
+                          id="edit-duration-3plus"
+                          type="number"
+                          min="1"
+                          max="600"
+                          value={editFormData.sceneDuration3plus}
+                          onChange={(e) => setEditFormData({ ...editFormData, sceneDuration3plus: parseInt(e.target.value) })}
+                          className="pr-12"
+                        />
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+                          sec
+                        </span>
+                      </div>
                     </div>
                   </div>
                 </div>
 
-                <div className="space-y-4">
-                  <h3 className="text-sm font-semibold">Exemples de prompts</h3>
-                  {[0, 1, 2].map((index) => (
-                    <div key={index}>
-                      <Label htmlFor={`edit-prompt-${index}`}>
-                        Exemple {index + 1} {index === 0 ? "(recommandé)" : "(optionnel)"}
-                      </Label>
-                      <Input
-                        id={`edit-prompt-${index}`}
-                        placeholder={`Ex: "A cinematic scene showing... [your style]"`}
-                        value={editFormData.examplePrompts[index] || ""}
-                        onChange={(e) => {
-                          const newPrompts = [...editFormData.examplePrompts];
-                          newPrompts[index] = e.target.value;
-                          setEditFormData({ ...editFormData, examplePrompts: newPrompts });
-                        }}
-                      />
-                    </div>
-                  ))}
+                {/* Exemples de prompts */}
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <div className="h-1 w-1 rounded-full bg-primary" />
+                    <h3 className="text-base font-semibold">Exemples de prompts</h3>
+                  </div>
+                  <div className="space-y-4">
+                    {[0, 1, 2].map((index) => (
+                      <div key={index} className="space-y-1.5">
+                        <Label htmlFor={`edit-prompt-${index}`} className="text-sm">
+                          Exemple {index + 1}
+                          <span className="ml-2 text-xs text-muted-foreground">
+                            {index === 0 ? "(recommandé)" : "(optionnel)"}
+                          </span>
+                        </Label>
+                        <Textarea
+                          id={`edit-prompt-${index}`}
+                          placeholder={`Ex: "A cinematic scene showing..."`}
+                          value={editFormData.examplePrompts[index] || ""}
+                          onChange={(e) => {
+                            const newPrompts = [...editFormData.examplePrompts];
+                            newPrompts[index] = e.target.value;
+                            setEditFormData({ ...editFormData, examplePrompts: newPrompts });
+                          }}
+                          rows={3}
+                          className="resize-none"
+                        />
+                      </div>
+                    ))}
+                  </div>
                 </div>
 
-                <div className="space-y-4">
-                  <h3 className="text-sm font-semibold">Dimensions d'image</h3>
+                {/* Dimensions d'image */}
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <div className="h-1 w-1 rounded-full bg-primary" />
+                    <h3 className="text-base font-semibold">Dimensions d'image</h3>
+                  </div>
                   <div className="grid grid-cols-3 gap-4">
-                    <div>
-                      <Label htmlFor="edit-aspect-ratio">Ratio</Label>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="edit-aspect-ratio" className="text-sm">
+                        Ratio
+                      </Label>
                       <Select 
                         value={editFormData.aspectRatio} 
                         onValueChange={(value) => {
@@ -452,62 +507,96 @@ export const PresetManager = ({ currentConfig, onLoadPreset }: PresetManagerProp
                         </SelectContent>
                       </Select>
                     </div>
-                    <div>
-                      <Label htmlFor="edit-width">Largeur (px)</Label>
-                      <Input
-                        id="edit-width"
-                        type="number"
-                        min="512"
-                        max="2048"
-                        value={editFormData.imageWidth}
-                        onChange={(e) => setEditFormData({ ...editFormData, imageWidth: parseInt(e.target.value) })}
-                      />
+                    <div className="space-y-1.5">
+                      <Label htmlFor="edit-width" className="text-sm">
+                        Largeur
+                      </Label>
+                      <div className="relative">
+                        <Input
+                          id="edit-width"
+                          type="number"
+                          min="512"
+                          max="2048"
+                          value={editFormData.imageWidth}
+                          onChange={(e) => setEditFormData({ ...editFormData, imageWidth: parseInt(e.target.value) })}
+                          className="pr-12"
+                        />
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+                          px
+                        </span>
+                      </div>
                     </div>
-                    <div>
-                      <Label htmlFor="edit-height">Hauteur (px)</Label>
-                      <Input
-                        id="edit-height"
-                        type="number"
-                        min="512"
-                        max="2048"
-                        value={editFormData.imageHeight}
-                        onChange={(e) => setEditFormData({ ...editFormData, imageHeight: parseInt(e.target.value) })}
-                      />
+                    <div className="space-y-1.5">
+                      <Label htmlFor="edit-height" className="text-sm">
+                        Hauteur
+                      </Label>
+                      <div className="relative">
+                        <Input
+                          id="edit-height"
+                          type="number"
+                          min="512"
+                          max="2048"
+                          value={editFormData.imageHeight}
+                          onChange={(e) => setEditFormData({ ...editFormData, imageHeight: parseInt(e.target.value) })}
+                          className="pr-12"
+                        />
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+                          px
+                        </span>
+                      </div>
                     </div>
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="edit-style-ref">URL de l'image de référence de style</Label>
-                  <Input
-                    id="edit-style-ref"
-                    placeholder="https://..."
-                    value={editFormData.styleReferenceUrl}
-                    onChange={(e) => setEditFormData({ ...editFormData, styleReferenceUrl: e.target.value })}
-                  />
-                  {editFormData.styleReferenceUrl && (
-                    <div className="mt-2 border rounded-lg p-2">
-                      <img 
-                        src={editFormData.styleReferenceUrl} 
-                        alt="Style de référence" 
-                        className="max-h-32 mx-auto rounded"
-                        onError={(e) => {
-                          e.currentTarget.src = "";
-                          e.currentTarget.alt = "Image non disponible";
-                        }}
+                {/* Image de référence */}
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <div className="h-1 w-1 rounded-full bg-primary" />
+                    <h3 className="text-base font-semibold">Image de référence de style</h3>
+                  </div>
+                  <div className="space-y-3">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="edit-style-ref" className="text-sm">
+                        URL de l'image
+                      </Label>
+                      <Input
+                        id="edit-style-ref"
+                        placeholder="https://..."
+                        value={editFormData.styleReferenceUrl}
+                        onChange={(e) => setEditFormData({ ...editFormData, styleReferenceUrl: e.target.value })}
                       />
                     </div>
-                  )}
+                    {editFormData.styleReferenceUrl && (
+                      <div className="rounded-lg border bg-muted/30 p-4">
+                        <p className="text-xs text-muted-foreground mb-2">Aperçu:</p>
+                        <img 
+                          src={editFormData.styleReferenceUrl} 
+                          alt="Style de référence" 
+                          className="max-h-48 mx-auto rounded-lg shadow-sm"
+                          onError={(e) => {
+                            e.currentTarget.src = "";
+                            e.currentTarget.alt = "Image non disponible";
+                          }}
+                        />
+                      </div>
+                    )}
+                  </div>
                 </div>
 
-                <div className="flex justify-end gap-2 pt-4 border-t">
+                {/* Actions */}
+                <div className="flex justify-end gap-3 pt-6 border-t">
                   <Button
                     variant="outline"
                     onClick={() => setIsEditDialogOpen(false)}
+                    className="min-w-24"
                   >
                     Annuler
                   </Button>
-                  <Button onClick={handleUpdatePreset} disabled={isUpdating}>
+                  <Button 
+                    onClick={handleUpdatePreset} 
+                    disabled={isUpdating}
+                    className="min-w-32"
+                  >
                     {isUpdating ? (
                       <>
                         <Loader2 className="h-4 w-4 mr-2 animate-spin" />
