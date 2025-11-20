@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import type { User } from "@supabase/supabase-js";
 import { Loader2, Settings, Play, Download, Video, Image as ImageIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SceneSidebar } from "@/components/SceneSidebar";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { TimelineBar } from "@/components/TimelineBar";
@@ -51,7 +52,7 @@ const Workspace = () => {
   });
   const [isExportingVideo, setIsExportingVideo] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
-  const [showThumbnailGenerator, setShowThumbnailGenerator] = useState(false);
+  const [activeTab, setActiveTab] = useState<string>("video");
 
   // Check authentication
   useEffect(() => {
@@ -331,7 +332,7 @@ const Workspace = () => {
               </span>
             </div>
 
-            {canShowPreview && (
+            {activeTab === "video" && canShowPreview && (
               <>
                 <Button
                   onClick={handlePlayPreview}
@@ -353,44 +354,34 @@ const Workspace = () => {
               </>
             )}
             
-            <Button
-              variant="outline"
-              onClick={handleExport}
-            >
-              <Download className="mr-2 h-4 w-4" />
-              Export XML
-            </Button>
+            {activeTab === "video" && (
+              <>
+                <Button
+                  variant="outline"
+                  onClick={handleExport}
+                >
+                  <Download className="mr-2 h-4 w-4" />
+                  Export XML
+                </Button>
 
-            <Button
-              onClick={handleVideoExport}
-              disabled={isExportingVideo || !canShowPreview}
-            >
-              {isExportingVideo ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  {exportProgress > 0 ? `${Math.round(exportProgress)}%` : "Export..."}
-                </>
-              ) : (
-                <>
-                  <Video className="mr-2 h-4 w-4" />
-                  Export Vidéo
-                </>
-              )}
-            </Button>
-
-            <Button
-              variant="outline"
-              onClick={() => {
-                if (showPreview) {
-                  setShowPreview(false);
-                  setAutoPlayPreview(false);
-                }
-                setShowThumbnailGenerator(!showThumbnailGenerator);
-              }}
-            >
-              <ImageIcon className="mr-2 h-4 w-4" />
-              Miniatures YouTube
-            </Button>
+                <Button
+                  onClick={handleVideoExport}
+                  disabled={isExportingVideo || !canShowPreview}
+                >
+                  {isExportingVideo ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      {exportProgress > 0 ? `${Math.round(exportProgress)}%` : "Export..."}
+                    </>
+                  ) : (
+                    <>
+                      <Video className="mr-2 h-4 w-4" />
+                      Export Vidéo
+                    </>
+                  )}
+                </Button>
+              </>
+            )}
             
             <Button variant="outline" size="icon">
               <Settings className="h-4 w-4" />
@@ -399,62 +390,79 @@ const Workspace = () => {
         </div>
       </div>
 
-      {/* Main content */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* Scenes list */}
-        <div className="flex-1 flex-shrink-0">
-          <SceneSidebar
-            scenes={generatedPrompts}
-            selectedSceneIndex={0}
-            onSelectScene={() => {}}
-            onRegenerateImage={handleRegenerateImage}
-            onRegeneratePrompt={handleRegeneratePrompt}
-            onUploadImage={handleUploadImage}
-            isGeneratingImage={isGeneratingImage}
-            isGeneratingPrompt={isGeneratingPrompt}
-          />
-        </div>
+      {/* Main content with tabs */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
+          <div className="border-b px-6">
+            <TabsList>
+              <TabsTrigger value="video" className="flex items-center gap-2">
+                <Video className="h-4 w-4" />
+                Vidéo
+              </TabsTrigger>
+              <TabsTrigger value="thumbnails" className="flex items-center gap-2">
+                <ImageIcon className="h-4 w-4" />
+                Miniatures
+              </TabsTrigger>
+            </TabsList>
+          </div>
 
-        {/* Right side - Preview or Thumbnail Generator */}
-        {(showPreview || showThumbnailGenerator) && (
-          <div className="flex-1 flex overflow-hidden border-l">
-            <div className="flex-1 flex flex-col overflow-hidden">
-              <div className="flex-1 overflow-auto">
-                {showPreview && canShowPreview ? (
-                  <div className="p-6">
-                    <VideoPreview 
-                      audioUrl={audioUrl} 
-                      prompts={generatedPrompts}
-                      autoPlay={autoPlayPreview}
-                      startFromScene={0}
-                      subtitleSettings={subtitleSettings}
-                      onSubtitleSettingsChange={setSubtitleSettings}
-                    />
-                  </div>
-                ) : showThumbnailGenerator ? (
-                  <div className="p-6">
-                    <div className="max-w-4xl mx-auto">
-                      <ThumbnailGenerator
-                        projectId={currentProjectId || ""}
-                        videoScript={generatedPrompts.map(p => p.text).join(" ")}
+          <TabsContent value="video" className="flex-1 flex overflow-hidden m-0">
+            <div className="flex-1 flex overflow-hidden">
+              {/* Scenes list */}
+              <div className="flex-1 flex-shrink-0">
+                <SceneSidebar
+                  scenes={generatedPrompts}
+                  selectedSceneIndex={0}
+                  onSelectScene={() => {}}
+                  onRegenerateImage={handleRegenerateImage}
+                  onRegeneratePrompt={handleRegeneratePrompt}
+                  onUploadImage={handleUploadImage}
+                  isGeneratingImage={isGeneratingImage}
+                  isGeneratingPrompt={isGeneratingPrompt}
+                />
+              </div>
+
+              {/* Right side - Preview */}
+              {showPreview && canShowPreview && (
+                <div className="flex-1 flex overflow-hidden border-l">
+                  <div className="flex-1 flex flex-col overflow-hidden">
+                    <div className="flex-1 overflow-auto">
+                      <div className="p-6">
+                        <VideoPreview 
+                          audioUrl={audioUrl} 
+                          prompts={generatedPrompts}
+                          autoPlay={autoPlayPreview}
+                          startFromScene={0}
+                          subtitleSettings={subtitleSettings}
+                          onSubtitleSettingsChange={setSubtitleSettings}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Right sidebar - Subtitle controls */}
+                    <div className="w-[320px] border-l flex-shrink-0">
+                      <SubtitleControls
+                        settings={subtitleSettings}
+                        onChange={setSubtitleSettings}
                       />
                     </div>
                   </div>
-                ) : null}
-              </div>
+                </div>
+              )}
             </div>
+          </TabsContent>
 
-            {/* Right sidebar - Subtitle controls (visible during preview) */}
-            {showPreview && (
-              <div className="w-[320px] border-l flex-shrink-0">
-                <SubtitleControls
-                  settings={subtitleSettings}
-                  onChange={setSubtitleSettings}
+          <TabsContent value="thumbnails" className="flex-1 overflow-auto m-0">
+            <div className="p-6">
+              <div className="max-w-5xl mx-auto">
+                <ThumbnailGenerator
+                  projectId={currentProjectId || ""}
+                  videoScript={generatedPrompts.map(p => p.text).join(" ")}
                 />
               </div>
-            )}
-          </div>
-        )}
+            </div>
+          </TabsContent>
+        </Tabs>
       </div>
     </div>
   );
