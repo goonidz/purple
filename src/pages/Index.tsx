@@ -117,6 +117,7 @@ const Index = () => {
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [exportFormat, setExportFormat] = useState<ExportFormat>("premiere-xml");
   const [exportMode, setExportMode] = useState<ExportMode>("with-images");
+  const [exportFramerate, setExportFramerate] = useState<number>(25);
   const [isExporting, setIsExporting] = useState(false);
 
   // Check authentication
@@ -1017,7 +1018,7 @@ const Index = () => {
         format: exportFormat,
         mode: exportMode,
         projectName: projectName || "projet_sans_nom",
-        framerate: 25,
+        framerate: exportFramerate,
         width: imageWidth,
         height: imageHeight
       };
@@ -1988,6 +1989,25 @@ const Index = () => {
                       </div>
                     </div>
                   </RadioGroup>
+                </div>
+
+                <div className="space-y-3 pt-2 border-t">
+                  <Label className="text-base font-semibold">Cadence de la timeline (images/seconde)</Label>
+                  <p className="text-xs text-muted-foreground mb-3">
+                    Choisissez la même cadence que votre timeline dans DaVinci Resolve / Premiere Pro
+                  </p>
+                  <Select value={exportFramerate.toString()} onValueChange={(value) => setExportFramerate(Number(value))}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="23.976">23.976 fps (Film)</SelectItem>
+                      <SelectItem value="24">24 fps (Cinéma)</SelectItem>
+                      <SelectItem value="25">25 fps (PAL)</SelectItem>
+                      <SelectItem value="29.97">29.97 fps (NTSC)</SelectItem>
+                      <SelectItem value="30">30 fps</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
 

@@ -21,10 +21,12 @@ interface ExportOptions {
 }
 
 export function formatTimecode(seconds: number, framerate: number = 25): string {
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const secs = Math.floor(seconds % 60);
-  const frames = Math.floor((seconds % 1) * framerate);
+  const totalFrames = Math.round(seconds * framerate);
+  const frames = totalFrames % framerate;
+  const totalSeconds = Math.floor(totalFrames / framerate);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const secs = totalSeconds % 60;
   
   return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}:${frames.toString().padStart(2, '0')}`;
 }
@@ -35,19 +37,11 @@ export function generatePremiereXML(
 ): string {
   const { projectName, framerate = 25, width = 1920, height = 1080, mode } = options;
   
-  // Calculate sequential timeline positions (no gaps)
-  let timelinePosition = 0;
-  
   const clipItems = prompts.map((prompt, index) => {
-    // Calculate duration precisely from the scene's actual duration
-    const duration = Math.round(prompt.duration * framerate);
-    
-    // Use sequential timeline position
-    const startFrame = timelinePosition;
-    const endFrame = timelinePosition + duration;
-    
-    // Update position for next clip
-    timelinePosition = endFrame;
+    // Calculate frames from the actual scene timecodes
+    const startFrame = Math.round(prompt.startTime * framerate);
+    const endFrame = Math.round(prompt.endTime * framerate);
+    const duration = endFrame - startFrame;
     
     const imagePath = mode === "with-images" 
       ? `images/clip_${(index + 1).toString().padStart(3, '0')}_img.jpg`
@@ -80,6 +74,10 @@ export function generatePremiereXML(
       </clipitem>`;
   }).join('\n');
 
+  // Calculate total sequence duration from the last scene's end time
+  const lastEndTime = Math.max(...prompts.map(p => p.endTime));
+  const totalDurationFrames = Math.round(lastEndTime * framerate);
+
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE xmeml>
 <xmeml version="5">
@@ -88,7 +86,7 @@ export function generatePremiereXML(
     <children>
       <sequence>
         <name>${escapeXml(projectName)} - Timeline</name>
-        <duration>${timelinePosition}</duration>
+        <duration>${totalDurationFrames}</duration>
         <rate>
           <timebase>${framerate}</timebase>
         </rate>
@@ -123,18 +121,14 @@ export function generateEDL(
   
   let edl = `TITLE: ${projectName}\nFCM: NON-DROP FRAME\n\n`;
   
-  // Calculate sequential timeline positions (no gaps)
-  let timelinePosition = 0;
-  
   prompts.forEach((prompt, index) => {
     const clipNumber = (index + 1).toString().padStart(3, '0');
     const sourceIn = formatTimecode(0, framerate);
     const sourceOut = formatTimecode(prompt.duration, framerate);
     
-    // Use sequential timeline positions instead of original timecodes
-    const recordIn = formatTimecode(timelinePosition, framerate);
-    timelinePosition += prompt.duration;
-    const recordOut = formatTimecode(timelinePosition, framerate);
+    // Use actual scene timecodes for timeline positions
+    const recordIn = formatTimecode(prompt.startTime, framerate);
+    const recordOut = formatTimecode(prompt.endTime, framerate);
     
     const imagePath = mode === "with-images"
       ? `images/clip_${clipNumber}_img.jpg`
@@ -155,14 +149,14 @@ export function generateCSV(
   prompts: GeneratedPrompt[],
   options: ExportOptions
 ): string {
-  const { mode } = options;
+  const { mode, framerate = 25 } = options;
   
   let csv = "Scene Number,Timecode In,Timecode Out,Duration (s),Image Path,Scene Text,Image Prompt\n";
   
   prompts.forEach((prompt, index) => {
     const sceneNum = index + 1;
-    const timecodeIn = formatTimecode(prompt.startTime);
-    const timecodeOut = formatTimecode(prompt.endTime);
+    const timecodeIn = formatTimecode(prompt.startTime, framerate);
+    const timecodeOut = formatTimecode(prompt.endTime, framerate);
     const duration = prompt.duration.toFixed(2);
     
     const imagePath = mode === "with-images"
