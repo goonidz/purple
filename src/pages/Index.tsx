@@ -1935,12 +1935,12 @@ const Index = () => {
 
         {/* Image preview dialog */}
         <Dialog open={imagePreviewUrl !== null} onOpenChange={(open) => !open && setImagePreviewUrl(null)}>
-          <DialogContent className="max-w-5xl max-h-[90vh] p-0">
+          <DialogContent className="max-w-4xl max-h-[85vh] p-4">
             {imagePreviewUrl && (
               <img 
                 src={imagePreviewUrl} 
                 alt="Aperçu" 
-                className="w-full h-full object-contain rounded-lg"
+                className="w-full h-auto max-h-[75vh] object-contain rounded-lg"
               />
             )}
           </DialogContent>
