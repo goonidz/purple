@@ -684,6 +684,42 @@ const Index = () => {
     }
   };
 
+  // Helper function to save image to Supabase Storage
+  const saveImageToStorage = async (replicateUrl: string, sceneIndex: number): Promise<string> => {
+    try {
+      // Download image from Replicate
+      const response = await fetch(replicateUrl);
+      if (!response.ok) throw new Error("Failed to download image");
+      
+      const blob = await response.blob();
+      
+      // Generate unique filename
+      const timestamp = Date.now();
+      const filename = `${currentProjectId || 'temp'}/scene_${sceneIndex + 1}_${timestamp}.jpg`;
+      
+      // Upload to Supabase Storage
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('generated-images')
+        .upload(filename, blob, {
+          contentType: 'image/jpeg',
+          upsert: true
+        });
+      
+      if (uploadError) throw uploadError;
+      
+      // Get public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('generated-images')
+        .getPublicUrl(filename);
+      
+      return publicUrl;
+    } catch (error) {
+      console.error("Error saving image to storage:", error);
+      // Return original URL as fallback
+      return replicateUrl;
+    }
+  };
+
   const generateImage = async (index: number) => {
     const prompt = generatedPrompts[index];
     if (!prompt) {
@@ -710,11 +746,14 @@ const Index = () => {
 
       if (error) throw error;
 
-      const imageUrl = Array.isArray(data.output) ? data.output[0] : data.output;
+      const replicateUrl = Array.isArray(data.output) ? data.output[0] : data.output;
+      
+      // Save image to Supabase Storage for permanent access
+      const permanentUrl = await saveImageToStorage(replicateUrl, index);
       
       setGeneratedPrompts(prev => {
         const updatedPrompts = [...prev];
-        updatedPrompts[index] = { ...updatedPrompts[index], imageUrl };
+        updatedPrompts[index] = { ...updatedPrompts[index], imageUrl: permanentUrl };
         return updatedPrompts;
       });
       
@@ -781,11 +820,14 @@ const Index = () => {
 
             if (error) throw error;
 
-            const imageUrl = Array.isArray(data.output) ? data.output[0] : data.output;
+            const replicateUrl = Array.isArray(data.output) ? data.output[0] : data.output;
+            
+            // Save image to Supabase Storage for permanent access
+            const permanentUrl = await saveImageToStorage(replicateUrl, index);
             
             setGeneratedPrompts(prev => {
               const updated = [...prev];
-              updated[index] = { ...updated[index], imageUrl };
+              updated[index] = { ...updated[index], imageUrl: permanentUrl };
               return updated;
             });
 
