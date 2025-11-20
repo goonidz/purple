@@ -61,18 +61,18 @@ serve(async (req) => {
     console.log("Transcription successful");
     console.log("Transcription data:", JSON.stringify(transcriptionData, null, 2));
 
-    // Transform Eleven Labs response to match expected format
+    // Transform Eleven Labs response to match expected format with word-level timestamps
     const formattedTranscript = {
-      segments: transcriptionData.utterances?.map((utterance: any) => ({
-        text: utterance.text,
-        start_time: utterance.start,
-        end_time: utterance.end,
+      segments: transcriptionData.words?.filter((w: any) => w.type === "word").map((word: any) => ({
+        text: word.text,
+        start_time: word.start,
+        end_time: word.end,
       })) || [],
       language_code: transcriptionData.language_code || "en",
       full_text: transcriptionData.text || "",
     };
 
-    console.log("Formatted transcript:", JSON.stringify(formattedTranscript, null, 2));
+    console.log("Formatted transcript with word-level timestamps:", JSON.stringify(formattedTranscript, null, 2));
 
     return new Response(JSON.stringify(formattedTranscript), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
