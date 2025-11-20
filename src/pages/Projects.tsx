@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,7 +20,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Loader2, Plus, Trash2, Eye, ArrowLeft, LogOut } from "lucide-react";
+import { Loader2, Plus, Trash2, Eye, ArrowLeft, User as UserIcon } from "lucide-react";
 import { toast } from "sonner";
 import type { User } from "@supabase/supabase-js";
 import { Label } from "@/components/ui/label";
@@ -303,9 +303,11 @@ const Projects = () => {
             </div>
             <div className="flex items-center gap-4">
               <span className="text-sm text-muted-foreground">{user.email}</span>
-              <Button variant="outline" size="sm" onClick={handleLogout}>
-                <LogOut className="h-4 w-4 mr-2" />
-                Déconnexion
+              <Button variant="outline" size="sm" asChild>
+                <Link to="/profile">
+                  <UserIcon className="h-4 w-4 mr-2" />
+                  Profil
+                </Link>
               </Button>
             </div>
           </div>

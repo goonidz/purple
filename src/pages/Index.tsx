@@ -33,7 +33,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2, Sparkles, Copy, Check, Upload, LogOut, FolderOpen, Image as ImageIcon, RefreshCw, Settings, Download } from "lucide-react";
+import { Loader2, Sparkles, Copy, Check, Upload, FolderOpen, Image as ImageIcon, RefreshCw, Settings, Download, User as UserIcon } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import type { User, Session } from "@supabase/supabase-js";
@@ -1413,9 +1413,11 @@ const Index = () => {
                   Mes projets
                 </Link>
               </Button>
-              <Button variant="outline" size="sm" onClick={handleLogout}>
-                <LogOut className="h-4 w-4 mr-2" />
-                Déconnexion
+              <Button variant="outline" size="sm" asChild>
+                <Link to="/profile">
+                  <UserIcon className="h-4 w-4 mr-2" />
+                  Profil
+                </Link>
               </Button>
             </div>
           </div>
