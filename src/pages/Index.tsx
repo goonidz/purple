@@ -235,9 +235,10 @@ const Index = () => {
       setGeneratedPrompts((data.prompts as unknown as GeneratedPrompt[]) || []);
       
       // Load image dimensions and aspect ratio
-      if (data.image_width) setImageWidth(data.image_width);
-      if (data.image_height) setImageHeight(data.image_height);
-      if (data.aspect_ratio) setAspectRatio(data.aspect_ratio);
+      const projectData = data as any;
+      if (projectData.image_width) setImageWidth(projectData.image_width);
+      if (projectData.image_height) setImageHeight(projectData.image_height);
+      if (projectData.aspect_ratio) setAspectRatio(projectData.aspect_ratio);
       
       if (data.style_reference_url) {
         setStyleReferenceUrl(data.style_reference_url);

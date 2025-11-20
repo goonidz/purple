@@ -64,10 +64,13 @@ export type Database = {
       }
       projects: {
         Row: {
+          aspect_ratio: string | null
           audio_url: string | null
           created_at: string
           example_prompts: Json | null
           id: string
+          image_height: number | null
+          image_width: number | null
           name: string
           prompts: Json | null
           scene_duration_0to1: number | null
@@ -81,10 +84,13 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          aspect_ratio?: string | null
           audio_url?: string | null
           created_at?: string
           example_prompts?: Json | null
           id?: string
+          image_height?: number | null
+          image_width?: number | null
           name: string
           prompts?: Json | null
           scene_duration_0to1?: number | null
@@ -98,10 +104,13 @@ export type Database = {
           user_id: string
         }
         Update: {
+          aspect_ratio?: string | null
           audio_url?: string | null
           created_at?: string
           example_prompts?: Json | null
           id?: string
+          image_height?: number | null
+          image_width?: number | null
           name?: string
           prompts?: Json | null
           scene_duration_0to1?: number | null
