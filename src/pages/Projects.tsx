@@ -90,8 +90,8 @@ const Projects = () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("User not authenticated");
 
-      // Upload audio to storage
-      const audioFileName = `${Date.now()}_${file.name}`;
+      // Upload audio to storage with user ID in path
+      const audioFileName = `${user.id}/${Date.now()}_${file.name}`;
       const { data: audioData, error: audioError } = await supabase.storage
         .from("audio-files")
         .upload(audioFileName, file);
