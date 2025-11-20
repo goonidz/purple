@@ -19,7 +19,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { Loader2, Save, Trash2, Plus, Copy } from "lucide-react";
+import { Loader2, Save, Trash2, Plus, Copy, Settings } from "lucide-react";
 import { toast } from "sonner";
 import { Textarea } from "@/components/ui/textarea";
 
@@ -374,42 +374,36 @@ export const PresetManager = ({ currentConfig, onLoadPreset }: PresetManagerProp
             </div>
 
             {selectedPresetId && (
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={openEditDialog}
-                  className="flex-1"
-                >
-                  Modifier
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={openDuplicateDialog}
-                  className="flex-1"
-                >
-                  <Copy className="h-4 w-4 mr-2" />
-                  Dupliquer
-                </Button>
-              </div>
-            )}
-
-            {selectedPresetId && (
               <div className="flex items-center justify-between p-2 bg-muted rounded-lg">
                 <span className="text-xs text-muted-foreground">
                   {presets.find(p => p.id === selectedPresetId)?.name}
                 </span>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    const preset = presets.find(p => p.id === selectedPresetId);
-                    if (preset) deletePreset(preset.id, preset.name);
-                  }}
-                >
-                  <Trash2 className="h-4 w-4 text-destructive" />
-                </Button>
+                <div className="flex gap-1">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={openEditDialog}
+                  >
+                    <Settings className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={openDuplicateDialog}
+                  >
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      const preset = presets.find(p => p.id === selectedPresetId);
+                      if (preset) deletePreset(preset.id, preset.name);
+                    }}
+                  >
+                    <Trash2 className="h-4 w-4 text-destructive" />
+                  </Button>
+                </div>
               </div>
             )}
           </div>
