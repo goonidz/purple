@@ -5,14 +5,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -20,7 +12,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Loader2, Plus, Trash2, Eye, Sparkles, User as UserIcon } from "lucide-react";
+import { Loader2, Plus, Trash2, Sparkles, User as UserIcon } from "lucide-react";
 import { toast } from "sonner";
 import type { User } from "@supabase/supabase-js";
 import { Label } from "@/components/ui/label";
@@ -329,44 +321,43 @@ const Projects = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-secondary/5">
-      <div className="border-b bg-background/80 backdrop-blur-sm sticky top-0 z-10">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <Link to="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-primary/60">
-                <Sparkles className="h-5 w-5 text-primary-foreground" />
-              </div>
-              <span className="text-xl font-bold bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
-                VidéoFlow
-              </span>
-            </Link>
-            <div className="flex items-center gap-4">
-              <span className="text-sm text-muted-foreground">{user.email}</span>
-              <Button variant="outline" size="sm" asChild>
-                <Link to="/profile">
-                  <UserIcon className="h-4 w-4 mr-2" />
-                  Profil
-                </Link>
-              </Button>
+    <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
+      <header className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+        <div className="container flex h-16 items-center justify-between">
+          <Link to="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-primary/60">
+              <Sparkles className="h-5 w-5 text-primary-foreground" />
             </div>
+            <span className="text-xl font-bold bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
+              VidéoFlow
+            </span>
+          </Link>
+          <div className="flex items-center gap-4">
+            <Link to="/profile">
+              <Button variant="ghost" size="sm">
+                <UserIcon className="h-4 w-4 mr-2" />
+                Profil
+              </Button>
+            </Link>
           </div>
         </div>
-      </div>
+      </header>
 
-      <div className="container mx-auto px-4 py-8">
-        <Card className="p-6">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-2xl font-semibold">
-              Tous les projets ({projects.length})
-            </h2>
-            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-              <DialogTrigger asChild>
-                <Button>
-                  <Plus className="h-4 w-4 mr-2" />
-                  Nouveau projet
-                </Button>
-              </DialogTrigger>
+      <div className="container py-12 px-4">
+        <div className="mb-12 text-center max-w-2xl mx-auto">
+          <h1 className="text-5xl font-bold tracking-tight mb-4 bg-gradient-to-r from-foreground to-foreground/60 bg-clip-text text-transparent">
+            Mes Projets
+          </h1>
+          <p className="text-xl text-muted-foreground mb-6">
+            Gérez tous vos projets vidéo en un seul endroit
+          </p>
+          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+            <DialogTrigger asChild>
+              <Button size="lg">
+                <Plus className="h-4 w-4 mr-2" />
+                Nouveau projet
+              </Button>
+            </DialogTrigger>
               <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
                 <DialogHeader>
                   <DialogTitle>
@@ -800,63 +791,59 @@ const Projects = () => {
             </Dialog>
           </div>
 
-          {projects.length === 0 ? (
-            <div className="text-center py-12">
-              <p className="text-muted-foreground mb-4">Aucun projet pour le moment</p>
-              <Button onClick={() => setIsDialogOpen(true)}>
-                <Plus className="h-4 w-4 mr-2" />
-                Créer votre premier projet
-              </Button>
-            </div>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Nom</TableHead>
-                  <TableHead>Scènes</TableHead>
-                  <TableHead>Prompts</TableHead>
-                  <TableHead>Créé le</TableHead>
-                  <TableHead>Modifié le</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {projects.map((project) => (
-                  <TableRow key={project.id}>
-                    <TableCell className="font-medium">{project.name}</TableCell>
-                    <TableCell>{getSceneCount(project.scenes)}</TableCell>
-                    <TableCell>{getPromptCount(project.prompts)}</TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {formatDate(project.created_at)}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {formatDate(project.updated_at)}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => navigate(`/?project=${project.id}`)}
-                        >
-                          <Eye className="h-4 w-4 mr-2" />
-                          Ouvrir
-                        </Button>
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          onClick={() => handleDeleteProject(project.id, project.name)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+        {projects.length === 0 ? (
+          <Card className="p-12 text-center max-w-2xl mx-auto bg-card/50 backdrop-blur">
+            <p className="text-muted-foreground mb-6 text-lg">Aucun projet pour le moment</p>
+            <Button size="lg" onClick={() => setIsDialogOpen(true)}>
+              <Plus className="h-4 w-4 mr-2" />
+              Créer votre premier projet
+            </Button>
+          </Card>
+        ) : (
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 max-w-6xl mx-auto">
+            {projects.map((project) => (
+              <Card
+                key={project.id}
+                className="group cursor-pointer hover:shadow-lg transition-all duration-300 hover:scale-105 border-2 hover:border-primary/50 bg-card/50 backdrop-blur"
+                onClick={() => navigate(`/project/${project.id}`)}
+              >
+                <div className="p-6">
+                  <div className="flex items-start justify-between mb-4">
+                    <h3 className="text-xl font-bold truncate group-hover:text-primary transition-colors flex-1">
+                      {project.name}
+                    </h3>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteProject(project.id, project.name);
+                      }}
+                      className="hover:bg-destructive/10 shrink-0"
+                    >
+                      <Trash2 className="h-4 w-4 text-destructive" />
+                    </Button>
+                  </div>
+                  <div className="space-y-2 text-sm text-muted-foreground">
+                    <div className="flex items-center justify-between">
+                      <span>Scènes:</span>
+                      <span className="font-medium">{getSceneCount(project.scenes)}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span>Prompts:</span>
+                      <span className="font-medium">{getPromptCount(project.prompts)}</span>
+                    </div>
+                    <div className="pt-2 mt-2 border-t">
+                      <div className="text-xs">
+                        Modifié le {formatDate(project.updated_at)}
                       </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </Card>
+                    </div>
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
+        )}
 
         <OnboardingDialog
           open={showOnboarding}
