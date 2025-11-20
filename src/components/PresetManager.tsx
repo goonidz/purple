@@ -72,7 +72,7 @@ export const PresetManager = ({ currentConfig, onLoadPreset }: PresetManagerProp
     imageWidth: number;
     imageHeight: number;
     aspectRatio: string;
-    styleReferenceUrl: string;
+    styleReferenceUrls: string[];
   } | null>(null);
 
   useEffect(() => {
@@ -204,7 +204,7 @@ export const PresetManager = ({ currentConfig, onLoadPreset }: PresetManagerProp
           image_width: editFormData.imageWidth,
           image_height: editFormData.imageHeight,
           aspect_ratio: editFormData.aspectRatio,
-          style_reference_url: editFormData.styleReferenceUrl || null,
+          style_reference_url: JSON.stringify(editFormData.styleReferenceUrls),
         })
         .eq("id", selectedPresetId);
 
@@ -625,22 +625,27 @@ export const PresetManager = ({ currentConfig, onLoadPreset }: PresetManagerProp
                       <Input
                         id="edit-style-ref"
                         placeholder="https://..."
-                        value={editFormData.styleReferenceUrl}
-                        onChange={(e) => setEditFormData({ ...editFormData, styleReferenceUrl: e.target.value })}
+                        value={editFormData.styleReferenceUrls[0] || ""}
+                        onChange={(e) => setEditFormData({ ...editFormData, styleReferenceUrls: e.target.value ? [e.target.value] : [] })}
                       />
                     </div>
-                    {editFormData.styleReferenceUrl && (
+                    {editFormData.styleReferenceUrls.length > 0 && (
                       <div className="rounded-lg border bg-muted/30 p-4">
-                        <p className="text-xs text-muted-foreground mb-2">Aperçu:</p>
-                        <img 
-                          src={editFormData.styleReferenceUrl} 
-                          alt="Style de référence" 
-                          className="max-h-48 mx-auto rounded-lg shadow-sm"
-                          onError={(e) => {
-                            e.currentTarget.src = "";
-                            e.currentTarget.alt = "Image non disponible";
-                          }}
-                        />
+                        <p className="text-xs text-muted-foreground mb-2">Aperçu ({editFormData.styleReferenceUrls.length} image{editFormData.styleReferenceUrls.length > 1 ? 's' : ''}):</p>
+                        <div className="grid grid-cols-3 gap-2">
+                          {editFormData.styleReferenceUrls.map((url, index) => (
+                            <img 
+                              key={index}
+                              src={url} 
+                              alt={`Style de référence ${index + 1}`} 
+                              className="w-full h-24 object-cover rounded shadow-sm"
+                              onError={(e) => {
+                                e.currentTarget.src = "";
+                                e.currentTarget.alt = "Image non disponible";
+                              }}
+                            />
+                          ))}
+                        </div>
                       </div>
                     )}
                   </div>
