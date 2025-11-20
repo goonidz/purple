@@ -41,6 +41,30 @@ export type Database = {
         }
         Relationships: []
       }
+      generated_titles: {
+        Row: {
+          created_at: string
+          id: string
+          project_id: string
+          titles: Json
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          project_id: string
+          titles?: Json
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          project_id?: string
+          titles?: Json
+          user_id?: string
+        }
+        Relationships: []
+      }
       presets: {
         Row: {
           aspect_ratio: string | null
@@ -175,6 +199,33 @@ export type Database = {
           character_ref_url?: string | null
           created_at?: string
           example_urls?: Json | null
+          id?: string
+          name?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      title_presets: {
+        Row: {
+          created_at: string
+          example_titles: Json
+          id: string
+          name: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          example_titles?: Json
+          id?: string
+          name: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          example_titles?: Json
           id?: string
           name?: string
           updated_at?: string

@@ -51,7 +51,7 @@ export const TitleGenerator = ({ projectId, videoScript }: TitleGeneratorProps) 
         .order("created_at", { ascending: false });
 
       if (error) throw error;
-      setPresets(data || []);
+      setPresets((data || []) as TitlePreset[]);
     } catch (error: any) {
       console.error("Error loading presets:", error);
     }
@@ -70,7 +70,7 @@ export const TitleGenerator = ({ projectId, videoScript }: TitleGeneratorProps) 
         .order("created_at", { ascending: false });
 
       if (error) throw error;
-      setTitleHistory(data || []);
+      setTitleHistory((data || []) as GeneratedTitleHistory[]);
     } catch (error: any) {
       console.error("Error loading history:", error);
     }

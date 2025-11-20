@@ -33,7 +33,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2, Sparkles, Copy, Check, Upload, FolderOpen, Image as ImageIcon, RefreshCw, Settings, Download, User as UserIcon, Video } from "lucide-react";
+import { Upload, X, Loader2, Image as ImageIcon, RefreshCw, Settings, Download, User as UserIcon, Video, Type, Sparkles, Check, Copy, FolderOpen } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import type { User, Session } from "@supabase/supabase-js";
@@ -51,6 +51,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { VideoPreview } from "@/components/VideoPreview";
 import { PresetManager } from "@/components/PresetManager";
 import { ThumbnailGenerator } from "@/components/ThumbnailGenerator";
+import { TitleGenerator } from "@/components/TitleGenerator";
 import { DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
@@ -1456,6 +1457,10 @@ const Index = () => {
                   <ImageIcon className="h-4 w-4" />
                   Miniatures
                 </TabsTrigger>
+                <TabsTrigger value="titles" className="flex items-center gap-2">
+                  <Type className="h-4 w-4" />
+                  Titres
+                </TabsTrigger>
               </TabsList>
             </div>
 
@@ -1967,6 +1972,15 @@ const Index = () => {
               <TabsContent value="thumbnails" className="m-0">
                 <div className="max-w-5xl mx-auto">
                   <ThumbnailGenerator
+                    projectId={currentProjectId || ""}
+                    videoScript={generatedPrompts.map(p => p.text).join(" ")}
+                  />
+                </div>
+              </TabsContent>
+
+              <TabsContent value="titles" className="m-0">
+                <div className="max-w-5xl mx-auto">
+                  <TitleGenerator
                     projectId={currentProjectId || ""}
                     videoScript={generatedPrompts.map(p => p.text).join(" ")}
                   />
