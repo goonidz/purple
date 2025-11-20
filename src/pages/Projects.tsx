@@ -28,6 +28,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PresetManager } from "@/components/PresetManager";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import OnboardingDialog from "@/components/OnboardingDialog";
 
 interface Project {
   id: string;
@@ -62,6 +63,8 @@ const Projects = () => {
   const [styleReferenceFile, setStyleReferenceFile] = useState<File | null>(null);
   const [styleReferenceUrl, setStyleReferenceUrl] = useState("");
   const [activePresetName, setActivePresetName] = useState<string | null>(null);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [hasCheckedApiKeys, setHasCheckedApiKeys] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -70,6 +73,7 @@ const Projects = () => {
         navigate("/auth");
       } else {
         loadProjects();
+        checkApiKeys(session.user.id);
       }
     });
 
@@ -82,6 +86,41 @@ const Projects = () => {
 
     return () => subscription.unsubscribe();
   }, [navigate]);
+
+  const checkApiKeys = async (userId: string) => {
+    // Ne pas afficher l'onboarding si l'utilisateur l'a déjà vu
+    const onboardingCompleted = localStorage.getItem("onboarding_completed");
+    const onboardingSkipped = localStorage.getItem("onboarding_skipped");
+    
+    if (onboardingCompleted || onboardingSkipped) {
+      setHasCheckedApiKeys(true);
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from("user_api_keys")
+        .select("replicate_api_key, eleven_labs_api_key")
+        .eq("user_id", userId)
+        .maybeSingle();
+
+      if (error && error.code !== 'PGRST116') {
+        console.error("Error checking API keys:", error);
+        setHasCheckedApiKeys(true);
+        return;
+      }
+
+      // Afficher l'onboarding si les clés ne sont pas configurées
+      const hasKeys = data?.replicate_api_key && data?.eleven_labs_api_key;
+      if (!hasKeys) {
+        setShowOnboarding(true);
+      }
+      setHasCheckedApiKeys(true);
+    } catch (error) {
+      console.error("Error checking API keys:", error);
+      setHasCheckedApiKeys(true);
+    }
+  };
 
   const loadProjects = async () => {
     try {
@@ -817,6 +856,11 @@ const Projects = () => {
             </Table>
           )}
         </Card>
+
+        <OnboardingDialog
+          open={showOnboarding}
+          onOpenChange={setShowOnboarding}
+        />
       </div>
     </div>
   );
