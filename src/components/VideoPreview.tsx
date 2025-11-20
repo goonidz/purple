@@ -23,8 +23,6 @@ interface VideoPreviewProps {
 
 export const VideoPreview = ({ audioUrl, prompts, autoPlay = false, startFromScene = 0 }: VideoPreviewProps) => {
   const audioRef = useRef<HTMLAudioElement>(null);
-  const imageRef = useRef<HTMLImageElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationFrameRef = useRef<number>();
 
   const [isPlaying, setIsPlaying] = useState(false);
@@ -45,21 +43,6 @@ export const VideoPreview = ({ audioUrl, prompts, autoPlay = false, startFromSce
       return prompts.length - 1;
     }
     return 0;
-  };
-
-  // Update canvas with current image
-  const updateCanvas = () => {
-    if (!canvasRef.current || !imageRef.current || !imageRef.current.complete) {
-      return;
-    }
-
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    // Draw image to fit canvas
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(imageRef.current, 0, 0, canvas.width, canvas.height);
   };
 
   // Animation loop to sync image with audio
@@ -192,16 +175,6 @@ export const VideoPreview = ({ audioUrl, prompts, autoPlay = false, startFromSce
 
   const currentPrompt = prompts[currentSceneIndex];
 
-  // Update canvas when image changes
-  useEffect(() => {
-    if (imageRef.current) {
-      // Force image reload when scene changes
-      if (imageRef.current.complete) {
-        updateCanvas();
-      }
-    }
-  }, [currentSceneIndex, currentPrompt?.imageUrl]);
-
   // Format time as MM:SS
   const formatTime = (time: number) => {
     const minutes = Math.floor(time / 60);
@@ -216,24 +189,19 @@ export const VideoPreview = ({ audioUrl, prompts, autoPlay = false, startFromSce
       {/* Hidden audio element */}
       <audio ref={audioRef} src={audioUrl} preload="auto" />
 
-      {/* Hidden image for preloading */}
-      <img
-        ref={imageRef}
-        src={currentPrompt?.imageUrl}
-        alt="Current scene"
-        className="hidden"
-        onLoad={updateCanvas}
-        crossOrigin="anonymous"
-      />
-
-      {/* Canvas for displaying image */}
+      {/* Image preview */}
       <div className="relative aspect-video bg-black rounded-lg overflow-hidden group">
-        <canvas
-          ref={canvasRef}
-          width={1920}
-          height={1080}
-          className="w-full h-full object-contain"
-        />
+        {currentPrompt?.imageUrl ? (
+          <img
+            src={currentPrompt.imageUrl}
+            alt={`Scene ${currentSceneIndex + 1}`}
+            className="w-full h-full object-cover"
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center text-muted-foreground text-sm">
+            Aucune image pour cette scène
+          </div>
+        )}
         
         {/* Hover controls overlay */}
         <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
