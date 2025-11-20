@@ -1,4 +1,5 @@
 import Replicate from "https://esm.sh/replicate@0.25.2"
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -12,11 +13,48 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const REPLICATE_API_KEY = Deno.env.get('REPLICATE_API_KEY')
-    if (!REPLICATE_API_KEY) {
-      console.error('REPLICATE_API_KEY is not set')
-      throw new Error('REPLICATE_API_KEY is not configured')
+    // Get user from auth header
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) {
+      return new Response(JSON.stringify({ error: 'No authorization header' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
+
+    // Initialize Supabase client
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+      { global: { headers: { Authorization: authHeader } } }
+    );
+
+    // Get user
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError || !user) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Get user's API keys
+    const { data: apiKeys, error: apiKeysError } = await supabase
+      .from('user_api_keys')
+      .select('replicate_api_key')
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    if (apiKeysError || !apiKeys || !apiKeys.replicate_api_key) {
+      return new Response(JSON.stringify({ 
+        error: 'Replicate API key not configured. Please add your API key in your profile.' 
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    const REPLICATE_API_KEY = apiKeys.replicate_api_key;
 
     const replicate = new Replicate({
       auth: REPLICATE_API_KEY,
