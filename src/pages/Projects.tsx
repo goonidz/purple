@@ -795,7 +795,7 @@ const Projects = () => {
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => navigate(`/?project=${project.id}`)}
+                          onClick={() => navigate(`/workspace?project=${project.id}`)}
                         >
                           <Eye className="h-4 w-4 mr-2" />
                           Ouvrir
