@@ -61,8 +61,8 @@ const Profile = () => {
   const handleSave = async () => {
     if (!user) return;
 
-    if (!replicateApiKey.trim() || !elevenLabsApiKey.trim()) {
-      toast.error("Veuillez remplir toutes les clés API");
+    if (!replicateApiKey.trim() && !elevenLabsApiKey.trim()) {
+      toast.error("Veuillez remplir au moins une clé API");
       return;
     }
 
@@ -72,13 +72,13 @@ const Profile = () => {
         .from("user_api_keys")
         .upsert({
           user_id: user.id,
-          replicate_api_key: replicateApiKey.trim(),
-          eleven_labs_api_key: elevenLabsApiKey.trim(),
+          replicate_api_key: replicateApiKey.trim() || null,
+          eleven_labs_api_key: elevenLabsApiKey.trim() || null,
         });
 
       if (error) throw error;
 
-      toast.success("Clés API sauvegardées !");
+      toast.success("Clés API sauvegardées avec succès !");
     } catch (error: any) {
       console.error("Error saving API keys:", error);
       toast.error("Erreur lors de la sauvegarde des clés API");
@@ -201,7 +201,7 @@ const Profile = () => {
 
                 <Button
                   onClick={handleSave}
-                  disabled={isSaving || !replicateApiKey.trim() || !elevenLabsApiKey.trim()}
+                  disabled={isSaving || (!replicateApiKey.trim() && !elevenLabsApiKey.trim())}
                   className="w-full"
                   size="lg"
                 >
