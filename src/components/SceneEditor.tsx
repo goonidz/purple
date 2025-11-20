@@ -4,6 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Play, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -24,8 +25,20 @@ interface SceneEditorProps {
   onUpdate: (updatedScene: GeneratedPrompt) => void;
   onPlayFromHere: () => void;
   userId: string;
-  subtitleSettings?: { size: "small" | "medium" | "large"; position: "top" | "bottom" };
-  onSubtitleSettingsChange?: (settings: { size: "small" | "medium" | "large"; position: "top" | "bottom" }) => void;
+  subtitleSettings?: SubtitleSettings;
+  onSubtitleSettingsChange?: (settings: SubtitleSettings) => void;
+}
+
+interface SubtitleSettings {
+  enabled: boolean;
+  fontSize: number;
+  fontFamily: string;
+  color: string;
+  backgroundColor: string;
+  opacity: number;
+  textShadow: string;
+  x: number;
+  y: number;
 }
 
 export const SceneEditor = ({
@@ -34,7 +47,17 @@ export const SceneEditor = ({
   onUpdate,
   onPlayFromHere,
   userId,
-  subtitleSettings = { size: "medium", position: "bottom" },
+  subtitleSettings = {
+    enabled: true,
+    fontSize: 18,
+    fontFamily: 'Arial, sans-serif',
+    color: '#ffffff',
+    backgroundColor: '#000000',
+    opacity: 0.8,
+    textShadow: '2px 2px 4px rgba(0,0,0,0.8)',
+    x: 50,
+    y: 85
+  },
   onSubtitleSettingsChange
 }: SceneEditorProps) => {
   const [localScene, setLocalScene] = useState(scene);
@@ -187,47 +210,108 @@ export const SceneEditor = ({
 
         {/* Subtitle Settings */}
         {onSubtitleSettingsChange && (
-          <div className="space-y-3 mt-4 pt-4 border-t">
-            <Label>Paramètres des sous-titres</Label>
-            <div className="flex gap-2">
-              <Button
-                variant={subtitleSettings.size === "small" ? "default" : "outline"}
-                size="sm"
-                onClick={() => onSubtitleSettingsChange({ ...subtitleSettings, size: "small" })}
-              >
-                Petit
-              </Button>
-              <Button
-                variant={subtitleSettings.size === "medium" ? "default" : "outline"}
-                size="sm"
-                onClick={() => onSubtitleSettingsChange({ ...subtitleSettings, size: "medium" })}
-              >
-                Moyen
-              </Button>
-              <Button
-                variant={subtitleSettings.size === "large" ? "default" : "outline"}
-                size="sm"
-                onClick={() => onSubtitleSettingsChange({ ...subtitleSettings, size: "large" })}
-              >
-                Grand
-              </Button>
+          <div className="space-y-4 mt-4 pt-4 border-t">
+            <Label className="text-base font-semibold">Paramètres des sous-titres</Label>
+            
+            {/* Font Size */}
+            <div className="space-y-2">
+              <Label>Taille (px)</Label>
+              <Input
+                type="number"
+                min="10"
+                max="60"
+                value={subtitleSettings.fontSize}
+                onChange={(e) => onSubtitleSettingsChange({ ...subtitleSettings, fontSize: parseInt(e.target.value) || 18 })}
+              />
             </div>
-            <div className="flex gap-2">
-              <Button
-                variant={subtitleSettings.position === "top" ? "default" : "outline"}
-                size="sm"
-                onClick={() => onSubtitleSettingsChange({ ...subtitleSettings, position: "top" })}
+
+            {/* Font Family */}
+            <div className="space-y-2">
+              <Label>Police</Label>
+              <Select
+                value={subtitleSettings.fontFamily}
+                onValueChange={(value) => onSubtitleSettingsChange({ ...subtitleSettings, fontFamily: value })}
               >
-                Haut
-              </Button>
-              <Button
-                variant={subtitleSettings.position === "bottom" ? "default" : "outline"}
-                size="sm"
-                onClick={() => onSubtitleSettingsChange({ ...subtitleSettings, position: "bottom" })}
-              >
-                Bas
-              </Button>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Arial, sans-serif">Arial</SelectItem>
+                  <SelectItem value="'Times New Roman', serif">Times New Roman</SelectItem>
+                  <SelectItem value="'Courier New', monospace">Courier New</SelectItem>
+                  <SelectItem value="Georgia, serif">Georgia</SelectItem>
+                  <SelectItem value="Verdana, sans-serif">Verdana</SelectItem>
+                  <SelectItem value="'Comic Sans MS', cursive">Comic Sans</SelectItem>
+                  <SelectItem value="Impact, fantasy">Impact</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
+
+            {/* Text Color */}
+            <div className="space-y-2">
+              <Label>Couleur du texte</Label>
+              <div className="flex gap-2">
+                <Input
+                  type="color"
+                  value={subtitleSettings.color}
+                  onChange={(e) => onSubtitleSettingsChange({ ...subtitleSettings, color: e.target.value })}
+                  className="w-20 h-10"
+                />
+                <Input
+                  type="text"
+                  value={subtitleSettings.color}
+                  onChange={(e) => onSubtitleSettingsChange({ ...subtitleSettings, color: e.target.value })}
+                  className="flex-1"
+                />
+              </div>
+            </div>
+
+            {/* Background Color */}
+            <div className="space-y-2">
+              <Label>Couleur de fond</Label>
+              <div className="flex gap-2">
+                <Input
+                  type="color"
+                  value={subtitleSettings.backgroundColor}
+                  onChange={(e) => onSubtitleSettingsChange({ ...subtitleSettings, backgroundColor: e.target.value })}
+                  className="w-20 h-10"
+                />
+                <Input
+                  type="text"
+                  value={subtitleSettings.backgroundColor}
+                  onChange={(e) => onSubtitleSettingsChange({ ...subtitleSettings, backgroundColor: e.target.value })}
+                  className="flex-1"
+                />
+              </div>
+            </div>
+
+            {/* Opacity */}
+            <div className="space-y-2">
+              <Label>Opacité ({Math.round(subtitleSettings.opacity * 100)}%)</Label>
+              <Input
+                type="range"
+                min="0"
+                max="1"
+                step="0.1"
+                value={subtitleSettings.opacity}
+                onChange={(e) => onSubtitleSettingsChange({ ...subtitleSettings, opacity: parseFloat(e.target.value) })}
+              />
+            </div>
+
+            {/* Text Shadow */}
+            <div className="space-y-2">
+              <Label>Ombre du texte</Label>
+              <Input
+                type="text"
+                value={subtitleSettings.textShadow}
+                onChange={(e) => onSubtitleSettingsChange({ ...subtitleSettings, textShadow: e.target.value })}
+                placeholder="2px 2px 4px rgba(0,0,0,0.8)"
+              />
+            </div>
+
+            <p className="text-xs text-muted-foreground mt-2">
+              💡 Glissez-déposez les sous-titres directement sur la vidéo pour les repositionner
+            </p>
           </div>
         )}
       </div>

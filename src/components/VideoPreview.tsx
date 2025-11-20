@@ -20,9 +20,20 @@ interface VideoPreviewProps {
   prompts: GeneratedPrompt[];
   autoPlay?: boolean;
   startFromScene?: number;
-  subtitleSize?: "small" | "medium" | "large";
-  subtitlePosition?: "top" | "bottom";
-  onSubtitleSettingsChange?: (settings: { size: "small" | "medium" | "large"; position: "top" | "bottom" }) => void;
+  subtitleSettings?: SubtitleSettings;
+  onSubtitleSettingsChange?: (settings: SubtitleSettings) => void;
+}
+
+interface SubtitleSettings {
+  enabled: boolean;
+  fontSize: number;
+  fontFamily: string;
+  color: string;
+  backgroundColor: string;
+  opacity: number;
+  textShadow: string;
+  x: number; // position X en %
+  y: number; // position Y en %
 }
 
 export const VideoPreview = ({ 
@@ -30,28 +41,68 @@ export const VideoPreview = ({
   prompts, 
   autoPlay = false, 
   startFromScene = 0,
-  subtitleSize: initialSize = "medium",
-  subtitlePosition: initialPosition = "bottom",
+  subtitleSettings = {
+    enabled: true,
+    fontSize: 18,
+    fontFamily: 'Arial, sans-serif',
+    color: '#ffffff',
+    backgroundColor: '#000000',
+    opacity: 0.8,
+    textShadow: '2px 2px 4px rgba(0,0,0,0.8)',
+    x: 50,
+    y: 85
+  },
   onSubtitleSettingsChange
 }: VideoPreviewProps) => {
   const audioRef = useRef<HTMLAudioElement>(null);
   const animationFrameRef = useRef<number>();
+  const subtitleRef = useRef<HTMLDivElement>(null);
+  const [isDragging, setIsDragging] = useState(false);
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(startFromScene > 0 ? prompts[startFromScene].startTime : 0);
   const [duration, setDuration] = useState(0);
   const [currentSceneIndex, setCurrentSceneIndex] = useState(startFromScene);
   const [playbackRate, setPlaybackRate] = useState(1);
-  const [showSubtitles, setShowSubtitles] = useState(true);
-  const [subtitleSize, setSubtitleSize] = useState<"small" | "medium" | "large">(initialSize);
-  const [subtitlePosition, setSubtitlePosition] = useState<"top" | "bottom">(initialPosition);
 
-  // Notify parent of subtitle settings changes
-  const updateSubtitleSettings = (size: "small" | "medium" | "large", position: "top" | "bottom") => {
-    setSubtitleSize(size);
-    setSubtitlePosition(position);
-    onSubtitleSettingsChange?.({ size, position });
+  // Drag handlers for subtitle positioning
+  const handleSubtitleMouseDown = (e: React.MouseEvent) => {
+    if (!subtitleRef.current) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
   };
+
+  const handleMouseMove = (e: MouseEvent) => {
+    if (!isDragging || !subtitleRef.current) return;
+    const videoContainer = subtitleRef.current.parentElement;
+    if (!videoContainer) return;
+
+    const rect = videoContainer.getBoundingClientRect();
+    const x = ((e.clientX - rect.left) / rect.width) * 100;
+    const y = ((e.clientY - rect.top) / rect.height) * 100;
+
+    onSubtitleSettingsChange?.({
+      ...subtitleSettings,
+      x: Math.max(0, Math.min(100, x)),
+      y: Math.max(0, Math.min(100, y))
+    });
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
+  };
+
+  useEffect(() => {
+    if (isDragging) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+      return () => {
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', handleMouseUp);
+      };
+    }
+  }, [isDragging, subtitleSettings]);
 
   // Find which scene we're currently in based on time
   const getCurrentSceneIndex = (time: number) => {
@@ -252,23 +303,28 @@ export const VideoPreview = ({
         </div>
         
         {/* Subtitles */}
-        {showSubtitles && currentPrompt?.text && (
+        {subtitleSettings.enabled && currentPrompt?.text && (
           <div 
-            className={cn(
-              "absolute left-4 right-4 bg-black/80 text-white px-4 py-3 rounded text-center pointer-events-none",
-              subtitlePosition === "bottom" ? "bottom-4" : "top-4",
-              subtitleSize === "small" && "py-2",
-              subtitleSize === "large" && "py-4"
-            )}
+            ref={subtitleRef}
+            onMouseDown={handleSubtitleMouseDown}
+            className="absolute cursor-move select-none"
+            style={{
+              left: `${subtitleSettings.x}%`,
+              top: `${subtitleSettings.y}%`,
+              transform: 'translate(-50%, -50%)',
+              fontSize: `${subtitleSettings.fontSize}px`,
+              fontFamily: subtitleSettings.fontFamily,
+              color: subtitleSettings.color,
+              backgroundColor: subtitleSettings.backgroundColor,
+              opacity: subtitleSettings.opacity,
+              textShadow: subtitleSettings.textShadow,
+              padding: '8px 16px',
+              borderRadius: '4px',
+              maxWidth: '90%',
+              textAlign: 'center'
+            }}
           >
-            <p className={cn(
-              "leading-relaxed",
-              subtitleSize === "small" && "text-xs",
-              subtitleSize === "medium" && "text-sm md:text-base",
-              subtitleSize === "large" && "text-base md:text-lg"
-            )}>
-              {currentPrompt.text}
-            </p>
+            {currentPrompt.text}
           </div>
         )}
       </div>
@@ -352,39 +408,11 @@ export const VideoPreview = ({
         <Button
           variant="outline"
           size="icon"
-          onClick={() => setShowSubtitles(!showSubtitles)}
-          title={showSubtitles ? "Masquer les sous-titres" : "Afficher les sous-titres"}
+          onClick={() => onSubtitleSettingsChange?.({ ...subtitleSettings, enabled: !subtitleSettings.enabled })}
+          title={subtitleSettings.enabled ? "Masquer les sous-titres" : "Afficher les sous-titres"}
         >
-          <Subtitles className={showSubtitles ? "h-4 w-4" : "h-4 w-4 opacity-50"} />
+          <Subtitles className={subtitleSettings.enabled ? "h-4 w-4" : "h-4 w-4 opacity-50"} />
         </Button>
-        
-        {/* Subtitle settings */}
-        {showSubtitles && (
-          <>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                const sizes: Array<"small" | "medium" | "large"> = ["small", "medium", "large"];
-                const currentIndex = sizes.indexOf(subtitleSize);
-                const newSize = sizes[(currentIndex + 1) % sizes.length];
-                updateSubtitleSettings(newSize, subtitlePosition);
-              }}
-            >
-              Taille: {subtitleSize === "small" ? "P" : subtitleSize === "medium" ? "M" : "G"}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                const newPosition = subtitlePosition === "bottom" ? "top" : "bottom";
-                updateSubtitleSettings(subtitleSize, newPosition);
-              }}
-            >
-              Position: {subtitlePosition === "bottom" ? "Bas" : "Haut"}
-            </Button>
-          </>
-        )}
       </div>
 
       {/* Current scene info */}

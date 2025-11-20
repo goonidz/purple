@@ -34,9 +34,16 @@ const Workspace = () => {
   const [startFromSceneIndex, setStartFromSceneIndex] = useState(0);
   const [isGeneratingImage, setIsGeneratingImage] = useState<number | null>(null);
   const [isGeneratingPrompt, setIsGeneratingPrompt] = useState<number | null>(null);
-  const [subtitleSettings, setSubtitleSettings] = useState<{ size: "small" | "medium" | "large"; position: "top" | "bottom" }>({
-    size: "medium",
-    position: "bottom"
+  const [subtitleSettings, setSubtitleSettings] = useState({
+    enabled: true,
+    fontSize: 18,
+    fontFamily: 'Arial, sans-serif',
+    color: '#ffffff',
+    backgroundColor: '#000000',
+    opacity: 0.8,
+    textShadow: '2px 2px 4px rgba(0,0,0,0.8)',
+    x: 50,
+    y: 85
   });
 
   // Check authentication
@@ -299,8 +306,7 @@ const Workspace = () => {
                   prompts={generatedPrompts}
                   autoPlay={autoPlayPreview}
                   startFromScene={startFromSceneIndex}
-                  subtitleSize={subtitleSettings.size}
-                  subtitlePosition={subtitleSettings.position}
+                  subtitleSettings={subtitleSettings}
                   onSubtitleSettingsChange={setSubtitleSettings}
                 />
               </div>
