@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { Card } from "@/components/ui/card";
-import { Play, Pause, SkipBack, SkipForward } from "lucide-react";
+import { Play, Pause, SkipBack, SkipForward, Subtitles } from "lucide-react";
 
 interface GeneratedPrompt {
   scene: string;
@@ -30,6 +30,7 @@ export const VideoPreview = ({ audioUrl, prompts, autoPlay = false, startFromSce
   const [duration, setDuration] = useState(0);
   const [currentSceneIndex, setCurrentSceneIndex] = useState(startFromScene);
   const [playbackRate, setPlaybackRate] = useState(1);
+  const [showSubtitles, setShowSubtitles] = useState(true);
 
   // Find which scene we're currently in based on time
   const getCurrentSceneIndex = (time: number) => {
@@ -228,6 +229,15 @@ export const VideoPreview = ({ audioUrl, prompts, autoPlay = false, startFromSce
         <div className="absolute top-4 right-4 bg-black/70 text-white px-3 py-1 rounded text-sm pointer-events-none">
           {playbackRate}x
         </div>
+        
+        {/* Subtitles */}
+        {showSubtitles && currentPrompt?.text && (
+          <div className="absolute bottom-4 left-4 right-4 bg-black/80 text-white px-4 py-3 rounded text-center pointer-events-none">
+            <p className="text-sm md:text-base leading-relaxed">
+              {currentPrompt.text}
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Timeline slider */}
@@ -304,6 +314,15 @@ export const VideoPreview = ({ audioUrl, prompts, autoPlay = false, startFromSce
           className="min-w-[60px]"
         >
           {playbackRate}x
+        </Button>
+        
+        <Button
+          variant="outline"
+          size="icon"
+          onClick={() => setShowSubtitles(!showSubtitles)}
+          title={showSubtitles ? "Masquer les sous-titres" : "Afficher les sous-titres"}
+        >
+          <Subtitles className={showSubtitles ? "h-4 w-4" : "h-4 w-4 opacity-50"} />
         </Button>
       </div>
 
