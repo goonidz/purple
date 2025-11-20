@@ -391,12 +391,6 @@ const Workspace = () => {
               )}
             </div>
 
-            {/* Timeline at bottom */}
-            <TimelineBar
-              scenes={generatedPrompts}
-              selectedSceneIndex={selectedSceneIndex}
-              onSelectScene={setSelectedSceneIndex}
-            />
           </div>
 
           {/* Right sidebar - Subtitle controls (visible during preview) */}
