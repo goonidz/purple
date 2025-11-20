@@ -264,12 +264,12 @@ export const VideoPreview = ({
       <audio ref={audioRef} src={audioUrl} preload="auto" />
 
       {/* Image preview */}
-      <div className="relative aspect-video bg-black rounded-lg overflow-hidden group">
+      <div className="relative w-full max-h-[70vh] bg-black rounded-lg overflow-hidden group flex items-center justify-center">
         {currentPrompt?.imageUrl ? (
           <img
             src={currentPrompt.imageUrl}
             alt={`Scene ${currentSceneIndex + 1}`}
-            className="w-full h-full object-cover"
+            className="max-w-full max-h-[70vh] w-auto h-auto object-contain"
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center text-muted-foreground text-sm">
