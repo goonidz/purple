@@ -79,7 +79,7 @@ const Projects = () => {
     }
   };
 
-  const handleCreateProject = async () => {
+  const handleAudioUpload = async (file: File) => {
     if (!newProjectName.trim()) {
       toast.error("Veuillez entrer un nom de projet");
       return;
@@ -90,27 +90,61 @@ const Projects = () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("User not authenticated");
 
-      const { data, error } = await supabase
+      // Upload audio to storage
+      const audioFileName = `${Date.now()}_${file.name}`;
+      const { data: audioData, error: audioError } = await supabase.storage
+        .from("audio-files")
+        .upload(audioFileName, file);
+
+      if (audioError) throw audioError;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from("audio-files")
+        .getPublicUrl(audioFileName);
+
+      // Create project with audio URL
+      const { data: projectData, error: projectError } = await supabase
         .from("projects")
         .insert([
           {
             user_id: user.id,
             name: newProjectName.trim(),
+            audio_url: publicUrl,
           },
         ])
         .select()
         .single();
 
-      if (error) throw error;
+      if (projectError) throw projectError;
 
-      toast.success("Projet créé !");
+      toast.success("Audio importé, transcription en cours...");
+
+      // Call transcription edge function
+      const { data: transcriptData, error: transcriptError } = await supabase.functions.invoke(
+        "transcribe-audio",
+        {
+          body: { audioUrl: publicUrl },
+        }
+      );
+
+      if (transcriptError) throw transcriptError;
+
+      // Update project with transcript
+      const { error: updateError } = await supabase
+        .from("projects")
+        .update({ transcript_json: transcriptData })
+        .eq("id", projectData.id);
+
+      if (updateError) throw updateError;
+
+      toast.success("Transcription terminée !");
       setNewProjectName("");
       setIsDialogOpen(false);
       await loadProjects();
-      navigate(`/?project=${data.id}`);
+      navigate(`/?project=${projectData.id}`);
     } catch (error: any) {
       console.error("Error creating project:", error);
-      toast.error("Erreur lors de la création du projet");
+      toast.error("Erreur : " + (error.message || "Erreur inconnue"));
     } finally {
       setIsCreating(false);
     }
@@ -218,26 +252,45 @@ const Projects = () => {
                     placeholder="Nom du projet"
                     value={newProjectName}
                     onChange={(e) => setNewProjectName(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && !isCreating) {
-                        handleCreateProject();
-                      }
-                    }}
+                    disabled={isCreating}
                   />
-                  <Button
-                    onClick={handleCreateProject}
-                    disabled={isCreating || !newProjectName.trim()}
-                    className="w-full"
-                  >
-                    {isCreating ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Création...
-                      </>
-                    ) : (
-                      "Créer le projet"
-                    )}
-                  </Button>
+                  <div className="border-2 border-dashed rounded-lg p-8 text-center">
+                    <Input
+                      type="file"
+                      accept="audio/mp3,audio/wav,audio/mpeg"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          handleAudioUpload(file);
+                        }
+                      }}
+                      className="hidden"
+                      id="audio-upload-mobile"
+                      disabled={isCreating}
+                    />
+                    <label htmlFor="audio-upload-mobile" className="cursor-pointer">
+                      <div className="flex flex-col items-center gap-2">
+                        {isCreating ? (
+                          <>
+                            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                            <p className="text-sm text-muted-foreground">
+                              Transcription en cours...
+                            </p>
+                          </>
+                        ) : (
+                          <>
+                            <Plus className="h-8 w-8 text-muted-foreground" />
+                            <p className="text-sm text-muted-foreground">
+                              Cliquez pour importer un fichier audio
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              MP3 ou WAV
+                            </p>
+                          </>
+                        )}
+                      </div>
+                    </label>
+                  </div>
                 </div>
               </DialogContent>
             </Dialog>
