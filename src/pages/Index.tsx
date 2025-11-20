@@ -245,11 +245,12 @@ const Index = () => {
         toast.success(`${generatedScenes.length} scènes générées automatiquement !`);
       }
       
-      setGeneratedPrompts((data.prompts as unknown as GeneratedPrompt[]) || []);
+      // Filter out any null values from prompts array
+      const validPrompts = ((data.prompts as unknown as GeneratedPrompt[]) || []).filter(p => p !== null && p !== undefined);
+      setGeneratedPrompts(validPrompts);
       
       // Check if test has already been done (at least 2 scenes with images)
-      const loadedPrompts = (data.prompts as unknown as GeneratedPrompt[]) || [];
-      const firstTwoWithImages = loadedPrompts.slice(0, 2).filter(p => p.imageUrl).length;
+      const firstTwoWithImages = validPrompts.slice(0, 2).filter(p => p && p.imageUrl).length;
       if (firstTwoWithImages >= 2) {
         setHasTestedFirstTwo(true);
       }
@@ -1231,7 +1232,7 @@ const Index = () => {
     // Filter prompts to process
     const promptsToProcess = generatedPrompts
       .map((prompt, index) => ({ prompt, index }))
-      .filter(({ prompt }) => !skipExisting || !prompt.imageUrl);
+      .filter(({ prompt }) => prompt && (!skipExisting || !prompt.imageUrl));
 
     // Count skipped images
     skippedCount = generatedPrompts.length - promptsToProcess.length;
@@ -1307,7 +1308,7 @@ const Index = () => {
     setIsGeneratingImages(false);
     
     // Check for missing images
-    const missingCount = generatedPrompts.filter(p => !p.imageUrl).length;
+    const missingCount = generatedPrompts.filter(p => p && !p.imageUrl).length;
     
     if (!cancelImageGenerationRef.current) {
       if (missingCount > 0) {
@@ -1328,7 +1329,7 @@ const Index = () => {
     }
 
     // Check for missing images and show alert
-    const missingImages = generatedPrompts.filter(p => !p.imageUrl);
+    const missingImages = generatedPrompts.filter(p => p && !p.imageUrl);
     if (missingImages.length > 0) {
       if (exportMode === "with-images") {
         toast.error(`${missingImages.length} scène(s) n'ont pas d'images. Impossible d'exporter avec images. Changez le mode d'export ou générez les images manquantes.`);
@@ -1754,7 +1755,7 @@ const Index = () => {
                         <div className="flex gap-2 items-center">
                           {generatedPrompts.length > 0 && (
                             <>
-                              {generatedPrompts.filter(p => p.imageUrl).length > 0 && (
+                              {generatedPrompts.filter(p => p && p.imageUrl).length > 0 && (
                                 <Button
                                   onClick={() => setExportDialogOpen(true)}
                                   variant="outline"
@@ -2444,7 +2445,7 @@ const Index = () => {
               <AlertDialogTitle>Confirmer la génération des images</AlertDialogTitle>
               <AlertDialogDescription className="space-y-3">
                 {(() => {
-                  const existingImagesCount = generatedPrompts.filter(p => p.imageUrl).length;
+                  const existingImagesCount = generatedPrompts.filter(p => p && p.imageUrl).length;
                   const missingImagesCount = generatedPrompts.length - existingImagesCount;
                   
                   return (
@@ -2487,7 +2488,7 @@ const Index = () => {
             </AlertDialogHeader>
             <AlertDialogFooter className="flex-col sm:flex-row gap-2">
               <AlertDialogCancel>Annuler</AlertDialogCancel>
-              {generatedPrompts.filter(p => p.imageUrl).length > 0 && (
+              {generatedPrompts.filter(p => p && p.imageUrl).length > 0 && (
                 <AlertDialogAction
                   className="bg-secondary text-secondary-foreground hover:bg-secondary/80"
                   onClick={() => {
@@ -2502,7 +2503,7 @@ const Index = () => {
                 setConfirmGenerateImages(false);
                 generateAllImages(false);
               }}>
-                {generatedPrompts.filter(p => p.imageUrl).length > 0 ? "Tout régénérer" : "Générer"}
+                {generatedPrompts.filter(p => p && p.imageUrl).length > 0 ? "Tout régénérer" : "Générer"}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
