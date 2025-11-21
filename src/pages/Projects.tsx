@@ -119,7 +119,7 @@ const Projects = () => {
     try {
       const { data, error } = await supabase
         .from("projects")
-        .select("*")
+        .select("id, name, created_at, updated_at, scenes, prompts")
         .order("updated_at", { ascending: false });
 
       if (error) throw error;
