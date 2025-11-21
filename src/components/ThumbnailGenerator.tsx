@@ -727,7 +727,7 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle }: Thumb
                     <img
                       src={url}
                       alt={`Example ${index + 1}`}
-                      className="w-full h-32 object-cover rounded-lg border"
+                      className="w-full h-32 object-contain rounded-lg border bg-muted/30"
                     />
                     <Button
                       variant="destructive"
