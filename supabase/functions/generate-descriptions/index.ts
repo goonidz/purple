@@ -23,27 +23,31 @@ serve(async (req) => {
       throw new Error('LOVABLE_API_KEY not configured');
     }
 
-    const systemPrompt = `Tu es un expert en création de descriptions YouTube. 
+    const systemPrompt = `You are a YouTube description generation expert.
 
-Ta mission est de générer 1 description de vidéo qui:
-- DOIT IMPÉRATIVEMENT être rédigée dans la même langue que le script vidéo fourni (anglais si le script est en anglais, français si le script est en français, etc.)
-- Est écrite à la première personne (je/nous) comme si l'auteur parlait directement
-- Décrit factuellement et clairement le contenu de la vidéo
-- Reste concise (150-250 caractères recommandés)
-- Utilise un ton professionnel et informatif, pas sensationnel
-- N'utilise AUCUN emoji
-- Évite les superlatifs et l'exagération
-- Capture l'essence du contenu de manière directe
+Your task is to generate 1 video description that:
+- MUST be written in the EXACT SAME LANGUAGE as the video script provided (if script is in English, write in English; if script is in French, write in French; etc.)
+- Is written in first person (I/we) as if the author is speaking directly
+- Factually and clearly describes the video content
+- Stays concise (150-250 characters recommended)
+- Uses a professional and informative tone, not sensational
+- Uses NO emojis
+- Avoids superlatives and exaggeration
+- Captures the essence of the content directly
 
-IMPORTANT: Détecte la langue du script et génère la description dans EXACTEMENT cette même langue.`;
+CRITICAL: First detect the language of the script, then write your ENTIRE response in that EXACT language.`;
 
-    const userPrompt = `Détecte la langue du script ci-dessous et génère 1 description YouTube factuelle dans cette MÊME langue exacte.
+    const userPrompt = `STEP 1: Detect the language of the script below.
+STEP 2: Generate 1 factual YouTube description in that EXACT SAME language.
+
+If the script is in English, your description MUST be in English.
+If the script is in French, your description MUST be in French.
 
 Script: ${videoScript}
 
-Retourne uniquement la description sous format JSON strict (la description doit être dans la même langue que le script):
+Return ONLY the JSON with the description in the SAME language as the script:
 {
-  "description": "description factuelle dans la langue du script"
+  "description": "factual description in the script's language"
 }`;
 
     console.log('Calling Lovable AI Gateway for description generation...');
