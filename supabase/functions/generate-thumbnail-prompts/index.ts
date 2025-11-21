@@ -11,7 +11,7 @@ serve(async (req) => {
   }
 
   try {
-    const { videoScript, exampleUrls, characterRefUrl } = await req.json();
+    const { videoScript, exampleUrls, characterRefUrl, previousPrompts } = await req.json();
 
     if (!videoScript) {
       return new Response(
@@ -36,7 +36,7 @@ serve(async (req) => {
       );
     }
 
-    const systemPrompt = `Tu es un expert en création de miniatures YouTube accrocheuses et performantes.
+    let systemPrompt = `Tu es un expert en création de miniatures YouTube accrocheuses et performantes.
 
 Ton rôle est d'ANALYSER les exemples de miniatures fournis et de générer 3 prompts SIMILAIRES mais DIFFÉRENTS pour créer des miniatures YouTube.
 
@@ -53,7 +53,23 @@ RÈGLES STRICTES:
 4. Utilise "the character from the single-person reference image" pour le personnage
 5. Les prompts doivent être en ANGLAIS pour la génération d'images
 6. Chaque prompt doit faire 60-100 mots et être très détaillé sur le style visuel
-7. Mentionne explicitement les éléments de style observés dans les exemples
+7. Mentionne explicitement les éléments de style observés dans les exemples`;
+
+    // Ajouter l'instruction sur les prompts précédents si fournis
+    if (previousPrompts && Array.isArray(previousPrompts) && previousPrompts.length > 0) {
+      systemPrompt += `
+
+CRITICAL CONSTRAINT - AVOID PREVIOUS PROMPTS:
+The user has already generated thumbnails with the following prompts and was NOT satisfied with them.
+You MUST generate 3 COMPLETELY DIFFERENT prompts that explore NEW creative directions while maintaining the style from the examples.
+DO NOT create variations similar to these rejected prompts:
+
+${previousPrompts.map((p, i) => `${i + 1}. ${p}`).join('\n\n')}
+
+Generate fresh, innovative prompts that are distinctly different from the above.`;
+    }
+
+    systemPrompt += `
 
 Retourne UNIQUEMENT un JSON avec ce format exact:
 {
