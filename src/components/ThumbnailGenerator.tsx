@@ -280,12 +280,16 @@ export const ThumbnailGenerator = ({ projectId, videoScript }: ThumbnailGenerato
       if (!user) throw new Error("User not authenticated");
 
       // Étape 1: Générer 3 prompts créatifs avec Gemini
+      // Collecter tous les prompts précédemment générés
+      const previousPrompts = thumbnailHistory.flatMap(item => item.prompts);
+      
       toast.info("Génération de 3 prompts créatifs avec Gemini...");
       const { data: promptsData, error: promptsError } = await supabase.functions.invoke("generate-thumbnail-prompts", {
         body: { 
           videoScript,
           exampleUrls,
-          characterRefUrl 
+          characterRefUrl,
+          previousPrompts: previousPrompts.length > 0 ? previousPrompts : undefined
         }
       });
 
