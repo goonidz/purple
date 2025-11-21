@@ -60,15 +60,33 @@ const Projects = () => {
   const [hasCheckedApiKeys, setHasCheckedApiKeys] = useState(false);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-      if (!session) {
-        navigate("/auth");
-      } else {
-        loadProjects();
-        checkApiKeys(session.user.id);
+    const initAuth = async () => {
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession();
+        
+        if (error) {
+          console.error("Auth error:", error);
+          toast.error("Erreur d'authentification");
+          setIsLoading(false);
+          navigate("/auth");
+          return;
+        }
+        
+        setUser(session?.user ?? null);
+        if (!session) {
+          navigate("/auth");
+        } else {
+          await loadProjects();
+          checkApiKeys(session.user.id);
+        }
+      } catch (error) {
+        console.error("Unexpected error:", error);
+        toast.error("Une erreur est survenue");
+        setIsLoading(false);
       }
-    });
+    };
+    
+    initAuth();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       setUser(session?.user ?? null);
