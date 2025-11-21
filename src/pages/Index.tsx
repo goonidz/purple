@@ -1338,12 +1338,12 @@ const Index = () => {
     setImageGenerationProgress(0);
     setImageGenerationTotal(0);
     
-    // Check for missing images
-    const missingCount = generatedPrompts.filter(p => p && !p.imageUrl).length;
+    // Calculate missing images from generation results
+    const failedCount = promptsToProcess.length - successCount;
     
     if (!cancelImageGenerationRef.current) {
-      if (missingCount > 0) {
-        toast.warning(`${successCount} images générées, ${skippedCount} conservées. ${missingCount} image(s) manquante(s).`);
+      if (failedCount > 0) {
+        toast.warning(`${successCount} images générées, ${skippedCount} conservées. ${failedCount} image(s) manquante(s).`);
       } else if (skippedCount > 0) {
         toast.success(`${successCount} images générées, ${skippedCount} conservées !`);
       } else {
