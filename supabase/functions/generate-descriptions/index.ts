@@ -23,26 +23,26 @@ serve(async (req) => {
       throw new Error('LOVABLE_API_KEY not configured');
     }
 
-    const systemPrompt = `Tu es un expert en création de descriptions YouTube optimisées pour le référencement et l'engagement. 
+    const systemPrompt = `Tu es un expert en création de descriptions YouTube. 
 
 Ta mission est de générer 1 description de vidéo qui:
-- Sonne naturelle et authentique (PAS comme de l'IA)
-- Est concise mais engageante (150-250 caractères recommandés)
-- Utilise un langage conversationnel et humain
-- Inclut des émotions et de la personnalité
-- Évite les formulations génériques ou robotiques
-- Capture l'essence du contenu de manière captivante
-- Inclut un appel à l'action subtil si approprié
+- Est rédigée dans la même langue que le script vidéo fourni
+- Décrit factuellement et clairement le contenu de la vidéo
+- Reste concise (150-250 caractères recommandés)
+- Utilise un ton professionnel et informatif, pas sensationnel
+- N'utilise AUCUN emoji
+- Évite les superlatifs et l'exagération
+- Capture l'essence du contenu de manière directe
 
-IMPORTANT: La description doit sembler écrite par un vrai humain passionné, pas par une IA.`;
+IMPORTANT: La description doit être factuelle et informative, dans la langue du script.`;
 
-    const userPrompt = `Génère 1 description YouTube réaliste et engageante pour cette vidéo:
+    const userPrompt = `Génère 1 description YouTube factuelle pour cette vidéo. La description doit être dans la même langue que le script ci-dessous.
 
 Script: ${videoScript}
 
 Retourne uniquement la description sous format JSON strict:
 {
-  "description": "description réaliste et engageante"
+  "description": "description factuelle"
 }`;
 
     console.log('Calling Lovable AI Gateway for description generation...');
