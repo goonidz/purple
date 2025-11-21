@@ -85,8 +85,11 @@ Retourne uniquement la description sous format JSON strict:
     
     console.log('AI Response:', aiContent);
 
+    // Remove markdown code blocks if present
+    let cleanedContent = aiContent.replace(/```json\s*/g, '').replace(/```\s*/g, '');
+    
     // Parse the JSON response
-    const jsonMatch = aiContent.match(/\{[\s\S]*\}/);
+    const jsonMatch = cleanedContent.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
       throw new Error('Format de réponse invalide de l\'IA');
     }
