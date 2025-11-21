@@ -26,7 +26,7 @@ serve(async (req) => {
     const systemPrompt = `Tu es un expert en création de descriptions YouTube. 
 
 Ta mission est de générer 1 description de vidéo qui:
-- Est rédigée dans la même langue que le script vidéo fourni
+- DOIT IMPÉRATIVEMENT être rédigée dans la même langue que le script vidéo fourni (anglais si le script est en anglais, français si le script est en français, etc.)
 - Est écrite à la première personne (je/nous) comme si l'auteur parlait directement
 - Décrit factuellement et clairement le contenu de la vidéo
 - Reste concise (150-250 caractères recommandés)
@@ -35,15 +35,15 @@ Ta mission est de générer 1 description de vidéo qui:
 - Évite les superlatifs et l'exagération
 - Capture l'essence du contenu de manière directe
 
-IMPORTANT: La description doit être à la première personne, factuelle et informative, dans la langue du script.`;
+IMPORTANT: Détecte la langue du script et génère la description dans EXACTEMENT cette même langue.`;
 
-    const userPrompt = `Génère 1 description YouTube factuelle pour cette vidéo. La description doit être dans la même langue que le script ci-dessous.
+    const userPrompt = `Détecte la langue du script ci-dessous et génère 1 description YouTube factuelle dans cette MÊME langue exacte.
 
 Script: ${videoScript}
 
-Retourne uniquement la description sous format JSON strict:
+Retourne uniquement la description sous format JSON strict (la description doit être dans la même langue que le script):
 {
-  "description": "description factuelle"
+  "description": "description factuelle dans la langue du script"
 }`;
 
     console.log('Calling Lovable AI Gateway for description generation...');
