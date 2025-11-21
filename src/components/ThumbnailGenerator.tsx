@@ -374,7 +374,8 @@ export const ThumbnailGenerator = ({ projectId, videoScript }: ThumbnailGenerato
       }
     } catch (error: any) {
       console.error("Error generating thumbnails:", error);
-      toast.error("Erreur lors de la génération");
+      const errorMessage = error?.message || "Erreur lors de la génération";
+      toast.error(errorMessage);
     } finally {
       setIsGenerating(false);
     }
