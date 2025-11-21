@@ -14,6 +14,30 @@ export type Database = {
   }
   public: {
     Tables: {
+      generated_descriptions: {
+        Row: {
+          created_at: string | null
+          descriptions: string[]
+          id: string
+          project_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          descriptions?: string[]
+          id?: string
+          project_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          descriptions?: string[]
+          id?: string
+          project_id?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       generated_thumbnails: {
         Row: {
           created_at: string

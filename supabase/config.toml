@@ -9,3 +9,6 @@ verify_jwt = false
 [functions.generate-image-seedream]
 verify_jwt = false
 
+[functions.generate-descriptions]
+verify_jwt = false
+
