@@ -27,6 +27,7 @@ serve(async (req) => {
 
 Ta mission est de générer 1 description de vidéo qui:
 - Est rédigée dans la même langue que le script vidéo fourni
+- Est écrite à la première personne (je/nous) comme si l'auteur parlait directement
 - Décrit factuellement et clairement le contenu de la vidéo
 - Reste concise (150-250 caractères recommandés)
 - Utilise un ton professionnel et informatif, pas sensationnel
@@ -34,7 +35,7 @@ Ta mission est de générer 1 description de vidéo qui:
 - Évite les superlatifs et l'exagération
 - Capture l'essence du contenu de manière directe
 
-IMPORTANT: La description doit être factuelle et informative, dans la langue du script.`;
+IMPORTANT: La description doit être à la première personne, factuelle et informative, dans la langue du script.`;
 
     const userPrompt = `Génère 1 description YouTube factuelle pour cette vidéo. La description doit être dans la même langue que le script ci-dessous.
 
