@@ -38,14 +38,20 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Get user's API keys
-    const { data: apiKeys, error: apiKeysError } = await supabase
-      .from('user_api_keys')
-      .select('replicate_api_key')
-      .eq('user_id', user.id)
-      .maybeSingle();
+    // Get user's API key from Supabase Vault using service role
+    const supabaseService = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+    );
 
-    if (apiKeysError || !apiKeys || !apiKeys.replicate_api_key) {
+    const { data: apiKey, error: apiKeyError } = await supabaseService
+      .rpc('get_user_api_key_for_service', {
+        target_user_id: user.id,
+        key_name: 'replicate'
+      });
+
+    if (apiKeyError || !apiKey) {
+      console.error('Error retrieving API key:', apiKeyError);
       return new Response(JSON.stringify({ 
         error: 'Replicate API key not configured. Please add your API key in your profile.' 
       }), {
@@ -54,7 +60,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    const REPLICATE_API_KEY = apiKeys.replicate_api_key;
+    const REPLICATE_API_KEY = apiKey;
 
     const replicate = new Replicate({
       auth: REPLICATE_API_KEY,

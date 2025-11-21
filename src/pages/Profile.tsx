@@ -38,17 +38,22 @@ const Profile = () => {
   const loadApiKeys = async () => {
     setIsLoading(true);
     try {
-      const { data, error } = await supabase
-        .from("user_api_keys")
-        .select("*")
-        .eq("user_id", user?.id)
-        .maybeSingle();
+      // Try to get API keys from Vault
+      const { data: replicateKey, error: replicateError } = await supabase
+        .rpc('get_user_api_key', { key_name: 'replicate' });
+      
+      const { data: elevenLabsKey, error: elevenLabsError } = await supabase
+        .rpc('get_user_api_key', { key_name: 'eleven_labs' });
 
-      if (error && error.code !== 'PGRST116') throw error;
-
-      if (data) {
-        setReplicateApiKey(data.replicate_api_key || "");
-        setElevenLabsApiKey(data.eleven_labs_api_key || "");
+      // Don't show errors if keys don't exist yet - just leave them empty
+      if (replicateKey) setReplicateApiKey(replicateKey);
+      if (elevenLabsKey) setElevenLabsApiKey(elevenLabsKey);
+      
+      if (replicateError && !replicateError.message?.includes('not found')) {
+        console.error("Error loading Replicate API key:", replicateError);
+      }
+      if (elevenLabsError && !elevenLabsError.message?.includes('not found')) {
+        console.error("Error loading Eleven Labs API key:", elevenLabsError);
       }
     } catch (error: any) {
       console.error("Error loading API keys:", error);
@@ -68,17 +73,34 @@ const Profile = () => {
 
     setIsSaving(true);
     try {
-      const { error } = await supabase
-        .from("user_api_keys")
-        .upsert({
-          user_id: user.id,
-          replicate_api_key: replicateApiKey.trim() || null,
-          eleven_labs_api_key: elevenLabsApiKey.trim() || null,
-        }, {
-          onConflict: 'user_id'
-        });
+      // Store API keys securely in Vault
+      const promises = [];
+      
+      if (replicateApiKey.trim()) {
+        promises.push(
+          supabase.rpc('store_user_api_key', {
+            key_name: 'replicate',
+            key_value: replicateApiKey.trim()
+          })
+        );
+      }
+      
+      if (elevenLabsApiKey.trim()) {
+        promises.push(
+          supabase.rpc('store_user_api_key', {
+            key_name: 'eleven_labs',
+            key_value: elevenLabsApiKey.trim()
+          })
+        );
+      }
 
-      if (error) throw error;
+      const results = await Promise.all(promises);
+      
+      // Check for errors
+      const errors = results.filter(r => r.error);
+      if (errors.length > 0) {
+        throw errors[0].error;
+      }
 
       toast.success("Clés API sauvegardées avec succès !");
     } catch (error: any) {

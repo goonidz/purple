@@ -289,7 +289,16 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      delete_user_api_key: { Args: { key_name: string }; Returns: boolean }
+      get_user_api_key: { Args: { key_name: string }; Returns: string }
+      get_user_api_key_for_service: {
+        Args: { key_name: string; target_user_id: string }
+        Returns: string
+      }
+      store_user_api_key: {
+        Args: { key_name: string; key_value: string }
+        Returns: string
+      }
     }
     Enums: {
       [_ in never]: never

@@ -37,14 +37,20 @@ serve(async (req) => {
       });
     }
 
-    // Get user's API keys
-    const { data: apiKeys, error: apiKeysError } = await supabase
-      .from('user_api_keys')
-      .select('eleven_labs_api_key')
-      .eq('user_id', user.id)
-      .maybeSingle();
+    // Get user's API key from Supabase Vault using service role
+    const supabaseService = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+    );
 
-    if (apiKeysError || !apiKeys || !apiKeys.eleven_labs_api_key) {
+    const { data: apiKey, error: apiKeyError } = await supabaseService
+      .rpc('get_user_api_key_for_service', {
+        target_user_id: user.id,
+        key_name: 'eleven_labs'
+      });
+
+    if (apiKeyError || !apiKey) {
+      console.error('Error retrieving API key:', apiKeyError);
       return new Response(JSON.stringify({ 
         error: 'Eleven Labs API key not configured. Please add your API key in your profile.' 
       }), {
@@ -53,7 +59,7 @@ serve(async (req) => {
       });
     }
 
-    const ELEVEN_LABS_API_KEY = apiKeys.eleven_labs_api_key;
+    const ELEVEN_LABS_API_KEY = apiKey;
 
     const { audioUrl } = await req.json();
     
