@@ -77,7 +77,16 @@ RÈGLES STRICTES:
 4. Utilise "the character from the single-person reference image" pour le personnage
 5. Les prompts doivent être en ANGLAIS pour la génération d'images
 6. Chaque prompt doit faire 60-100 mots et être très détaillé sur le style visuel
-7. Mentionne explicitement les éléments de style observés dans les exemples`;
+7. Mentionne explicitement les éléments de style observés dans les exemples
+
+RÈGLES DE SIMPLICITÉ (CRITIQUE):
+- ÉVITE les scènes trop complexes avec beaucoup d'éléments
+- LIMITE le nombre d'objets visuels à 3-4 maximum par miniature
+- PRIVILÉGIE des compositions épurées et lisibles
+- ÉVITE les textes trop longs ou multiples zones de texte
+- Concentre-toi sur 1-2 éléments visuels forts plutôt que sur beaucoup de petits détails
+- Garde l'arrière-plan simple et minimaliste
+- Le personnage + 1-2 éléments clés maximum = design efficace`;
 
     // Ajouter l'instruction sur les prompts précédents si fournis
     if (previousPrompts && Array.isArray(previousPrompts) && previousPrompts.length > 0) {
@@ -132,7 +141,9 @@ Retourne UNIQUEMENT un JSON avec ce format exact:
     // Add video script
     userContent.push({
       type: "text",
-      text: `\n\nSCRIPT DE LA VIDÉO:\n${videoScript}\n\nGénère 3 prompts de miniatures en REPRODUISANT LE STYLE des exemples ci-dessus, mais avec des variations de contenu basées sur le script.`
+      text: `\n\nSCRIPT DE LA VIDÉO:\n${videoScript}\n\nGénère 3 prompts de miniatures en REPRODUISANT LE STYLE des exemples ci-dessus, mais avec des variations de contenu basées sur le script.
+
+IMPORTANT: Crée des designs SIMPLES et ÉPURÉS. Maximum 3-4 éléments visuels. Évite la complexité excessive.`
     });
 
     console.log("Generating thumbnail prompts with Gemini (with images)...");
