@@ -3,9 +3,10 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Upload, X, Loader2, Image as ImageIcon, Save, Download, Trash2, Edit, Copy } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -48,6 +49,10 @@ export const ThumbnailGenerator = ({ projectId, videoScript }: ThumbnailGenerato
   const [editingPreset, setEditingPreset] = useState<ThumbnailPreset | null>(null);
   const [editName, setEditName] = useState("");
   const [duplicateName, setDuplicateName] = useState("");
+  const [isEditImageDialogOpen, setIsEditImageDialogOpen] = useState(false);
+  const [editingImageUrl, setEditingImageUrl] = useState<string>("");
+  const [editingImagePrompt, setEditingImagePrompt] = useState("");
+  const [isEditingImage, setIsEditingImage] = useState(false);
 
   useEffect(() => {
     loadPresets();
@@ -520,6 +525,86 @@ export const ThumbnailGenerator = ({ projectId, videoScript }: ThumbnailGenerato
     }
   };
 
+  const openEditImageDialog = (imageUrl: string) => {
+    setEditingImageUrl(imageUrl);
+    setEditingImagePrompt("");
+    setIsEditImageDialogOpen(true);
+  };
+
+  const editThumbnailImage = async () => {
+    if (!editingImageUrl || !editingImagePrompt.trim()) {
+      toast.error("Veuillez entrer une instruction de modification");
+      return;
+    }
+
+    setIsEditingImage(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("User not authenticated");
+
+      toast.info("Modification de la miniature en cours...");
+
+      const { data, error } = await supabase.functions.invoke("generate-image-seedream", {
+        body: {
+          prompt: editingImagePrompt,
+          width: 1920,
+          height: 1080,
+          image_urls: [editingImageUrl]
+        }
+      });
+
+      if (error) throw error;
+      if (!data?.output) throw new Error("No image generated");
+
+      const imageUrl = Array.isArray(data.output) ? data.output[0] : data.output;
+
+      // Download and upload to Supabase Storage
+      const imageResponse = await fetch(imageUrl);
+      const imageBlob = await imageResponse.blob();
+      const fileName = `${Date.now()}_edited_thumbnail.jpg`;
+      const filePath = `${user.id}/thumbnails/${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('generated-images')
+        .upload(filePath, imageBlob, { contentType: 'image/jpeg' });
+
+      if (uploadError) throw uploadError;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('generated-images')
+        .getPublicUrl(filePath);
+
+      // Add to history
+      const newHistory = [
+        {
+          id: crypto.randomUUID(),
+          prompts: [editingImagePrompt],
+          thumbnail_urls: [publicUrl],
+          created_at: new Date().toISOString()
+        },
+        ...thumbnailHistory
+      ];
+      setThumbnailHistory(newHistory);
+
+      // Save to database
+      await supabase.from('generated_thumbnails').insert({
+        project_id: projectId,
+        user_id: user.id,
+        prompts: [editingImagePrompt],
+        thumbnail_urls: [publicUrl]
+      });
+
+      toast.success("Miniature modifiée avec succès");
+      setIsEditImageDialogOpen(false);
+      setEditingImagePrompt("");
+    } catch (error: any) {
+      console.error('Error editing thumbnail:', error);
+      toast.error("Erreur lors de la modification de la miniature");
+    } finally {
+      setIsEditingImage(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <h3 className="text-lg font-semibold">Générer des miniatures YouTube</h3>
@@ -772,12 +857,26 @@ export const ThumbnailGenerator = ({ projectId, videoScript }: ThumbnailGenerato
                 <div className="grid grid-cols-3 gap-4">
                   {item.thumbnail_urls.map((url, index) => (
                     <div key={index} className="space-y-2">
-                      <img
-                        src={url}
-                        alt={`History ${index + 1}`}
-                        className="w-full aspect-video object-cover rounded-lg border cursor-pointer hover:opacity-80 transition-opacity"
-                        onClick={() => setPreviewImage(url)}
-                      />
+                      <div className="relative group">
+                        <img
+                          src={url}
+                          alt={`History ${index + 1}`}
+                          className="w-full aspect-video object-cover rounded-lg border cursor-pointer hover:opacity-80 transition-opacity"
+                          onClick={() => setPreviewImage(url)}
+                        />
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openEditImageDialog(url);
+                          }}
+                        >
+                          <Edit className="h-4 w-4 mr-1" />
+                          Modifier
+                        </Button>
+                      </div>
                       <Button
                         variant="outline"
                         size="sm"
@@ -892,6 +991,42 @@ export const ThumbnailGenerator = ({ projectId, videoScript }: ThumbnailGenerato
               </Button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Image Dialog */}
+      <Dialog open={isEditImageDialogOpen} onOpenChange={setIsEditImageDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Modifier la miniature</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Image à modifier</Label>
+              <div className="mt-2 aspect-video bg-muted rounded-lg overflow-hidden">
+                <img src={editingImageUrl} alt="Image à modifier" className="w-full h-full object-cover" />
+              </div>
+            </div>
+            <div>
+              <Label htmlFor="editPrompt">Instruction de modification</Label>
+              <Textarea
+                id="editPrompt"
+                placeholder="Ex: Rendre l'arrière-plan plus sombre, ajouter un effet de lumière, changer la couleur du texte..."
+                value={editingImagePrompt}
+                onChange={(e) => setEditingImagePrompt(e.target.value)}
+                rows={4}
+                className="mt-1"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsEditImageDialogOpen(false)} disabled={isEditingImage}>
+              Annuler
+            </Button>
+            <Button onClick={editThumbnailImage} disabled={isEditingImage || !editingImagePrompt.trim()}>
+              {isEditingImage ? "Modification..." : "Modifier"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
