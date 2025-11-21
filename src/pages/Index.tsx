@@ -148,6 +148,12 @@ const Index = () => {
   const [activeTab, setActiveTab] = useState<string>("video");
   const [imageGenerationProgress, setImageGenerationProgress] = useState(0);
   const [imageGenerationTotal, setImageGenerationTotal] = useState(0);
+  const [generationStatsDialog, setGenerationStatsDialog] = useState(false);
+  const [generationStats, setGenerationStats] = useState<{
+    generated: number;
+    skipped: number;
+    failed: number;
+  } | null>(null);
   const [missingImagesInfo, setMissingImagesInfo] = useState<{count: number, indices: number[]} | null>(null);
 
   // Check authentication
@@ -1342,13 +1348,13 @@ const Index = () => {
     const failedCount = promptsToProcess.length - successCount;
     
     if (!cancelImageGenerationRef.current) {
-      if (failedCount > 0) {
-        toast.warning(`${successCount} images générées, ${skippedCount} conservées. ${failedCount} image(s) manquante(s).`);
-      } else if (skippedCount > 0) {
-        toast.success(`${successCount} images générées, ${skippedCount} conservées !`);
-      } else {
-        toast.success(`${successCount}/${generatedPrompts.length} images générées !`);
-      }
+      // Open statistics dialog
+      setGenerationStats({
+        generated: successCount,
+        skipped: skippedCount,
+        failed: failedCount
+      });
+      setGenerationStatsDialog(true);
     }
   };
 
@@ -2829,6 +2835,77 @@ const Index = () => {
               projectId={currentProjectId || ""}
               videoScript={generatedPrompts.filter(p => p).map(p => p.text).join(" ")}
             />
+          </DialogContent>
+        </Dialog>
+
+        {/* Generation Statistics Dialog */}
+        <Dialog open={generationStatsDialog} onOpenChange={setGenerationStatsDialog}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Sparkles className="h-5 w-5 text-primary" />
+                Génération terminée
+              </DialogTitle>
+            </DialogHeader>
+            
+            {generationStats && (
+              <div className="space-y-4 py-4">
+                <div className="grid grid-cols-3 gap-4">
+                  {/* Generated */}
+                  <Card className="p-4 bg-green-500/10 border-green-500/20">
+                    <div className="text-center">
+                      <Check className="h-6 w-6 text-green-500 mx-auto mb-2" />
+                      <div className="text-2xl font-bold text-green-600 dark:text-green-400">
+                        {generationStats.generated}
+                      </div>
+                      <div className="text-xs text-muted-foreground mt-1">
+                        Générées
+                      </div>
+                    </div>
+                  </Card>
+
+                  {/* Skipped */}
+                  <Card className="p-4 bg-blue-500/10 border-blue-500/20">
+                    <div className="text-center">
+                      <Copy className="h-6 w-6 text-blue-500 mx-auto mb-2" />
+                      <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
+                        {generationStats.skipped}
+                      </div>
+                      <div className="text-xs text-muted-foreground mt-1">
+                        Conservées
+                      </div>
+                    </div>
+                  </Card>
+
+                  {/* Failed */}
+                  <Card className="p-4 bg-red-500/10 border-red-500/20">
+                    <div className="text-center">
+                      <AlertCircle className="h-6 w-6 text-red-500 mx-auto mb-2" />
+                      <div className="text-2xl font-bold text-red-600 dark:text-red-400">
+                        {generationStats.failed}
+                      </div>
+                      <div className="text-xs text-muted-foreground mt-1">
+                        Manquantes
+                      </div>
+                    </div>
+                  </Card>
+                </div>
+
+                {generationStats.failed > 0 && (
+                  <div className="rounded-lg bg-muted/50 p-3 text-sm">
+                    <p className="text-muted-foreground">
+                      Utilisez le bouton "Vérifier les images manquantes" pour identifier et régénérer les images qui ont échoué.
+                    </p>
+                  </div>
+                )}
+
+                <div className="flex justify-end">
+                  <Button onClick={() => setGenerationStatsDialog(false)}>
+                    Fermer
+                  </Button>
+                </div>
+              </div>
+            )}
           </DialogContent>
         </Dialog>
       </div>
