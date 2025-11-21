@@ -148,6 +148,7 @@ const Index = () => {
   const [activeTab, setActiveTab] = useState<string>("video");
   const [imageGenerationProgress, setImageGenerationProgress] = useState(0);
   const [imageGenerationTotal, setImageGenerationTotal] = useState(0);
+  const [missingImagesInfo, setMissingImagesInfo] = useState<{count: number, indices: number[]} | null>(null);
 
   // Check authentication
   useEffect(() => {
@@ -1876,8 +1877,13 @@ const Index = () => {
                                   .map(item => item.index + 1);
                                 
                                 if (missingImages.length === 0) {
+                                  setMissingImagesInfo(null);
                                   toast.success("✅ Toutes les images ont été générées !");
                                 } else {
+                                  setMissingImagesInfo({
+                                    count: missingImages.length,
+                                    indices: missingImages
+                                  });
                                   toast.warning(
                                     `⚠️ ${missingImages.length} scène(s) sans image : ${missingImages.join(", ")}`,
                                     { duration: 8000 }
@@ -1889,6 +1895,41 @@ const Index = () => {
                               <AlertCircle className="mr-2 h-4 w-4" />
                               Vérifier les images manquantes
                             </Button>
+                           )}
+                           {missingImagesInfo && missingImagesInfo.count > 0 && !isGeneratingImages && (
+                             <Card className="p-4 bg-destructive/10 border-destructive/20">
+                               <div className="space-y-3">
+                                 <div className="flex items-center justify-between">
+                                   <div className="flex items-center gap-2">
+                                     <AlertCircle className="h-5 w-5 text-destructive" />
+                                     <span className="font-medium text-destructive">
+                                       {missingImagesInfo.count} image(s) manquante(s)
+                                     </span>
+                                   </div>
+                                   <Button
+                                     size="sm"
+                                     variant="ghost"
+                                     onClick={() => setMissingImagesInfo(null)}
+                                   >
+                                     <X className="h-4 w-4" />
+                                   </Button>
+                                 </div>
+                                 <p className="text-sm text-muted-foreground">
+                                   Scènes concernées : {missingImagesInfo.indices.join(", ")}
+                                 </p>
+                                 <Button
+                                   onClick={() => {
+                                     setMissingImagesInfo(null);
+                                     generateAllImages(true);
+                                   }}
+                                   className="w-full"
+                                   variant="destructive"
+                                 >
+                                   <RefreshCw className="mr-2 h-4 w-4" />
+                                   Regénérer toutes les images manquantes
+                                 </Button>
+                               </div>
+                             </Card>
                            )}
                           {isGeneratingImages && imageGenerationTotal > 0 && (
                             <Card className="p-4 bg-muted/30 border-primary/20">
