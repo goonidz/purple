@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Upload, X, Loader2, Image as ImageIcon, Save, Download, Trash2 } from "lucide-react";
+import { Upload, X, Loader2, Image as ImageIcon, Save, Download, Trash2, Edit, Copy } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
@@ -43,6 +43,11 @@ export const ThumbnailGenerator = ({ projectId, videoScript }: ThumbnailGenerato
   const [isDraggingExamples, setIsDraggingExamples] = useState(false);
   const [isDraggingCharacter, setIsDraggingCharacter] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [isDuplicateDialogOpen, setIsDuplicateDialogOpen] = useState(false);
+  const [editingPreset, setEditingPreset] = useState<ThumbnailPreset | null>(null);
+  const [editName, setEditName] = useState("");
+  const [duplicateName, setDuplicateName] = useState("");
 
   useEffect(() => {
     loadPresets();
@@ -403,6 +408,114 @@ export const ThumbnailGenerator = ({ projectId, videoScript }: ThumbnailGenerato
     }
   };
 
+  const openEditDialog = () => {
+    const preset = presets.find(p => p.id === selectedPresetId);
+    if (!preset) {
+      toast.error("Sélectionnez un preset à modifier");
+      return;
+    }
+    setEditingPreset(preset);
+    setEditName(preset.name);
+    setIsEditDialogOpen(true);
+  };
+
+  const updatePreset = async () => {
+    if (!editingPreset || !editName.trim()) {
+      toast.error("Veuillez entrer un nom");
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from("thumbnail_presets")
+        .update({
+          name: editName.trim(),
+          example_urls: exampleUrls,
+          character_ref_url: characterRefUrl || null,
+        })
+        .eq("id", editingPreset.id);
+
+      if (error) throw error;
+
+      toast.success("Preset modifié !");
+      setIsEditDialogOpen(false);
+      setEditingPreset(null);
+      await loadPresets();
+    } catch (error: any) {
+      console.error("Error updating preset:", error);
+      toast.error("Erreur lors de la modification");
+    }
+  };
+
+  const openDuplicateDialog = () => {
+    const preset = presets.find(p => p.id === selectedPresetId);
+    if (!preset) {
+      toast.error("Sélectionnez un preset à dupliquer");
+      return;
+    }
+    setEditingPreset(preset);
+    setDuplicateName(`${preset.name} (copie)`);
+    setIsDuplicateDialogOpen(true);
+  };
+
+  const duplicatePreset = async () => {
+    if (!editingPreset || !duplicateName.trim()) {
+      toast.error("Veuillez entrer un nom");
+      return;
+    }
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("User not authenticated");
+
+      const { error } = await supabase
+        .from("thumbnail_presets")
+        .insert({
+          user_id: user.id,
+          name: duplicateName.trim(),
+          example_urls: editingPreset.example_urls,
+          character_ref_url: editingPreset.character_ref_url,
+        });
+
+      if (error) throw error;
+
+      toast.success("Preset dupliqué !");
+      setIsDuplicateDialogOpen(false);
+      setEditingPreset(null);
+      await loadPresets();
+    } catch (error: any) {
+      console.error("Error duplicating preset:", error);
+      toast.error("Erreur lors de la duplication");
+    }
+  };
+
+  const deletePreset = async () => {
+    if (!selectedPresetId) {
+      toast.error("Sélectionnez un preset à supprimer");
+      return;
+    }
+
+    if (!confirm("Êtes-vous sûr de vouloir supprimer ce preset ?")) {
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from("thumbnail_presets")
+        .delete()
+        .eq("id", selectedPresetId);
+
+      if (error) throw error;
+
+      toast.success("Preset supprimé !");
+      setSelectedPresetId("");
+      await loadPresets();
+    } catch (error: any) {
+      console.error("Error deleting preset:", error);
+      toast.error("Erreur lors de la suppression");
+    }
+  };
+
   return (
     <div className="space-y-6">
       <h3 className="text-lg font-semibold">Générer des miniatures YouTube</h3>
@@ -433,6 +546,33 @@ export const ThumbnailGenerator = ({ projectId, videoScript }: ThumbnailGenerato
                   ))}
                 </SelectContent>
               </Select>
+              <Button
+                onClick={openEditDialog}
+                disabled={!selectedPresetId}
+                size="icon"
+                variant="outline"
+                title="Modifier le preset"
+              >
+                <Edit className="w-4 h-4" />
+              </Button>
+              <Button
+                onClick={openDuplicateDialog}
+                disabled={!selectedPresetId}
+                size="icon"
+                variant="outline"
+                title="Dupliquer le preset"
+              >
+                <Copy className="w-4 h-4" />
+              </Button>
+              <Button
+                onClick={deletePreset}
+                disabled={!selectedPresetId}
+                size="icon"
+                variant="outline"
+                title="Supprimer le preset"
+              >
+                <Trash2 className="w-4 h-4" />
+              </Button>
             </div>
 
             <div className="flex gap-2 mt-4">
@@ -665,6 +805,89 @@ export const ThumbnailGenerator = ({ projectId, videoScript }: ThumbnailGenerato
               className="w-full h-auto rounded-lg"
             />
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog pour modifier un preset */}
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Modifier le preset</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Nom du preset</Label>
+              <Input
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                placeholder="Nom du preset"
+              />
+            </div>
+            
+            <div>
+              <Label>Exemples actuels ({exampleUrls.length})</Label>
+              {exampleUrls.length > 0 && (
+                <div className="grid grid-cols-3 gap-2 mt-2">
+                  {exampleUrls.map((url, index) => (
+                    <img
+                      key={index}
+                      src={url}
+                      alt={`Example ${index + 1}`}
+                      className="w-full h-24 object-cover rounded border"
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div>
+              <Label>Personnage de référence</Label>
+              {characterRefUrl && (
+                <img
+                  src={characterRefUrl}
+                  alt="Character"
+                  className="w-32 h-32 object-cover rounded border mt-2"
+                />
+              )}
+            </div>
+
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>
+                Annuler
+              </Button>
+              <Button onClick={updatePreset} disabled={!editName.trim()}>
+                Enregistrer
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog pour dupliquer un preset */}
+      <Dialog open={isDuplicateDialogOpen} onOpenChange={setIsDuplicateDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Dupliquer le preset</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Nom du nouveau preset</Label>
+              <Input
+                value={duplicateName}
+                onChange={(e) => setDuplicateName(e.target.value)}
+                placeholder="Nom du preset"
+              />
+            </div>
+
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" onClick={() => setIsDuplicateDialogOpen(false)}>
+                Annuler
+              </Button>
+              <Button onClick={duplicatePreset} disabled={!duplicateName.trim()}>
+                Dupliquer
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
