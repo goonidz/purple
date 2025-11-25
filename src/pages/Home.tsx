@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Video, History, Sparkles } from "lucide-react";
+import { Video, History, Sparkles, Image } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
@@ -52,7 +52,7 @@ const Home = () => {
         </div>
 
         {/* Action Cards */}
-        <div className="grid md:grid-cols-2 gap-6 w-full max-w-4xl">
+        <div className="grid md:grid-cols-3 gap-6 w-full max-w-5xl">
           <Link to="/workspace" className="group">
             <Card className="p-8 hover:shadow-lg transition-all duration-300 hover:scale-105 border-2 hover:border-primary/50 bg-card/50 backdrop-blur">
               <div className="flex flex-col items-center text-center space-y-4">
@@ -65,6 +65,24 @@ const Home = () => {
                 </p>
                 <Button size="lg" className="w-full mt-4">
                   Commencer
+                  <Sparkles className="ml-2 h-4 w-4" />
+                </Button>
+              </div>
+            </Card>
+          </Link>
+
+          <Link to="/thumbnail-creator" className="group">
+            <Card className="p-8 hover:shadow-lg transition-all duration-300 hover:scale-105 border-2 hover:border-primary/50 bg-card/50 backdrop-blur">
+              <div className="flex flex-col items-center text-center space-y-4">
+                <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
+                  <Image className="h-8 w-8 text-primary" />
+                </div>
+                <h3 className="text-2xl font-bold">Créer une miniature</h3>
+                <p className="text-muted-foreground">
+                  Générez des miniatures YouTube professionnelles avec l'IA
+                </p>
+                <Button size="lg" className="w-full mt-4">
+                  Créer
                   <Sparkles className="ml-2 h-4 w-4" />
                 </Button>
               </div>

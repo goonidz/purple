@@ -10,6 +10,7 @@ import Auth from "./pages/Auth";
 import Workspace from "./pages/Workspace";
 import TestScenes from "./pages/TestScenes";
 import Profile from "./pages/Profile";
+import ThumbnailCreator from "./pages/ThumbnailCreator";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -27,6 +28,7 @@ const App = () => (
           <Route path="/workspace" element={<Workspace />} />
           <Route path="/test-scenes" element={<TestScenes />} />
           <Route path="/profile" element={<Profile />} />
+          <Route path="/thumbnail-creator" element={<ThumbnailCreator />} />
           <Route path="/auth" element={<Auth />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
