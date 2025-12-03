@@ -153,9 +153,35 @@ Retourne UNIQUEMENT un JSON avec ce format exact:
     // Add video title and script
     userContent.push({
       type: "text",
-      text: `\n\nTITRE DE LA VIDÉO:\n"${videoTitle}"\n\nSCRIPT DE LA VIDÉO:\n${videoScript}\n\nGénère 3 prompts de miniatures en REPRODUISANT LE STYLE des exemples ci-dessus, mais avec des variations de contenu basées sur le titre et le script.
+      text: `
+=== TITRE DE LA VIDÉO ===
+"${videoTitle}"
 
-IMPORTANT: Crée des designs SIMPLES et ÉPURÉS. Maximum 3-4 éléments visuels. Évite la complexité excessive. Le titre doit être pris en compte dans la conception des miniatures pour assurer la cohérence avec le contenu.`
+=== SCRIPT COMPLET DE LA VIDÉO (LIS ATTENTIVEMENT) ===
+${videoScript}
+
+=== INSTRUCTIONS CRITIQUES ===
+
+ÉTAPE 1 - ANALYSE DU SCRIPT:
+Avant de générer les prompts, tu DOIS identifier dans le script ci-dessus:
+- Les PERSONNAGES principaux mentionnés (noms, descriptions)
+- Les ÉVÉNEMENTS clés de l'histoire
+- Les LIEUX ou ENVIRONNEMENTS décrits
+- Les OBJETS importants mentionnés
+- L'ÉMOTION ou le TON dominant (peur, mystère, drame, etc.)
+
+ÉTAPE 2 - CRÉATION DES PROMPTS:
+Chaque prompt DOIT inclure des éléments SPÉCIFIQUES tirés du script:
+- Si le script parle d'une personne kidnappée → montre un élément visuel lié à l'enlèvement
+- Si le script mentionne un lieu précis → intègre ce lieu
+- Si le script décrit un événement choquant → représente cet événement
+
+NE GÉNÈRE PAS de miniatures génériques "horror style" avec des éléments aléatoires.
+GÉNÈRE des miniatures qui représentent VRAIMENT le contenu spécifique de CETTE vidéo.
+
+RAPPEL: Les images d'exemples = STYLE VISUEL uniquement. Le CONTENU vient du script ci-dessus.
+
+Crée des designs SIMPLES (3-4 éléments max) mais PERTINENTS au script.`
     });
 
     console.log("Generating thumbnail prompts with Gemini (with images)...");
