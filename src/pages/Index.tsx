@@ -2406,7 +2406,53 @@ const Index = () => {
                 </div>
               </div>
 
-              <div className="flex justify-end">
+              <div className="flex justify-between">
+                <Button
+                  variant="outline"
+                  onClick={async () => {
+                    if (!transcriptData) {
+                      toast.error("Aucune transcription disponible pour régénérer les scènes");
+                      return;
+                    }
+                    
+                    const confirmRegenerate = window.confirm(
+                      "Attention : la régénération des scènes va effacer tous les prompts et images existants. Êtes-vous sûr de vouloir continuer ?"
+                    );
+                    
+                    if (!confirmRegenerate) return;
+                    
+                    const newScenes = parseTranscriptToScenes(
+                      transcriptData,
+                      sceneDuration0to1,
+                      sceneDuration1to3,
+                      sceneDuration3plus,
+                      range1End,
+                      range2End
+                    );
+                    
+                    setScenes(newScenes);
+                    setGeneratedPrompts([]);
+                    setHasTestedFirstTwo(false);
+                    
+                    // Save to database
+                    if (currentProjectId) {
+                      await supabase
+                        .from("projects")
+                        .update({ 
+                          scenes: newScenes as any,
+                          prompts: [] as any
+                        })
+                        .eq("id", currentProjectId);
+                    }
+                    
+                    toast.success(`${newScenes.length} scènes régénérées !`);
+                    setSceneSettingsOpen(false);
+                  }}
+                  disabled={!transcriptData}
+                >
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                  Regénérer les scènes
+                </Button>
                 <Button onClick={() => setSceneSettingsOpen(false)}>
                   Fermer
                 </Button>
