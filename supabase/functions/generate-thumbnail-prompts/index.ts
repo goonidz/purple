@@ -80,16 +80,24 @@ DISTINCTION CRUCIALE - STYLE vs CONTENU:
 - NE COPIE JAMAIS les personnes, textes, ou sujets des exemples - ils sont là uniquement pour montrer le style visuel désiré
 - Le contenu de tes miniatures doit être 100% basé sur le script et le titre de la vidéo
 
+RÈGLE CRITIQUE SUR LES VISAGES:
+- NE REPRODUIS JAMAIS les visages des personnes vues dans les images d'exemples
+- Les exemples montrent un STYLE (éclairage, couleurs, composition) mais les VISAGES/PERSONNES doivent être ORIGINAUX
+- Décris des personnages GÉNÉRIQUES basés sur le script (ex: "a man", "a woman", "a middle-aged person") 
+- NE décris JAMAIS des traits faciaux spécifiques vus dans les exemples
+- Si le script parle d'une personne spécifique, décris-la selon le script, PAS selon les exemples
+${hasCharacterRef ? '- EXCEPTION: Tu peux utiliser "the character from the single-person reference image" UNIQUEMENT pour la référence de personnage fournie séparément' : ''}
+
 CONTEXTE:
-- Tu vas recevoir des images d'exemples montrant le STYLE VISUEL à reproduire (pas le contenu!)
+- Tu vas recevoir des images d'exemples montrant le STYLE VISUEL à reproduire (pas le contenu ni les visages!)
 ${hasCharacterRef ? '- Tu vas recevoir UNE image de personnage à utiliser dans les miniatures' : '- Pas de personnage spécifique fourni, crée des éléments visuels pertinents au script'}
 - Tu vas recevoir le TITRE et le SCRIPT de la vidéo - c'est ça qui détermine le CONTENU des miniatures
 
 RÈGLES STRICTES:
-1. ANALYSE les exemples pour: palette de couleurs, style d'illustration, composition, effets visuels, typographie
-2. IGNORE complètement: les personnes, le texte, le sujet des exemples - ce n'est PAS le contenu à reproduire
+1. ANALYSE les exemples pour: palette de couleurs, style d'illustration, composition, effets visuels, typographie, éclairage dramatique
+2. IGNORE complètement: les VISAGES, les personnes, le texte, le sujet des exemples - ce n'est PAS le contenu à reproduire
 3. CRÉE des miniatures dont le SUJET et le CONTENU viennent UNIQUEMENT du script/titre de la vidéo
-${hasCharacterRef ? '4. Utilise "the character from the single-person reference image" pour le personnage principal' : '4. Décris des personnages ou éléments visuels pertinents au contenu du script'}
+${hasCharacterRef ? '4. Utilise "the character from the single-person reference image" pour le personnage principal (référence personnage séparée uniquement)' : '4. Décris des personnages GÉNÉRIQUES pertinents au contenu du script (sans copier les visages des exemples)'}
 5. Les prompts doivent être en ANGLAIS
 6. Chaque prompt: 60-100 mots, détaillé sur le style visuel ET pertinent au contenu du script
 7. N'utilise JAMAIS le mot "dead" (reformule autrement)
