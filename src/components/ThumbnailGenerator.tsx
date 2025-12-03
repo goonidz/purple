@@ -80,6 +80,7 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle }: Thumb
   const [isDuplicateDialogOpen, setIsDuplicateDialogOpen] = useState(false);
   const [editingPreset, setEditingPreset] = useState<ThumbnailPreset | null>(null);
   const [editName, setEditName] = useState("");
+  const [editCustomPrompt, setEditCustomPrompt] = useState("");
   const [duplicateName, setDuplicateName] = useState("");
   const [isEditImageDialogOpen, setIsEditImageDialogOpen] = useState(false);
   const [editingImageUrl, setEditingImageUrl] = useState<string>("");
@@ -472,6 +473,7 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle }: Thumb
     }
     setEditingPreset(preset);
     setEditName(preset.name);
+    setEditCustomPrompt(preset.custom_prompt || DEFAULT_THUMBNAIL_PROMPT);
     setIsEditDialogOpen(true);
   };
 
@@ -488,6 +490,7 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle }: Thumb
           name: editName.trim(),
           example_urls: exampleUrls,
           character_ref_url: characterRefUrl || null,
+          custom_prompt: editCustomPrompt !== DEFAULT_THUMBNAIL_PROMPT ? editCustomPrompt : null,
         })
         .eq("id", editingPreset.id);
 
@@ -531,6 +534,7 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle }: Thumb
           name: duplicateName.trim(),
           example_urls: editingPreset.example_urls,
           character_ref_url: editingPreset.character_ref_url,
+          custom_prompt: editingPreset.custom_prompt,
         });
 
       if (error) throw error;
@@ -1027,6 +1031,25 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle }: Thumb
                   className="w-32 h-32 object-cover rounded border mt-2"
                 />
               )}
+            </div>
+
+            <div>
+              <Label>Prompt système</Label>
+              <Textarea
+                value={editCustomPrompt}
+                onChange={(e) => setEditCustomPrompt(e.target.value)}
+                rows={8}
+                className="font-mono text-sm mt-2"
+                placeholder="Prompt système personnalisé..."
+              />
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setEditCustomPrompt(DEFAULT_THUMBNAIL_PROMPT)}
+                className="text-muted-foreground mt-1"
+              >
+                Réinitialiser au prompt par défaut
+              </Button>
             </div>
 
             <div className="flex gap-2 justify-end">
