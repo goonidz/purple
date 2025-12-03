@@ -111,7 +111,7 @@ const Index = () => {
   const [range1End, setRange1End] = useState(60);      // Default: 0-60s (0-1 min)
   const [range2End, setRange2End] = useState(180);     // Default: 60-180s (1-3 min)
   // range3 is 180+ (3+ min)
-  const [preferSentenceBoundaries, setPreferSentenceBoundaries] = useState(false);
+  const [preferSentenceBoundaries, setPreferSentenceBoundaries] = useState(true);
   const cancelGenerationRef = useRef(false);
   const cancelImageGenerationRef = useRef(false);
   const [imageWidth, setImageWidth] = useState<number>(1920);
@@ -338,7 +338,7 @@ const Index = () => {
     duration3plus: number,
     rangeEnd1: number = 60,
     rangeEnd2: number = 180,
-    preferSentenceBoundaries: boolean = false
+    preferSentenceBoundaries: boolean = true
   ): Scene[] => {
     const scenes: Scene[] = [];
     let currentScene: Scene = { text: "", startTime: 0, endTime: 0 };
@@ -2465,18 +2465,18 @@ const Index = () => {
               <div className="flex items-start space-x-3 p-4 border rounded-lg bg-muted/30">
                 <input
                   type="checkbox"
-                  id="prefer-sentence"
-                  checked={preferSentenceBoundaries}
-                  onChange={(e) => setPreferSentenceBoundaries(e.target.checked)}
+                  id="strict-cutting"
+                  checked={!preferSentenceBoundaries}
+                  onChange={(e) => setPreferSentenceBoundaries(!e.target.checked)}
                   className="mt-1 h-4 w-4 rounded border-input"
                 />
                 <div className="space-y-1">
-                  <Label htmlFor="prefer-sentence" className="cursor-pointer font-medium">
-                    Respecter les fins de phrases
+                  <Label htmlFor="strict-cutting" className="cursor-pointer font-medium">
+                    Découpage strict par durée
                   </Label>
                   <p className="text-xs text-muted-foreground">
-                    Coupe les scènes à la fin des phrases plutôt qu'à la durée exacte. 
-                    <span className="text-amber-600 dark:text-amber-400"> Attention : cela peut augmenter la durée des scènes jusqu'à 50%.</span>
+                    Coupe les scènes exactement à la durée configurée, même en milieu de phrase.
+                    <span className="text-muted-foreground/80"> Par défaut, les scènes sont coupées à la fin des phrases (peut augmenter la durée jusqu'à 50%).</span>
                   </p>
                 </div>
               </div>
