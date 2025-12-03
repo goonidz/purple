@@ -273,10 +273,6 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle }: Thumb
       toast.error("Ajoute au moins un exemple de miniature");
       return;
     }
-    if (!characterRefUrl) {
-      toast.error("Ajoute une référence de ton personnage");
-      return;
-    }
 
     setIsGenerating(true);
     const generated: string[] = [];
@@ -319,10 +315,14 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle }: Thumb
       toast.info("Génération des 3 miniatures en parallèle...");
       
       const generationPromises = creativePrompts.map(async (prompt, i) => {
+        const imageUrls = characterRefUrl 
+          ? [...exampleUrls, characterRefUrl] 
+          : exampleUrls;
+        
         const { data, error } = await supabase.functions.invoke("generate-image-seedream", {
           body: {
             prompt,
-            image_urls: [...exampleUrls, characterRefUrl],
+            image_urls: imageUrls,
             width: 1920,
             height: 1080,
           },
@@ -743,10 +743,10 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle }: Thumb
             )}
           </div>
 
-          {/* Référence du personnage */}
+          {/* Référence du personnage (optionnel) */}
           <div>
             <Label className="mb-2">
-              Personnage de référence (UNIQUEMENT le personnage)
+              Personnage de référence (optionnel)
             </Label>
             <div
               className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors ${
@@ -766,7 +766,7 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle }: Thumb
               />
               <ImageIcon className="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
               <p className="text-sm text-muted-foreground">
-                Ajoute une image avec uniquement ton personnage
+                Ajoute une image de ton personnage (optionnel)
               </p>
             </div>
 
@@ -792,7 +792,7 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle }: Thumb
           {/* Bouton de génération */}
           <Button
             onClick={generateThumbnails}
-            disabled={isGenerating || exampleUrls.length === 0 || !characterRefUrl}
+            disabled={isGenerating || exampleUrls.length === 0}
             className="w-full"
             size="lg"
           >
@@ -953,7 +953,7 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle }: Thumb
             </div>
 
             <div>
-              <Label>Personnage de référence</Label>
+              <Label>Personnage de référence (optionnel)</Label>
               {characterRefUrl && (
                 <img
                   src={characterRefUrl}

@@ -67,13 +67,15 @@ serve(async (req) => {
       );
     }
 
+    const hasCharacterRef = !!characterRefUrl;
+    
     let systemPrompt = `Tu es un expert en création de miniatures YouTube accrocheuses et performantes.
 
 Ton rôle est d'ANALYSER les exemples de miniatures fournis et de générer 3 prompts SIMILAIRES mais DIFFÉRENTS pour créer des miniatures YouTube.
 
 CONTEXTE IMPORTANT:
 - Tu vas recevoir plusieurs images d'exemples de miniatures (style de référence à REPRODUIRE)
-- Tu vas recevoir UNE image avec UNIQUEMENT le personnage (pas d'autre élément, juste le personnage sur fond uni)
+${hasCharacterRef ? '- Tu vas recevoir UNE image avec UNIQUEMENT le personnage (pas d\'autre élément, juste le personnage sur fond uni)' : '- Pas de personnage spécifique fourni, base-toi sur les exemples pour le style uniquement'}
 - Tu dois ANALYSER le style, la composition, les couleurs, le texte des exemples
 - Tu dois créer des prompts qui REPRODUISENT ce style tout en variant le contenu
 
@@ -81,7 +83,7 @@ RÈGLES STRICTES:
 1. OBSERVE ATTENTIVEMENT les exemples: composition, couleurs, typographie, style d'illustration, mise en page
 2. Tes 3 prompts doivent SUIVRE LE MÊME STYLE que les exemples
 3. Chaque prompt doit rester UNIQUE avec des variations sur le contenu mais PAS sur le style global
-4. Utilise "the character from the single-person reference image" pour le personnage
+${hasCharacterRef ? '4. Utilise "the character from the single-person reference image" pour le personnage' : '4. Décris les personnages ou éléments visuels de manière générique basé sur le contenu de la vidéo'}
 5. Les prompts doivent être en ANGLAIS pour la génération d'images
 6. Chaque prompt doit faire 60-100 mots et être très détaillé sur le style visuel
 7. Mentionne explicitement les éléments de style observés dans les exemples
@@ -94,7 +96,7 @@ RÈGLES DE SIMPLICITÉ (CRITIQUE):
 - ÉVITE les textes trop longs ou multiples zones de texte
 - Concentre-toi sur 1-2 éléments visuels forts plutôt que sur beaucoup de petits détails
 - Garde l'arrière-plan simple et minimaliste
-- Le personnage + 1-2 éléments clés maximum = design efficace`;
+${hasCharacterRef ? '- Le personnage + 1-2 éléments clés maximum = design efficace' : '- 2-3 éléments visuels clés maximum = design efficace'}`;
 
     // Ajouter l'instruction sur les prompts précédents si fournis
     if (previousPrompts && Array.isArray(previousPrompts) && previousPrompts.length > 0) {
