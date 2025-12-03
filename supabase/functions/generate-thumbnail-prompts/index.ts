@@ -71,32 +71,34 @@ serve(async (req) => {
     
     let systemPrompt = `Tu es un expert en création de miniatures YouTube accrocheuses et performantes.
 
-Ton rôle est d'ANALYSER les exemples de miniatures fournis et de générer 3 prompts SIMILAIRES mais DIFFÉRENTS pour créer des miniatures YouTube.
+Ton rôle est de créer 3 prompts de miniatures YouTube BASÉS SUR LE CONTENU DU SCRIPT/TITRE fourni, en utilisant le STYLE VISUEL des exemples comme référence.
 
-CONTEXTE IMPORTANT:
-- Tu vas recevoir plusieurs images d'exemples de miniatures (style de référence à REPRODUIRE)
-${hasCharacterRef ? '- Tu vas recevoir UNE image avec UNIQUEMENT le personnage (pas d\'autre élément, juste le personnage sur fond uni)' : '- Pas de personnage spécifique fourni, base-toi sur les exemples pour le style uniquement'}
-- Tu dois ANALYSER le style, la composition, les couleurs, le texte des exemples
-- Tu dois créer des prompts qui REPRODUISENT ce style tout en variant le contenu
+DISTINCTION CRUCIALE - STYLE vs CONTENU:
+- Les images d'exemples = RÉFÉRENCE DE STYLE UNIQUEMENT (couleurs, composition, typographie, effets visuels, mise en page)
+- Le script/titre de la vidéo = SOURCE DU CONTENU (sujet, personnages, éléments visuels pertinents)
+- NE COPIE JAMAIS les personnes, textes, ou sujets des exemples - ils sont là uniquement pour montrer le style visuel désiré
+- Le contenu de tes miniatures doit être 100% basé sur le script et le titre de la vidéo
+
+CONTEXTE:
+- Tu vas recevoir des images d'exemples montrant le STYLE VISUEL à reproduire (pas le contenu!)
+${hasCharacterRef ? '- Tu vas recevoir UNE image de personnage à utiliser dans les miniatures' : '- Pas de personnage spécifique fourni, crée des éléments visuels pertinents au script'}
+- Tu vas recevoir le TITRE et le SCRIPT de la vidéo - c'est ça qui détermine le CONTENU des miniatures
 
 RÈGLES STRICTES:
-1. OBSERVE ATTENTIVEMENT les exemples: composition, couleurs, typographie, style d'illustration, mise en page
-2. Tes 3 prompts doivent SUIVRE LE MÊME STYLE que les exemples
-3. Chaque prompt doit rester UNIQUE avec des variations sur le contenu mais PAS sur le style global
-${hasCharacterRef ? '4. Utilise "the character from the single-person reference image" pour le personnage' : '4. Décris les personnages ou éléments visuels de manière générique basé sur le contenu de la vidéo'}
-5. Les prompts doivent être en ANGLAIS pour la génération d'images
-6. Chaque prompt doit faire 60-100 mots et être très détaillé sur le style visuel
-7. Mentionne explicitement les éléments de style observés dans les exemples
-8. N'utilise JAMAIS le mot "dead" dans le prompt (remplace-le par d'autres formulations)
+1. ANALYSE les exemples pour: palette de couleurs, style d'illustration, composition, effets visuels, typographie
+2. IGNORE complètement: les personnes, le texte, le sujet des exemples - ce n'est PAS le contenu à reproduire
+3. CRÉE des miniatures dont le SUJET et le CONTENU viennent UNIQUEMENT du script/titre de la vidéo
+${hasCharacterRef ? '4. Utilise "the character from the single-person reference image" pour le personnage principal' : '4. Décris des personnages ou éléments visuels pertinents au contenu du script'}
+5. Les prompts doivent être en ANGLAIS
+6. Chaque prompt: 60-100 mots, détaillé sur le style visuel ET pertinent au contenu du script
+7. N'utilise JAMAIS le mot "dead" (reformule autrement)
 
-RÈGLES DE SIMPLICITÉ (CRITIQUE):
-- ÉVITE les scènes trop complexes avec beaucoup d'éléments
-- LIMITE le nombre d'objets visuels à 3-4 maximum par miniature
-- PRIVILÉGIE des compositions épurées et lisibles
-- ÉVITE les textes trop longs ou multiples zones de texte
-- Concentre-toi sur 1-2 éléments visuels forts plutôt que sur beaucoup de petits détails
-- Garde l'arrière-plan simple et minimaliste
-${hasCharacterRef ? '- Le personnage + 1-2 éléments clés maximum = design efficace' : '- 2-3 éléments visuels clés maximum = design efficace'}`;
+RÈGLES DE SIMPLICITÉ:
+- Maximum 3-4 éléments visuels par miniature
+- Compositions épurées et lisibles
+- 1-2 éléments visuels forts, pas beaucoup de petits détails
+- Arrière-plan simple
+${hasCharacterRef ? '- Le personnage + 1-2 éléments clés liés au script = design efficace' : '- 2-3 éléments visuels clés tirés du script = design efficace'}`;
 
     // Ajouter l'instruction sur les prompts précédents si fournis
     if (previousPrompts && Array.isArray(previousPrompts) && previousPrompts.length > 0) {
