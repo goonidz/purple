@@ -86,6 +86,7 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle }: Thumb
   const [editingImagePrompt, setEditingImagePrompt] = useState("");
   const [isEditingImage, setIsEditingImage] = useState(false);
   const [customPrompt, setCustomPrompt] = useState(DEFAULT_THUMBNAIL_PROMPT);
+  const [generatedPrompts, setGeneratedPrompts] = useState<string[]>([]);
 
   useEffect(() => {
     loadPresets();
@@ -345,6 +346,7 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle }: Thumb
 
       const creativePrompts = promptsData.prompts as string[];
       console.log("Generated creative prompts:", creativePrompts);
+      setGeneratedPrompts(creativePrompts);
       toast.success("Prompts créatifs générés !");
 
       // Étape 2: Générer les 3 miniatures EN PARALLÈLE
@@ -868,7 +870,7 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle }: Thumb
           {generatedThumbnails.length > 0 && (
             <div className="space-y-4">
               <h4 className="font-semibold">Miniatures générées</h4>
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {generatedThumbnails.map((url, index) => (
                   <div key={index} className="space-y-2">
                     <img
@@ -877,6 +879,12 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle }: Thumb
                       className="w-full aspect-video object-cover rounded-lg border cursor-pointer hover:opacity-80 transition-opacity"
                       onClick={() => setPreviewImage(url)}
                     />
+                    {generatedPrompts[index] && (
+                      <div className="p-2 bg-muted rounded text-xs text-muted-foreground max-h-24 overflow-y-auto">
+                        <p className="font-medium text-foreground mb-1">Prompt {index + 1}:</p>
+                        {generatedPrompts[index]}
+                      </div>
+                    )}
                     <Button
                       variant="outline"
                       size="sm"
