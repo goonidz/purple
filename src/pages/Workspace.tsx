@@ -2,7 +2,8 @@ import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import type { User } from "@supabase/supabase-js";
-import { Loader2, Settings, Download, Video, Image as ImageIcon, Sparkles } from "lucide-react";
+import { Loader2, Settings, Download, Video, Image as ImageIcon, Sparkles, Pencil } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SceneSidebar } from "@/components/SceneSidebar";
@@ -49,6 +50,8 @@ const Workspace = () => {
   const [isExportingVideo, setIsExportingVideo] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
   const [activeTab, setActiveTab] = useState<string>("video");
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [editedName, setEditedName] = useState("");
 
   // Check authentication
   useEffect(() => {
@@ -134,6 +137,36 @@ const Workspace = () => {
       return () => clearTimeout(timeoutId);
     }
   }, [currentProjectId, generatedPrompts, audioUrl]);
+
+  const handleStartEditName = () => {
+    setEditedName(projectName);
+    setIsEditingName(true);
+  };
+
+  const handleSaveName = async () => {
+    if (!currentProjectId || !editedName.trim()) return;
+    
+    try {
+      const { error } = await supabase
+        .from("projects")
+        .update({ name: editedName.trim() })
+        .eq("id", currentProjectId);
+
+      if (error) throw error;
+      
+      setProjectName(editedName.trim());
+      setIsEditingName(false);
+      toast.success("Titre mis à jour");
+    } catch (error: any) {
+      console.error("Error updating project name:", error);
+      toast.error("Erreur lors de la mise à jour du titre");
+    }
+  };
+
+  const handleCancelEditName = () => {
+    setIsEditingName(false);
+    setEditedName("");
+  };
 
   const handleRegenerateImage = async (sceneIndex: number) => {
     const prompt = generatedPrompts[sceneIndex];
@@ -314,7 +347,34 @@ const Workspace = () => {
               </span>
             </Link>
             <span className="text-muted-foreground">/</span>
-            <h1 className="text-lg font-semibold">{projectName}</h1>
+            {isEditingName ? (
+              <div className="flex items-center gap-2">
+                <Input
+                  value={editedName}
+                  onChange={(e) => setEditedName(e.target.value)}
+                  className="h-8 w-64"
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleSaveName();
+                    if (e.key === "Escape") handleCancelEditName();
+                  }}
+                />
+                <Button size="sm" onClick={handleSaveName}>Enregistrer</Button>
+                <Button size="sm" variant="ghost" onClick={handleCancelEditName}>Annuler</Button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 group">
+                <h1 className="text-lg font-semibold">{projectName}</h1>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
+                  onClick={handleStartEditName}
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            )}
           </div>
           
           <div className="flex items-center gap-2">
