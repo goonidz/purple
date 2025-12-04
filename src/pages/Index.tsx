@@ -156,6 +156,8 @@ const Index = () => {
     failed: number;
   } | null>(null);
   const [missingImagesInfo, setMissingImagesInfo] = useState<{count: number, indices: number[]} | null>(null);
+  const [isEditingProjectName, setIsEditingProjectName] = useState(false);
+  const [editingProjectNameValue, setEditingProjectNameValue] = useState("");
 
   // Check authentication
   useEffect(() => {
@@ -445,6 +447,27 @@ const Index = () => {
       }
       setTranscriptFile(file);
       toast.success("Fichier chargé avec succès");
+    }
+  };
+
+  const handleSaveProjectName = async () => {
+    if (!currentProjectId || !editingProjectNameValue.trim()) return;
+    
+    try {
+      const { error } = await supabase
+        .from("projects")
+        .update({ name: editingProjectNameValue.trim() })
+        .eq("id", currentProjectId);
+
+      if (error) throw error;
+      
+      setProjectName(editingProjectNameValue.trim());
+      setIsEditingProjectName(false);
+      setEditingProjectNameValue("");
+      toast.success("Titre mis à jour");
+    } catch (error: any) {
+      console.error("Error updating project name:", error);
+      toast.error("Erreur lors de la mise à jour du titre");
     }
   };
 
@@ -1582,7 +1605,45 @@ const Index = () => {
               {currentProjectId && projectName && (
                 <>
                   <span className="text-muted-foreground">/</span>
-                  <h1 className="text-lg font-semibold">{projectName}</h1>
+                  {isEditingProjectName ? (
+                    <div className="flex items-center gap-2">
+                      <Input
+                        value={editingProjectNameValue}
+                        onChange={(e) => setEditingProjectNameValue(e.target.value)}
+                        className="h-8 w-64"
+                        autoFocus
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            handleSaveProjectName();
+                          }
+                          if (e.key === "Escape") {
+                            setIsEditingProjectName(false);
+                            setEditingProjectNameValue("");
+                          }
+                        }}
+                      />
+                      <Button size="sm" onClick={handleSaveProjectName}>Enregistrer</Button>
+                      <Button size="sm" variant="ghost" onClick={() => {
+                        setIsEditingProjectName(false);
+                        setEditingProjectNameValue("");
+                      }}>Annuler</Button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 group">
+                      <h1 className="text-lg font-semibold">{projectName}</h1>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
+                        onClick={() => {
+                          setEditingProjectNameValue(projectName);
+                          setIsEditingProjectName(true);
+                        }}
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  )}
                 </>
               )}
             </div>
