@@ -65,6 +65,17 @@ STRICT RULES FOR GENERATING CONSISTENT PROMPTS:
 6. Generate prompts in ENGLISH only
 7. NEVER use the word "dead" in the prompt (rephrase with other words instead)
 
+CONTENT SAFETY - STRICTLY FORBIDDEN (to avoid AI image generator blocks):
+- No nudity, partial nudity, or suggestive/intimate content
+- No violence, gore, blood, weapons pointed at people, or graphic injuries
+- No sexual or romantic physical contact (kissing, embracing intimately)
+- No drug use or drug paraphernalia
+- No hate symbols, extremist imagery, or discriminatory content
+- No realistic depictions of real public figures or celebrities
+- No content involving minors in any potentially inappropriate context
+- Instead of violent scenes, describe tension, conflict, or drama through expressions, postures, and atmosphere
+- Instead of intimate scenes, describe emotional connection through eye contact, gestures, or symbolic imagery
+
 `;
 
     // Add examples if provided
