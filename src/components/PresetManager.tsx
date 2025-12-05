@@ -221,10 +221,7 @@ export const PresetManager = ({ currentConfig, onLoadPreset }: PresetManagerProp
     }
   };
 
-  const openEditDialog = () => {
-    const preset = presets.find(p => p.id === selectedPresetId);
-    if (!preset) return;
-
+  const openEditDialogForPreset = (preset: Preset) => {
     setEditFormData({
       name: preset.name,
       sceneDuration0to1: preset.scene_duration_0to1,
@@ -239,10 +236,7 @@ export const PresetManager = ({ currentConfig, onLoadPreset }: PresetManagerProp
     setIsEditDialogOpen(true);
   };
 
-  const openDuplicateDialog = () => {
-    const preset = presets.find(p => p.id === selectedPresetId);
-    if (!preset) return;
-
+  const openDuplicateDialogForPreset = (preset: Preset) => {
     setDuplicatePresetName(`${preset.name} (copie)`);
     setIsDuplicateDialogOpen(true);
   };
@@ -359,9 +353,48 @@ export const PresetManager = ({ currentConfig, onLoadPreset }: PresetManagerProp
                 </SelectTrigger>
                 <SelectContent>
                   {presets.map((preset) => (
-                    <SelectItem key={preset.id} value={preset.id}>
-                      {preset.name}
-                    </SelectItem>
+                    <div key={preset.id} className="flex items-center justify-between px-2 py-1.5 hover:bg-accent rounded-sm group">
+                      <SelectItem value={preset.id} className="flex-1 p-0 focus:bg-transparent">
+                        {preset.name}
+                      </SelectItem>
+                      <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity ml-2">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedPresetId(preset.id);
+                            openEditDialogForPreset(preset);
+                          }}
+                        >
+                          <Settings className="h-3 w-3" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedPresetId(preset.id);
+                            openDuplicateDialogForPreset(preset);
+                          }}
+                        >
+                          <Copy className="h-3 w-3" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deletePreset(preset.id, preset.name);
+                          }}
+                        >
+                          <Trash2 className="h-3 w-3 text-destructive" />
+                        </Button>
+                      </div>
+                    </div>
                   ))}
                 </SelectContent>
               </Select>
@@ -373,40 +406,6 @@ export const PresetManager = ({ currentConfig, onLoadPreset }: PresetManagerProp
                 Charger
               </Button>
             </div>
-
-            {selectedPresetId && (
-              <div className="flex items-center justify-between p-2 bg-muted rounded-lg">
-                <span className="text-xs text-muted-foreground">
-                  {presets.find(p => p.id === selectedPresetId)?.name}
-                </span>
-                <div className="flex gap-1">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={openEditDialog}
-                  >
-                    <Settings className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={openDuplicateDialog}
-                  >
-                    <Copy className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      const preset = presets.find(p => p.id === selectedPresetId);
-                      if (preset) deletePreset(preset.id, preset.name);
-                    }}
-                  >
-                    <Trash2 className="h-4 w-4 text-destructive" />
-                  </Button>
-                </div>
-              </div>
-            )}
           </div>
         )}
 
