@@ -144,6 +144,7 @@ const Index = () => {
   const [audioUrl, setAudioUrl] = useState<string>("");
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [isUploadingAudio, setIsUploadingAudio] = useState(false);
+  const [isDraggingAudio, setIsDraggingAudio] = useState(false);
   const [hasTestedFirstTwo, setHasTestedFirstTwo] = useState(false);
   const [thumbnailDialogOpen, setThumbnailDialogOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<string>("video");
@@ -868,10 +869,7 @@ const Index = () => {
     }
   };
 
-  const handleAudioUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
+  const processAudioFile = async (file: File) => {
     // Validate file type
     if (!file.type.startsWith('audio/')) {
       toast.error("Veuillez sélectionner un fichier audio");
@@ -914,6 +912,30 @@ const Index = () => {
       toast.error(error.message || "Erreur lors de l'upload du fichier audio");
     } finally {
       setIsUploadingAudio(false);
+    }
+  };
+
+  const handleAudioUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    await processAudioFile(file);
+  };
+
+  const handleAudioDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDraggingAudio(true);
+  };
+
+  const handleAudioDragLeave = () => {
+    setIsDraggingAudio(false);
+  };
+
+  const handleAudioDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDraggingAudio(false);
+    const file = e.dataTransfer.files[0];
+    if (file) {
+      await processAudioFile(file);
     }
   };
 
@@ -1763,22 +1785,28 @@ const Index = () => {
                       <h2 className="text-lg font-semibold mb-4">1b. Importer l'audio (optionnel)</h2>
                       <div className="space-y-4">
                         <div>
-                          <label htmlFor="audio-upload" className="cursor-pointer">
-                            <div className="border-2 border-dashed border-muted-foreground/25 rounded-lg p-8 text-center hover:border-primary/50 transition-colors">
-                              <Upload className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
-                              <p className="text-sm font-medium mb-1">
-                                {audioFile ? audioFile.name : audioUrl ? "Audio chargé" : "Cliquez pour importer un fichier audio"}
-                              </p>
-                              <p className="text-xs text-muted-foreground">
-                                Format: MP3, WAV, M4A, etc.
-                              </p>
-                              {isUploadingAudio && (
-                                <div className="mt-4 flex flex-col items-center gap-2">
-                                  <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                                  <p className="text-sm font-medium text-primary">Upload en cours...</p>
-                                </div>
-                              )}
-                            </div>
+                          <div
+                            className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors ${
+                              isDraggingAudio ? 'border-primary bg-primary/10' : 'border-muted-foreground/25 hover:border-primary/50'
+                            }`}
+                            onDragOver={handleAudioDragOver}
+                            onDragLeave={handleAudioDragLeave}
+                            onDrop={handleAudioDrop}
+                            onClick={() => document.getElementById('audio-upload')?.click()}
+                          >
+                            <Upload className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
+                            <p className="text-sm font-medium mb-1">
+                              {audioFile ? audioFile.name : audioUrl ? "Audio chargé" : "Glissez-déposez ou cliquez pour importer"}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              Format: MP3, WAV, M4A, etc.
+                            </p>
+                            {isUploadingAudio && (
+                              <div className="mt-4 flex flex-col items-center gap-2">
+                                <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                                <p className="text-sm font-medium text-primary">Upload en cours...</p>
+                              </div>
+                            )}
                             <input
                               id="audio-upload"
                               type="file"
@@ -1787,7 +1815,7 @@ const Index = () => {
                               className="hidden"
                               disabled={isUploadingAudio}
                             />
-                          </label>
+                          </div>
                         </div>
                       </div>
                     </Card>
