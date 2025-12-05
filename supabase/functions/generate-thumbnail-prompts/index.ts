@@ -75,7 +75,7 @@ serve(async (req) => {
       });
     }
 
-    const { videoScript, videoTitle, exampleUrls, characterRefUrl, previousPrompts, customPrompt } = await req.json();
+    const { videoScript, videoTitle, exampleUrls, characterRefUrl, previousPrompts, customPrompt, userIdea } = await req.json();
 
     if (!videoScript) {
       return new Response(
@@ -175,6 +175,18 @@ STRICT REQUIREMENTS:
 6. Explore UNEXPLORED aspects of the video content
 
 Think: "What aspects of the script have NOT been explored yet?"`;
+    }
+
+    // Ajouter l'idée de l'utilisateur si fournie
+    if (userIdea && userIdea.trim()) {
+      systemPrompt += `
+
+🎯 USER'S SPECIFIC DIRECTION:
+The user has provided this specific idea/direction for the thumbnails:
+"${userIdea.trim()}"
+
+You MUST incorporate this direction into ALL 3 thumbnail prompts.
+This is the user's priority - make sure the thumbnails follow this guidance.`;
     }
 
     // Always append the JSON format instruction

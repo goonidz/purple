@@ -89,6 +89,7 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle }: Thumb
   const [customPrompt, setCustomPrompt] = useState(DEFAULT_THUMBNAIL_PROMPT);
   const [generatedPrompts, setGeneratedPrompts] = useState<string[]>([]);
   const [imageModel, setImageModel] = useState<string>("seedream-4.5");
+  const [userIdea, setUserIdea] = useState<string>("");
 
   useEffect(() => {
     loadPresets();
@@ -331,7 +332,8 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle }: Thumb
           exampleUrls,
           characterRefUrl,
           previousPrompts: previousPrompts.length > 0 ? previousPrompts : undefined,
-          customPrompt: customPrompt !== DEFAULT_THUMBNAIL_PROMPT ? customPrompt : undefined
+          customPrompt: customPrompt !== DEFAULT_THUMBNAIL_PROMPT ? customPrompt : undefined,
+          userIdea: userIdea.trim() || undefined
         }
       });
 
@@ -818,6 +820,20 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle }: Thumb
                 </Button>
               </div>
             )}
+          </div>
+
+          {/* Idée / direction pour les miniatures (optionnel) */}
+          <div className="space-y-2">
+            <Label className="text-sm">
+              Ton idée / direction (optionnel)
+            </Label>
+            <Textarea
+              value={userIdea}
+              onChange={(e) => setUserIdea(e.target.value)}
+              rows={2}
+              className="text-sm"
+              placeholder="Ex: Je veux une miniature avec un effet avant/après, ou un visage choqué avec du texte rouge..."
+            />
           </div>
 
           {/* Prompt système personnalisable */}
