@@ -2049,11 +2049,11 @@ const Index = () => {
                             </Button>
                            )}
                            {missingImagesInfo && missingImagesInfo.count > 0 && !isGeneratingImages && (
-                             <Card className="p-4 bg-destructive/10 border-destructive/20">
+                             <Card className="p-4 bg-destructive/10 border-destructive/20 max-w-sm">
                                <div className="space-y-3">
-                                 <div className="flex items-center justify-between">
-                                   <div className="flex items-center gap-2">
-                                     <AlertCircle className="h-5 w-5 text-destructive" />
+                                 <div className="flex items-center justify-between gap-2">
+                                   <div className="flex items-center gap-2 min-w-0">
+                                     <AlertCircle className="h-5 w-5 text-destructive flex-shrink-0" />
                                      <span className="font-medium text-destructive">
                                        {missingImagesInfo.count} image(s) manquante(s)
                                      </span>
@@ -2061,12 +2061,13 @@ const Index = () => {
                                    <Button
                                      size="sm"
                                      variant="ghost"
+                                     className="flex-shrink-0"
                                      onClick={() => setMissingImagesInfo(null)}
                                    >
                                      <X className="h-4 w-4" />
                                    </Button>
                                  </div>
-                                 <p className="text-sm text-muted-foreground">
+                                 <p className="text-sm text-muted-foreground break-words">
                                    Scènes concernées : {missingImagesInfo.indices.join(", ")}
                                  </p>
                                  <Button
@@ -2076,9 +2077,10 @@ const Index = () => {
                                    }}
                                    className="w-full"
                                    variant="destructive"
+                                   size="sm"
                                  >
                                    <RefreshCw className="mr-2 h-4 w-4" />
-                                   Regénérer toutes les images manquantes
+                                   Regénérer les images manquantes
                                  </Button>
                                </div>
                              </Card>
