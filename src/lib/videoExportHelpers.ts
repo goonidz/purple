@@ -63,12 +63,23 @@ export function generatePremiereXML(
         <end>${endFrame}</end>
         <in>0</in>
         <out>${duration}</out>
+        <stillframe>TRUE</stillframe>
         <file id="file-${index + 1}">
           <name>${filename}</name>
           <pathurl>${imagePath}</pathurl>
           <duration>${duration}</duration>
           <width>${width}</width>
           <height>${height}</height>
+          <media>
+            <video>
+              <stillframe>TRUE</stillframe>
+              <duration>${duration}</duration>
+              <samplecharacteristics>
+                <width>${width}</width>
+                <height>${height}</height>
+              </samplecharacteristics>
+            </video>
+          </media>
         </file>
         <sourcetrack>
           <mediatype>video</mediatype>
