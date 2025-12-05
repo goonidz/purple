@@ -88,6 +88,7 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle }: Thumb
   const [isEditingImage, setIsEditingImage] = useState(false);
   const [customPrompt, setCustomPrompt] = useState(DEFAULT_THUMBNAIL_PROMPT);
   const [generatedPrompts, setGeneratedPrompts] = useState<string[]>([]);
+  const [imageModel, setImageModel] = useState<string>("seedream-4.5");
 
   useEffect(() => {
     loadPresets();
@@ -364,6 +365,7 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle }: Thumb
             image_urls: imageUrls,
             width: 1920,
             height: 1080,
+            model: imageModel,
           },
         });
 
@@ -851,6 +853,20 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle }: Thumb
             >
               Réinitialiser au prompt par défaut
             </Button>
+          </div>
+
+          {/* Sélection du modèle d'image */}
+          <div className="space-y-2">
+            <Label>Modèle de génération d'image</Label>
+            <Select value={imageModel} onValueChange={setImageModel}>
+              <SelectTrigger>
+                <SelectValue placeholder="Choisir un modèle" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="seedream-4.5">SeedDream 4.5 (Recommandé)</SelectItem>
+                <SelectItem value="seedream-4.0">SeedDream 4.0</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
           {/* Bouton de génération */}
