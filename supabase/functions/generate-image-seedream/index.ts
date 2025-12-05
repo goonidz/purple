@@ -95,7 +95,7 @@ Deno.serve(async (req) => {
 
     const sanitizedPrompt = sanitizePrompt(body.prompt)
 
-    console.log("Generating image with SeedDream 4, prompt:", sanitizedPrompt)
+    console.log("Generating image with SeedDream 4.5, prompt:", sanitizedPrompt)
     
     const input: any = {
       prompt: sanitizedPrompt,
@@ -114,7 +114,7 @@ Deno.serve(async (req) => {
     if (body.guidance_scale) input.guidance_scale = body.guidance_scale
     if (body.num_inference_steps) input.num_inference_steps = body.num_inference_steps
 
-    console.log("SeedDream 4 input parameters:", input)
+    console.log("SeedDream 4.5 input parameters:", input)
 
     let output;
     let lastError;
@@ -125,10 +125,10 @@ Deno.serve(async (req) => {
       try {
         console.log(`Generation attempt ${attempt}/${MAX_RETRIES}`)
         output = await replicate.run(
-          "bytedance/seedream-4",
+          "bytedance/seedream-4.5",
           { input }
         )
-        console.log("SeedDream 4 generation complete")
+        console.log("SeedDream 4.5 generation complete")
         break; // Success, exit retry loop
       } catch (error: any) {
         lastError = error;
