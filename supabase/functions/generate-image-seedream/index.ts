@@ -101,8 +101,23 @@ Deno.serve(async (req) => {
     
     console.log(`Generating image with ${modelVersion}, prompt:`, sanitizedPrompt)
     
-    const width = body.width || 2048;
-    const height = body.height || 2048;
+    let width = body.width || 2048;
+    let height = body.height || 2048;
+    const requestedWidth = width;
+    const requestedHeight = height;
+    
+    // SeedDream 4.5 requires minimum 3,686,400 pixels when using image_input (style references)
+    // SeedDream 4.0 does not have this constraint
+    if (modelVersion === 'seedream-4.5' && body.image_urls && body.image_urls.length > 0) {
+      const MIN_PIXELS = 3686400;
+      const currentPixels = width * height;
+      if (currentPixels < MIN_PIXELS) {
+        const scaleFactor = Math.sqrt(MIN_PIXELS / currentPixels);
+        width = Math.ceil(width * scaleFactor);
+        height = Math.ceil(height * scaleFactor);
+        console.log(`SeedDream 4.5 with image references: scaled from ${requestedWidth}x${requestedHeight} to ${width}x${height} to meet minimum pixel requirement`);
+      }
+    }
     
     const input: any = {
       prompt: sanitizedPrompt,
