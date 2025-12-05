@@ -2048,59 +2048,6 @@ const Index = () => {
                               Vérifier les images manquantes
                             </Button>
                            )}
-                           {missingImagesInfo && missingImagesInfo.count > 0 && !isGeneratingImages && (
-                             <Card className="p-4 bg-destructive/10 border-destructive/20 max-w-sm">
-                               <div className="space-y-3">
-                                 <div className="flex items-center justify-between gap-2">
-                                   <div className="flex items-center gap-2 min-w-0">
-                                     <AlertCircle className="h-5 w-5 text-destructive flex-shrink-0" />
-                                     <span className="font-medium text-destructive">
-                                       {missingImagesInfo.count} image(s) manquante(s)
-                                     </span>
-                                   </div>
-                                   <Button
-                                     size="sm"
-                                     variant="ghost"
-                                     className="flex-shrink-0"
-                                     onClick={() => setMissingImagesInfo(null)}
-                                   >
-                                     <X className="h-4 w-4" />
-                                   </Button>
-                                 </div>
-                                 <p className="text-sm text-muted-foreground break-words">
-                                   Scènes concernées : {missingImagesInfo.indices.join(", ")}
-                                 </p>
-                                 <Button
-                                   onClick={() => {
-                                     setMissingImagesInfo(null);
-                                     generateAllImages(true);
-                                   }}
-                                   className="w-full"
-                                   variant="destructive"
-                                   size="sm"
-                                 >
-                                   <RefreshCw className="mr-2 h-4 w-4" />
-                                   Regénérer les images manquantes
-                                 </Button>
-                               </div>
-                             </Card>
-                           )}
-                          {isGeneratingImages && imageGenerationTotal > 0 && (
-                            <Card className="p-4 bg-muted/30 border-primary/20">
-                              <div className="space-y-2">
-                                <div className="flex items-center justify-between text-sm">
-                                  <span className="font-medium">Génération en cours...</span>
-                                  <span className="text-muted-foreground">
-                                    {imageGenerationProgress} / {imageGenerationTotal} images
-                                  </span>
-                                </div>
-                                <Progress 
-                                  value={(imageGenerationProgress / imageGenerationTotal) * 100} 
-                                  className="h-2"
-                                />
-                              </div>
-                            </Card>
-                          )}
                           {isGeneratingPrompts && (
                             <Button
                               onClick={() => {
@@ -2125,6 +2072,61 @@ const Index = () => {
                           )}
                         </div>
                       </div>
+                      
+                      {/* Cards d'état - en dehors du flex des boutons */}
+                      {missingImagesInfo && missingImagesInfo.count > 0 && !isGeneratingImages && (
+                        <Card className="p-4 bg-destructive/10 border-destructive/20 mt-4">
+                          <div className="space-y-3">
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-2">
+                                <AlertCircle className="h-5 w-5 text-destructive flex-shrink-0" />
+                                <span className="font-medium text-destructive">
+                                  {missingImagesInfo.count} image(s) manquante(s)
+                                </span>
+                              </div>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => setMissingImagesInfo(null)}
+                              >
+                                <X className="h-4 w-4" />
+                              </Button>
+                            </div>
+                            <p className="text-sm text-muted-foreground">
+                              Scènes concernées : {missingImagesInfo.indices.join(", ")}
+                            </p>
+                            <Button
+                              onClick={() => {
+                                setMissingImagesInfo(null);
+                                generateAllImages(true);
+                              }}
+                              className="w-full"
+                              variant="destructive"
+                              size="sm"
+                            >
+                              <RefreshCw className="mr-2 h-4 w-4" />
+                              Regénérer les images manquantes
+                            </Button>
+                          </div>
+                        </Card>
+                      )}
+                      
+                      {isGeneratingImages && imageGenerationTotal > 0 && (
+                        <Card className="p-4 bg-muted/30 border-primary/20 mt-4">
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between text-sm">
+                              <span className="font-medium">Génération en cours...</span>
+                              <span className="text-muted-foreground">
+                                {imageGenerationProgress} / {imageGenerationTotal} images
+                              </span>
+                            </div>
+                            <Progress 
+                              value={(imageGenerationProgress / imageGenerationTotal) * 100} 
+                              className="h-2"
+                            />
+                          </div>
+                        </Card>
+                      )}
 
                     </div>
                     <div className="overflow-x-auto">
