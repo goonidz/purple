@@ -104,17 +104,14 @@ Deno.serve(async (req) => {
     let width = body.width || 2048;
     let height = body.height || 2048;
     
-    // SeedDream 4.5 requires minimum 3,686,400 pixels (approx 1920x1920)
-    // SeedDream 4.0 doesn't have this requirement
-    if (modelVersion === 'seedream-4.5') {
-      const MIN_PIXELS = 3686400;
-      const currentPixels = width * height;
-      if (currentPixels < MIN_PIXELS) {
-        const scaleFactor = Math.sqrt(MIN_PIXELS / currentPixels);
-        width = Math.ceil(width * scaleFactor);
-        height = Math.ceil(height * scaleFactor);
-        console.log(`Scaled dimensions from ${body.width}x${body.height} to ${width}x${height} to meet minimum pixel requirement`);
-      }
+    // Both SeedDream 4.0 and 4.5 require minimum 3,686,400 pixels
+    const MIN_PIXELS = 3686400;
+    const currentPixels = width * height;
+    if (currentPixels < MIN_PIXELS) {
+      const scaleFactor = Math.sqrt(MIN_PIXELS / currentPixels);
+      width = Math.ceil(width * scaleFactor);
+      height = Math.ceil(height * scaleFactor);
+      console.log(`Scaled dimensions from ${body.width}x${body.height} to ${width}x${height} to meet minimum pixel requirement`);
     }
     
     const input: any = {
