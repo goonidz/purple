@@ -1935,30 +1935,30 @@ const Index = () => {
                 {scenes.length > 0 && (
                   <Card className="p-6">
                     <div className="space-y-4">
-                      <div className="flex items-center justify-between">
-                        <h2 className="text-lg font-semibold">
-                          Scènes générées ({scenes.length})
-                          {generatedPrompts.length > 0 && ` - ${generatedPrompts.length} prompts`}
-                        </h2>
-                        <div className="flex gap-2 items-center">
-                          {generatedPrompts.length > 0 && (
-                            <>
-                              {generatedPrompts.filter(p => p && p.imageUrl).length > 0 && (
-                                <Button
-                                  onClick={() => setExportDialogOpen(true)}
-                                  variant="outline"
-                                  size="sm"
-                                >
-                                  <Download className="mr-2 h-4 w-4" />
-                                  Exporter pour montage
-                                </Button>
-                              )}
-                            </>
+                      {/* Header avec titre et boutons */}
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <h2 className="text-lg font-semibold">
+                            Scènes générées ({scenes.length})
+                            {generatedPrompts.length > 0 && ` - ${generatedPrompts.length} prompts`}
+                          </h2>
+                          {generatedPrompts.filter(p => p && p.imageUrl).length > 0 && (
+                            <Button
+                              onClick={() => setExportDialogOpen(true)}
+                              variant="outline"
+                              size="sm"
+                            >
+                              <Download className="mr-2 h-4 w-4" />
+                              Exporter pour montage
+                            </Button>
                           )}
+                        </div>
+                        
+                        {/* Boutons d'action - sur une ligne séparée */}
+                        <div className="flex flex-wrap gap-2 items-center">
                           <Button
                             onClick={handleTestFirstTwo}
                             disabled={isGeneratingPrompts || isGeneratingImages}
-                            variant="default"
                             size="sm"
                           >
                             {isGeneratingPrompts || isGeneratingImages ? (
@@ -1977,6 +1977,7 @@ const Index = () => {
                             onClick={() => handleGeneratePrompts(false)}
                             disabled={isGeneratingPrompts || !hasTestedFirstTwo}
                             title={!hasTestedFirstTwo ? "Veuillez d'abord tester avec les 2 premières scènes" : ""}
+                            size="sm"
                           >
                             {isGeneratingPrompts ? (
                               <>
@@ -2005,7 +2006,7 @@ const Index = () => {
                                   ? "Veuillez d'abord générer tous les prompts"
                                   : ""
                               }
-                              variant="default"
+                              size="sm"
                             >
                               {isGeneratingImages ? (
                                 <>
@@ -2043,11 +2044,12 @@ const Index = () => {
                                 }
                               }}
                               variant="outline"
+                              size="sm"
                             >
                               <AlertCircle className="mr-2 h-4 w-4" />
-                              Vérifier les images manquantes
+                              Vérifier images
                             </Button>
-                           )}
+                          )}
                           {isGeneratingPrompts && (
                             <Button
                               onClick={() => {
@@ -2055,6 +2057,7 @@ const Index = () => {
                                 toast.info("Annulation en cours...");
                               }}
                               variant="destructive"
+                              size="sm"
                             >
                               Annuler
                             </Button>
@@ -2066,6 +2069,7 @@ const Index = () => {
                                 toast.info("Annulation des images en cours...");
                               }}
                               variant="destructive"
+                              size="sm"
                             >
                               Annuler images
                             </Button>
@@ -2073,9 +2077,9 @@ const Index = () => {
                         </div>
                       </div>
                       
-                      {/* Cards d'état - en dehors du flex des boutons */}
+                      {/* Cards d'état */}
                       {missingImagesInfo && missingImagesInfo.count > 0 && !isGeneratingImages && (
-                        <Card className="p-4 bg-destructive/10 border-destructive/20 mt-4">
+                        <Card className="p-4 bg-destructive/10 border-destructive/20">
                           <div className="space-y-3">
                             <div className="flex items-center justify-between gap-2">
                               <div className="flex items-center gap-2">
@@ -2112,7 +2116,7 @@ const Index = () => {
                       )}
                       
                       {isGeneratingImages && imageGenerationTotal > 0 && (
-                        <Card className="p-4 bg-muted/30 border-primary/20 mt-4">
+                        <Card className="p-4 bg-muted/30 border-primary/20">
                           <div className="space-y-2">
                             <div className="flex items-center justify-between text-sm">
                               <span className="font-medium">Génération en cours...</span>
