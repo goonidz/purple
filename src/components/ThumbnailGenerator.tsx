@@ -366,30 +366,17 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle }: Thumb
             width: 1920,
             height: 1080,
             model: imageModel,
+            uploadToStorage: true,
+            storageFolder: `thumbnails/generated/${projectId}`,
+            filePrefix: `thumb_v${i + 1}`,
           },
         });
 
         if (error) throw error;
 
         if (data?.output && Array.isArray(data.output)) {
-          const imageUrl = data.output[0];
-          
-          // Télécharger et sauvegarder dans Supabase Storage
-          const imageResponse = await fetch(imageUrl);
-          const imageBlob = await imageResponse.blob();
-          
-          const fileName = `${user.id}/thumbnails/generated/${projectId}_${Date.now()}_v${i + 1}.jpg`;
-          const { error: uploadError } = await supabase.storage
-            .from("generated-images")
-            .upload(fileName, imageBlob);
-
-          if (uploadError) throw uploadError;
-
-          const { data: { publicUrl } } = supabase.storage
-            .from("generated-images")
-            .getPublicUrl(fileName);
-
-          return publicUrl;
+          // L'image est déjà uploadée dans Storage par l'edge function
+          return data.output[0];
         }
         throw new Error(`Failed to generate thumbnail ${i + 1}`);
       });

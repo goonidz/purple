@@ -168,6 +168,51 @@ Deno.serve(async (req) => {
       throw lastError || new Error("Image generation failed after all retries");
     }
 
+    // If uploadToStorage flag is set, download the image and upload to Supabase Storage
+    if (body.uploadToStorage && Array.isArray(output) && output.length > 0) {
+      const replicateUrl = output[0];
+      console.log("Downloading image from Replicate for storage upload:", replicateUrl);
+      
+      try {
+        const imageResponse = await fetch(replicateUrl);
+        if (!imageResponse.ok) {
+          throw new Error(`Failed to fetch image: ${imageResponse.status}`);
+        }
+        
+        const imageBlob = await imageResponse.blob();
+        const arrayBuffer = await imageBlob.arrayBuffer();
+        const uint8Array = new Uint8Array(arrayBuffer);
+        
+        const fileName = `${user.id}/${body.storageFolder || 'generated'}/${Date.now()}_${body.filePrefix || 'image'}.jpg`;
+        
+        const { error: uploadError } = await supabaseService.storage
+          .from("generated-images")
+          .upload(fileName, uint8Array, {
+            contentType: 'image/jpeg',
+            upsert: false
+          });
+
+        if (uploadError) {
+          console.error("Storage upload error:", uploadError);
+          throw new Error(`Storage upload failed: ${uploadError.message}`);
+        }
+
+        const { data: { publicUrl } } = supabaseService.storage
+          .from("generated-images")
+          .getPublicUrl(fileName);
+
+        console.log("Image uploaded to storage:", publicUrl);
+        
+        return new Response(JSON.stringify({ output: [publicUrl], originalOutput: output }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 200,
+        });
+      } catch (storageError: any) {
+        console.error("Storage upload failed, returning original URL:", storageError.message);
+        // Fall back to returning original Replicate URL
+      }
+    }
+
     return new Response(JSON.stringify({ output }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
