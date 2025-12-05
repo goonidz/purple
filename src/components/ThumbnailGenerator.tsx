@@ -355,9 +355,9 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle }: Thumb
       toast.info("Génération des 3 miniatures en parallèle...");
       
       const generationPromises = creativePrompts.map(async (prompt, i) => {
-        // N'envoyer QUE l'image du personnage à SeedDream (pas les exemples de style)
-        // Le style est déjà décrit dans le prompt textuel, les exemples causent des confusions de visages
-        const imageUrls = characterRefUrl ? [characterRefUrl] : [];
+        const imageUrls = characterRefUrl 
+          ? [...exampleUrls, characterRefUrl] 
+          : exampleUrls;
         
         const { data, error } = await supabase.functions.invoke("generate-image-seedream", {
           body: {
