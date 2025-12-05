@@ -101,21 +101,8 @@ Deno.serve(async (req) => {
     
     console.log(`Generating image with ${modelVersion}, prompt:`, sanitizedPrompt)
     
-    let width = body.width || 2048;
-    let height = body.height || 2048;
-    
-    // Minimum pixel requirement only applies when using image_input (style references)
-    // Without image references, 1920x1080 works fine
-    if (body.image_urls && body.image_urls.length > 0) {
-      const MIN_PIXELS = 3686400;
-      const currentPixels = width * height;
-      if (currentPixels < MIN_PIXELS) {
-        const scaleFactor = Math.sqrt(MIN_PIXELS / currentPixels);
-        width = Math.ceil(width * scaleFactor);
-        height = Math.ceil(height * scaleFactor);
-        console.log(`Scaled dimensions from ${body.width}x${body.height} to ${width}x${height} to meet minimum pixel requirement (required when using image references)`);
-      }
-    }
+    const width = body.width || 2048;
+    const height = body.height || 2048;
     
     const input: any = {
       prompt: sanitizedPrompt,
