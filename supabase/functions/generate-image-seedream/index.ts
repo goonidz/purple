@@ -106,13 +106,17 @@ Deno.serve(async (req) => {
     const requestedWidth = width;
     const requestedHeight = height;
     
-    // SeedDream 4.5 with image_input requires minimum 3,686,400 pixels which causes timeouts
-    // For 4.5: skip image_input entirely to avoid upscaling and timeout issues
-    // For 4.0: use image_input normally (no pixel constraint)
-    const useImageInput = modelVersion === 'seedream-4' && body.image_urls && body.image_urls.length > 0;
-    
+    // SeedDream 4.5 requires minimum 3,686,400 pixels when using image_input (style references)
+    // SeedDream 4.0 does not have this constraint
     if (modelVersion === 'seedream-4.5' && body.image_urls && body.image_urls.length > 0) {
-      console.log(`SeedDream 4.5: skipping image_input to avoid 3.6M pixel requirement and timeout. Style guidance via prompt only.`);
+      const MIN_PIXELS = 3686400;
+      const currentPixels = width * height;
+      if (currentPixels < MIN_PIXELS) {
+        const scaleFactor = Math.sqrt(MIN_PIXELS / currentPixels);
+        width = Math.ceil(width * scaleFactor);
+        height = Math.ceil(height * scaleFactor);
+        console.log(`SeedDream 4.5 with image references: scaled from ${requestedWidth}x${requestedHeight} to ${width}x${height} to meet minimum pixel requirement`);
+      }
     }
     
     const input: any = {
@@ -122,10 +126,10 @@ Deno.serve(async (req) => {
       height,
     }
 
-    // Add image reference only for SeedDream 4.0 (4.5 causes timeouts with image_input)
-    if (useImageInput) {
+    // Add image reference if provided
+    if (body.image_urls && body.image_urls.length > 0) {
       input.image_input = body.image_urls;
-      console.log(`SeedDream 4.0: using ${body.image_urls.length} image references`);
+      console.log(`${modelVersion}: using ${body.image_urls.length} image references`);
     }
 
     // Add optional parameters if provided
