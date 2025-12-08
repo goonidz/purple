@@ -33,6 +33,7 @@ export const ProjectConfigurationModal = ({
   const [imageWidth, setImageWidth] = useState(1920);
   const [imageHeight, setImageHeight] = useState(1080);
   const [aspectRatio, setAspectRatio] = useState("16:9");
+  const [imageModel, setImageModel] = useState("seedream-4.5");
   const [styleReferenceUrls, setStyleReferenceUrls] = useState<string[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -109,6 +110,7 @@ export const ProjectConfigurationModal = ({
           image_width: imageWidth,
           image_height: imageHeight,
           aspect_ratio: aspectRatio,
+          image_model: imageModel,
           style_reference_url: styleReferenceUrls.length > 0 ? JSON.stringify(styleReferenceUrls) : null,
         })
         .eq("id", currentProjectId);
@@ -317,6 +319,24 @@ export const ProjectConfigurationModal = ({
 
       {step === "image-config" && (
         <div className="space-y-4">
+          <div className="space-y-2">
+            <Label>Modèle de génération</Label>
+            <Select value={imageModel} onValueChange={setImageModel}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="seedream-4.0">SeedDream 4.0</SelectItem>
+                <SelectItem value="seedream-4.5">SeedDream 4.5</SelectItem>
+                <SelectItem value="z-image-turbo">Z-Image Turbo (rapide)</SelectItem>
+              </SelectContent>
+            </Select>
+            {imageModel === "z-image-turbo" && styleReferenceUrls.length > 0 && (
+              <p className="text-xs text-amber-600">
+                Z-Image Turbo ne supporte pas les images de référence de style
+              </p>
+            )}
+          </div>
           <div className="space-y-2">
             <Label>Aspect Ratio</Label>
             <Select value={aspectRatio} onValueChange={handleAspectRatioChange}>
