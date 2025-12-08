@@ -145,7 +145,7 @@ Return ONLY the prompt text, no JSON, no title, just the optimized prompt in ENG
       }
 
       return new Response(
-        JSON.stringify({ error: "Erreur lors de la génération du prompt" }),
+        JSON.stringify({ error: `Erreur lors de la génération du prompt: ${response.status} - ${errorText.substring(0, 200)}` }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
