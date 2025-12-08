@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Video, History, Sparkles } from "lucide-react";
+import { Video, History, Sparkles, Calendar } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
@@ -32,11 +32,19 @@ const Home = () => {
               VidéoFlow
             </span>
           </div>
-          <Link to="/projects">
-            <Button variant="ghost" size="sm">
-              Mes projets
-            </Button>
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link to="/calendar">
+              <Button variant="ghost" size="sm">
+                <Calendar className="h-4 w-4 mr-2" />
+                Calendrier
+              </Button>
+            </Link>
+            <Link to="/projects">
+              <Button variant="ghost" size="sm">
+                Mes projets
+              </Button>
+            </Link>
+          </div>
         </div>
       </header>
 
@@ -52,9 +60,9 @@ const Home = () => {
         </div>
 
         {/* Action Cards */}
-        <div className="grid md:grid-cols-2 gap-6 w-full max-w-4xl">
+        <div className="grid md:grid-cols-3 gap-6 w-full max-w-5xl">
           <Link to="/workspace" className="group">
-            <Card className="p-8 hover:shadow-lg transition-all duration-300 hover:scale-105 border-2 hover:border-primary/50 bg-card/50 backdrop-blur">
+            <Card className="p-8 hover:shadow-lg transition-all duration-300 hover:scale-105 border-2 hover:border-primary/50 bg-card/50 backdrop-blur h-full">
               <div className="flex flex-col items-center text-center space-y-4">
                 <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
                   <Video className="h-8 w-8 text-primary" />
@@ -71,8 +79,25 @@ const Home = () => {
             </Card>
           </Link>
 
+          <Link to="/calendar" className="group">
+            <Card className="p-8 hover:shadow-lg transition-all duration-300 hover:scale-105 border-2 hover:border-primary/50 bg-card/50 backdrop-blur h-full">
+              <div className="flex flex-col items-center text-center space-y-4">
+                <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
+                  <Calendar className="h-8 w-8 text-primary" />
+                </div>
+                <h3 className="text-2xl font-bold">Calendrier</h3>
+                <p className="text-muted-foreground">
+                  Planifiez vos vidéos, organisez vos scripts et gérez votre calendrier de contenu
+                </p>
+                <Button size="lg" variant="secondary" className="w-full mt-4">
+                  Planifier
+                </Button>
+              </div>
+            </Card>
+          </Link>
+
           <Link to="/projects" className="group">
-            <Card className="p-8 hover:shadow-lg transition-all duration-300 hover:scale-105 border-2 hover:border-primary/50 bg-card/50 backdrop-blur">
+            <Card className="p-8 hover:shadow-lg transition-all duration-300 hover:scale-105 border-2 hover:border-primary/50 bg-card/50 backdrop-blur h-full">
               <div className="flex flex-col items-center text-center space-y-4">
                 <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
                   <History className="h-8 w-8 text-primary" />

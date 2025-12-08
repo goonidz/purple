@@ -14,6 +14,56 @@ export type Database = {
   }
   public: {
     Tables: {
+      content_calendar: {
+        Row: {
+          audio_url: string | null
+          created_at: string
+          id: string
+          notes: string | null
+          project_id: string | null
+          scheduled_date: string
+          script: string | null
+          status: string
+          title: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          audio_url?: string | null
+          created_at?: string
+          id?: string
+          notes?: string | null
+          project_id?: string | null
+          scheduled_date: string
+          script?: string | null
+          status?: string
+          title: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          audio_url?: string | null
+          created_at?: string
+          id?: string
+          notes?: string | null
+          project_id?: string | null
+          scheduled_date?: string
+          script?: string | null
+          status?: string
+          title?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "content_calendar_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       generated_descriptions: {
         Row: {
           created_at: string | null
