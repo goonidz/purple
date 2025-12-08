@@ -181,12 +181,10 @@ Think: "What aspects of the script have NOT been explored yet?"`;
     if (userIdea && userIdea.trim()) {
       systemPrompt += `
 
-🎯 USER'S SPECIFIC DIRECTION:
-The user has provided this specific idea/direction for the thumbnails:
-"${userIdea.trim()}"
+💡 USER'S IDEA (optional guidance):
+The user suggests this direction: "${userIdea.trim()}"
 
-You MUST incorporate this direction into ALL 3 thumbnail prompts.
-This is the user's priority - make sure the thumbnails follow this guidance.`;
+Consider this as a hint for the SCENE or ANGLE to explore, while still following ALL the rules above (style from examples, content from script, simplicity, etc.).`;
     }
 
     // Always append the JSON format instruction
