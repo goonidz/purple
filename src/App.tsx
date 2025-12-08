@@ -10,6 +10,7 @@ import Auth from "./pages/Auth";
 import Workspace from "./pages/Workspace";
 import TestScenes from "./pages/TestScenes";
 import Profile from "./pages/Profile";
+import Calendar from "./pages/Calendar";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -25,6 +26,7 @@ const App = () => (
           <Route path="/project" element={<Index />} />
           <Route path="/projects" element={<Projects />} />
           <Route path="/workspace" element={<Workspace />} />
+          <Route path="/calendar" element={<Calendar />} />
           <Route path="/test-scenes" element={<TestScenes />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/auth" element={<Auth />} />
