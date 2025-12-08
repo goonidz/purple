@@ -35,7 +35,7 @@ const categories = [
 const defaultFakeVideos: FakeVideo[] = [
   {
     id: "1",
-    thumbnail: "https://images.unsplash.com/photo-1611162617474-5b21e879e113?w=640&h=360&fit=crop",
+    thumbnail: "https://images.unsplash.com/photo-1553729459-uj9d48e6c3c7?w=640&h=360&fit=crop",
     title: "Quelle est la vraie Fortune des Youtubeurs connus ?",
     channel: "Fuzzy",
     subscribers: "526K",
@@ -47,7 +47,7 @@ const defaultFakeVideos: FakeVideo[] = [
   },
   {
     id: "2",
-    thumbnail: "https://images.unsplash.com/photo-1535016120720-40c646be5580?w=640&h=360&fit=crop",
+    thumbnail: "https://images.unsplash.com/photo-1677442136019-21780ecad995?w=640&h=360&fit=crop",
     title: "NEW AI Video Generator Kling 2.6 DESTROYS Veo 3.1 & Sora 2?! Full Comparison",
     channel: "Dan Kieft",
     subscribers: "166K",
@@ -59,7 +59,7 @@ const defaultFakeVideos: FakeVideo[] = [
   },
   {
     id: "3",
-    thumbnail: "https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=640&h=360&fit=crop",
+    thumbnail: "https://images.unsplash.com/photo-1534430480872-3498386e7856?w=640&h=360&fit=crop",
     title: "SURVIVRE à une BOMBE NUCLÉAIRE sur PARIS ? ⚠️",
     channel: "Science Trash",
     subscribers: "906K",
@@ -71,7 +71,7 @@ const defaultFakeVideos: FakeVideo[] = [
   },
   {
     id: "4",
-    thumbnail: "https://images.unsplash.com/photo-1550745165-9bc0b252726f?w=640&h=360&fit=crop",
+    thumbnail: "https://images.unsplash.com/photo-1563013544-824ae1b704d3?w=640&h=360&fit=crop",
     title: "J'ai testé les PIRES arnaques sur Internet pendant 30 jours",
     channel: "Micode",
     subscribers: "2,1M",
@@ -83,7 +83,7 @@ const defaultFakeVideos: FakeVideo[] = [
   },
   {
     id: "5",
-    thumbnail: "https://images.unsplash.com/photo-1519389950473-47ba0277781c?w=640&h=360&fit=crop",
+    thumbnail: "https://images.unsplash.com/photo-1485827404703-89b55fcc595e?w=640&h=360&fit=crop",
     title: "Comment j'ai automatisé TOUT mon business avec l'IA",
     channel: "Marketing Mania",
     subscribers: "445K",
@@ -95,7 +95,7 @@ const defaultFakeVideos: FakeVideo[] = [
   },
   {
     id: "6",
-    thumbnail: "https://images.unsplash.com/photo-1504639725590-34d0984388bd?w=640&h=360&fit=crop",
+    thumbnail: "https://images.unsplash.com/photo-1611162616305-c69b3fa7fbe0?w=640&h=360&fit=crop",
     title: "Les 10 SECRETS que YouTube ne veut pas que vous sachiez",
     channel: "Underscore_",
     subscribers: "1,8M",
@@ -107,7 +107,7 @@ const defaultFakeVideos: FakeVideo[] = [
   },
   {
     id: "7",
-    thumbnail: "https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?w=640&h=360&fit=crop",
+    thumbnail: "https://images.unsplash.com/photo-1676299081847-c3c9b3f3d7a0?w=640&h=360&fit=crop",
     title: "J'ai créé une startup en 24h avec ChatGPT (résultat fou)",
     channel: "Yomi Denzel",
     subscribers: "892K",
@@ -119,7 +119,7 @@ const defaultFakeVideos: FakeVideo[] = [
   },
   {
     id: "8",
-    thumbnail: "https://images.unsplash.com/photo-1485827404703-89b55fcc595e?w=640&h=360&fit=crop",
+    thumbnail: "https://images.unsplash.com/photo-1635070041078-e363dbe005cb?w=640&h=360&fit=crop",
     title: "Cette technologie va TOUT changer en 2025",
     channel: "Léo Duff",
     subscribers: "1,2M",
