@@ -360,6 +360,7 @@ const Projects = () => {
           image_width: imageWidth,
           image_height: imageHeight,
           aspect_ratio: aspectRatio,
+          image_model: imageModel,
           style_reference_url: serializeStyleReferenceUrls(styleReferenceUrls),
         })
         .eq("id", projectId);
@@ -855,6 +856,24 @@ const Projects = () => {
 
                 {workflowStep === "image-config" && (
                   <div className="space-y-4 py-4">
+                    <div>
+                      <Label>Modèle de génération</Label>
+                      <Select value={imageModel} onValueChange={setImageModel}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="seedream-4.0">SeedDream 4.0</SelectItem>
+                          <SelectItem value="seedream-4.5">SeedDream 4.5</SelectItem>
+                          <SelectItem value="z-image-turbo">Z-Image Turbo (rapide)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      {imageModel === "z-image-turbo" && styleReferenceUrls.length > 0 && (
+                        <p className="text-xs text-amber-600 mt-1">
+                          Z-Image Turbo ne supporte pas les images de référence de style
+                        </p>
+                      )}
+                    </div>
                     <div>
                       <Label>Aspect Ratio</Label>
                       <Select 
