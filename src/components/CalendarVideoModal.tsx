@@ -194,16 +194,17 @@ export default function CalendarVideoModal({
   };
 
   const handleLaunchProject = () => {
-    // Navigate to workspace with the script data
-    if (script) {
-      // Store script in sessionStorage to pass to workspace
-      sessionStorage.setItem("calendar_script", script);
-      sessionStorage.setItem("calendar_audio_url", audioUrl || "");
+    // Navigate to projects with the calendar data to open creation modal
+    if (audioUrl) {
+      // Store data in sessionStorage to pass to projects page
+      sessionStorage.setItem("calendar_script", script || "");
+      sessionStorage.setItem("calendar_audio_url", audioUrl);
       sessionStorage.setItem("calendar_title", title);
       sessionStorage.setItem("calendar_entry_id", entry?.id || "");
-      window.location.href = "/workspace";
+      onClose();
+      window.location.href = "/projects?from_calendar=true";
     } else {
-      toast.error("Ajoutez un script avant de lancer la génération");
+      toast.error("Ajoutez un fichier audio avant de lancer la génération");
     }
   };
 
