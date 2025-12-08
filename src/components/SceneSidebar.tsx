@@ -2,9 +2,9 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Search, Image as ImageIcon, Trash2, RefreshCw, Upload, Loader2, Eye } from "lucide-react";
+import { Search, Image as ImageIcon, Trash2, RefreshCw, Upload, Loader2, Eye, ArrowUp } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -47,6 +47,25 @@ export const SceneSidebar = ({
 }: SceneSidebarProps) => {
   const [promptDialogOpen, setPromptDialogOpen] = useState(false);
   const [selectedPrompt, setSelectedPrompt] = useState("");
+  const [showScrollTop, setShowScrollTop] = useState(false);
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const scrollContainer = scrollAreaRef.current?.querySelector('[data-radix-scroll-area-viewport]');
+    if (!scrollContainer) return;
+
+    const handleScroll = () => {
+      setShowScrollTop(scrollContainer.scrollTop > 300);
+    };
+
+    scrollContainer.addEventListener('scroll', handleScroll);
+    return () => scrollContainer.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  const scrollToTop = () => {
+    const scrollContainer = scrollAreaRef.current?.querySelector('[data-radix-scroll-area-viewport]');
+    scrollContainer?.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -73,7 +92,7 @@ export const SceneSidebar = ({
       </div>
 
       {/* Scenes list */}
-      <ScrollArea className="flex-1">
+      <ScrollArea className="flex-1 relative" ref={scrollAreaRef}>
         <div className="p-2 space-y-2">
           {scenes.map((scene, index) => (
             <Card
@@ -217,6 +236,18 @@ export const SceneSidebar = ({
           ))}
         </div>
       </ScrollArea>
+
+      {/* Scroll to top button */}
+      {showScrollTop && (
+        <Button
+          variant="secondary"
+          size="icon"
+          className="absolute bottom-4 right-6 z-10 rounded-full shadow-lg animate-fade-in"
+          onClick={scrollToTop}
+        >
+          <ArrowUp className="h-4 w-4" />
+        </Button>
+      )}
 
       {/* Prompt Dialog */}
       <Dialog open={promptDialogOpen} onOpenChange={setPromptDialogOpen}>
