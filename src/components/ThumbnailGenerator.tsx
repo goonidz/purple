@@ -867,9 +867,15 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle }: Thumb
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="seedream-4.5">SeedDream 4.5 (Recommandé)</SelectItem>
-                <SelectItem value="seedream-4.0">SeedDream 4.0</SelectItem>
+                <SelectItem value="seedream-4">SeedDream 4.0</SelectItem>
+                <SelectItem value="z-image-turbo">Z-Image Turbo (Rapide)</SelectItem>
               </SelectContent>
             </Select>
+            {imageModel === 'z-image-turbo' && exampleUrls.length > 0 && (
+              <p className="text-xs text-amber-500">
+                ⚠️ Z-Image Turbo ne supporte pas les images de référence. Elles seront ignorées.
+              </p>
+            )}
           </div>
 
           {/* Bouton de génération */}

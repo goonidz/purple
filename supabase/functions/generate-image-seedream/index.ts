@@ -97,7 +97,16 @@ Deno.serve(async (req) => {
     
     // Determine which model to use (default to seedream-4.5)
     const modelVersion = body.model || 'seedream-4.5';
-    const modelName = modelVersion === 'seedream-4' ? 'bytedance/seedream-4' : 'bytedance/seedream-4.5';
+    
+    // Model name mapping
+    let modelName: string;
+    if (modelVersion === 'seedream-4') {
+      modelName = 'bytedance/seedream-4';
+    } else if (modelVersion === 'z-image-turbo') {
+      modelName = 'prunaai/z-image-turbo';
+    } else {
+      modelName = 'bytedance/seedream-4.5';
+    }
     
     console.log(`Generating image with ${modelVersion}, prompt:`, sanitizedPrompt)
     
@@ -105,6 +114,20 @@ Deno.serve(async (req) => {
     let height = body.height || 2048;
     const requestedWidth = width;
     const requestedHeight = height;
+    
+    // Z-Image Turbo: max dimension is 1440, no style references support
+    if (modelVersion === 'z-image-turbo') {
+      const MAX_DIM = 1440;
+      if (width > MAX_DIM || height > MAX_DIM) {
+        const scale = Math.min(MAX_DIM / width, MAX_DIM / height);
+        width = Math.floor(width * scale);
+        height = Math.floor(height * scale);
+        console.log(`Z-Image Turbo: scaled from ${requestedWidth}x${requestedHeight} to ${width}x${height} (max 1440px)`);
+      }
+      if (body.image_urls && body.image_urls.length > 0) {
+        console.log(`Z-Image Turbo: ignoring ${body.image_urls.length} style reference(s) - not supported`);
+      }
+    }
     
     // SeedDream 4.5 requires minimum 3,686,400 pixels when using image_input (style references)
     // SeedDream 4.0 does not have this constraint
@@ -121,21 +144,31 @@ Deno.serve(async (req) => {
     
     const input: any = {
       prompt: sanitizedPrompt,
-      size: "custom",
-      width,
-      height,
     }
 
-    // Add image reference if provided
-    if (body.image_urls && body.image_urls.length > 0) {
-      input.image_input = body.image_urls;
-      console.log(`${modelVersion}: using ${body.image_urls.length} image references`);
+    // Z-Image Turbo uses different input format
+    if (modelVersion === 'z-image-turbo') {
+      input.width = width;
+      input.height = height;
+      input.guidance_scale = 0; // Required for turbo models
+      input.num_inference_steps = body.num_inference_steps || 8;
+    } else {
+      // SeedDream models
+      input.size = "custom";
+      input.width = width;
+      input.height = height;
+      
+      // Add image reference if provided (only for SeedDream models)
+      if (body.image_urls && body.image_urls.length > 0) {
+        input.image_input = body.image_urls;
+        console.log(`${modelVersion}: using ${body.image_urls.length} image references`);
+      }
+      
+      // Add optional parameters if provided
+      if (body.seed) input.seed = body.seed
+      if (body.guidance_scale) input.guidance_scale = body.guidance_scale
+      if (body.num_inference_steps) input.num_inference_steps = body.num_inference_steps
     }
-
-    // Add optional parameters if provided
-    if (body.seed) input.seed = body.seed
-    if (body.guidance_scale) input.guidance_scale = body.guidance_scale
-    if (body.num_inference_steps) input.num_inference_steps = body.num_inference_steps
 
     console.log(`${modelVersion} input parameters:`, input)
 

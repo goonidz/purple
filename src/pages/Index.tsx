@@ -801,26 +801,42 @@ const Index = () => {
 
   const handleAspectRatioChange = (ratio: string) => {
     setAspectRatio(ratio);
+    // Use lower resolutions for z-image-turbo (max 1440px)
+    const isZImageTurbo = imageModel === 'z-image-turbo';
     switch (ratio) {
       case "16:9":
-        setImageWidth(1920);
-        setImageHeight(1080);
+        setImageWidth(isZImageTurbo ? 1280 : 1920);
+        setImageHeight(isZImageTurbo ? 720 : 1080);
         break;
       case "9:16":
-        setImageWidth(1080);
-        setImageHeight(1920);
+        setImageWidth(isZImageTurbo ? 720 : 1080);
+        setImageHeight(isZImageTurbo ? 1280 : 1920);
         break;
       case "1:1":
-        setImageWidth(1024);
-        setImageHeight(1024);
+        setImageWidth(isZImageTurbo ? 1024 : 1024);
+        setImageHeight(isZImageTurbo ? 1024 : 1024);
         break;
       case "4:3":
-        setImageWidth(1920);
-        setImageHeight(1440);
+        setImageWidth(isZImageTurbo ? 1280 : 1920);
+        setImageHeight(isZImageTurbo ? 960 : 1440);
         break;
       case "custom":
         // Keep current values
         break;
+    }
+  };
+
+  const handleModelChange = (model: string) => {
+    setImageModel(model);
+    // Adapt dimensions when switching to z-image-turbo
+    if (model === 'z-image-turbo') {
+      const MAX_DIM = 1440;
+      if (imageWidth > MAX_DIM || imageHeight > MAX_DIM) {
+        const scale = Math.min(MAX_DIM / imageWidth, MAX_DIM / imageHeight);
+        setImageWidth(Math.floor(imageWidth * scale));
+        setImageHeight(Math.floor(imageHeight * scale));
+        toast.info("Dimensions ajustées pour Z-Image Turbo (max 1440px)");
+      }
     }
   };
 
@@ -2743,17 +2759,21 @@ const Index = () => {
               <div className="space-y-4">
                 <div>
                   <label className="text-sm font-medium mb-2 block">Modèle de génération</label>
-                  <Select value={imageModel} onValueChange={setImageModel}>
+                  <Select value={imageModel} onValueChange={handleModelChange}>
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="seedream-4.5">SeedDream 4.5 (Recommandé)</SelectItem>
                       <SelectItem value="seedream-4">SeedDream 4.0</SelectItem>
+                      <SelectItem value="z-image-turbo">Z-Image Turbo (Rapide, max 720p)</SelectItem>
                     </SelectContent>
                   </Select>
                   <p className="text-xs text-muted-foreground mt-1">
-                    SeedDream 4.5 offre une meilleure qualité mais nécessite des images plus grandes
+                    {imageModel === 'z-image-turbo' 
+                      ? "Z-Image Turbo est très rapide mais ne supporte pas les images de référence" 
+                      : "SeedDream 4.5 offre une meilleure qualité mais nécessite des images plus grandes"
+                    }
                   </p>
                 </div>
 
