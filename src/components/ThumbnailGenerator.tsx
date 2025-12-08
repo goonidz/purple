@@ -314,14 +314,14 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle }: Thumb
     }
 
     setIsGenerating(true);
-    const generated: string[] = [];
+    setGeneratedThumbnails([]); // Reset pour nouvelle génération
+    setGeneratedPrompts([]); // Reset prompts
 
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("User not authenticated");
 
       // Étape 1: Générer 3 prompts créatifs avec Gemini
-      // Collecter tous les prompts précédemment générés
       const previousPrompts = thumbnailHistory.flatMap(item => item.prompts);
       
       toast.info("Génération de 3 prompts créatifs avec Gemini...");
@@ -339,7 +339,6 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle }: Thumb
 
       if (promptsError) throw promptsError;
       
-      // Vérifier si l'edge function a retourné une erreur
       if (promptsData?.error) {
         throw new Error(promptsData.error);
       }
@@ -353,56 +352,79 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle }: Thumb
       setGeneratedPrompts(creativePrompts);
       toast.success("Prompts créatifs générés !");
 
-      // Étape 2: Générer les 3 miniatures EN PARALLÈLE
-      toast.info("Génération des 3 miniatures en parallèle...");
+      // Étape 2: Générer les 3 miniatures EN PARALLÈLE mais afficher au fur et à mesure
+      toast.info("Génération des 3 miniatures...");
+      
+      const successfulThumbnails: { index: number; url: string; prompt: string }[] = [];
       
       const generationPromises = creativePrompts.map(async (prompt, i) => {
-        const imageUrls = characterRefUrl 
-          ? [...exampleUrls, characterRefUrl] 
-          : exampleUrls;
-        
-        const { data, error } = await supabase.functions.invoke("generate-image-seedream", {
-          body: {
-            prompt,
-            image_urls: imageUrls,
-            width: 1920,
-            height: 1080,
-            model: imageModel,
-            uploadToStorage: true,
-            storageFolder: `thumbnails/generated/${projectId}`,
-            filePrefix: `thumb_v${i + 1}`,
-          },
-        });
+        try {
+          const imageUrls = characterRefUrl 
+            ? [...exampleUrls, characterRefUrl] 
+            : exampleUrls;
+          
+          const { data, error } = await supabase.functions.invoke("generate-image-seedream", {
+            body: {
+              prompt,
+              image_urls: imageUrls,
+              width: 1920,
+              height: 1080,
+              model: imageModel,
+              uploadToStorage: true,
+              storageFolder: `thumbnails/generated/${projectId}`,
+              filePrefix: `thumb_v${i + 1}`,
+            },
+          });
 
-        if (error) throw error;
+          if (error) throw error;
 
-        if (data?.output && Array.isArray(data.output)) {
-          // L'image est déjà uploadée dans Storage par l'edge function
-          return data.output[0];
+          if (data?.output && Array.isArray(data.output)) {
+            const thumbnailUrl = data.output[0];
+            // Ajouter immédiatement à l'affichage
+            setGeneratedThumbnails(prev => {
+              const newThumbnails = [...prev];
+              newThumbnails[i] = thumbnailUrl;
+              return newThumbnails;
+            });
+            successfulThumbnails.push({ index: i, url: thumbnailUrl, prompt });
+            toast.success(`Miniature ${i + 1} générée !`);
+            return { success: true, index: i, url: thumbnailUrl, prompt };
+          }
+          throw new Error(`Failed to generate thumbnail ${i + 1}`);
+        } catch (err: any) {
+          console.error(`Error generating thumbnail ${i + 1}:`, err);
+          toast.error(`Erreur miniature ${i + 1}: ${err.message || 'Échec'}`);
+          return { success: false, index: i, url: null, prompt };
         }
-        throw new Error(`Failed to generate thumbnail ${i + 1}`);
       });
 
-      const results = await Promise.all(generationPromises);
-      generated.push(...results);
+      await Promise.allSettled(generationPromises);
 
-      setGeneratedThumbnails(generated);
-      toast.success("Toutes les miniatures sont générées !");
+      // Sauvegarder uniquement les miniatures réussies dans l'historique
+      if (successfulThumbnails.length > 0) {
+        // Trier par index pour garder l'ordre
+        successfulThumbnails.sort((a, b) => a.index - b.index);
+        
+        const { error: saveError } = await supabase
+          .from("generated_thumbnails")
+          .insert({
+            project_id: projectId,
+            user_id: user.id,
+            thumbnail_urls: successfulThumbnails.map(t => t.url),
+            prompts: successfulThumbnails.map(t => t.prompt),
+          });
 
-      // Sauvegarder dans l'historique
-      const { error: saveError } = await supabase
-        .from("generated_thumbnails")
-        .insert({
-          project_id: projectId,
-          user_id: user.id,
-          thumbnail_urls: generated,
-          prompts: creativePrompts,
-        });
-
-      if (saveError) {
-        console.error("Error saving to history:", saveError);
-      } else {
-        await loadThumbnailHistory();
+        if (saveError) {
+          console.error("Error saving to history:", saveError);
+        } else {
+          await loadThumbnailHistory();
+        }
+        
+        if (successfulThumbnails.length === 3) {
+          toast.success("Toutes les miniatures sont générées !");
+        } else {
+          toast.info(`${successfulThumbnails.length}/3 miniatures générées`);
+        }
       }
     } catch (error: any) {
       console.error("Error generating thumbnails:", error);
