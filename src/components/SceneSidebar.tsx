@@ -51,19 +51,28 @@ export const SceneSidebar = ({
   const scrollAreaRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const scrollContainer = scrollAreaRef.current?.querySelector('[data-radix-scroll-area-viewport]');
-    if (!scrollContainer) return;
+    // Small delay to ensure DOM is ready
+    const timeout = setTimeout(() => {
+      const scrollContainer = scrollAreaRef.current?.querySelector('[data-radix-scroll-area-viewport]') as HTMLElement;
+      if (!scrollContainer) {
+        console.log('ScrollArea viewport not found');
+        return;
+      }
 
-    const handleScroll = () => {
-      setShowScrollTop(scrollContainer.scrollTop > 300);
-    };
+      const handleScroll = () => {
+        const scrollTop = scrollContainer.scrollTop;
+        setShowScrollTop(scrollTop > 200);
+      };
 
-    scrollContainer.addEventListener('scroll', handleScroll);
-    return () => scrollContainer.removeEventListener('scroll', handleScroll);
-  }, []);
+      scrollContainer.addEventListener('scroll', handleScroll);
+      return () => scrollContainer.removeEventListener('scroll', handleScroll);
+    }, 100);
+
+    return () => clearTimeout(timeout);
+  }, [scenes.length]);
 
   const scrollToTop = () => {
-    const scrollContainer = scrollAreaRef.current?.querySelector('[data-radix-scroll-area-viewport]');
+    const scrollContainer = scrollAreaRef.current?.querySelector('[data-radix-scroll-area-viewport]') as HTMLElement;
     scrollContainer?.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
