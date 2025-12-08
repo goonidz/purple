@@ -104,12 +104,18 @@ CONTENT SAFETY - STRICTLY FORBIDDEN (to avoid AI image generator blocks):
 
       systemPrompt += `Your role is to create ONE detailed visual prompt for a specific scene from a video/audio.
 
+CRITICAL - CONTENT MUST MATCH THE SCENE:
+1. READ the scene text carefully and identify the SPECIFIC subject, action, or concept being discussed
+2. The image must DIRECTLY illustrate what is being said in this specific scene
+3. Different scenes = DIFFERENT subjects, settings, and visual elements
+4. DO NOT generate generic or repetitive imagery - each prompt must be UNIQUE to its scene content
+5. If the scene talks about "100 people surviving", show that. If it talks about "genetic diversity", show that concept. If it talks about "psychology", show that context.
+
 For this scene, you must:
-1. Identify key visual elements from the text
-2. Create a descriptive and detailed prompt
-3. Include style, mood, composition, lighting
-4. Optimize for high-quality image generation
-5. Think about visual coherence with the global story context
+1. Identify the MAIN TOPIC and KEY CONCEPTS from the scene text
+2. Create a visual that SPECIFICALLY represents what is being discussed
+3. Apply the visual style from the examples (lighting, mood, 3D aesthetic) but with DIFFERENT content
+4. Vary the setting, characters, objects, and composition based on the scene content
 
 Return ONLY the prompt text, no JSON, no title, just the optimized prompt in ENGLISH.`;
     }
