@@ -167,7 +167,7 @@ export const YouTubeTester = ({ projectId, videoTitle }: YouTubeTesterProps) => 
   };
 
   const VideoCard = ({ video, isUser }: { video: FakeVideo; isUser: boolean }) => (
-    <div className={`group cursor-pointer ${isUser ? 'ring-2 ring-primary ring-offset-2 ring-offset-background rounded-xl' : ''}`}>
+    <div className="group cursor-pointer">
       <div className="relative aspect-video rounded-xl overflow-hidden mb-3 bg-muted">
         <img
           src={video.thumbnail}
@@ -180,18 +180,12 @@ export const YouTubeTester = ({ projectId, videoTitle }: YouTubeTesterProps) => 
         </div>
         {/* Hover overlay */}
         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
-        {isUser && (
-          <div className="absolute top-2 left-2 bg-primary text-primary-foreground text-xs px-2 py-1 rounded-full font-medium flex items-center gap-1">
-            <Check className="w-3 h-3" />
-            Votre vidéo
-          </div>
-        )}
       </div>
       <div className="flex gap-3">
         {/* Channel avatar */}
         <div className="flex-shrink-0">
-          <div className={`w-9 h-9 rounded-full ${isUser ? 'bg-primary' : 'bg-muted'} flex items-center justify-center`}>
-            <span className="text-xs font-semibold text-primary-foreground">
+          <div className="w-9 h-9 rounded-full bg-muted flex items-center justify-center">
+            <span className="text-xs font-semibold text-foreground">
               {video.channel.charAt(0).toUpperCase()}
             </span>
           </div>
