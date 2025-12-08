@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { parseStyleReferenceUrls, serializeStyleReferenceUrls } from "@/lib/styleReferenceHelpers";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate, Link, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,6 +34,7 @@ interface Project {
 
 const Projects = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [user, setUser] = useState<User | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -61,6 +62,7 @@ const Projects = () => {
   const [hasCheckedApiKeys, setHasCheckedApiKeys] = useState(false);
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
   const [editingProjectName, setEditingProjectName] = useState("");
+  const [calendarEntryId, setCalendarEntryId] = useState<string | null>(null);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -82,6 +84,92 @@ const Projects = () => {
 
     return () => subscription.unsubscribe();
   }, [navigate]);
+
+  // Handle calendar data
+  useEffect(() => {
+    const fromCalendar = searchParams.get("from_calendar");
+    if (fromCalendar === "true") {
+      const calendarTitle = sessionStorage.getItem("calendar_title");
+      const calendarAudioUrl = sessionStorage.getItem("calendar_audio_url");
+      const calendarEntryIdStored = sessionStorage.getItem("calendar_entry_id");
+      
+      if (calendarAudioUrl && calendarTitle) {
+        setNewProjectName(calendarTitle);
+        setCalendarEntryId(calendarEntryIdStored);
+        setIsDialogOpen(true);
+        
+        // Start transcription with the audio URL from calendar
+        startCalendarTranscription(calendarAudioUrl, calendarTitle);
+        
+        // Clear sessionStorage
+        sessionStorage.removeItem("calendar_script");
+        sessionStorage.removeItem("calendar_audio_url");
+        sessionStorage.removeItem("calendar_title");
+        sessionStorage.removeItem("calendar_entry_id");
+        
+        // Clear URL params
+        navigate("/projects", { replace: true });
+      }
+    }
+  }, [searchParams, navigate]);
+
+  const startCalendarTranscription = async (audioUrl: string, projectName: string) => {
+    setIsCreating(true);
+    setWorkflowStep("transcription");
+    
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("User not authenticated");
+
+      // Create project with audio URL
+      const { data: projectData, error: projectError } = await supabase
+        .from("projects")
+        .insert([
+          {
+            user_id: user.id,
+            name: projectName.trim(),
+            audio_url: audioUrl,
+          },
+        ])
+        .select()
+        .single();
+
+      if (projectError) throw projectError;
+
+      setCurrentProjectId(projectData.id);
+      toast.success("Transcription en cours...");
+
+      // Call transcription edge function
+      const { data: transcriptionResult, error: transcriptError } = await supabase.functions.invoke(
+        "transcribe-audio",
+        {
+          body: { audioUrl },
+        }
+      );
+
+      if (transcriptError) throw transcriptError;
+
+      // Update project with transcript
+      const { error: updateError } = await supabase
+        .from("projects")
+        .update({ transcript_json: transcriptionResult })
+        .eq("id", projectData.id);
+
+      if (updateError) throw updateError;
+
+      setTranscriptData(transcriptionResult);
+      setWorkflowStep("review");
+      toast.success("Transcription terminée !");
+      await loadProjects();
+    } catch (error: any) {
+      console.error("Error with calendar transcription:", error);
+      toast.error("Erreur lors de la transcription: " + error.message);
+      setWorkflowStep("upload");
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
 
   const checkApiKeys = async (userId: string) => {
     // Ne pas afficher l'onboarding si l'utilisateur l'a déjà vu
@@ -277,6 +365,15 @@ const Projects = () => {
         .eq("id", projectId);
 
       if (error) throw error;
+
+      // Link project to calendar entry if created from calendar
+      if (calendarEntryId) {
+        await supabase
+          .from("content_calendar")
+          .update({ project_id: projectId, status: "generating" })
+          .eq("id", calendarEntryId);
+        setCalendarEntryId(null);
+      }
 
       toast.success("Configuration enregistrée !");
       setIsDialogOpen(false);
