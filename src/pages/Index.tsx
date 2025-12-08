@@ -2703,18 +2703,66 @@ const Index = () => {
               <div className="space-y-4">
                 <div>
                   <label className="text-sm font-medium mb-2 block">
-                    Prompt système personnalisé (optionnel)
+                    Prompt système personnalisé
                   </label>
                   <p className="text-xs text-muted-foreground mb-3">
-                    Personnalisez les instructions données à l'IA pour générer les prompts. Laissez vide pour utiliser le prompt par défaut.
+                    Personnalisez les instructions données à l'IA pour générer les prompts d'images.
                   </p>
                   <Textarea
-                    placeholder="Ex: Tu es un expert en création de prompts pour la génération d'images. Tu dois créer des prompts détaillés avec un style cinématique, en incluant les personnages, l'ambiance, l'éclairage..."
+                    placeholder="Entrez votre prompt système personnalisé..."
                     value={promptSystemMessage}
                     onChange={(e) => setPromptSystemMessage(e.target.value)}
-                    rows={6}
-                    className="resize-none font-mono text-sm"
+                    rows={10}
+                    className="resize-none font-mono text-xs"
                   />
+                  <div className="mt-2 flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setPromptSystemMessage(`You are an expert at generating prompts for AI image creation (like Midjourney, Stable Diffusion, DALL-E).
+
+STRICT RULES FOR GENERATING CONSISTENT PROMPTS:
+1. Follow EXACTLY the structure and style of the examples below
+2. Use the same tone, vocabulary, and format
+3. Respect the same approximate length (50-100 words)
+4. Include the same types of elements: main subject, visual style, composition, lighting, mood
+5. NEVER deviate from the format established by the examples
+6. Generate prompts in ENGLISH only
+7. NEVER use the word "dead" in the prompt (rephrase with other words instead)
+
+CONTENT SAFETY - STRICTLY FORBIDDEN:
+- No nudity, partial nudity, or suggestive/intimate content
+- No violence, gore, blood, weapons pointed at people, or graphic injuries
+- No sexual or romantic physical contact
+- No drug use or drug paraphernalia
+- No hate symbols, extremist imagery, or discriminatory content
+- No realistic depictions of real public figures or celebrities
+- Instead of violent scenes, describe tension through expressions, postures, and atmosphere
+- Instead of intimate scenes, describe emotional connection through eye contact and gestures
+
+Your role is to create ONE detailed visual prompt for a specific scene from a video/audio.
+
+For this scene, you must:
+1. Identify key visual elements from the text
+2. Create a descriptive and detailed prompt
+3. Include style, mood, composition, lighting
+4. Optimize for high-quality image generation
+5. Think about visual coherence with the global story context
+
+Return ONLY the prompt text, no JSON, no title, just the optimized prompt in ENGLISH.`)}
+                    >
+                      Charger prompt par défaut
+                    </Button>
+                    {promptSystemMessage && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setPromptSystemMessage("")}
+                      >
+                        Effacer
+                      </Button>
+                    )}
+                  </div>
                 </div>
 
                 <div>
