@@ -1630,6 +1630,7 @@ const Index = () => {
     aspect_ratio: string;
     style_reference_url: string | null;
     image_model: string;
+    prompt_system_message: string | null;
   }) => {
     setSceneDuration0to1(preset.scene_duration_0to1);
     setSceneDuration1to3(preset.scene_duration_1to3);
@@ -1640,6 +1641,7 @@ const Index = () => {
     setAspectRatio(preset.aspect_ratio);
     setImageModel(preset.image_model);
     setActivePresetName(preset.name);
+    setPromptSystemMessage(preset.prompt_system_message || "");
     const parsedUrls = parseStyleReferenceUrls(preset.style_reference_url);
     setStyleReferenceUrls(parsedUrls);
     if (parsedUrls.length > 0) {
@@ -1917,6 +1919,7 @@ const Index = () => {
                     aspectRatio,
                     styleReferenceUrls,
                     imageModel,
+                    promptSystemMessage,
                   }}
                   onLoadPreset={handleLoadPreset}
                 />

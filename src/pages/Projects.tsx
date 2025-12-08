@@ -668,6 +668,7 @@ const Projects = () => {
                           aspectRatio,
                           styleReferenceUrls,
                           imageModel,
+                          promptSystemMessage,
                         }}
                         onLoadPreset={(preset) => {
                           setSceneDuration0to1(preset.scene_duration_0to1);
@@ -679,6 +680,7 @@ const Projects = () => {
                           setAspectRatio(preset.aspect_ratio);
                           setImageModel(preset.image_model);
                           setStyleReferenceUrls(parseStyleReferenceUrls(preset.style_reference_url));
+                          setPromptSystemMessage(preset.prompt_system_message || "");
                           setActivePresetName(preset.name);
                           toast.success("Preset chargé !");
                         }}

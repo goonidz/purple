@@ -149,6 +149,7 @@ export type Database = {
           image_model: string | null
           image_width: number | null
           name: string
+          prompt_system_message: string | null
           scene_duration_0to1: number | null
           scene_duration_1to3: number | null
           scene_duration_3plus: number | null
@@ -165,6 +166,7 @@ export type Database = {
           image_model?: string | null
           image_width?: number | null
           name: string
+          prompt_system_message?: string | null
           scene_duration_0to1?: number | null
           scene_duration_1to3?: number | null
           scene_duration_3plus?: number | null
@@ -181,6 +183,7 @@ export type Database = {
           image_model?: string | null
           image_width?: number | null
           name?: string
+          prompt_system_message?: string | null
           scene_duration_0to1?: number | null
           scene_duration_1to3?: number | null
           scene_duration_3plus?: number | null

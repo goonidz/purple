@@ -36,7 +36,40 @@ interface Preset {
   aspect_ratio: string;
   style_reference_url: string | null;
   image_model: string;
+  prompt_system_message: string | null;
 }
+
+const DEFAULT_PROMPT_SYSTEM_MESSAGE = `You are an expert at generating prompts for AI image creation (like Midjourney, Stable Diffusion, DALL-E).
+
+STRICT RULES FOR GENERATING CONSISTENT PROMPTS:
+1. Follow EXACTLY the structure and style of the examples below
+2. Use the same tone, vocabulary, and format
+3. Respect the same approximate length (50-100 words)
+4. Include the same types of elements: main subject, visual style, composition, lighting, mood
+5. NEVER deviate from the format established by the examples
+6. Generate prompts in ENGLISH only
+7. NEVER use the word "dead" in the prompt (rephrase with other words instead)
+
+CONTENT SAFETY - STRICTLY FORBIDDEN:
+- No nudity, partial nudity, or suggestive/intimate content
+- No violence, gore, blood, weapons pointed at people, or graphic injuries
+- No sexual or romantic physical contact
+- No drug use or drug paraphernalia
+- No hate symbols, extremist imagery, or discriminatory content
+- No realistic depictions of real public figures or celebrities
+- Instead of violent scenes, describe tension through expressions, postures, and atmosphere
+- Instead of intimate scenes, describe emotional connection through eye contact and gestures
+
+Your role is to create ONE detailed visual prompt for a specific scene from a video/audio.
+
+For this scene, you must:
+1. Identify key visual elements from the text
+2. Create a descriptive and detailed prompt
+3. Include style, mood, composition, lighting
+4. Optimize for high-quality image generation
+5. Think about visual coherence with the global story context
+
+Return ONLY the prompt text, no JSON, no title, just the optimized prompt in ENGLISH.`;
 
 interface PresetManagerProps {
   currentConfig: {
@@ -49,6 +82,7 @@ interface PresetManagerProps {
     aspectRatio: string;
     styleReferenceUrls: string[];
     imageModel: string;
+    promptSystemMessage: string;
   };
   onLoadPreset: (preset: Preset) => void;
 }
@@ -76,6 +110,7 @@ export const PresetManager = ({ currentConfig, onLoadPreset }: PresetManagerProp
     aspectRatio: string;
     styleReferenceUrls: string[];
     imageModel: string;
+    promptSystemMessage: string;
   } | null>(null);
 
   useEffect(() => {
@@ -106,6 +141,7 @@ export const PresetManager = ({ currentConfig, onLoadPreset }: PresetManagerProp
         aspect_ratio: preset.aspect_ratio,
         style_reference_url: preset.style_reference_url,
         image_model: (preset as any).image_model || 'seedream-4.5',
+        prompt_system_message: (preset as any).prompt_system_message || null,
       }));
       
       setPresets(mappedPresets);
@@ -141,6 +177,7 @@ export const PresetManager = ({ currentConfig, onLoadPreset }: PresetManagerProp
           aspect_ratio: currentConfig.aspectRatio,
           image_model: currentConfig.imageModel,
           style_reference_url: JSON.stringify(currentConfig.styleReferenceUrls),
+          prompt_system_message: currentConfig.promptSystemMessage || DEFAULT_PROMPT_SYSTEM_MESSAGE,
         },
       ]);
 
@@ -211,6 +248,7 @@ export const PresetManager = ({ currentConfig, onLoadPreset }: PresetManagerProp
           aspect_ratio: editFormData.aspectRatio,
           image_model: editFormData.imageModel,
           style_reference_url: JSON.stringify(editFormData.styleReferenceUrls),
+          prompt_system_message: editFormData.promptSystemMessage || null,
         })
         .eq("id", selectedPresetId);
 
@@ -239,6 +277,7 @@ export const PresetManager = ({ currentConfig, onLoadPreset }: PresetManagerProp
       aspectRatio: preset.aspect_ratio,
       styleReferenceUrls: parseStyleReferenceUrls(preset.style_reference_url),
       imageModel: preset.image_model,
+      promptSystemMessage: preset.prompt_system_message || DEFAULT_PROMPT_SYSTEM_MESSAGE,
     });
     setIsEditDialogOpen(true);
   };
@@ -275,6 +314,7 @@ export const PresetManager = ({ currentConfig, onLoadPreset }: PresetManagerProp
           aspect_ratio: sourcePreset.aspect_ratio,
           image_model: sourcePreset.image_model,
           style_reference_url: sourcePreset.style_reference_url,
+          prompt_system_message: sourcePreset.prompt_system_message,
         },
       ]);
 
@@ -655,6 +695,41 @@ export const PresetManager = ({ currentConfig, onLoadPreset }: PresetManagerProp
                         </div>
                       </div>
                     )}
+                  </div>
+                </div>
+
+                {/* Prompt système */}
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <div className="h-1 w-1 rounded-full bg-primary" />
+                    <h3 className="text-base font-semibold">Prompt système</h3>
+                  </div>
+                  <div className="space-y-2">
+                    <Textarea
+                      placeholder="Entrez votre prompt système personnalisé..."
+                      value={editFormData.promptSystemMessage}
+                      onChange={(e) => setEditFormData({ ...editFormData, promptSystemMessage: e.target.value })}
+                      rows={8}
+                      className="resize-none font-mono text-xs"
+                    />
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setEditFormData({ ...editFormData, promptSystemMessage: DEFAULT_PROMPT_SYSTEM_MESSAGE })}
+                      >
+                        Charger prompt par défaut
+                      </Button>
+                      {editFormData.promptSystemMessage && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setEditFormData({ ...editFormData, promptSystemMessage: "" })}
+                        >
+                          Effacer
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 </div>
 
