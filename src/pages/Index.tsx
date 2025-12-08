@@ -595,6 +595,12 @@ const Index = () => {
         const batchPromises = batch.map(async (scene, batchIndex) => {
           const originalIndex = scenes.indexOf(scene);
           
+          // Get previous prompts to avoid repetition (last 3 prompts before this scene)
+          const previousPrompts = generatedPrompts
+            .slice(Math.max(0, originalIndex - 3), originalIndex)
+            .filter(p => p.prompt && p.prompt !== "Erreur lors de la génération")
+            .map(p => p.prompt);
+          
           try {
             const { data, error } = await supabase.functions.invoke("generate-prompts", {
               body: { 
@@ -605,7 +611,8 @@ const Index = () => {
                 totalScenes: scenes.length,
                 startTime: scene.startTime,
                 endTime: scene.endTime,
-                customSystemPrompt: promptSystemMessage || undefined
+                customSystemPrompt: promptSystemMessage || undefined,
+                previousPrompts
               },
             });
 
@@ -696,6 +703,12 @@ const Index = () => {
       const scene = scenes[sceneIndex];
       const filteredPrompts = examplePrompts.filter(p => p.trim() !== "");
 
+      // Get previous prompts to avoid repetition
+      const previousPrompts = generatedPrompts
+        .slice(Math.max(0, sceneIndex - 3), sceneIndex)
+        .filter(p => p.prompt && p.prompt !== "Erreur lors de la génération")
+        .map(p => p.prompt);
+
       const { data, error } = await supabase.functions.invoke("generate-prompts", {
         body: { 
           scene: scene.text,
@@ -705,7 +718,8 @@ const Index = () => {
           totalScenes: scenes.length,
           startTime: scene.startTime,
           endTime: scene.endTime,
-          customSystemPrompt: promptSystemMessage || undefined
+          customSystemPrompt: promptSystemMessage || undefined,
+          previousPrompts
         },
       });
 
@@ -771,6 +785,12 @@ const Index = () => {
       const scene = scenes[sceneIndex];
       const filteredPrompts = examplePrompts.filter(p => p.trim() !== "");
 
+      // Get previous prompts to avoid repetition
+      const previousPrompts = generatedPrompts
+        .slice(Math.max(0, sceneIndex - 3), sceneIndex)
+        .filter(p => p.prompt && p.prompt !== "Erreur lors de la génération")
+        .map(p => p.prompt);
+
       const { data, error } = await supabase.functions.invoke("generate-prompts", {
         body: { 
           scene: scene.text,
@@ -780,7 +800,8 @@ const Index = () => {
           totalScenes: scenes.length,
           startTime: scene.startTime,
           endTime: scene.endTime,
-          customSystemPrompt: promptSystemMessage || undefined
+          customSystemPrompt: promptSystemMessage || undefined,
+          previousPrompts
         },
       });
 
@@ -1338,6 +1359,13 @@ const Index = () => {
 
       for (let i = 0; i < sceneCount; i++) {
         const scene = scenesToTest[i];
+        
+        // Get previous prompts from already generated ones in this loop
+        const previousPrompts = prompts
+          .slice(Math.max(0, i - 3), i)
+          .filter(p => p.prompt && p.prompt !== "Erreur lors de la génération")
+          .map(p => p.prompt);
+        
         try {
           const { data, error } = await supabase.functions.invoke("generate-prompts", {
             body: { 
@@ -1348,7 +1376,8 @@ const Index = () => {
               totalScenes: scenes.length,
               startTime: scene.startTime,
               endTime: scene.endTime,
-              customSystemPrompt: promptSystemMessage || undefined
+              customSystemPrompt: promptSystemMessage || undefined,
+              previousPrompts
             },
           });
 

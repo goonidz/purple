@@ -35,7 +35,7 @@ serve(async (req) => {
       });
     }
 
-    const { scene, summary, examplePrompts, sceneIndex, totalScenes, startTime, endTime, customSystemPrompt } = await req.json();
+    const { scene, summary, examplePrompts, sceneIndex, totalScenes, startTime, endTime, customSystemPrompt, previousPrompts } = await req.json();
 
     if (!scene) {
       return new Response(
@@ -119,6 +119,15 @@ Return ONLY the prompt text, no JSON, no title, just the optimized prompt in ENG
     
     if (summary) {
       userMessage += `Contexte global : ${summary}\n\n`;
+    }
+    
+    // Add previous prompts to avoid repetition
+    if (previousPrompts && Array.isArray(previousPrompts) && previousPrompts.length > 0) {
+      userMessage += `PREVIOUS PROMPTS (avoid similar imagery, compositions, and visual elements):\n`;
+      previousPrompts.slice(-3).forEach((prompt: string, i: number) => {
+        userMessage += `- Scene ${sceneIndex - previousPrompts.length + i}: "${prompt.substring(0, 150)}..."\n`;
+      });
+      userMessage += `\nIMPORTANT: Create a VISUALLY DIFFERENT prompt - vary the composition, angle, lighting, and main visual elements to avoid repetitive imagery.\n\n`;
     }
     
     userMessage += `Scene ${sceneIndex}/${totalScenes} (${startTime.toFixed(1)}s - ${endTime.toFixed(1)}s):\n"${scene}"\n\n`;
