@@ -36,7 +36,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Upload, X, Loader2, Image as ImageIcon, RefreshCw, Settings, Download, User as UserIcon, Video, Type, Sparkles, Check, Copy, FolderOpen, Pencil, AlertCircle, FileText } from "lucide-react";
+import { Upload, X, Loader2, Image as ImageIcon, RefreshCw, Settings, Download, User as UserIcon, Video, Type, Sparkles, Check, Copy, FolderOpen, Pencil, AlertCircle, FileText, ArrowUp } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import type { User, Session } from "@supabase/supabase-js";
@@ -160,6 +160,20 @@ const Index = () => {
   const [missingImagesInfo, setMissingImagesInfo] = useState<{count: number, indices: number[]} | null>(null);
   const [isEditingProjectName, setIsEditingProjectName] = useState(false);
   const [editingProjectNameValue, setEditingProjectNameValue] = useState("");
+  const [showScrollTop, setShowScrollTop] = useState(false);
+
+  // Scroll to top button visibility
+  useEffect(() => {
+    const handleScroll = () => {
+      setShowScrollTop(window.scrollY > 400);
+    };
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  const scrollToTop = () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   // Check authentication
   useEffect(() => {
@@ -3186,6 +3200,18 @@ const Index = () => {
             )}
           </DialogContent>
         </Dialog>
+
+        {/* Scroll to top button */}
+        {showScrollTop && (
+          <Button
+            variant="secondary"
+            size="icon"
+            className="fixed bottom-6 right-6 z-50 rounded-full shadow-lg animate-fade-in h-12 w-12"
+            onClick={scrollToTop}
+          >
+            <ArrowUp className="h-5 w-5" />
+          </Button>
+        )}
       </div>
     </div>
   );
