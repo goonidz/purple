@@ -1036,15 +1036,39 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle }: Thumb
               {exampleUrls.length > 0 && (
                 <div className="grid grid-cols-3 gap-2 mt-2">
                   {exampleUrls.map((url, index) => (
-                    <img
-                      key={index}
-                      src={url}
-                      alt={`Example ${index + 1}`}
-                      className="w-full h-24 object-cover rounded border"
-                    />
+                    <div key={index} className="relative group">
+                      <img
+                        src={url}
+                        alt={`Example ${index + 1}`}
+                        className="w-full h-24 object-cover rounded border"
+                      />
+                      <Button
+                        variant="destructive"
+                        size="icon"
+                        className="absolute top-1 right-1 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                        onClick={() => removeExample(index)}
+                      >
+                        <X className="w-3 h-3" />
+                      </Button>
+                    </div>
                   ))}
                 </div>
               )}
+              <div
+                className="border-2 border-dashed rounded-lg p-4 text-center cursor-pointer transition-colors hover:border-primary hover:bg-primary/5 mt-2"
+                onClick={() => document.getElementById('edit-example-upload')?.click()}
+              >
+                <input
+                  id="edit-example-upload"
+                  type="file"
+                  multiple
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => e.target.files && handleExampleUpload(e.target.files)}
+                />
+                <Upload className="w-5 h-5 mx-auto mb-1 text-muted-foreground" />
+                <p className="text-xs text-muted-foreground">Ajouter des exemples</p>
+              </div>
             </div>
 
             <div>
