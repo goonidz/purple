@@ -115,7 +115,7 @@ Deno.serve(async (req) => {
     const requestedWidth = width;
     const requestedHeight = height;
     
-    // Z-Image Turbo: max dimension is 1440, no style references support
+    // Z-Image Turbo: max dimension is 1440, dimensions must be divisible by 16, no style references support
     if (modelVersion === 'z-image-turbo') {
       const MAX_DIM = 1440;
       if (width > MAX_DIM || height > MAX_DIM) {
@@ -124,6 +124,11 @@ Deno.serve(async (req) => {
         height = Math.floor(height * scale);
         console.log(`Z-Image Turbo: scaled from ${requestedWidth}x${requestedHeight} to ${width}x${height} (max 1440px)`);
       }
+      // Round to nearest multiple of 16 (required by z-image-turbo)
+      width = Math.round(width / 16) * 16;
+      height = Math.round(height / 16) * 16;
+      console.log(`Z-Image Turbo: dimensions rounded to multiples of 16: ${width}x${height}`);
+      
       if (body.image_urls && body.image_urls.length > 0) {
         console.log(`Z-Image Turbo: ignoring ${body.image_urls.length} style reference(s) - not supported`);
       }
