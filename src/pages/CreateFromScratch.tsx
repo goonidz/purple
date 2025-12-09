@@ -291,10 +291,10 @@ const CreateFromScratch = () => {
     setGenerationProgress(0);
     setGenerationMessage(GENERATION_MESSAGES[0]);
 
-    // Progress animation
+    // Progress animation - slower updates every 5 seconds
     const progressInterval = setInterval(() => {
       setGenerationProgress(prev => {
-        const newProgress = Math.min(prev + Math.random() * 8, 90);
+        const newProgress = Math.min(prev + Math.random() * 5, 85);
         const messageIndex = Math.min(
           Math.floor(newProgress / 12),
           GENERATION_MESSAGES.length - 1
@@ -302,7 +302,7 @@ const CreateFromScratch = () => {
         setGenerationMessage(GENERATION_MESSAGES[messageIndex]);
         return newProgress;
       });
-    }, 2000);
+    }, 5000);
 
     try {
       const { data, error } = await supabase.functions.invoke('generate-script', {
