@@ -670,19 +670,20 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle }: Thumb
           <TabsTrigger value="history">Historique ({thumbnailHistory.length})</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="generate" className="mt-4">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <TabsContent value="generate" className="mt-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
             {/* Left Column - Configuration */}
-            <div className="space-y-4">
-              {/* Presets - Compact */}
-              <Card className="p-3 bg-muted/30">
+            <div className="space-y-6">
+              {/* Presets */}
+              <Card className="p-4 bg-muted/30">
+                <Label className="text-sm font-medium mb-3 block">Presets</Label>
                 <div className="flex gap-2 items-center">
                   <Select value={selectedPresetId} onValueChange={(value) => {
                     setSelectedPresetId(value);
                     loadPreset(value);
                   }}>
-                    <SelectTrigger className="flex-1 h-9">
-                      <SelectValue placeholder="Preset..." />
+                    <SelectTrigger className="flex-1">
+                      <SelectValue placeholder="Sélectionner un preset..." />
                     </SelectTrigger>
                     <SelectContent>
                       {presets.map((preset) => (
@@ -692,34 +693,34 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle }: Thumb
                       ))}
                     </SelectContent>
                   </Select>
-                  <Button onClick={openEditDialog} disabled={!selectedPresetId} size="icon" variant="ghost" className="h-9 w-9">
+                  <Button onClick={openEditDialog} disabled={!selectedPresetId} size="icon" variant="outline">
                     <Edit className="w-4 h-4" />
                   </Button>
-                  <Button onClick={openDuplicateDialog} disabled={!selectedPresetId} size="icon" variant="ghost" className="h-9 w-9">
+                  <Button onClick={openDuplicateDialog} disabled={!selectedPresetId} size="icon" variant="outline">
                     <Copy className="w-4 h-4" />
                   </Button>
-                  <Button onClick={deletePreset} disabled={!selectedPresetId} size="icon" variant="ghost" className="h-9 w-9">
+                  <Button onClick={deletePreset} disabled={!selectedPresetId} size="icon" variant="outline">
                     <Trash2 className="w-4 h-4" />
                   </Button>
                 </div>
-                <div className="flex gap-2 mt-2">
+                <div className="flex gap-2 mt-3">
                   <Input
-                    placeholder="Nouveau preset..."
+                    placeholder="Nom du nouveau preset..."
                     value={newPresetName}
                     onChange={(e) => setNewPresetName(e.target.value)}
-                    className="flex-1 h-8 text-sm"
+                    className="flex-1"
                   />
-                  <Button onClick={saveAsPreset} disabled={isSavingPreset || !newPresetName.trim()} size="sm" variant="outline" className="h-8">
-                    {isSavingPreset ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+                  <Button onClick={saveAsPreset} disabled={isSavingPreset || !newPresetName.trim()} variant="outline">
+                    {isSavingPreset ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                   </Button>
                 </div>
               </Card>
 
               {/* Exemples de style */}
-              <div>
-                <Label className="text-sm mb-1.5 block">Exemples de style</Label>
+              <div className="space-y-3">
+                <Label className="text-sm font-medium">Exemples de style</Label>
                 <div
-                  className={`border-2 border-dashed rounded-lg p-4 text-center cursor-pointer transition-colors ${
+                  className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors ${
                     isDraggingExamples ? 'border-primary bg-primary/10' : 'border-muted-foreground/25 hover:border-muted-foreground/50'
                   }`}
                   onDragOver={handleDragOverExamples}
@@ -735,26 +736,26 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle }: Thumb
                     className="hidden"
                     onChange={(e) => e.target.files && handleExampleUpload(e.target.files)}
                   />
-                  <Upload className="w-5 h-5 mx-auto mb-1 text-muted-foreground" />
-                  <p className="text-xs text-muted-foreground">Glisser ou cliquer</p>
+                  <Upload className="w-6 h-6 mx-auto mb-2 text-muted-foreground" />
+                  <p className="text-sm text-muted-foreground">Glisser ou cliquer pour ajouter</p>
                 </div>
                 {exampleUrls.length > 0 && (
-                  <div className="flex flex-wrap gap-2 mt-2">
+                  <div className="flex flex-wrap gap-3">
                     {exampleUrls.map((url, index) => (
                       <div key={index} className="relative group">
                         <img
                           src={url}
-                          alt={`Ex ${index + 1}`}
-                          className="w-16 h-10 object-cover rounded border cursor-pointer hover:opacity-80"
+                          alt={`Exemple ${index + 1}`}
+                          className="w-20 h-12 object-cover rounded-md border cursor-pointer hover:opacity-80 transition-opacity"
                           onClick={() => setPreviewImage(url)}
                         />
                         <Button
                           variant="destructive"
                           size="icon"
-                          className="absolute -top-1 -right-1 h-4 w-4 opacity-0 group-hover:opacity-100 transition-opacity"
+                          className="absolute -top-2 -right-2 h-5 w-5 opacity-0 group-hover:opacity-100 transition-opacity"
                           onClick={(e) => { e.stopPropagation(); removeExample(index); }}
                         >
-                          <X className="w-2 h-2" />
+                          <X className="w-3 h-3" />
                         </Button>
                       </div>
                     ))}
@@ -763,15 +764,15 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle }: Thumb
               </div>
 
               {/* Personnage de référence */}
-              <div>
-                <Label className="text-sm mb-1.5 block">Personnage (optionnel)</Label>
+              <div className="space-y-3">
+                <Label className="text-sm font-medium">Personnage de référence (optionnel)</Label>
                 {characterRefUrl ? (
                   <div className="relative group inline-block">
-                    <img src={characterRefUrl} alt="Character" className="w-20 h-20 object-cover rounded-lg border" />
+                    <img src={characterRefUrl} alt="Personnage" className="w-24 h-24 object-cover rounded-lg border" />
                     <Button
                       variant="destructive"
                       size="icon"
-                      className="absolute -top-1 -right-1 h-5 w-5 opacity-0 group-hover:opacity-100 transition-opacity"
+                      className="absolute -top-2 -right-2 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
                       onClick={() => setCharacterRefUrl("")}
                     >
                       <X className="w-3 h-3" />
@@ -779,7 +780,7 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle }: Thumb
                   </div>
                 ) : (
                   <div
-                    className={`border-2 border-dashed rounded-lg p-3 text-center cursor-pointer transition-colors w-20 h-20 flex flex-col items-center justify-center ${
+                    className={`border-2 border-dashed rounded-lg p-4 text-center cursor-pointer transition-colors w-24 h-24 flex flex-col items-center justify-center ${
                       isDraggingCharacter ? 'border-primary bg-primary/10' : 'border-muted-foreground/25 hover:border-muted-foreground/50'
                     }`}
                     onDragOver={handleDragOverCharacter}
@@ -794,67 +795,69 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle }: Thumb
                       className="hidden"
                       onChange={(e) => e.target.files?.[0] && handleCharacterUpload(e.target.files[0])}
                     />
-                    <ImageIcon className="w-5 h-5 text-muted-foreground" />
+                    <ImageIcon className="w-6 h-6 text-muted-foreground" />
+                    <p className="text-xs text-muted-foreground mt-1">Ajouter</p>
                   </div>
                 )}
               </div>
 
               {/* Idée / direction */}
-              <div>
-                <Label className="text-sm mb-1.5 block">Ton idée (optionnel)</Label>
+              <div className="space-y-3">
+                <Label className="text-sm font-medium">Ton idée ou direction (optionnel)</Label>
                 <Textarea
                   value={userIdea}
                   onChange={(e) => setUserIdea(e.target.value)}
                   rows={2}
-                  className="text-sm resize-none"
-                  placeholder="Ex: Un effet avant/après, un visage choqué..."
+                  className="resize-none"
+                  placeholder="Ex: Un effet avant/après, un visage choqué avec du texte rouge..."
                 />
               </div>
 
-              {/* Modèle + Options */}
-              <div className="flex gap-3 items-start">
-                <div className="flex-1">
-                  <Label className="text-sm mb-1.5 block">Modèle</Label>
-                  <Select value={imageModel} onValueChange={setImageModel}>
-                    <SelectTrigger className="h-9">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="seedream-4.5">SeedDream 4.5</SelectItem>
-                      <SelectItem value="seedream-4">SeedDream 4.0</SelectItem>
-                      <SelectItem value="z-image-turbo">Z-Image Turbo</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="flex items-center gap-2 pt-7">
-                  <Checkbox
-                    id="avoid-previous"
-                    checked={avoidPreviousPrompts}
-                    onCheckedChange={(checked) => setAvoidPreviousPrompts(checked === true)}
-                  />
-                  <Label htmlFor="avoid-previous" className="text-xs cursor-pointer">Varier</Label>
-                </div>
+              {/* Modèle */}
+              <div className="space-y-3">
+                <Label className="text-sm font-medium">Modèle de génération</Label>
+                <Select value={imageModel} onValueChange={setImageModel}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="seedream-4.5">SeedDream 4.5 (Recommandé)</SelectItem>
+                    <SelectItem value="seedream-4">SeedDream 4.0</SelectItem>
+                    <SelectItem value="z-image-turbo">Z-Image Turbo (Rapide)</SelectItem>
+                  </SelectContent>
+                </Select>
+                {imageModel === 'z-image-turbo' && exampleUrls.length > 0 && (
+                  <p className="text-xs text-amber-500">⚠️ Z-Image Turbo ne supporte pas les images de référence.</p>
+                )}
               </div>
 
-              {imageModel === 'z-image-turbo' && exampleUrls.length > 0 && (
-                <p className="text-xs text-amber-500">⚠️ Z-Image Turbo ignore les images de référence.</p>
-              )}
+              {/* Option varier */}
+              <div className="flex items-center gap-3 py-2">
+                <Checkbox
+                  id="avoid-previous"
+                  checked={avoidPreviousPrompts}
+                  onCheckedChange={(checked) => setAvoidPreviousPrompts(checked === true)}
+                />
+                <Label htmlFor="avoid-previous" className="text-sm cursor-pointer">
+                  Éviter de répéter les idées des miniatures précédentes
+                </Label>
+              </div>
 
               {/* Prompt système - collapsible */}
-              <details className="group">
+              <details className="group border rounded-lg p-3">
                 <summary className="text-sm font-medium cursor-pointer hover:text-foreground/80 list-none flex items-center gap-2">
                   <span className="text-xs text-muted-foreground group-open:rotate-90 transition-transform">▶</span>
-                  Prompt système
+                  Prompt système personnalisé
                 </summary>
-                <div className="mt-2 space-y-2">
+                <div className="mt-3 space-y-3">
                   <Textarea
                     value={customPrompt}
                     onChange={(e) => setCustomPrompt(e.target.value)}
-                    rows={8}
+                    rows={10}
                     className="font-mono text-xs"
                   />
-                  <Button variant="ghost" size="sm" onClick={() => setCustomPrompt(DEFAULT_THUMBNAIL_PROMPT)} className="text-xs h-7">
-                    Réinitialiser
+                  <Button variant="ghost" size="sm" onClick={() => setCustomPrompt(DEFAULT_THUMBNAIL_PROMPT)}>
+                    Réinitialiser au prompt par défaut
                   </Button>
                 </div>
               </details>
