@@ -866,7 +866,7 @@ async function processImagesJob(
         // Poll for completion
         let imageUrl = null;
         const maxWaitMs = 300000; // 5 minutes per image
-        const pollIntervalMs = 2000; // Poll every 2 seconds (reduced from 3)
+        const pollIntervalMs = 1000; // Poll every 1 second for faster response
         const imageStartTime = Date.now();
         let isFirstPoll = true;
 
