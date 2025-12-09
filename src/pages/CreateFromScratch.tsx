@@ -1089,8 +1089,8 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
       return;
     }
     
-    // Navigate to projects page to continue with transcription workflow
-    navigate(`/projects?from_scratch=true&project=${projectId}`);
+    // Navigate directly to workspace with the project
+    navigate(`/workspace?project=${projectId}`);
   };
 
   const handleLoadDefaultPrompt = () => {
