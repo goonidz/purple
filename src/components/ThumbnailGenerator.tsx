@@ -26,6 +26,7 @@ interface ThumbnailPreset {
   example_urls: string[];
   character_ref_url: string | null;
   custom_prompt: string | null;
+  image_model: string | null;
 }
 
 const DEFAULT_THUMBNAIL_PROMPT = `Tu es un expert en création de miniatures YouTube accrocheuses et performantes.
@@ -189,6 +190,7 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle }: Thumb
           : [],
         character_ref_url: preset.character_ref_url,
         custom_prompt: preset.custom_prompt || null,
+        image_model: (preset as any).image_model || null,
       }));
 
       setPresets(mappedPresets);
@@ -234,6 +236,7 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle }: Thumb
     setExampleUrls(preset.example_urls || []);
     setCharacterRefUrl(preset.character_ref_url || "");
     setCustomPrompt(preset.custom_prompt || DEFAULT_THUMBNAIL_PROMPT);
+    setImageModel(preset.image_model || "seedream-4.5");
     toast.success("Preset chargé !");
   };
 
@@ -261,7 +264,8 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle }: Thumb
           example_urls: exampleUrls,
           character_ref_url: characterRefUrl || null,
           custom_prompt: customPrompt !== DEFAULT_THUMBNAIL_PROMPT ? customPrompt : null,
-        });
+          image_model: imageModel,
+        } as any);
 
       if (error) throw error;
 
@@ -495,7 +499,8 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle }: Thumb
           example_urls: exampleUrls,
           character_ref_url: characterRefUrl || null,
           custom_prompt: editCustomPrompt !== DEFAULT_THUMBNAIL_PROMPT ? editCustomPrompt : null,
-        })
+          image_model: imageModel,
+        } as any)
         .eq("id", editingPreset.id);
 
       if (error) throw error;
@@ -539,7 +544,8 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle }: Thumb
           example_urls: editingPreset.example_urls,
           character_ref_url: editingPreset.character_ref_url,
           custom_prompt: editingPreset.custom_prompt,
-        });
+          image_model: editingPreset.image_model,
+        } as any);
 
       if (error) throw error;
 

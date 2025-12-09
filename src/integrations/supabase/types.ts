@@ -333,6 +333,7 @@ export type Database = {
           custom_prompt: string | null
           example_urls: Json | null
           id: string
+          image_model: string | null
           name: string
           updated_at: string
           user_id: string
@@ -343,6 +344,7 @@ export type Database = {
           custom_prompt?: string | null
           example_urls?: Json | null
           id?: string
+          image_model?: string | null
           name: string
           updated_at?: string
           user_id: string
@@ -353,6 +355,7 @@ export type Database = {
           custom_prompt?: string | null
           example_urls?: Json | null
           id?: string
+          image_model?: string | null
           name?: string
           updated_at?: string
           user_id?: string
