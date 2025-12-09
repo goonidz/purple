@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
@@ -10,6 +10,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Upload, X, Loader2, Image as ImageIcon, Save, Download, Trash2, Edit, Copy } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { useGenerationJobs, GenerationJob } from "@/hooks/useGenerationJobs";
+import { JobProgressIndicator } from "@/components/JobProgressIndicator";
 
 interface ThumbnailGeneratorProps {
   projectId: string;
@@ -90,6 +92,47 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle }: Thumb
   const [generatedPrompts, setGeneratedPrompts] = useState<string[]>([]);
   const [imageModel, setImageModel] = useState<string>("seedream-4.5");
   const [userIdea, setUserIdea] = useState<string>("");
+
+  // Background job management for thumbnails
+  const handleJobComplete = useCallback((job: GenerationJob) => {
+    if (job.job_type === 'thumbnails') {
+      toast.success("Miniatures générées en arrière-plan !");
+      setIsGenerating(false);
+      loadThumbnailHistory();
+      
+      // Extract generated prompts from metadata if available
+      if (job.metadata?.generatedPrompts) {
+        setGeneratedPrompts(job.metadata.generatedPrompts);
+      }
+    }
+  }, []);
+
+  const handleJobFailed = useCallback((job: GenerationJob) => {
+    if (job.job_type === 'thumbnails') {
+      toast.error(`Erreur: ${job.error_message || 'Génération échouée'}`);
+      setIsGenerating(false);
+    }
+  }, []);
+
+  const { 
+    activeJobs, 
+    startJob, 
+    hasActiveJob,
+    getJobByType
+  } = useGenerationJobs({
+    projectId,
+    onJobComplete: handleJobComplete,
+    onJobFailed: handleJobFailed,
+    autoRetryImages: false // No auto-retry for thumbnails
+  });
+
+  // Sync isGenerating with active jobs
+  useEffect(() => {
+    const hasThumbnailJob = hasActiveJob('thumbnails');
+    if (hasThumbnailJob && !isGenerating) {
+      setIsGenerating(true);
+    }
+  }, [activeJobs, hasActiveJob, isGenerating]);
 
   useEffect(() => {
     loadPresets();
@@ -313,124 +356,37 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle }: Thumb
       return;
     }
 
+    if (hasActiveJob('thumbnails')) {
+      toast.error("Une génération de miniatures est déjà en cours");
+      return;
+    }
+
     setIsGenerating(true);
-    setGeneratedThumbnails([]); // Reset pour nouvelle génération
-    setGeneratedPrompts([]); // Reset prompts
+    setGeneratedThumbnails([]);
+    setGeneratedPrompts([]);
 
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("User not authenticated");
-
-      // Étape 1: Générer 3 prompts créatifs avec Gemini
+      // Collect previous prompts for variation
       const previousPrompts = thumbnailHistory.flatMap(item => item.prompts);
       
-      toast.info("Génération de 3 prompts créatifs avec Gemini...");
-      const { data: promptsData, error: promptsError } = await supabase.functions.invoke("generate-thumbnail-prompts", {
-        body: { 
-          videoScript,
-          videoTitle,
-          exampleUrls,
-          characterRefUrl,
-          previousPrompts: previousPrompts.length > 0 ? previousPrompts : undefined,
-          customPrompt: customPrompt !== DEFAULT_THUMBNAIL_PROMPT ? customPrompt : undefined,
-          userIdea: userIdea.trim() || undefined
-        }
+      toast.info("Lancement de la génération en arrière-plan...");
+      
+      // Start background job with all required metadata
+      await startJob('thumbnails', {
+        videoScript,
+        videoTitle,
+        exampleUrls,
+        characterRefUrl: characterRefUrl || undefined,
+        previousPrompts: previousPrompts.length > 0 ? previousPrompts : undefined,
+        customPrompt: customPrompt !== DEFAULT_THUMBNAIL_PROMPT ? customPrompt : undefined,
+        userIdea: userIdea.trim() || undefined,
+        imageModel
       });
-
-      if (promptsError) throw promptsError;
       
-      if (promptsData?.error) {
-        throw new Error(promptsData.error);
-      }
-      
-      if (!promptsData?.prompts || promptsData.prompts.length !== 3) {
-        throw new Error("Failed to generate prompts");
-      }
-
-      const creativePrompts = promptsData.prompts as string[];
-      console.log("Generated creative prompts:", creativePrompts);
-      setGeneratedPrompts(creativePrompts);
-      toast.success("Prompts créatifs générés !");
-
-      // Étape 2: Générer les 3 miniatures EN PARALLÈLE mais afficher au fur et à mesure
-      toast.info("Génération des 3 miniatures...");
-      
-      const successfulThumbnails: { index: number; url: string; prompt: string }[] = [];
-      
-      const generationPromises = creativePrompts.map(async (prompt, i) => {
-        try {
-          const imageUrls = characterRefUrl 
-            ? [...exampleUrls, characterRefUrl] 
-            : exampleUrls;
-          
-          const { data, error } = await supabase.functions.invoke("generate-image-seedream", {
-            body: {
-              prompt,
-              image_urls: imageUrls,
-              width: 1920,
-              height: 1080,
-              model: imageModel,
-              uploadToStorage: true,
-              storageFolder: `thumbnails/generated/${projectId}`,
-              filePrefix: `thumb_v${i + 1}`,
-            },
-          });
-
-          if (error) throw error;
-
-          if (data?.output && Array.isArray(data.output)) {
-            const thumbnailUrl = data.output[0];
-            // Ajouter immédiatement à l'affichage
-            setGeneratedThumbnails(prev => {
-              const newThumbnails = [...prev];
-              newThumbnails[i] = thumbnailUrl;
-              return newThumbnails;
-            });
-            successfulThumbnails.push({ index: i, url: thumbnailUrl, prompt });
-            toast.success(`Miniature ${i + 1} générée !`);
-            return { success: true, index: i, url: thumbnailUrl, prompt };
-          }
-          throw new Error(`Failed to generate thumbnail ${i + 1}`);
-        } catch (err: any) {
-          console.error(`Error generating thumbnail ${i + 1}:`, err);
-          toast.error(`Erreur miniature ${i + 1}: ${err.message || 'Échec'}`);
-          return { success: false, index: i, url: null, prompt };
-        }
-      });
-
-      await Promise.allSettled(generationPromises);
-
-      // Sauvegarder uniquement les miniatures réussies dans l'historique
-      if (successfulThumbnails.length > 0) {
-        // Trier par index pour garder l'ordre
-        successfulThumbnails.sort((a, b) => a.index - b.index);
-        
-        const { error: saveError } = await supabase
-          .from("generated_thumbnails")
-          .insert({
-            project_id: projectId,
-            user_id: user.id,
-            thumbnail_urls: successfulThumbnails.map(t => t.url),
-            prompts: successfulThumbnails.map(t => t.prompt),
-          });
-
-        if (saveError) {
-          console.error("Error saving to history:", saveError);
-        } else {
-          await loadThumbnailHistory();
-        }
-        
-        if (successfulThumbnails.length === 3) {
-          toast.success("Toutes les miniatures sont générées !");
-        } else {
-          toast.info(`${successfulThumbnails.length}/3 miniatures générées`);
-        }
-      }
+      toast.success("Génération démarrée ! Vous pouvez quitter cette page.");
     } catch (error: any) {
-      console.error("Error generating thumbnails:", error);
-      const errorMessage = error?.message || "Erreur lors de la génération";
-      toast.error(errorMessage);
-    } finally {
+      console.error("Error starting thumbnails job:", error);
+      toast.error(error?.message || "Erreur lors du lancement");
       setIsGenerating(false);
     }
   };
@@ -920,6 +876,11 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle }: Thumb
               "Générer 3 miniatures"
             )}
           </Button>
+
+          {/* Job progress indicator */}
+          {getJobByType('thumbnails') && (
+            <JobProgressIndicator job={getJobByType('thumbnails')!} />
+          )}
 
           {/* Résultats de génération */}
           {generatedThumbnails.length > 0 && (

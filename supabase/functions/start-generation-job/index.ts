@@ -135,6 +135,8 @@ serve(async (req) => {
       total = Math.min(scenes.length, 2); // Test first 2 scenes
     } else if (jobType === 'single_prompt' || jobType === 'single_image') {
       total = 1; // Single item
+    } else if (jobType === 'thumbnails') {
+      total = 3; // Always generate 3 thumbnails
     }
 
     // Create the job record
@@ -220,6 +222,8 @@ async function processJob(
       await processSinglePromptJob(jobId, projectId, userId, metadata, authHeader, adminClient);
     } else if (jobType === 'single_image') {
       await processSingleImageJob(jobId, projectId, userId, metadata, authHeader, adminClient);
+    } else if (jobType === 'thumbnails') {
+      await processThumbnailsJob(jobId, projectId, userId, metadata, authHeader, adminClient);
     }
 
     // Mark job as completed
@@ -1199,4 +1203,225 @@ async function processSingleImageJob(
     .from('generation_jobs')
     .update({ progress: 1 })
     .eq('id', jobId);
+}
+
+// Process thumbnails job - generates 3 thumbnail variations in background
+async function processThumbnailsJob(
+  jobId: string,
+  projectId: string,
+  userId: string,
+  metadata: Record<string, any>,
+  authHeader: string,
+  adminClient: any
+) {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+  
+  // Get required data from metadata
+  const {
+    videoScript,
+    videoTitle,
+    exampleUrls,
+    characterRefUrl,
+    previousPrompts,
+    customPrompt,
+    userIdea,
+    imageModel
+  } = metadata;
+
+  if (!videoScript || !videoTitle || !exampleUrls || exampleUrls.length === 0) {
+    throw new Error("Missing required thumbnail data in metadata");
+  }
+
+  console.log(`Starting thumbnails generation for project ${projectId}`);
+
+  // Step 1: Generate prompts with Gemini
+  const promptsResponse = await fetch(`${supabaseUrl}/functions/v1/generate-thumbnail-prompts`, {
+    method: 'POST',
+    headers: {
+      'Authorization': authHeader,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      videoScript,
+      videoTitle,
+      exampleUrls,
+      characterRefUrl,
+      previousPrompts,
+      customPrompt,
+      userIdea
+    }),
+  });
+
+  if (!promptsResponse.ok) {
+    const errorText = await promptsResponse.text();
+    throw new Error(`Failed to generate prompts: ${errorText}`);
+  }
+
+  const promptsData = await promptsResponse.json();
+  
+  if (promptsData.error) {
+    throw new Error(promptsData.error);
+  }
+  
+  if (!promptsData.prompts || promptsData.prompts.length !== 3) {
+    throw new Error("Failed to generate 3 prompts");
+  }
+
+  const creativePrompts = promptsData.prompts as string[];
+  console.log("Generated thumbnail prompts:", creativePrompts.length);
+
+  // Update metadata with generated prompts
+  await adminClient
+    .from('generation_jobs')
+    .update({ 
+      metadata: { ...metadata, generatedPrompts: creativePrompts }
+    })
+    .eq('id', jobId);
+
+  // Step 2: Generate images in parallel
+  const successfulThumbnails: { index: number; url: string; prompt: string }[] = [];
+  let completedCount = 0;
+
+  const generateThumbnail = async (prompt: string, index: number): Promise<void> => {
+    try {
+      const requestBody: any = {
+        prompt,
+        width: 1920,
+        height: 1080,
+        model: imageModel || 'seedream-4.5',
+        async: true,
+        uploadToStorage: true,
+        storageFolder: `thumbnails/generated/${projectId}`,
+        filePrefix: `thumb_v${index + 1}`,
+      };
+
+      // Add character reference if provided (not style examples)
+      if (characterRefUrl) {
+        requestBody.image_urls = [characterRefUrl];
+      }
+
+      // Start async generation
+      const startResponse = await fetch(`${supabaseUrl}/functions/v1/generate-image-seedream`, {
+        method: 'POST',
+        headers: {
+          'Authorization': authHeader,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody),
+      });
+
+      if (!startResponse.ok) {
+        throw new Error(`Failed to start thumbnail generation: ${startResponse.status}`);
+      }
+
+      const startData = await startResponse.json();
+      const predictionId = startData.predictionId;
+
+      if (!predictionId) {
+        throw new Error("No prediction ID returned");
+      }
+
+      // Poll for completion
+      let thumbnailUrl = null;
+      const maxWaitMs = 600000; // 10 minutes
+      const pollIntervalMs = 3000;
+      const startTime = Date.now();
+
+      while (Date.now() - startTime < maxWaitMs) {
+        await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
+
+        const statusResponse = await fetch(`${supabaseUrl}/functions/v1/generate-image-seedream`, {
+          method: 'POST',
+          headers: {
+            'Authorization': authHeader,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ predictionId }),
+        });
+
+        if (!statusResponse.ok) continue;
+
+        const statusData = await statusResponse.json();
+
+        if (statusData.status === 'succeeded') {
+          const output = Array.isArray(statusData.output) ? statusData.output[0] : statusData.output;
+          if (output) {
+            // Download and upload to Supabase storage
+            const imageResponse = await fetch(output);
+            if (imageResponse.ok) {
+              const blob = await imageResponse.blob();
+              const timestamp = Date.now();
+              const filename = `${projectId}/thumb_v${index + 1}_${timestamp}.jpg`;
+
+              const { error: uploadError } = await adminClient.storage
+                .from('generated-images')
+                .upload(filename, blob, {
+                  contentType: 'image/jpeg',
+                  upsert: true
+                });
+
+              if (!uploadError) {
+                const { data: { publicUrl } } = adminClient.storage
+                  .from('generated-images')
+                  .getPublicUrl(filename);
+                
+                thumbnailUrl = publicUrl;
+              }
+            }
+          }
+          break;
+        }
+
+        if (statusData.status === 'failed' || statusData.status === 'canceled') {
+          throw new Error(`Thumbnail generation ${statusData.status}`);
+        }
+      }
+
+      if (thumbnailUrl) {
+        successfulThumbnails.push({ index, url: thumbnailUrl, prompt });
+        completedCount++;
+        console.log(`Thumbnail ${index + 1} generated successfully`);
+        
+        // Update progress
+        await adminClient
+          .from('generation_jobs')
+          .update({ progress: completedCount })
+          .eq('id', jobId);
+      } else {
+        throw new Error("Thumbnail generation timed out");
+      }
+    } catch (error) {
+      console.error(`Failed to generate thumbnail ${index + 1}:`, error);
+      // Don't throw - allow other thumbnails to complete
+    }
+  };
+
+  // Generate all 3 in parallel
+  await Promise.all(creativePrompts.map((prompt, i) => generateThumbnail(prompt, i)));
+
+  // Save to generated_thumbnails table
+  if (successfulThumbnails.length > 0) {
+    successfulThumbnails.sort((a, b) => a.index - b.index);
+    
+    const { error: saveError } = await adminClient
+      .from('generated_thumbnails')
+      .insert({
+        project_id: projectId,
+        user_id: userId,
+        thumbnail_urls: successfulThumbnails.map(t => t.url),
+        prompts: successfulThumbnails.map(t => t.prompt),
+      });
+
+    if (saveError) {
+      console.error("Error saving thumbnails to history:", saveError);
+    } else {
+      console.log(`Saved ${successfulThumbnails.length} thumbnails to history`);
+    }
+  }
+
+  if (successfulThumbnails.length === 0) {
+    throw new Error("All thumbnail generations failed");
+  }
+
+  console.log(`Thumbnails job completed: ${successfulThumbnails.length}/3 generated`);
 }
