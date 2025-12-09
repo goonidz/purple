@@ -1,6 +1,11 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.38.4";
 
+// Declare EdgeRuntime for Supabase Edge Functions
+declare const EdgeRuntime: {
+  waitUntil: (promise: Promise<any>) => void;
+};
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -49,14 +54,15 @@ serve(async (req) => {
       languageBoost = 'auto',
       englishNormalization = true,
       emotion = 'neutral',
-      projectId 
+      projectId,
+      jobId // If provided, this is a job-based call
     } = await req.json();
 
     if (!script) {
       throw new Error("Script is required");
     }
 
-    console.log("Generating audio with MiniMax, script length:", script.length, "model:", model, "voice:", voice, "speed:", speed, "pitch:", pitch);
+    console.log("Generating audio with MiniMax, script length:", script.length, "model:", model, "voice:", voice, "jobId:", jobId);
 
     // Get user's MiniMax API key from Vault
     const supabaseAdmin = createClient(
@@ -71,6 +77,19 @@ serve(async (req) => {
 
     if (apiKeyError || !apiKeyData) {
       console.error("Error fetching MiniMax API key:", apiKeyError);
+      
+      // If this is a job-based call, update job status
+      if (jobId) {
+        await supabaseAdmin
+          .from('generation_jobs')
+          .update({ 
+            status: 'failed',
+            error_message: "MiniMax API key not configured. Please add it in your profile.",
+            completed_at: new Date().toISOString()
+          })
+          .eq('id', jobId);
+      }
+      
       return new Response(
         JSON.stringify({ error: "MiniMax API key not configured. Please add it in your profile." }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -80,6 +99,40 @@ serve(async (req) => {
     const voiceId = voice || "English_expressive_narrator";
     console.log("Calling MiniMax TTS with voice:", voice, "voiceId:", voiceId, "model:", model);
 
+    // If jobId is provided, process in background and return immediately
+    if (jobId) {
+      console.log(`Job mode: Starting background processing for job ${jobId}`);
+      
+      // Start background processing
+      EdgeRuntime.waitUntil(processAudioInBackground(
+        supabaseAdmin,
+        jobId,
+        projectId,
+        user.id,
+        script,
+        apiKeyData,
+        model,
+        voiceId,
+        speed,
+        volume,
+        pitch,
+        languageBoost,
+        englishNormalization,
+        emotion
+      ));
+      
+      // Return immediately
+      return new Response(
+        JSON.stringify({ 
+          status: 'processing',
+          jobId,
+          message: 'Audio generation started in background'
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Synchronous mode (legacy) - for short texts without jobId
     let audioBytes: Uint8Array;
     let audioDuration: number;
 
@@ -138,6 +191,117 @@ serve(async (req) => {
     );
   }
 });
+
+// Background processing function for job-based audio generation
+async function processAudioInBackground(
+  adminClient: any,
+  jobId: string,
+  projectId: string,
+  userId: string,
+  script: string,
+  apiKey: string,
+  model: string,
+  voiceId: string,
+  speed: number,
+  volume: number,
+  pitch: number,
+  languageBoost: string,
+  englishNormalization: boolean,
+  emotion: string
+) {
+  try {
+    console.log(`Background processing started for job ${jobId}`);
+    
+    // Update job status to processing
+    await adminClient
+      .from('generation_jobs')
+      .update({ 
+        status: 'processing',
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', jobId);
+
+    let audioBytes: Uint8Array;
+    let audioDuration: number;
+
+    // Choose between sync and async API based on text length
+    if (script.length > ASYNC_TEXT_THRESHOLD) {
+      console.log("Background: Using async API for long text (", script.length, "chars)");
+      const result = await generateAudioAsync(apiKey, script, model, voiceId, speed, volume, pitch, languageBoost, englishNormalization, emotion);
+      audioBytes = result.audioBytes;
+      audioDuration = result.duration;
+    } else {
+      console.log("Background: Using sync API for short text (", script.length, "chars)");
+      const result = await generateAudioSync(apiKey, script, model, voiceId, speed, volume, pitch, languageBoost, englishNormalization, emotion);
+      audioBytes = result.audioBytes;
+      audioDuration = result.duration;
+    }
+
+    console.log("Background: Audio generated, uploading to storage...");
+
+    // Generate unique filename
+    const timestamp = Date.now();
+    const filename = `${userId}/${projectId || 'temp'}/${timestamp}_minimax_generated.mp3`;
+
+    // Upload to Supabase Storage
+    const { error: uploadError } = await adminClient.storage
+      .from('audio-files')
+      .upload(filename, audioBytes, {
+        contentType: 'audio/mpeg',
+        upsert: true,
+      });
+
+    if (uploadError) {
+      throw new Error(`Failed to upload audio: ${uploadError.message}`);
+    }
+
+    // Get public URL
+    const { data: { publicUrl } } = adminClient.storage
+      .from('audio-files')
+      .getPublicUrl(filename);
+
+    console.log("Background: Audio uploaded to:", publicUrl);
+
+    // Update project with audio URL
+    if (projectId) {
+      await adminClient
+        .from('projects')
+        .update({ 
+          audio_url: publicUrl,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', projectId);
+    }
+
+    // Update job as completed with audio info in metadata
+    await adminClient
+      .from('generation_jobs')
+      .update({ 
+        status: 'completed',
+        progress: 1,
+        metadata: {
+          audioUrl: publicUrl,
+          duration: audioDuration
+        },
+        completed_at: new Date().toISOString()
+      })
+      .eq('id', jobId);
+
+    console.log(`Background: Job ${jobId} completed successfully`);
+
+  } catch (error: any) {
+    console.error(`Background: Job ${jobId} failed:`, error);
+    
+    await adminClient
+      .from('generation_jobs')
+      .update({ 
+        status: 'failed',
+        error_message: error.message,
+        completed_at: new Date().toISOString()
+      })
+      .eq('id', jobId);
+  }
+}
 
 // Synchronous API for shorter texts (< 4000 chars)
 async function generateAudioSync(

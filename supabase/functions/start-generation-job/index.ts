@@ -13,7 +13,7 @@ const corsHeaders = {
 
 interface JobRequest {
   projectId: string;
-  jobType: 'transcription' | 'prompts' | 'images' | 'thumbnails' | 'test_images' | 'single_prompt' | 'single_image' | 'script_generation';
+  jobType: 'transcription' | 'prompts' | 'images' | 'thumbnails' | 'test_images' | 'single_prompt' | 'single_image' | 'script_generation' | 'audio_generation';
   metadata?: Record<string, any>;
 }
 
@@ -172,6 +172,8 @@ serve(async (req) => {
       total = 3; // Always generate 3 thumbnails
     } else if (jobType === 'script_generation') {
       total = 1; // Single script generation
+    } else if (jobType === 'audio_generation') {
+      total = 1; // Single audio generation
     }
 
     // Create the job record
@@ -261,6 +263,8 @@ async function processJob(
       await processThumbnailsJob(jobId, projectId, userId, metadata, authHeader, adminClient);
     } else if (jobType === 'script_generation') {
       await processScriptGenerationJob(jobId, projectId, userId, metadata, authHeader, adminClient);
+    } else if (jobType === 'audio_generation') {
+      await processAudioGenerationJob(jobId, projectId, userId, metadata, authHeader, adminClient);
     }
 
     // Mark job as completed
@@ -1746,6 +1750,76 @@ async function processScriptGenerationJob(
   
   // Job stays in 'processing' status - the webhook will mark it complete
   console.log(`Script generation job ${jobId} waiting for webhook...`);
+  
+  // Throw a special marker to prevent the job from being marked complete by processJob
+  throw new Error("WEBHOOK_MODE_ACTIVE");
+}
+
+// Process audio generation job - uses MiniMax TTS with background processing
+async function processAudioGenerationJob(
+  jobId: string,
+  projectId: string,
+  userId: string,
+  metadata: Record<string, any>,
+  authHeader: string,
+  adminClient: any
+) {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+  
+  const {
+    script,
+    voice,
+    model,
+    speed,
+    pitch,
+    volume,
+    languageBoost,
+    englishNormalization,
+    emotion,
+    provider
+  } = metadata;
+  
+  if (!script) {
+    throw new Error("Script is required for audio generation");
+  }
+  
+  console.log(`Starting audio generation job ${jobId}, provider: ${provider || 'minimax'}`);
+  
+  // Call the generate-audio-minimax function with jobId for background processing
+  const functionName = provider === 'elevenlabs' ? 'generate-audio-tts' : 'generate-audio-minimax';
+  
+  const response = await fetch(`${supabaseUrl}/functions/v1/${functionName}`, {
+    method: 'POST',
+    headers: {
+      'Authorization': authHeader,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      script,
+      voice,
+      model,
+      speed,
+      pitch,
+      volume,
+      languageBoost,
+      englishNormalization,
+      emotion,
+      projectId,
+      jobId // Pass jobId for background processing mode
+    }),
+  });
+  
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.error || `Audio generation failed: ${response.status}`);
+  }
+  
+  const data = await response.json();
+  console.log(`Audio generation started for job ${jobId}:`, data);
+  
+  // For MiniMax with jobId, the function handles everything in background via waitUntil
+  // Job stays in 'processing' status - the background process will mark it complete
+  console.log(`Audio generation job ${jobId} processing in background...`);
   
   // Throw a special marker to prevent the job from being marked complete by processJob
   throw new Error("WEBHOOK_MODE_ACTIVE");

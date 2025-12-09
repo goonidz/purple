@@ -911,6 +911,52 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
     }
   };
 
+  // Audio job polling
+  const [audioJobId, setAudioJobId] = useState<string | null>(null);
+
+  // Poll for audio job completion
+  useEffect(() => {
+    if (!audioJobId || !isGeneratingAudio) return;
+
+    const pollInterval = setInterval(async () => {
+      try {
+        const { data: job, error } = await supabase
+          .from('generation_jobs')
+          .select('*')
+          .eq('id', audioJobId)
+          .single();
+
+        if (error) {
+          console.error("Error polling audio job:", error);
+          return;
+        }
+
+        if (job.status === 'completed') {
+          clearInterval(pollInterval);
+          setIsGeneratingAudio(false);
+
+          // Get audio URL from job metadata
+          const metadata = job.metadata as any;
+          if (metadata?.audioUrl) {
+            setAudioUrl(metadata.audioUrl);
+            setStep("audio");
+            toast.success("Audio généré avec succès !");
+          }
+          setAudioJobId(null);
+        } else if (job.status === 'failed') {
+          clearInterval(pollInterval);
+          setIsGeneratingAudio(false);
+          setAudioJobId(null);
+          toast.error(job.error_message || "Erreur lors de la génération audio");
+        }
+      } catch (err) {
+        console.error("Audio polling error:", err);
+      }
+    }, 3000);
+
+    return () => clearInterval(pollInterval);
+  }, [audioJobId, isGeneratingAudio]);
+
   const handleGenerateAudio = async () => {
     if (!generatedScript.trim()) {
       toast.error("Le script est vide");
@@ -935,41 +981,38 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
         .update({ name: projectName.trim() })
         .eq("id", projectId);
 
-      // Generate audio based on provider
-      const functionName = ttsProvider === "minimax" ? "generate-audio-minimax" : "generate-audio-tts";
-      const body = ttsProvider === "minimax" 
-        ? { 
-            script: generatedScript, 
-            voice: selectedVoice, 
-            model: minimaxModel, 
+      // Start audio generation job via backend
+      const { data, error } = await supabase.functions.invoke('start-generation-job', {
+        body: {
+          projectId,
+          jobType: 'audio_generation',
+          metadata: {
+            script: generatedScript,
+            voice: selectedVoice,
+            model: minimaxModel,
             speed: minimaxSpeed,
             pitch: minimaxPitch,
             volume: minimaxVolume,
             languageBoost: minimaxLanguageBoost,
             englishNormalization: minimaxEnglishNormalization,
             emotion: minimaxEmotion,
-            projectId 
+            provider: ttsProvider
           }
-        : { script: generatedScript, voice: selectedVoice, projectId };
-
-      const { data, error } = await supabase.functions.invoke(functionName, { body });
+        }
+      });
 
       if (error) throw error;
 
-      // Update project with audio URL
-      await supabase
-        .from("projects")
-        .update({ audio_url: data.audioUrl })
-        .eq("id", projectId);
-
-      setAudioUrl(data.audioUrl);
-      setStep("audio");
-      toast.success("Audio généré avec succès !");
+      if (data.jobId) {
+        setAudioJobId(data.jobId);
+        toast.info("Génération audio en cours... Vous pouvez quitter cette page, l'audio sera sauvegardé.");
+      } else {
+        throw new Error("Pas de job ID reçu");
+      }
     } catch (error: any) {
-      console.error("Error generating audio:", error);
-      toast.error(error.message || "Erreur lors de la génération audio");
-    } finally {
+      console.error("Error starting audio generation:", error);
       setIsGeneratingAudio(false);
+      toast.error(error.message || "Erreur lors du lancement de la génération audio");
     }
   };
 
