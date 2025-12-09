@@ -972,6 +972,7 @@ async function processSinglePromptJob(
   }
 
   const data = await response.json();
+  console.log(`Single prompt job: received prompt for scene ${sceneIndex + 1}: ${data.prompt?.substring(0, 50)}...`);
 
   // Update the prompts array
   const updatedPrompts = [...existingPrompts];
@@ -989,11 +990,20 @@ async function processSinglePromptJob(
     imageUrl: existingPrompts[sceneIndex]?.imageUrl // Preserve existing image
   };
 
+  console.log(`Single prompt job: saving prompts to project ${projectId}, scene ${sceneIndex + 1}`);
+
   // Save prompts to project
-  await adminClient
+  const { error: updateError } = await adminClient
     .from('projects')
     .update({ prompts: updatedPrompts })
     .eq('id', projectId);
+
+  if (updateError) {
+    console.error(`Single prompt job: failed to save prompts:`, updateError);
+    throw new Error(`Failed to save prompts: ${updateError.message}`);
+  }
+
+  console.log(`Single prompt job: prompts saved successfully for scene ${sceneIndex + 1}`);
 
   // Update progress
   await adminClient
