@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Loader2, Sparkles, FileText, Mic, ArrowRight, Check, RefreshCw, ChevronDown, Save, Trash2, FolderOpen, Pencil, Copy } from "lucide-react";
@@ -454,48 +455,81 @@ const CreateFromScratch = () => {
                 {/* Preset selector */}
                 <div className="space-y-2">
                   <Label>Charger un preset</Label>
-                  <div className="flex items-center gap-2">
-                    <Select value={selectedPresetId} onValueChange={handleLoadPreset} >
-                      <SelectTrigger className="flex-1">
-                        <SelectValue placeholder="Sélectionner un preset..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {presets.map((preset) => (
-                          <SelectItem key={preset.id} value={preset.id}>
-                            {preset.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    {selectedPresetId && (
-                      <>
-                        <Button 
-                          variant="ghost" 
-                          size="icon"
-                          onClick={() => handleOpenEditPreset(selectedPresetId)}
-                          title="Modifier"
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        <Button 
-                          variant="ghost" 
-                          size="icon"
-                          onClick={() => handleOpenDuplicatePreset(selectedPresetId)}
-                          title="Dupliquer"
-                        >
-                          <Copy className="h-4 w-4" />
-                        </Button>
-                        <Button 
-                          variant="ghost" 
-                          size="icon"
-                          onClick={() => handleDeletePreset(selectedPresetId)}
-                          title="Supprimer"
-                        >
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
-                      </>
-                    )}
-                  </div>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" className="w-full justify-between">
+                        {selectedPresetId 
+                          ? presets.find(p => p.id === selectedPresetId)?.name 
+                          : "Sélectionner un preset..."}
+                        <ChevronDown className="h-4 w-4 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[400px] p-0" align="start">
+                      {presets.length === 0 ? (
+                        <div className="p-4 text-center text-muted-foreground text-sm">
+                          Aucun preset sauvegardé
+                        </div>
+                      ) : (
+                        <div className="max-h-[300px] overflow-auto">
+                          {presets.map((preset) => (
+                            <div 
+                              key={preset.id}
+                              className={`flex items-center justify-between px-3 py-2 hover:bg-accent cursor-pointer group ${
+                                selectedPresetId === preset.id ? "bg-accent" : ""
+                              }`}
+                            >
+                              <span 
+                                className="flex-1 truncate"
+                                onClick={() => {
+                                  handleLoadPreset(preset.id);
+                                }}
+                              >
+                                {preset.name}
+                              </span>
+                              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <Button 
+                                  variant="ghost" 
+                                  size="icon"
+                                  className="h-7 w-7"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleOpenEditPreset(preset.id);
+                                  }}
+                                  title="Modifier"
+                                >
+                                  <Pencil className="h-3.5 w-3.5" />
+                                </Button>
+                                <Button 
+                                  variant="ghost" 
+                                  size="icon"
+                                  className="h-7 w-7"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleOpenDuplicatePreset(preset.id);
+                                  }}
+                                  title="Dupliquer"
+                                >
+                                  <Copy className="h-3.5 w-3.5" />
+                                </Button>
+                                <Button 
+                                  variant="ghost" 
+                                  size="icon"
+                                  className="h-7 w-7"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeletePreset(preset.id);
+                                  }}
+                                  title="Supprimer"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                                </Button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </PopoverContent>
+                  </Popover>
                 </div>
 
                 <div className="space-y-4">
