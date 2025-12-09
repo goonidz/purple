@@ -153,6 +153,9 @@ const Index = () => {
   const [showScrollTop, setShowScrollTop] = useState(false);
   const [showConfigurationModal, setShowConfigurationModal] = useState(false);
 
+  // Ref to store thumbnail preset ID for semi-auto mode
+  const thumbnailPresetIdRef = useRef<string | null>(null);
+
   // Use ref for currentProjectId to avoid stale closures in callbacks
   const currentProjectIdRef = useRef(currentProjectId);
   useEffect(() => {
@@ -176,8 +179,9 @@ const Index = () => {
     toast.success(messages[job.job_type] || 'Génération terminée !');
     
     // Check if semi-auto mode is enabled and chain next job
-    const metadata = job.metadata as { semiAutoMode?: boolean } | null;
+    const metadata = job.metadata as { semiAutoMode?: boolean; thumbnailPresetId?: string } | null;
     const isSemiAuto = metadata?.semiAutoMode === true;
+    const thumbnailPresetId = metadata?.thumbnailPresetId || thumbnailPresetIdRef.current;
     
     // Reset generating states
     if (job.job_type === 'prompts') {
@@ -186,7 +190,7 @@ const Index = () => {
       // Semi-auto: start images generation after prompts complete
       if (isSemiAuto && startJobRef.current) {
         toast.info("Génération des images en cours...");
-        startJobRef.current('images', { skipExisting: false, semiAutoMode: true }).then(() => {
+        startJobRef.current('images', { skipExisting: false, semiAutoMode: true, thumbnailPresetId }).then(() => {
           setIsGeneratingImages(true);
         });
       }
@@ -194,9 +198,43 @@ const Index = () => {
       setIsGeneratingImages(false);
       
       // Semi-auto: start thumbnails generation after images complete
-      if (isSemiAuto && startJobRef.current) {
-        toast.info("Génération des miniatures en cours...");
-        startJobRef.current('thumbnails', { semiAutoMode: true });
+      if (isSemiAuto && startJobRef.current && thumbnailPresetId) {
+        // Fetch thumbnail preset data
+        supabase
+          .from("thumbnail_presets")
+          .select("*")
+          .eq("id", thumbnailPresetId)
+          .single()
+          .then(async ({ data: preset, error }) => {
+            if (error || !preset) {
+              toast.error("Preset de miniatures non trouvé. Miniatures ignorées.");
+              toast.success("🎉 Génération semi-automatique terminée (sans miniatures) !");
+              return;
+            }
+            
+            // Get project data for script and title
+            const projectId = currentProjectIdRef.current;
+            const { data: project } = await supabase
+              .from("projects")
+              .select("name, prompts")
+              .eq("id", projectId)
+              .single();
+            
+            const prompts = (project?.prompts as any[]) || [];
+            const videoScript = prompts.map((p: any) => p?.text || '').join(' ');
+            
+            toast.info("Génération des miniatures en cours...");
+            startJobRef.current!('thumbnails', { 
+              semiAutoMode: true,
+              videoScript,
+              videoTitle: project?.name || '',
+              exampleUrls: preset.example_urls || [],
+              characterRefUrl: preset.character_ref_url,
+              customPrompt: preset.custom_prompt
+            });
+          });
+      } else if (isSemiAuto && !thumbnailPresetId) {
+        toast.success("🎉 Génération semi-automatique terminée (sans miniatures - aucun preset sélectionné) !");
       }
     } else if (job.job_type === 'thumbnails') {
       // Semi-auto complete!
@@ -347,11 +385,17 @@ const Index = () => {
   useEffect(() => {
     const semiAuto = searchParams.get("semi_auto");
     const projectId = searchParams.get("project");
+    const thumbnailPreset = searchParams.get("thumbnail_preset");
+    
+    // Store thumbnail preset ID for later use
+    if (thumbnailPreset) {
+      thumbnailPresetIdRef.current = thumbnailPreset;
+    }
     
     if (semiAuto === "true" && projectId && scenes.length > 0 && !hasSemiAutoStartedRef.current && !hasActiveJob()) {
       hasSemiAutoStartedRef.current = true;
       
-      // Clear the semi_auto param from URL
+      // Clear the URL params
       navigate(`/project?project=${projectId}`, { replace: true });
       
       // Start semi-automatic generation pipeline
@@ -359,7 +403,8 @@ const Index = () => {
       
       startJob('prompts', { 
         regenerate: false,
-        semiAutoMode: true
+        semiAutoMode: true,
+        thumbnailPresetId: thumbnailPresetIdRef.current
       }).then((result) => {
         if (result) {
           setIsGeneratingPrompts(true);
@@ -3101,8 +3146,13 @@ Return ONLY the prompt text, no JSON, no title, just the optimized prompt in ENG
               <ProjectConfigurationModal
                 transcriptData={transcriptData}
                 currentProjectId={currentProjectId}
-                onComplete={async (semiAutoMode: boolean) => {
+                onComplete={async (semiAutoMode: boolean, thumbnailPresetId?: string) => {
                   setShowConfigurationModal(false);
+                  
+                  // Store thumbnail preset ID
+                  if (thumbnailPresetId) {
+                    thumbnailPresetIdRef.current = thumbnailPresetId;
+                  }
                   
                   // Fetch fresh config from database and generate scenes
                   const { data, error } = await supabase

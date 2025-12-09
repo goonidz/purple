@@ -28,7 +28,7 @@ interface Preset {
 interface ProjectConfigurationModalProps {
   transcriptData: any;
   currentProjectId: string;
-  onComplete: (semiAutoMode: boolean) => void;
+  onComplete: (semiAutoMode: boolean, thumbnailPresetId?: string) => void;
   onCancel: () => void;
 }
 
@@ -59,11 +59,30 @@ export const ProjectConfigurationModal = ({
   const [presets, setPresets] = useState<Preset[]>([]);
   const [isLoadingPresets, setIsLoadingPresets] = useState(false);
   const [selectedPresetId, setSelectedPresetId] = useState<string>("");
+  
+  // Thumbnail preset for semi-auto mode
+  const [thumbnailPresets, setThumbnailPresets] = useState<any[]>([]);
+  const [selectedThumbnailPresetId, setSelectedThumbnailPresetId] = useState<string>("");
 
   // Load presets on mount
   useEffect(() => {
     loadPresets();
+    loadThumbnailPresets();
   }, []);
+
+  const loadThumbnailPresets = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("thumbnail_presets")
+        .select("*")
+        .order("name", { ascending: true });
+
+      if (error) throw error;
+      setThumbnailPresets(data || []);
+    } catch (error) {
+      console.error("Error loading thumbnail presets:", error);
+    }
+  };
 
   const loadPresets = async () => {
     setIsLoadingPresets(true);
@@ -199,7 +218,7 @@ export const ProjectConfigurationModal = ({
       if (error) throw error;
 
       toast.success("Configuration enregistrée !");
-      onComplete(semiAutoMode);
+      onComplete(semiAutoMode, selectedThumbnailPresetId || undefined);
     } catch (error: any) {
       console.error("Error saving configuration:", error);
       toast.error("Erreur lors de l'enregistrement");
@@ -547,6 +566,30 @@ export const ProjectConfigurationModal = ({
                 </div>
               )}
             </div>
+          </div>
+
+          {/* Thumbnail preset selector for semi-auto mode */}
+          <div className="space-y-2">
+            <Label>Preset de miniatures (pour le mode semi-automatique)</Label>
+            <Select value={selectedThumbnailPresetId} onValueChange={setSelectedThumbnailPresetId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Sélectionner un preset de miniatures..." />
+              </SelectTrigger>
+              <SelectContent>
+                {thumbnailPresets.length === 0 ? (
+                  <SelectItem value="none" disabled>Aucun preset disponible</SelectItem>
+                ) : (
+                  thumbnailPresets.map((preset) => (
+                    <SelectItem key={preset.id} value={preset.id}>
+                      {preset.name}
+                    </SelectItem>
+                  ))
+                )}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Requis si le mode semi-automatique est activé pour générer les miniatures
+            </p>
           </div>
 
           {/* Semi-automatic mode option */}
