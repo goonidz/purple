@@ -48,7 +48,8 @@ serve(async (req) => {
       });
     }
 
-    const { projectId, jobType, metadata = {} } = await req.json() as JobRequest;
+    const body = await req.json();
+    const { projectId, jobType, metadata = {}, jobId: existingJobId } = body as JobRequest & { jobId?: string };
 
     if (!projectId || !jobType) {
       return new Response(
@@ -59,6 +60,40 @@ serve(async (req) => {
 
     // Use service role client for admin operations
     const adminClient = createClient(supabaseUrl, supabaseServiceKey);
+
+    // If a jobId is provided, we're resuming an existing job (from webhook chaining)
+    if (existingJobId) {
+      console.log(`Resuming existing job ${existingJobId} for ${jobType}`);
+      
+      // Get the job
+      const { data: existingJob } = await adminClient
+        .from('generation_jobs')
+        .select('*')
+        .eq('id', existingJobId)
+        .single();
+      
+      if (!existingJob) {
+        return new Response(
+          JSON.stringify({ error: "Job not found" }),
+          { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      
+      // Merge metadata from request with job metadata
+      const fullMetadata = { ...existingJob.metadata, ...metadata };
+      
+      // Start the background processing
+      EdgeRuntime.waitUntil(processJob(existingJobId, projectId, jobType, existingJob.user_id, fullMetadata, authHeader));
+
+      return new Response(
+        JSON.stringify({ 
+          jobId: existingJobId, 
+          status: 'processing',
+          total: existingJob.total 
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
 
     // Check if there's already an active job of this type for this project
     // For single_prompt and single_image, allow multiple jobs but not for the same scene

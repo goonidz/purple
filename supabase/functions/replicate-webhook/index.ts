@@ -618,8 +618,27 @@ async function chainNextJobFromWebhook(
 
   console.log(`Created chained job ${nextJob.id} for ${nextJobType}`);
 
-  // Call start-generation-job to process it
-  // Note: We can't use EdgeRuntime.waitUntil here since we're in webhook context
-  // Instead, we'll update the job status and let the next call to start-generation-job handle it
-  // For now, mark it as pending - the system will pick it up
+  // Call start-generation-job to process it via HTTP
+  try {
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    
+    await fetch(`${supabaseUrl}/functions/v1/start-generation-job`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${serviceRoleKey}`
+      },
+      body: JSON.stringify({
+        jobId: nextJob.id,
+        projectId,
+        userId,
+        jobType: nextJobType,
+        ...jobMetadata
+      })
+    });
+    console.log(`Triggered processing for chained job ${nextJob.id}`);
+  } catch (fetchError) {
+    console.error(`Error triggering chained job:`, fetchError);
+  }
 }
