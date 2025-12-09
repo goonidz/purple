@@ -17,6 +17,13 @@ const Profile = () => {
   const [replicateApiKey, setReplicateApiKey] = useState("");
   const [minimaxApiKey, setMinimaxApiKey] = useState("");
   const [elevenLabsApiKey, setElevenLabsApiKey] = useState("");
+  
+  // Track original values to detect changes
+  const [originalKeys, setOriginalKeys] = useState({
+    replicate: "",
+    eleven_labs: "",
+    minimax: ""
+  });
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
@@ -46,10 +53,21 @@ const Profile = () => {
         supabase.rpc('get_user_api_key', { key_name: 'minimax' }),
       ]);
 
-      // Don't show errors if keys don't exist yet - just leave them empty
-      if (replicateResult.data) setReplicateApiKey(replicateResult.data);
-      if (elevenLabsResult.data) setElevenLabsApiKey(elevenLabsResult.data);
-      if (minimaxResult.data) setMinimaxApiKey(minimaxResult.data);
+      const replicateValue = replicateResult.data || "";
+      const elevenLabsValue = elevenLabsResult.data || "";
+      const minimaxValue = minimaxResult.data || "";
+
+      // Set current values
+      setReplicateApiKey(replicateValue);
+      setElevenLabsApiKey(elevenLabsValue);
+      setMinimaxApiKey(minimaxValue);
+      
+      // Store original values to track changes
+      setOriginalKeys({
+        replicate: replicateValue,
+        eleven_labs: elevenLabsValue,
+        minimax: minimaxValue
+      });
       
       if (replicateResult.error && !replicateResult.error.message?.includes('not found')) {
         console.error("Error loading Replicate API key:", replicateResult.error);
@@ -71,42 +89,30 @@ const Profile = () => {
   const handleSave = async () => {
     if (!user) return;
 
-    if (!replicateApiKey.trim() && !elevenLabsApiKey.trim() && !minimaxApiKey.trim()) {
-      toast.error("Veuillez remplir au moins une clé API");
+    // Only save keys that have changed
+    const changedKeys: { key_name: string; key_value: string }[] = [];
+    
+    if (replicateApiKey.trim() !== originalKeys.replicate) {
+      changedKeys.push({ key_name: 'replicate', key_value: replicateApiKey.trim() });
+    }
+    if (elevenLabsApiKey.trim() !== originalKeys.eleven_labs) {
+      changedKeys.push({ key_name: 'eleven_labs', key_value: elevenLabsApiKey.trim() });
+    }
+    if (minimaxApiKey.trim() !== originalKeys.minimax) {
+      changedKeys.push({ key_name: 'minimax', key_value: minimaxApiKey.trim() });
+    }
+
+    if (changedKeys.length === 0) {
+      toast.info("Aucune modification détectée");
       return;
     }
 
     setIsSaving(true);
     try {
-      // Store API keys securely in Vault
-      const promises = [];
-      
-      if (replicateApiKey.trim()) {
-        promises.push(
-          supabase.rpc('store_user_api_key', {
-            key_name: 'replicate',
-            key_value: replicateApiKey.trim()
-          })
-        );
-      }
-      
-      if (elevenLabsApiKey.trim()) {
-        promises.push(
-          supabase.rpc('store_user_api_key', {
-            key_name: 'eleven_labs',
-            key_value: elevenLabsApiKey.trim()
-          })
-        );
-      }
-
-      if (minimaxApiKey.trim()) {
-        promises.push(
-          supabase.rpc('store_user_api_key', {
-            key_name: 'minimax',
-            key_value: minimaxApiKey.trim()
-          })
-        );
-      }
+      // Only store changed keys
+      const promises = changedKeys
+        .filter(k => k.key_value) // Only non-empty values
+        .map(k => supabase.rpc('store_user_api_key', k));
 
       const results = await Promise.all(promises);
       
@@ -115,6 +121,13 @@ const Profile = () => {
       if (errors.length > 0) {
         throw errors[0].error;
       }
+
+      // Update original keys to reflect saved state
+      setOriginalKeys({
+        replicate: replicateApiKey.trim(),
+        eleven_labs: elevenLabsApiKey.trim(),
+        minimax: minimaxApiKey.trim()
+      });
 
       toast.success("Clés API sauvegardées avec succès !");
     } catch (error: any) {
