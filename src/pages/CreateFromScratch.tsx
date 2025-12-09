@@ -12,7 +12,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Progress } from "@/components/ui/progress";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Loader2, Sparkles, FileText, Mic, ArrowRight, Check, RefreshCw, ChevronDown, Save, Trash2, FolderOpen, Pencil, Copy, User as UserIcon, Upload, X } from "lucide-react";
+import { Loader2, Sparkles, FileText, Mic, ArrowRight, Check, RefreshCw, ChevronDown, Save, Trash2, FolderOpen, Pencil, Copy, User as UserIcon, Upload, X, ClipboardCopy, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 
 type WorkflowStep = "topic" | "axes" | "script" | "audio" | "complete";
@@ -1422,18 +1422,40 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                       {wordCount} mots • ~{estimatedDuration}s de lecture
                     </p>
                   </div>
-                  <Button 
-                    variant="outline" 
-                    onClick={handleRegenerateScript}
-                    disabled={isGeneratingScript}
-                  >
-                    {isGeneratingScript ? (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : (
-                      <RefreshCw className="mr-2 h-4 w-4" />
-                    )}
-                    Régénérer
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button 
+                      variant="outline" 
+                      size="icon"
+                      onClick={() => {
+                        navigator.clipboard.writeText(generatedScript);
+                        toast.success("Script copié !");
+                      }}
+                      disabled={!generatedScript.trim()}
+                      title="Copier le script"
+                    >
+                      <ClipboardCopy className="h-4 w-4" />
+                    </Button>
+                    <Button 
+                      variant="outline" 
+                      size="icon"
+                      onClick={() => window.open("https://www.minimax.io/audio/text-to-speech", "_blank")}
+                      title="Ouvrir MiniMax TTS"
+                    >
+                      <ExternalLink className="h-4 w-4" />
+                    </Button>
+                    <Button 
+                      variant="outline" 
+                      onClick={handleRegenerateScript}
+                      disabled={isGeneratingScript}
+                    >
+                      {isGeneratingScript ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <RefreshCw className="mr-2 h-4 w-4" />
+                      )}
+                      Régénérer
+                    </Button>
+                  </div>
                 </div>
 
                 <Textarea
