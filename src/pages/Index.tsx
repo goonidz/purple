@@ -1502,6 +1502,16 @@ const Index = () => {
               </TabsList>
             </div>
 
+            {/* Banner fixe pour les jobs actifs - toujours visible */}
+            {activeJobs.length > 0 && (
+              <div className="sticky top-0 z-50 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 py-2 -mx-6 px-6 border-b">
+                <ActiveJobsBanner 
+                  jobs={activeJobs} 
+                  onCancel={cancelJob}
+                />
+              </div>
+            )}
+
             <TabsContent value="video" className="space-y-6 m-0">
                 {transcriptData && (
                   <Card className="p-4 bg-muted/30 border-primary/20">

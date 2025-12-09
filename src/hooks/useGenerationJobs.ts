@@ -313,9 +313,18 @@ export function useGenerationJobs({ projectId, onJobComplete, onJobFailed, autoR
         completed_at: null
       };
       
+      console.log('Adding new job to activeJobs:', newJob.id, newJob.job_type);
+      
+      // Force immediate state update with functional update
       setActiveJobs(prev => {
-        if (prev.find(j => j.id === data.jobId)) return prev;
-        return [...prev, newJob];
+        const exists = prev.find(j => j.id === data.jobId);
+        if (exists) {
+          console.log('Job already exists in activeJobs');
+          return prev;
+        }
+        const updated = [...prev, newJob];
+        console.log('Updated activeJobs count:', updated.length);
+        return updated;
       });
       
       return { jobId: data.jobId, total: data.total };
