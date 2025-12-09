@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
@@ -29,6 +29,15 @@ interface UseGenerationJobsOptions {
 export function useGenerationJobs({ projectId, onJobComplete, onJobFailed }: UseGenerationJobsOptions) {
   const [activeJobs, setActiveJobs] = useState<GenerationJob[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+
+  // Use refs to avoid stale closures in realtime callback
+  const onJobCompleteRef = useRef(onJobComplete);
+  const onJobFailedRef = useRef(onJobFailed);
+  
+  useEffect(() => {
+    onJobCompleteRef.current = onJobComplete;
+    onJobFailedRef.current = onJobFailed;
+  }, [onJobComplete, onJobFailed]);
 
   // Subscribe to realtime updates for jobs
   useEffect(() => {
@@ -62,14 +71,13 @@ export function useGenerationJobs({ projectId, onJobComplete, onJobFailed }: Use
             const updatedJob = payload.new as GenerationJob;
             
             setActiveJobs(prev => {
-              const existing = prev.find(j => j.id === updatedJob.id);
-              
               // If job completed or failed, trigger callbacks and remove from active
               if (updatedJob.status === 'completed') {
-                onJobComplete?.(updatedJob);
+                // Use ref to get latest callback
+                onJobCompleteRef.current?.(updatedJob);
                 return prev.filter(j => j.id !== updatedJob.id);
               } else if (updatedJob.status === 'failed') {
-                onJobFailed?.(updatedJob);
+                onJobFailedRef.current?.(updatedJob);
                 return prev.filter(j => j.id !== updatedJob.id);
               } else if (updatedJob.status === 'cancelled') {
                 return prev.filter(j => j.id !== updatedJob.id);
@@ -88,7 +96,7 @@ export function useGenerationJobs({ projectId, onJobComplete, onJobFailed }: Use
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [projectId, onJobComplete, onJobFailed]);
+  }, [projectId]);
 
   const fetchActiveJobs = useCallback(async () => {
     if (!projectId) return;

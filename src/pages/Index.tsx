@@ -166,6 +166,12 @@ const Index = () => {
   const [editingProjectNameValue, setEditingProjectNameValue] = useState("");
   const [showScrollTop, setShowScrollTop] = useState(false);
 
+  // Use ref for currentProjectId to avoid stale closures in callbacks
+  const currentProjectIdRef = useRef(currentProjectId);
+  useEffect(() => {
+    currentProjectIdRef.current = currentProjectId;
+  }, [currentProjectId]);
+
   // Background job management
   const handleJobComplete = useCallback((job: GenerationJob) => {
     const messages: Record<string, string> = {
@@ -182,11 +188,42 @@ const Index = () => {
     } else if (job.job_type === 'images') {
       setIsGeneratingImages(false);
     }
-    // Reload project data to get updated data
-    if (currentProjectId) {
-      loadProjectData(currentProjectId);
+    
+    // Reload project data to get updated data - use ref to get current value
+    const projectId = currentProjectIdRef.current;
+    if (projectId) {
+      // Fetch fresh data from database
+      supabase
+        .from("projects")
+        .select("*")
+        .eq("id", projectId)
+        .single()
+        .then(({ data, error }) => {
+          if (error || !data) {
+            console.error("Error reloading project data:", error);
+            return;
+          }
+          
+          // Update transcript data
+          if (data.transcript_json) {
+            setTranscriptData(data.transcript_json as unknown as TranscriptData);
+          }
+          
+          // Update scenes
+          const existingScenes = (data.scenes as unknown as Scene[]) || [];
+          setScenes(existingScenes);
+          
+          // Update prompts
+          const validPrompts = ((data.prompts as unknown as GeneratedPrompt[]) || []).filter(p => p !== null);
+          setGeneratedPrompts(validPrompts);
+          
+          // Update audio URL
+          if (data.audio_url) {
+            setAudioUrl(data.audio_url);
+          }
+        });
     }
-  }, [currentProjectId]);
+  }, []);
 
   const handleJobFailed = useCallback((job: GenerationJob) => {
     toast.error(`Erreur: ${job.error_message || 'Génération échouée'}`);
@@ -303,31 +340,9 @@ const Index = () => {
       setSceneDuration1to3(data.scene_duration_1to3 || 6);
       setSceneDuration3plus(data.scene_duration_3plus || 8);
       
-      // Load existing scenes or generate them if they don't exist
+      // Load existing scenes - don't auto-generate, let user configure first
       const existingScenes = (data.scenes as unknown as Scene[]) || [];
-      if (existingScenes.length > 0) {
-        setScenes(existingScenes);
-      } else if (data.transcript_json) {
-        // Auto-generate scenes from transcript if they don't exist
-        const transcriptData = data.transcript_json as unknown as TranscriptData;
-        const generatedScenes = parseTranscriptToScenes(
-          transcriptData,
-          data.scene_duration_0to1 || 4,
-          data.scene_duration_1to3 || 6,
-          data.scene_duration_3plus || 8,
-          60,
-          180
-        );
-        setScenes(generatedScenes);
-        
-        // Save generated scenes
-        await supabase
-          .from("projects")
-          .update({ scenes: generatedScenes as any })
-          .eq("id", projectId);
-          
-        toast.success(`${generatedScenes.length} scènes générées automatiquement !`);
-      }
+      setScenes(existingScenes);
       
       // Filter out any null values from prompts array
       const validPrompts = ((data.prompts as unknown as GeneratedPrompt[]) || []).filter(p => p !== null && p !== undefined);
