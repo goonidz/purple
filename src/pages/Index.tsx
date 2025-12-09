@@ -474,6 +474,18 @@ const Index = () => {
 
       if (error) throw error;
 
+      // Check if this is a "from scratch" project that needs to continue the workflow
+      // It has a summary (script) but no audio_url and no transcript_json
+      const hasScript = data.summary && data.summary.length > 100;
+      const hasAudio = !!data.audio_url;
+      const hasTranscript = data.transcript_json && Object.keys(data.transcript_json).length > 0;
+      
+      if (hasScript && !hasAudio && !hasTranscript) {
+        // This is an incomplete "from scratch" project - redirect to continue
+        navigate(`/create-from-scratch?continue=${projectId}`);
+        return;
+      }
+
       setProjectName(data.name || "");
       
       // Load transcript data
