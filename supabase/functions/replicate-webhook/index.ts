@@ -359,6 +359,21 @@ async function chainNextJobFromWebhook(
 
   console.log(`Webhook: Chaining from ${completedJobType} to ${nextJobType}`);
 
+  // Check if a job of this type already exists and is pending/processing
+  const { data: existingJob } = await adminClient
+    .from('generation_jobs')
+    .select('id, status')
+    .eq('project_id', projectId)
+    .eq('job_type', nextJobType)
+    .in('status', ['pending', 'processing'])
+    .limit(1)
+    .single();
+
+  if (existingJob) {
+    console.log(`Job ${nextJobType} already exists (${existingJob.id}), skipping duplicate creation`);
+    return;
+  }
+
   // Get project data
   const { data: project } = await adminClient
     .from('projects')
