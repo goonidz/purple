@@ -30,14 +30,20 @@ export function useGenerationJobs({ projectId, onJobComplete, onJobFailed }: Use
   const [activeJobs, setActiveJobs] = useState<GenerationJob[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
-  // Use refs to avoid stale closures in realtime callback
+  // Use refs to avoid stale closures
   const onJobCompleteRef = useRef(onJobComplete);
   const onJobFailedRef = useRef(onJobFailed);
+  const activeJobsRef = useRef(activeJobs);
   
   useEffect(() => {
     onJobCompleteRef.current = onJobComplete;
     onJobFailedRef.current = onJobFailed;
   }, [onJobComplete, onJobFailed]);
+
+  // Keep activeJobsRef in sync
+  useEffect(() => {
+    activeJobsRef.current = activeJobs;
+  }, [activeJobs]);
 
   // Subscribe to realtime updates for jobs
   useEffect(() => {
@@ -102,24 +108,44 @@ export function useGenerationJobs({ projectId, onJobComplete, onJobFailed }: Use
   useEffect(() => {
     if (!projectId || activeJobs.length === 0) return;
 
-    console.log('Starting polling fallback for', activeJobs.length, 'active jobs');
+    console.log('Starting polling fallback for', activeJobs.length, 'active jobs:', activeJobs.map(j => j.id));
 
     const pollInterval = setInterval(async () => {
+      // Use ref to get current jobs to avoid stale closure
+      const currentJobs = activeJobsRef.current;
+      if (currentJobs.length === 0) return;
+
       try {
-        const jobIds = activeJobs.map(j => j.id);
+        const jobIds = currentJobs.map(j => j.id);
+        console.log('Polling for jobs:', jobIds);
+        
         const { data, error } = await supabase
           .from('generation_jobs')
           .select('*')
-          .eq('project_id', projectId)
           .in('id', jobIds);
 
-        if (error || !data) return;
+        if (error) {
+          console.error('Polling error:', error);
+          return;
+        }
+        
+        if (!data || data.length === 0) {
+          console.log('No jobs found in polling response');
+          return;
+        }
+
+        console.log('Polling response:', data.map(j => ({ id: j.id, status: j.status })));
 
         data.forEach(job => {
           const typedJob = job as unknown as GenerationJob;
-          const existingJob = activeJobs.find(j => j.id === typedJob.id);
+          const existingJob = currentJobs.find(j => j.id === typedJob.id);
           
-          if (!existingJob) return;
+          if (!existingJob) {
+            console.log('Job not found in current jobs:', typedJob.id);
+            return;
+          }
+          
+          console.log(`Job ${typedJob.id}: existing status=${existingJob.status}, new status=${typedJob.status}`);
           
           // Check if status changed to completed or failed
           if (typedJob.status === 'completed' && existingJob.status !== 'completed') {
@@ -134,8 +160,10 @@ export function useGenerationJobs({ projectId, onJobComplete, onJobFailed }: Use
             console.log('Polling detected job cancelled:', typedJob.id);
             setActiveJobs(prev => prev.filter(j => j.id !== typedJob.id));
           } else if (typedJob.status === 'processing' || typedJob.status === 'pending') {
-            // Update progress
-            setActiveJobs(prev => prev.map(j => j.id === typedJob.id ? typedJob : j));
+            // Update progress without triggering re-render if nothing changed
+            if (typedJob.progress !== existingJob.progress) {
+              setActiveJobs(prev => prev.map(j => j.id === typedJob.id ? typedJob : j));
+            }
           }
         });
       } catch (error) {
@@ -200,6 +228,27 @@ export function useGenerationJobs({ projectId, onJobComplete, onJobFailed }: Use
       }
 
       toast.success(getJobStartMessage(jobType));
+      
+      // Immediately add the job to activeJobs so polling can start
+      const newJob: GenerationJob = {
+        id: data.jobId,
+        project_id: targetProjectId,
+        user_id: '',
+        job_type: jobType,
+        status: 'pending',
+        progress: 0,
+        total: data.total,
+        error_message: null,
+        metadata: metadata,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        completed_at: null
+      };
+      
+      setActiveJobs(prev => {
+        if (prev.find(j => j.id === data.jobId)) return prev;
+        return [...prev, newJob];
+      });
       
       return { jobId: data.jobId, total: data.total };
     } catch (error: any) {
