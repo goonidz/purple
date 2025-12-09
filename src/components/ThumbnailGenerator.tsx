@@ -94,18 +94,39 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle }: Thumb
   const [userIdea, setUserIdea] = useState<string>("");
 
   // Background job management for thumbnails
-  const handleJobComplete = useCallback((job: GenerationJob) => {
+  const handleJobComplete = useCallback(async (job: GenerationJob) => {
     if (job.job_type === 'thumbnails') {
       toast.success("Miniatures générées en arrière-plan !");
       setIsGenerating(false);
-      loadThumbnailHistory();
       
-      // Extract generated prompts from metadata if available
-      if (job.metadata?.generatedPrompts) {
-        setGeneratedPrompts(job.metadata.generatedPrompts);
+      // Load the latest thumbnails from history and display them
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data: latestThumbnails } = await supabase
+          .from("generated_thumbnails")
+          .select("*")
+          .eq("project_id", projectId)
+          .order("created_at", { ascending: false })
+          .limit(1);
+        
+        if (latestThumbnails && latestThumbnails.length > 0) {
+          const latest = latestThumbnails[0];
+          // Display the generated thumbnails in the current generation area
+          const urls = Array.isArray(latest.thumbnail_urls)
+            ? latest.thumbnail_urls.filter((url): url is string => typeof url === 'string')
+            : [];
+          const prompts = Array.isArray(latest.prompts)
+            ? latest.prompts.filter((p): p is string => typeof p === 'string')
+            : [];
+          
+          setGeneratedThumbnails(urls);
+          setGeneratedPrompts(prompts);
+        }
       }
+      
+      loadThumbnailHistory();
     }
-  }, []);
+  }, [projectId]);
 
   const handleJobFailed = useCallback((job: GenerationJob) => {
     if (job.job_type === 'thumbnails') {
