@@ -68,6 +68,8 @@ const Projects = () => {
   const [editingProjectName, setEditingProjectName] = useState("");
   const [calendarEntryId, setCalendarEntryId] = useState<string | null>(null);
   const [semiAutoMode, setSemiAutoMode] = useState(false);
+  const [thumbnailPresets, setThumbnailPresets] = useState<any[]>([]);
+  const [selectedThumbnailPresetId, setSelectedThumbnailPresetId] = useState<string>("");
 
   // Job management for background transcription
   const handleTranscriptionComplete = useCallback(async (job: GenerationJob) => {
@@ -114,6 +116,7 @@ const Projects = () => {
       } else {
         loadProjects();
         checkApiKeys(session.user.id);
+        loadThumbnailPresets();
       }
     });
 
@@ -126,6 +129,20 @@ const Projects = () => {
 
     return () => subscription.unsubscribe();
   }, [navigate]);
+
+  const loadThumbnailPresets = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("thumbnail_presets")
+        .select("*")
+        .order("name", { ascending: true });
+
+      if (error) throw error;
+      setThumbnailPresets(data || []);
+    } catch (error) {
+      console.error("Error loading thumbnail presets:", error);
+    }
+  };
 
   // Handle calendar data
   useEffect(() => {
@@ -356,6 +373,7 @@ const Projects = () => {
     
     const projectId = currentProjectId; // Sauvegarder l'ID avant de réinitialiser
     const shouldSemiAuto = semiAutoMode; // Sauvegarder le mode avant de réinitialiser
+    const thumbnailPresetId = selectedThumbnailPresetId; // Sauvegarder le preset de miniatures
     const transcript = transcriptData; // Sauvegarder les données de transcription
     
     setIsCreating(true);
@@ -407,9 +425,14 @@ const Projects = () => {
       setTranscriptData(null);
       setCurrentProjectId(null);
       setSemiAutoMode(false);
+      setSelectedThumbnailPresetId("");
       
       // Naviguer vers le projet APRÈS avoir réinitialisé l'état
-      navigate(`/project?project=${projectId}${shouldSemiAuto ? '&semi_auto=true' : ''}`);
+      const params = new URLSearchParams();
+      params.set('project', projectId);
+      if (shouldSemiAuto) params.set('semi_auto', 'true');
+      if (thumbnailPresetId) params.set('thumbnail_preset', thumbnailPresetId);
+      navigate(`/project?${params.toString()}`);
     } catch (error: any) {
       console.error("Error saving configuration:", error);
       toast.error("Erreur lors de l'enregistrement");
@@ -1050,6 +1073,30 @@ const Projects = () => {
                           </div>
                         )}
                       </div>
+                    </div>
+
+                    {/* Thumbnail preset selector for semi-auto mode */}
+                    <div className="space-y-2">
+                      <Label>Preset de miniatures (pour le mode semi-automatique)</Label>
+                      <Select value={selectedThumbnailPresetId} onValueChange={setSelectedThumbnailPresetId}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Sélectionner un preset de miniatures..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {thumbnailPresets.length === 0 ? (
+                            <SelectItem value="none" disabled>Aucun preset disponible</SelectItem>
+                          ) : (
+                            thumbnailPresets.map((preset) => (
+                              <SelectItem key={preset.id} value={preset.id}>
+                                {preset.name}
+                              </SelectItem>
+                            ))
+                          )}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground">
+                        Requis si le mode semi-automatique est activé pour générer les miniatures
+                      </p>
                     </div>
 
                     {/* Semi-automatic mode option */}

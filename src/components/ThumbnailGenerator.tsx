@@ -93,7 +93,7 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle }: Thumb
   const [generatedPrompts, setGeneratedPrompts] = useState<string[]>([]);
   const [imageModel, setImageModel] = useState<string>("seedream-4.5");
   const [userIdea, setUserIdea] = useState<string>("");
-  const [avoidPreviousPrompts, setAvoidPreviousPrompts] = useState<boolean>(true);
+  const [avoidPreviousPrompts, setAvoidPreviousPrompts] = useState<boolean>(false);
 
   // Background job management for thumbnails
   const handleJobComplete = useCallback(async (job: GenerationJob) => {
