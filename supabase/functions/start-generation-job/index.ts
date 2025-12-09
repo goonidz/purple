@@ -642,17 +642,20 @@ async function processTestImagesJob(
   }
 
   const filteredExamples = examplePrompts.filter((p: string) => p.trim() !== "");
-  const prompts: any[] = [];
 
-  // Step 2: Generate prompts for first 2 scenes
-  for (let i = 0; i < sceneCount; i++) {
-    const scene = scenesToTest[i];
-    
-    const previousPrompts = prompts
-      .slice(Math.max(0, i - 3), i)
-      .filter((p: any) => p?.prompt && p.prompt !== "Erreur lors de la génération")
-      .map((p: any) => p.prompt);
+  interface TestPrompt {
+    index: number;
+    scene: string;
+    prompt: string;
+    text: string;
+    startTime: number;
+    endTime: number;
+    duration: number;
+    imageUrl?: string;
+  }
 
+  // Step 2: Generate prompts for first 2 scenes IN PARALLEL
+  const promptPromises = scenesToTest.map(async (scene: any, i: number): Promise<TestPrompt> => {
     try {
       const response = await fetch(`${supabaseUrl}/functions/v1/generate-prompts`, {
         method: 'POST',
@@ -669,42 +672,48 @@ async function processTestImagesJob(
           startTime: scene.startTime,
           endTime: scene.endTime,
           customSystemPrompt,
-          previousPrompts
+          previousPrompts: []
         }),
       });
 
       if (response.ok) {
         const data = await response.json();
-        prompts.push({
+        return {
+          index: i,
           scene: `Scène ${i + 1}`,
           prompt: data.prompt,
           text: scene.text,
           startTime: scene.startTime,
           endTime: scene.endTime,
           duration: scene.endTime - scene.startTime
-        });
+        };
       } else {
-        prompts.push({
+        return {
+          index: i,
           scene: `Scène ${i + 1}`,
           prompt: "Erreur lors de la génération",
           text: scene.text,
           startTime: scene.startTime,
           endTime: scene.endTime,
           duration: scene.endTime - scene.startTime
-        });
+        };
       }
     } catch (error) {
       console.error(`Error generating prompt for scene ${i + 1}:`, error);
-      prompts.push({
+      return {
+        index: i,
         scene: `Scène ${i + 1}`,
         prompt: "Erreur lors de la génération",
         text: scene.text,
         startTime: scene.startTime,
         endTime: scene.endTime,
         duration: scene.endTime - scene.startTime
-      });
+      };
     }
-  }
+  });
+
+  const promptResults = await Promise.all(promptPromises);
+  const prompts: TestPrompt[] = promptResults.sort((a, b) => a.index - b.index);
 
   // Save prompts to project
   await adminClient
@@ -718,13 +727,11 @@ async function processTestImagesJob(
     .update({ progress: 1 })
     .eq('id', jobId);
 
-  // Step 3: Generate images for the prompts
-  for (let i = 0; i < prompts.length; i++) {
-    const prompt = prompts[i];
-    if (!prompt.prompt || prompt.prompt === "Erreur lors de la génération") {
-      continue;
-    }
+  // Step 3: Generate images for the prompts IN PARALLEL
+  const validPrompts = prompts.filter(p => p.prompt && p.prompt !== "Erreur lors de la génération");
 
+  const imagePromises = validPrompts.map(async (prompt: any) => {
+    const i = prompt.index;
     try {
       const requestBody: any = {
         prompt: prompt.prompt,
@@ -815,24 +822,31 @@ async function processTestImagesJob(
         }
       }
 
-      if (imageUrl) {
-        prompts[i] = { ...prompts[i], imageUrl };
-        
-        // Save updated prompts
-        await adminClient
-          .from('projects')
-          .update({ prompts })
-          .eq('id', projectId);
-      }
-
+      return { index: i, imageUrl };
     } catch (error) {
       console.error(`Error generating image for scene ${i + 1}:`, error);
+      return { index: i, imageUrl: null };
     }
+  });
 
-    // Update progress
-    await adminClient
-      .from('generation_jobs')
-      .update({ progress: i + 2 }) // +2 because we already counted 1 for prompts
-      .eq('id', jobId);
+  const imageResults = await Promise.all(imagePromises);
+
+  // Update prompts with image URLs
+  for (const result of imageResults) {
+    if (result.imageUrl) {
+      prompts[result.index] = { ...prompts[result.index], imageUrl: result.imageUrl };
+    }
   }
+
+  // Save final prompts to project
+  await adminClient
+    .from('projects')
+    .update({ prompts })
+    .eq('id', projectId);
+
+  // Update progress to complete
+  await adminClient
+    .from('generation_jobs')
+    .update({ progress: sceneCount })
+    .eq('id', jobId);
 }
