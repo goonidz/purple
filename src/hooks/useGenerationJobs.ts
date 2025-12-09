@@ -98,6 +98,57 @@ export function useGenerationJobs({ projectId, onJobComplete, onJobFailed }: Use
     };
   }, [projectId]);
 
+  // Fallback polling when realtime doesn't work
+  useEffect(() => {
+    if (!projectId || activeJobs.length === 0) return;
+
+    console.log('Starting polling fallback for', activeJobs.length, 'active jobs');
+
+    const pollInterval = setInterval(async () => {
+      try {
+        const jobIds = activeJobs.map(j => j.id);
+        const { data, error } = await supabase
+          .from('generation_jobs')
+          .select('*')
+          .eq('project_id', projectId)
+          .in('id', jobIds);
+
+        if (error || !data) return;
+
+        data.forEach(job => {
+          const typedJob = job as unknown as GenerationJob;
+          const existingJob = activeJobs.find(j => j.id === typedJob.id);
+          
+          if (!existingJob) return;
+          
+          // Check if status changed to completed or failed
+          if (typedJob.status === 'completed' && existingJob.status !== 'completed') {
+            console.log('Polling detected job completed:', typedJob.id);
+            onJobCompleteRef.current?.(typedJob);
+            setActiveJobs(prev => prev.filter(j => j.id !== typedJob.id));
+          } else if (typedJob.status === 'failed' && existingJob.status !== 'failed') {
+            console.log('Polling detected job failed:', typedJob.id);
+            onJobFailedRef.current?.(typedJob);
+            setActiveJobs(prev => prev.filter(j => j.id !== typedJob.id));
+          } else if (typedJob.status === 'cancelled') {
+            console.log('Polling detected job cancelled:', typedJob.id);
+            setActiveJobs(prev => prev.filter(j => j.id !== typedJob.id));
+          } else if (typedJob.status === 'processing' || typedJob.status === 'pending') {
+            // Update progress
+            setActiveJobs(prev => prev.map(j => j.id === typedJob.id ? typedJob : j));
+          }
+        });
+      } catch (error) {
+        console.error('Error polling job status:', error);
+      }
+    }, 2000); // Poll every 2 seconds
+
+    return () => {
+      console.log('Stopping polling fallback');
+      clearInterval(pollInterval);
+    };
+  }, [projectId, activeJobs.length]); // Only depend on length to avoid infinite re-renders
+
   const fetchActiveJobs = useCallback(async () => {
     if (!projectId) return;
 
