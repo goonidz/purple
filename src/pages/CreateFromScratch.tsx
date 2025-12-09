@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate, Link, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import type { User } from "@supabase/supabase-js";
@@ -12,7 +12,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Progress } from "@/components/ui/progress";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Loader2, Sparkles, FileText, Mic, ArrowRight, Check, RefreshCw, ChevronDown, Save, Trash2, FolderOpen, Pencil, Copy, User as UserIcon } from "lucide-react";
+import { Loader2, Sparkles, FileText, Mic, ArrowRight, Check, RefreshCw, ChevronDown, Save, Trash2, FolderOpen, Pencil, Copy, User as UserIcon, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 
 type WorkflowStep = "topic" | "axes" | "script" | "audio" | "complete";
@@ -238,6 +238,9 @@ const CreateFromScratch = () => {
   const [minimaxEmotion, setMinimaxEmotion] = useState("neutral");
   const [isGeneratingAudio, setIsGeneratingAudio] = useState(false);
   const [audioUrl, setAudioUrl] = useState("");
+  const [isUploadingAudio, setIsUploadingAudio] = useState(false);
+  const [isGenerationOpen, setIsGenerationOpen] = useState(false);
+  const audioInputRef = useRef<HTMLInputElement>(null);
   
   // TTS Preset management
   const [ttsPresets, setTtsPresets] = useState<TtsPreset[]>([]);
@@ -1014,6 +1017,72 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
     }
   };
 
+  // Handle audio file upload
+  const handleAudioUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!projectId) {
+      toast.error("Erreur: projet non trouvé");
+      return;
+    }
+
+    // Validate file type
+    const allowedTypes = ['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/wave', 'audio/x-wav'];
+    if (!allowedTypes.includes(file.type)) {
+      toast.error("Format non supporté. Utilisez MP3 ou WAV.");
+      return;
+    }
+
+    // Max size 100MB
+    if (file.size > 100 * 1024 * 1024) {
+      toast.error("Le fichier est trop volumineux (max 100MB)");
+      return;
+    }
+
+    setIsUploadingAudio(true);
+    try {
+      // Upload to Supabase Storage
+      const timestamp = Date.now();
+      const cleanFileName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
+      const filePath = `${user!.id}/${projectId}/${timestamp}_${cleanFileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('audio-files')
+        .upload(filePath, file);
+
+      if (uploadError) throw uploadError;
+
+      // Get public URL
+      const { data: urlData } = supabase.storage
+        .from('audio-files')
+        .getPublicUrl(filePath);
+
+      if (!urlData?.publicUrl) {
+        throw new Error("Impossible d'obtenir l'URL du fichier");
+      }
+
+      // Update project with audio URL
+      await supabase
+        .from("projects")
+        .update({ audio_url: urlData.publicUrl })
+        .eq("id", projectId);
+
+      setAudioUrl(urlData.publicUrl);
+      setStep("audio");
+      toast.success("Audio importé avec succès !");
+    } catch (error: any) {
+      console.error("Error uploading audio:", error);
+      toast.error(error.message || "Erreur lors de l'import de l'audio");
+    } finally {
+      setIsUploadingAudio(false);
+      // Reset input
+      if (audioInputRef.current) {
+        audioInputRef.current.value = "";
+      }
+    }
+  };
+
   const handleContinueToVideo = () => {
     if (!projectId) {
       toast.error("Erreur: projet non trouvé");
@@ -1377,272 +1446,331 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                   placeholder="Le script apparaîtra ici..."
                 />
 
-                {/* TTS Presets */}
-                <div className="space-y-2">
-                  <Label>Preset TTS</Label>
-                  <div className="flex gap-2">
-                    <Popover open={ttsPresetPopoverOpen} onOpenChange={setTtsPresetPopoverOpen}>
-                      <PopoverTrigger asChild>
-                        <Button variant="outline" className="flex-1 justify-between">
-                          <span className="flex items-center gap-2">
-                            <FolderOpen className="h-4 w-4" />
-                            {selectedTtsPresetId 
-                              ? ttsPresets.find(p => p.id === selectedTtsPresetId)?.name || "Sélectionner..."
-                              : "Sélectionner un preset..."}
-                          </span>
-                          <ChevronDown className="h-4 w-4 opacity-50" />
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-80 p-0" align="start">
-                        <div className="p-2 border-b">
-                          <p className="text-sm font-medium">Presets TTS sauvegardés</p>
-                        </div>
-                        {ttsPresets.length === 0 ? (
-                          <div className="p-4 text-center text-sm text-muted-foreground">
-                            Aucun preset TTS sauvegardé
-                          </div>
-                        ) : (
-                          <div className="max-h-60 overflow-y-auto">
-                            {ttsPresets.map((preset) => (
-                              <div 
-                                key={preset.id}
-                                className="flex items-center justify-between p-2 hover:bg-muted cursor-pointer"
-                              >
-                                <div 
-                                  className="flex-1 pr-2"
-                                  onClick={() => {
-                                    handleLoadTtsPreset(preset.id);
-                                    setTtsPresetPopoverOpen(false);
-                                  }}
-                                >
-                                  <p className="font-medium text-sm">{preset.name}</p>
-                                  <p className="text-xs text-muted-foreground">
-                                    {preset.provider === "minimax" ? "MiniMax (API Officielle)" : "ElevenLabs (Replicate)"} - {preset.voice_id}
-                                  </p>
-                                </div>
-                                <div className="flex gap-1">
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-7 w-7"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleOpenEditTtsPreset(preset.id);
-                                      setTtsPresetPopoverOpen(false);
-                                    }}
-                                  >
-                                    <Pencil className="h-3 w-3" />
-                                  </Button>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-7 w-7"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleOpenDuplicateTtsPreset(preset.id);
-                                      setTtsPresetPopoverOpen(false);
-                                    }}
-                                  >
-                                    <Copy className="h-3 w-3" />
-                                  </Button>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-7 w-7 text-destructive hover:text-destructive"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleDeleteTtsPreset(preset.id);
-                                    }}
-                                  >
-                                    <Trash2 className="h-3 w-3" />
-                                  </Button>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </PopoverContent>
-                    </Popover>
+                {/* Audio Section */}
+                <div className="space-y-4 border-t pt-6">
+                  <h3 className="text-lg font-semibold">Audio</h3>
+                  
+                  {/* Import Audio Option */}
+                  <div className="space-y-3">
+                    <input
+                      ref={audioInputRef}
+                      type="file"
+                      accept="audio/mpeg,audio/mp3,audio/wav,audio/wave,audio/x-wav"
+                      onChange={handleAudioUpload}
+                      className="hidden"
+                      id="audio-upload"
+                    />
                     <Button
                       variant="outline"
-                      onClick={() => setSaveTtsPresetDialogOpen(true)}
+                      onClick={() => audioInputRef.current?.click()}
+                      disabled={isUploadingAudio || isGeneratingAudio || !generatedScript.trim()}
+                      className="w-full"
                     >
-                      <Save className="h-4 w-4 mr-2" />
-                      Sauvegarder
+                      {isUploadingAudio ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Import en cours...
+                        </>
+                      ) : (
+                        <>
+                          <Upload className="mr-2 h-4 w-4" />
+                          Importer un fichier audio (MP3, WAV)
+                        </>
+                      )}
                     </Button>
+
+                    <div className="relative flex items-center justify-center">
+                      <div className="absolute inset-0 flex items-center">
+                        <span className="w-full border-t" />
+                      </div>
+                      <span className="relative bg-card px-3 text-xs text-muted-foreground uppercase">
+                        ou générer
+                      </span>
+                    </div>
                   </div>
-                </div>
 
-                <div className="p-3 bg-muted/50 rounded-lg">
-                  <p className="text-sm font-medium">Fournisseur TTS</p>
-                  <p className="text-sm text-muted-foreground">MiniMax (API Officielle)</p>
-                </div>
-
-                <div className="space-y-4">
-                  <Label>Modèle MiniMax</Label>
-                      <Select value={minimaxModel} onValueChange={setMinimaxModel}>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {MINIMAX_MODEL_OPTIONS.map((model) => (
-                            <SelectItem key={model.id} value={model.id}>
-                              {model.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div className="space-y-4">
-                      <Label>Langue prioritaire</Label>
-                      <Select value={minimaxLanguageBoost} onValueChange={setMinimaxLanguageBoost}>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="auto">Auto-détection</SelectItem>
-                          <SelectItem value="English">Anglais</SelectItem>
-                          <SelectItem value="French">Français</SelectItem>
-                          <SelectItem value="Spanish">Espagnol</SelectItem>
-                          <SelectItem value="German">Allemand</SelectItem>
-                          <SelectItem value="Italian">Italien</SelectItem>
-                          <SelectItem value="Portuguese">Portugais</SelectItem>
-                          <SelectItem value="Chinese">Chinois</SelectItem>
-                          <SelectItem value="Japanese">Japonais</SelectItem>
-                          <SelectItem value="Korean">Coréen</SelectItem>
-                          <SelectItem value="Arabic">Arabe</SelectItem>
-                          <SelectItem value="Russian">Russe</SelectItem>
-                          <SelectItem value="Hindi">Hindi</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div className="grid grid-cols-3 gap-4">
+                  {/* Generation Options - Collapsible */}
+                  <Collapsible open={isGenerationOpen} onOpenChange={setIsGenerationOpen}>
+                    <CollapsibleTrigger asChild>
+                      <Button variant="ghost" className="w-full justify-between p-3 h-auto">
+                        <span className="flex items-center gap-2">
+                          <Mic className="h-4 w-4" />
+                          Options de génération audio
+                        </span>
+                        <ChevronDown className={`h-4 w-4 transition-transform ${isGenerationOpen ? 'rotate-180' : ''}`} />
+                      </Button>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent className="space-y-4 pt-4">
+                      {/* TTS Presets */}
                       <div className="space-y-2">
-                        <Label>Vitesse ({minimaxSpeed.toFixed(1)}x)</Label>
-                        <input
-                          type="range"
-                          min="0.5"
-                          max="2.0"
-                          step="0.1"
-                          value={minimaxSpeed}
-                          onChange={(e) => setMinimaxSpeed(parseFloat(e.target.value))}
-                          className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
-                        />
-                        <div className="flex justify-between text-xs text-muted-foreground">
-                          <span>0.5x</span>
-                          <span>2.0x</span>
+                        <Label>Preset TTS</Label>
+                        <div className="flex gap-2">
+                          <Popover open={ttsPresetPopoverOpen} onOpenChange={setTtsPresetPopoverOpen}>
+                            <PopoverTrigger asChild>
+                              <Button variant="outline" className="flex-1 justify-between">
+                                <span className="flex items-center gap-2">
+                                  <FolderOpen className="h-4 w-4" />
+                                  {selectedTtsPresetId 
+                                    ? ttsPresets.find(p => p.id === selectedTtsPresetId)?.name || "Sélectionner..."
+                                    : "Sélectionner un preset..."}
+                                </span>
+                                <ChevronDown className="h-4 w-4 opacity-50" />
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-80 p-0 bg-popover z-50" align="start">
+                              <div className="p-2 border-b">
+                                <p className="text-sm font-medium">Presets TTS sauvegardés</p>
+                              </div>
+                              {ttsPresets.length === 0 ? (
+                                <div className="p-4 text-center text-sm text-muted-foreground">
+                                  Aucun preset TTS sauvegardé
+                                </div>
+                              ) : (
+                                <div className="max-h-60 overflow-y-auto">
+                                  {ttsPresets.map((preset) => (
+                                    <div 
+                                      key={preset.id}
+                                      className="flex items-center justify-between p-2 hover:bg-muted cursor-pointer"
+                                    >
+                                      <div 
+                                        className="flex-1 pr-2"
+                                        onClick={() => {
+                                          handleLoadTtsPreset(preset.id);
+                                          setTtsPresetPopoverOpen(false);
+                                        }}
+                                      >
+                                        <p className="font-medium text-sm">{preset.name}</p>
+                                        <p className="text-xs text-muted-foreground">
+                                          {preset.provider === "minimax" ? "MiniMax (API Officielle)" : "ElevenLabs (Replicate)"} - {preset.voice_id}
+                                        </p>
+                                      </div>
+                                      <div className="flex gap-1">
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          className="h-7 w-7"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleOpenEditTtsPreset(preset.id);
+                                            setTtsPresetPopoverOpen(false);
+                                          }}
+                                        >
+                                          <Pencil className="h-3 w-3" />
+                                        </Button>
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          className="h-7 w-7"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleOpenDuplicateTtsPreset(preset.id);
+                                            setTtsPresetPopoverOpen(false);
+                                          }}
+                                        >
+                                          <Copy className="h-3 w-3" />
+                                        </Button>
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          className="h-7 w-7 text-destructive hover:text-destructive"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleDeleteTtsPreset(preset.id);
+                                          }}
+                                        >
+                                          <Trash2 className="h-3 w-3" />
+                                        </Button>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </PopoverContent>
+                          </Popover>
+                          <Button
+                            variant="outline"
+                            onClick={() => setSaveTtsPresetDialogOpen(true)}
+                          >
+                            <Save className="h-4 w-4 mr-2" />
+                            Sauvegarder
+                          </Button>
                         </div>
                       </div>
-                      
-                      <div className="space-y-2">
-                        <Label>Pitch ({minimaxPitch > 0 ? '+' : ''}{minimaxPitch})</Label>
-                        <input
-                          type="range"
-                          min="-12"
-                          max="12"
-                          step="1"
-                          value={minimaxPitch}
-                          onChange={(e) => setMinimaxPitch(parseInt(e.target.value))}
-                          className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
-                        />
-                        <div className="flex justify-between text-xs text-muted-foreground">
-                          <span>Grave</span>
-                          <span>Aigu</span>
+
+                      <div className="p-3 bg-muted/50 rounded-lg">
+                        <p className="text-sm font-medium">Fournisseur TTS</p>
+                        <p className="text-sm text-muted-foreground">MiniMax (API Officielle)</p>
+                      </div>
+
+                      <div className="space-y-4">
+                        <Label>Modèle MiniMax</Label>
+                        <Select value={minimaxModel} onValueChange={setMinimaxModel}>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {MINIMAX_MODEL_OPTIONS.map((model) => (
+                              <SelectItem key={model.id} value={model.id}>
+                                {model.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="space-y-4">
+                        <Label>Langue prioritaire</Label>
+                        <Select value={minimaxLanguageBoost} onValueChange={setMinimaxLanguageBoost}>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="auto">Auto-détection</SelectItem>
+                            <SelectItem value="English">Anglais</SelectItem>
+                            <SelectItem value="French">Français</SelectItem>
+                            <SelectItem value="Spanish">Espagnol</SelectItem>
+                            <SelectItem value="German">Allemand</SelectItem>
+                            <SelectItem value="Italian">Italien</SelectItem>
+                            <SelectItem value="Portuguese">Portugais</SelectItem>
+                            <SelectItem value="Chinese">Chinois</SelectItem>
+                            <SelectItem value="Japanese">Japonais</SelectItem>
+                            <SelectItem value="Korean">Coréen</SelectItem>
+                            <SelectItem value="Arabic">Arabe</SelectItem>
+                            <SelectItem value="Russian">Russe</SelectItem>
+                            <SelectItem value="Hindi">Hindi</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-4">
+                        <div className="space-y-2">
+                          <Label>Vitesse ({minimaxSpeed.toFixed(1)}x)</Label>
+                          <input
+                            type="range"
+                            min="0.5"
+                            max="2.0"
+                            step="0.1"
+                            value={minimaxSpeed}
+                            onChange={(e) => setMinimaxSpeed(parseFloat(e.target.value))}
+                            className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
+                          />
+                          <div className="flex justify-between text-xs text-muted-foreground">
+                            <span>0.5x</span>
+                            <span>2.0x</span>
+                          </div>
+                        </div>
+                        
+                        <div className="space-y-2">
+                          <Label>Pitch ({minimaxPitch > 0 ? '+' : ''}{minimaxPitch})</Label>
+                          <input
+                            type="range"
+                            min="-12"
+                            max="12"
+                            step="1"
+                            value={minimaxPitch}
+                            onChange={(e) => setMinimaxPitch(parseInt(e.target.value))}
+                            className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
+                          />
+                          <div className="flex justify-between text-xs text-muted-foreground">
+                            <span>Grave</span>
+                            <span>Aigu</span>
+                          </div>
+                        </div>
+                        
+                        <div className="space-y-2">
+                          <Label>Volume ({Math.round(minimaxVolume * 100)}%)</Label>
+                          <input
+                            type="range"
+                            min="10"
+                            max="100"
+                            step="10"
+                            value={Math.round(minimaxVolume * 100)}
+                            onChange={(e) => setMinimaxVolume(parseInt(e.target.value) / 100)}
+                            className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
+                          />
+                          <div className="flex justify-between text-xs text-muted-foreground">
+                            <span>10%</span>
+                            <span>100%</span>
+                          </div>
                         </div>
                       </div>
-                      
-                      <div className="space-y-2">
-                        <Label>Volume ({Math.round(minimaxVolume * 100)}%)</Label>
-                        <input
-                          type="range"
-                          min="10"
-                          max="100"
-                          step="10"
-                          value={Math.round(minimaxVolume * 100)}
-                          onChange={(e) => setMinimaxVolume(parseInt(e.target.value) / 100)}
-                          className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
-                        />
-                        <div className="flex justify-between text-xs text-muted-foreground">
-                          <span>10%</span>
-                          <span>100%</span>
+
+                      <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg">
+                        <div className="space-y-0.5">
+                          <Label className="text-base">Normalisation des nombres</Label>
+                          <p className="text-sm text-muted-foreground">
+                            Améliore la lecture des nombres, dates et unités
+                          </p>
                         </div>
+                        <input
+                          type="checkbox"
+                          checked={minimaxEnglishNormalization}
+                          onChange={(e) => setMinimaxEnglishNormalization(e.target.checked)}
+                          className="h-5 w-5 rounded border-gray-300 text-primary focus:ring-primary"
+                        />
                       </div>
-                    </div>
 
-                    <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg">
-                      <div className="space-y-0.5">
-                        <Label className="text-base">Normalisation des nombres</Label>
-                        <p className="text-sm text-muted-foreground">
-                          Améliore la lecture des nombres, dates et unités
-                        </p>
+                      <div className="space-y-4">
+                        <Label>Émotion</Label>
+                        <Select value={minimaxEmotion} onValueChange={setMinimaxEmotion}>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {MINIMAX_EMOTIONS.map((emotion) => (
+                              <SelectItem key={emotion.id} value={emotion.id}>
+                                {emotion.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </div>
-                      <input
-                        type="checkbox"
-                        checked={minimaxEnglishNormalization}
-                        onChange={(e) => setMinimaxEnglishNormalization(e.target.checked)}
-                        className="h-5 w-5 rounded border-gray-300 text-primary focus:ring-primary"
-                      />
-                    </div>
 
-                    <div className="space-y-4">
-                      <Label>Émotion</Label>
-                      <Select value={minimaxEmotion} onValueChange={setMinimaxEmotion}>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {MINIMAX_EMOTIONS.map((emotion) => (
-                            <SelectItem key={emotion.id} value={emotion.id}>
-                              {emotion.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
+                      <div className="space-y-4">
+                        <Label>Voix pour l'audio</Label>
+                        <Select value={selectedVoice} onValueChange={setSelectedVoice}>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {MINIMAX_VOICE_OPTIONS.map((voice) => (
+                              <SelectItem key={voice.id} value={voice.id}>
+                                {voice.name} ({voice.language.toUpperCase()})
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
 
-                <div className="space-y-4">
-                  <Label>Voix pour l'audio</Label>
-                  <Select value={selectedVoice} onValueChange={setSelectedVoice}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {MINIMAX_VOICE_OPTIONS.map((voice) => (
-                        <SelectItem key={voice.id} value={voice.id}>
-                          {voice.name} ({voice.language.toUpperCase()})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                      <Button 
+                        onClick={handleGenerateAudio} 
+                        disabled={isGeneratingAudio || !generatedScript.trim()}
+                        className="w-full"
+                        size="lg"
+                      >
+                        {isGeneratingAudio ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Génération audio...
+                          </>
+                        ) : (
+                          <>
+                            <Mic className="mr-2 h-4 w-4" />
+                            Générer l'audio avec MiniMax
+                          </>
+                        )}
+                      </Button>
+                    </CollapsibleContent>
+                  </Collapsible>
                 </div>
 
-                <div className="flex gap-4">
+                <div className="flex gap-4 border-t pt-4">
                   <Button 
                     variant="outline"
                     onClick={() => setStep("topic")}
                     className="flex-1"
                   >
                     Retour
-                  </Button>
-                  <Button 
-                    onClick={handleGenerateAudio} 
-                    disabled={isGeneratingAudio || !generatedScript.trim()}
-                    className="flex-1"
-                    size="lg"
-                  >
-                    {isGeneratingAudio ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Génération audio...
-                      </>
-                    ) : (
-                      <>
-                        <Mic className="mr-2 h-4 w-4" />
-                        Générer l'audio avec MiniMax
-                      </>
-                    )}
                   </Button>
                 </div>
               </div>
