@@ -13,7 +13,7 @@ const corsHeaders = {
 
 interface JobRequest {
   projectId: string;
-  jobType: 'transcription' | 'prompts' | 'images' | 'thumbnails' | 'test_images';
+  jobType: 'transcription' | 'prompts' | 'images' | 'thumbnails' | 'test_images' | 'single_prompt' | 'single_image';
   metadata?: Record<string, any>;
 }
 
@@ -112,6 +112,8 @@ serve(async (req) => {
     } else if (jobType === 'test_images') {
       const scenes = (project.scenes as any[]) || [];
       total = Math.min(scenes.length, 2); // Test first 2 scenes
+    } else if (jobType === 'single_prompt' || jobType === 'single_image') {
+      total = 1; // Single item
     }
 
     // Create the job record
@@ -193,6 +195,10 @@ async function processJob(
       await processTranscriptionJob(jobId, projectId, userId, metadata, authHeader, adminClient);
     } else if (jobType === 'test_images') {
       await processTestImagesJob(jobId, projectId, userId, metadata, authHeader, adminClient);
+    } else if (jobType === 'single_prompt') {
+      await processSinglePromptJob(jobId, projectId, userId, metadata, authHeader, adminClient);
+    } else if (jobType === 'single_image') {
+      await processSingleImageJob(jobId, projectId, userId, metadata, authHeader, adminClient);
     }
 
     // Mark job as completed
@@ -848,5 +854,289 @@ async function processTestImagesJob(
   await adminClient
     .from('generation_jobs')
     .update({ progress: sceneCount })
+    .eq('id', jobId);
+}
+
+async function processSinglePromptJob(
+  jobId: string,
+  projectId: string,
+  userId: string,
+  metadata: Record<string, any>,
+  authHeader: string,
+  adminClient: any
+) {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+  const sceneIndex = metadata.sceneIndex as number;
+
+  if (sceneIndex === undefined || sceneIndex === null) {
+    throw new Error("sceneIndex is required in metadata");
+  }
+
+  // Get project data
+  const { data: project } = await adminClient
+    .from('projects')
+    .select('*')
+    .eq('id', projectId)
+    .single();
+
+  if (!project) throw new Error("Project not found");
+
+  const scenes = (project.scenes as any[]) || [];
+  const existingPrompts = (project.prompts as any[]) || [];
+  const examplePrompts = (project.example_prompts as string[]) || [];
+  const customSystemPrompt = project.prompt_system_message || undefined;
+
+  if (sceneIndex >= scenes.length) {
+    throw new Error(`Scene index ${sceneIndex} out of bounds`);
+  }
+
+  const scene = scenes[sceneIndex];
+
+  // Get or generate summary
+  let summary = project.summary;
+  if (!summary) {
+    const transcriptData = project.transcript_json as any;
+    const fullTranscript = transcriptData?.segments?.filter((seg: any) => seg).map((seg: any) => seg.text).join(' ') || '';
+    
+    const summaryResponse = await fetch(`${supabaseUrl}/functions/v1/generate-summary`, {
+      method: 'POST',
+      headers: {
+        'Authorization': authHeader,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ transcript: fullTranscript }),
+    });
+
+    if (summaryResponse.ok) {
+      const summaryData = await summaryResponse.json();
+      summary = summaryData.summary;
+      
+      await adminClient
+        .from('projects')
+        .update({ summary })
+        .eq('id', projectId);
+    }
+  }
+
+  const filteredExamples = examplePrompts.filter((p: string) => p.trim() !== "");
+
+  // Get previous prompts for context
+  const previousPrompts = existingPrompts
+    .slice(Math.max(0, sceneIndex - 3), sceneIndex)
+    .filter((p: any) => p?.prompt && p.prompt !== "Erreur lors de la génération")
+    .map((p: any) => p.prompt);
+
+  // Generate the prompt
+  const response = await fetch(`${supabaseUrl}/functions/v1/generate-prompts`, {
+    method: 'POST',
+    headers: {
+      'Authorization': authHeader,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      scene: scene.text,
+      summary,
+      examplePrompts: filteredExamples,
+      sceneIndex: sceneIndex + 1,
+      totalScenes: scenes.length,
+      startTime: scene.startTime,
+      endTime: scene.endTime,
+      customSystemPrompt,
+      previousPrompts
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to generate prompt: ${response.status}`);
+  }
+
+  const data = await response.json();
+
+  // Update the prompts array
+  const updatedPrompts = [...existingPrompts];
+  while (updatedPrompts.length <= sceneIndex) {
+    updatedPrompts.push(null);
+  }
+
+  updatedPrompts[sceneIndex] = {
+    scene: `Scène ${sceneIndex + 1}`,
+    prompt: data.prompt,
+    text: scene.text,
+    startTime: scene.startTime,
+    endTime: scene.endTime,
+    duration: scene.endTime - scene.startTime,
+    imageUrl: existingPrompts[sceneIndex]?.imageUrl // Preserve existing image
+  };
+
+  // Save prompts to project
+  await adminClient
+    .from('projects')
+    .update({ prompts: updatedPrompts })
+    .eq('id', projectId);
+
+  // Update progress
+  await adminClient
+    .from('generation_jobs')
+    .update({ progress: 1 })
+    .eq('id', jobId);
+}
+
+async function processSingleImageJob(
+  jobId: string,
+  projectId: string,
+  userId: string,
+  metadata: Record<string, any>,
+  authHeader: string,
+  adminClient: any
+) {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+  const sceneIndex = metadata.sceneIndex as number;
+
+  if (sceneIndex === undefined || sceneIndex === null) {
+    throw new Error("sceneIndex is required in metadata");
+  }
+
+  // Get project data
+  const { data: project } = await adminClient
+    .from('projects')
+    .select('*')
+    .eq('id', projectId)
+    .single();
+
+  if (!project) throw new Error("Project not found");
+
+  const prompts = (project.prompts as any[]) || [];
+  const imageWidth = project.image_width || 1920;
+  const imageHeight = project.image_height || 1080;
+  const imageModel = project.image_model || 'seedream-4.5';
+
+  if (sceneIndex >= prompts.length || !prompts[sceneIndex]) {
+    throw new Error(`Prompt at index ${sceneIndex} not found`);
+  }
+
+  const prompt = prompts[sceneIndex];
+  if (!prompt.prompt || prompt.prompt === "Erreur lors de la génération") {
+    throw new Error("No valid prompt for this scene");
+  }
+
+  // Parse style references
+  let styleReferenceUrls: string[] = [];
+  if (project.style_reference_url) {
+    try {
+      styleReferenceUrls = JSON.parse(project.style_reference_url);
+    } catch {
+      if (project.style_reference_url) {
+        styleReferenceUrls = [project.style_reference_url];
+      }
+    }
+  }
+
+  const requestBody: any = {
+    prompt: prompt.prompt,
+    width: imageWidth,
+    height: imageHeight,
+    model: imageModel,
+    async: true
+  };
+
+  if (styleReferenceUrls.length > 0) {
+    requestBody.image_urls = styleReferenceUrls;
+  }
+
+  // Start async generation
+  const startResponse = await fetch(`${supabaseUrl}/functions/v1/generate-image-seedream`, {
+    method: 'POST',
+    headers: {
+      'Authorization': authHeader,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(requestBody),
+  });
+
+  if (!startResponse.ok) {
+    throw new Error(`Failed to start generation: ${startResponse.status}`);
+  }
+
+  const startData = await startResponse.json();
+  const predictionId = startData.predictionId;
+
+  if (!predictionId) {
+    throw new Error("No prediction ID returned");
+  }
+
+  // Poll for completion
+  let imageUrl = null;
+  const maxWaitMs = 300000; // 5 minutes
+  const pollIntervalMs = 3000;
+  const startTime = Date.now();
+
+  while (Date.now() - startTime < maxWaitMs) {
+    await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
+
+    const statusResponse = await fetch(`${supabaseUrl}/functions/v1/generate-image-seedream`, {
+      method: 'POST',
+      headers: {
+        'Authorization': authHeader,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ predictionId }),
+    });
+
+    if (!statusResponse.ok) continue;
+
+    const statusData = await statusResponse.json();
+
+    if (statusData.status === 'succeeded') {
+      const output = Array.isArray(statusData.output) ? statusData.output[0] : statusData.output;
+      if (output) {
+        // Download and upload to Supabase storage
+        const imageResponse = await fetch(output);
+        if (imageResponse.ok) {
+          const blob = await imageResponse.blob();
+          const timestamp = Date.now();
+          const filename = `${projectId}/scene_${sceneIndex + 1}_${timestamp}.jpg`;
+
+          const { error: uploadError } = await adminClient.storage
+            .from('generated-images')
+            .upload(filename, blob, {
+              contentType: 'image/jpeg',
+              upsert: true
+            });
+
+          if (!uploadError) {
+            const { data: { publicUrl } } = adminClient.storage
+              .from('generated-images')
+              .getPublicUrl(filename);
+            
+            imageUrl = publicUrl;
+          }
+        }
+      }
+      break;
+    }
+
+    if (statusData.status === 'failed' || statusData.status === 'canceled') {
+      throw new Error(`Generation ${statusData.status}`);
+    }
+  }
+
+  if (!imageUrl) {
+    throw new Error("Image generation timed out or failed");
+  }
+
+  // Update the prompts array with the new image
+  const updatedPrompts = [...prompts];
+  updatedPrompts[sceneIndex] = { ...updatedPrompts[sceneIndex], imageUrl };
+
+  // Save prompts to project
+  await adminClient
+    .from('projects')
+    .update({ prompts: updatedPrompts })
+    .eq('id', projectId);
+
+  // Update progress
+  await adminClient
+    .from('generation_jobs')
+    .update({ progress: 1 })
     .eq('id', jobId);
 }

@@ -181,7 +181,9 @@ const Index = () => {
       'prompts': 'Prompts générés en arrière-plan !',
       'images': 'Images générées en arrière-plan !',
       'thumbnails': 'Miniatures générées en arrière-plan !',
-      'test_images': 'Test des 2 premières scènes terminé !'
+      'test_images': 'Test des 2 premières scènes terminé !',
+      'single_prompt': 'Prompt généré !',
+      'single_image': 'Image générée !'
     };
     toast.success(messages[job.job_type] || 'Génération terminée !');
     
@@ -194,6 +196,11 @@ const Index = () => {
       setIsGeneratingPrompts(false);
       setIsGeneratingImages(false);
       setHasTestedFirstTwo(true);
+    } else if (job.job_type === 'single_prompt') {
+      setGeneratingPromptIndex(null);
+      setRegeneratingPromptIndex(null);
+    } else if (job.job_type === 'single_image') {
+      setGeneratingImageIndex(null);
     }
     
     // Reload project data to get updated data - use ref to get current value
@@ -247,6 +254,11 @@ const Index = () => {
     } else if (job.job_type === 'test_images') {
       setIsGeneratingPrompts(false);
       setIsGeneratingImages(false);
+    } else if (job.job_type === 'single_prompt') {
+      setGeneratingPromptIndex(null);
+      setRegeneratingPromptIndex(null);
+    } else if (job.job_type === 'single_image') {
+      setGeneratingImageIndex(null);
     }
   }, []);
 
@@ -665,76 +677,9 @@ const Index = () => {
 
     setRegeneratingPromptIndex(sceneIndex);
     
-    try {
-      // Get the project to retrieve the summary
-      const { data: projectData, error: projectError } = await supabase
-        .from("projects")
-        .select("summary")
-        .eq("id", currentProjectId)
-        .single();
-
-      if (projectError) throw projectError;
-
-      let summary = projectData?.summary;
-
-      // If no summary exists, generate one
-      if (!summary) {
-        const fullTranscript = transcriptData?.segments?.filter(seg => seg).map(seg => seg.text).join(' ') || '';
-        const { data: summaryData, error: summaryError } = await supabase.functions.invoke('generate-summary', {
-          body: { transcript: fullTranscript }
-        });
-
-        if (summaryError) throw summaryError;
-        
-        summary = summaryData.summary;
-        
-        // Save the summary for future use
-        await supabase
-          .from("projects")
-          .update({ summary })
-          .eq("id", currentProjectId);
-      }
-
-      const scene = scenes[sceneIndex];
-      const filteredPrompts = examplePrompts.filter(p => p.trim() !== "");
-
-      // Get previous prompts to avoid repetition
-      const previousPrompts = generatedPrompts
-        .slice(Math.max(0, sceneIndex - 3), sceneIndex)
-        .filter(p => p.prompt && p.prompt !== "Erreur lors de la génération")
-        .map(p => p.prompt);
-
-      const { data, error } = await supabase.functions.invoke("generate-prompts", {
-        body: { 
-          scene: scene.text,
-          summary,
-          examplePrompts: filteredPrompts,
-          sceneIndex: sceneIndex + 1,
-          totalScenes: scenes.length,
-          startTime: scene.startTime,
-          endTime: scene.endTime,
-          customSystemPrompt: promptSystemMessage || undefined,
-          previousPrompts
-        },
-      });
-
-      if (error) throw error;
-
-      // Update the prompt in the array using functional update to avoid race conditions
-      setGeneratedPrompts(prev => {
-        const updatedPrompts = [...prev];
-        updatedPrompts[sceneIndex] = {
-          ...updatedPrompts[sceneIndex],
-          prompt: data.prompt,
-        };
-        return updatedPrompts;
-      });
-
-      toast.success("Prompt régénéré !");
-    } catch (error: any) {
-      console.error("Error regenerating prompt:", error);
-      toast.error(error.message || "Erreur lors de la régénération du prompt");
-    } finally {
+    // Start background job
+    const result = await startJob('single_prompt', { sceneIndex });
+    if (!result) {
       setRegeneratingPromptIndex(null);
     }
   };
@@ -747,83 +692,9 @@ const Index = () => {
 
     setGeneratingPromptIndex(sceneIndex);
     
-    try {
-      // Get the project to retrieve the summary
-      const { data: projectData, error: projectError } = await supabase
-        .from("projects")
-        .select("summary")
-        .eq("id", currentProjectId)
-        .single();
-
-      if (projectError) throw projectError;
-
-      let summary = projectData?.summary;
-
-      // If no summary exists, generate one
-      if (!summary) {
-        const fullTranscript = transcriptData?.segments?.filter(seg => seg).map(seg => seg.text).join(' ') || '';
-        const { data: summaryData, error: summaryError } = await supabase.functions.invoke('generate-summary', {
-          body: { transcript: fullTranscript }
-        });
-
-        if (summaryError) throw summaryError;
-        
-        summary = summaryData.summary;
-        
-        // Save the summary for future use
-        await supabase
-          .from("projects")
-          .update({ summary })
-          .eq("id", currentProjectId);
-      }
-
-      const scene = scenes[sceneIndex];
-      const filteredPrompts = examplePrompts.filter(p => p.trim() !== "");
-
-      // Get previous prompts to avoid repetition
-      const previousPrompts = generatedPrompts
-        .slice(Math.max(0, sceneIndex - 3), sceneIndex)
-        .filter(p => p.prompt && p.prompt !== "Erreur lors de la génération")
-        .map(p => p.prompt);
-
-      const { data, error } = await supabase.functions.invoke("generate-prompts", {
-        body: { 
-          scene: scene.text,
-          summary,
-          examplePrompts: filteredPrompts,
-          sceneIndex: sceneIndex + 1,
-          totalScenes: scenes.length,
-          startTime: scene.startTime,
-          endTime: scene.endTime,
-          customSystemPrompt: promptSystemMessage || undefined,
-          previousPrompts
-        },
-      });
-
-      if (error) throw error;
-
-      // Create new prompt object
-      const newPrompt: GeneratedPrompt = {
-        scene: `Scène ${sceneIndex + 1} (${formatTimecode(scene.startTime)} - ${formatTimecode(scene.endTime)})`,
-        prompt: data.prompt,
-        text: scene.text,
-        startTime: scene.startTime,
-        endTime: scene.endTime,
-        duration: scene.endTime - scene.startTime
-      };
-
-      // Insert the prompt at the correct index
-      setGeneratedPrompts(prev => {
-        const updatedPrompts = [...prev];
-        updatedPrompts[sceneIndex] = newPrompt;
-        return updatedPrompts;
-      });
-
-      toast.success("Prompt généré !");
-    } catch (error: any) {
-      console.error("Error generating prompt:", error);
-      toast.error(error.message || "Erreur lors de la génération du prompt");
-    } finally {
+    // Start background job
+    const result = await startJob('single_prompt', { sceneIndex });
+    if (!result) {
       setGeneratingPromptIndex(null);
     }
   };
@@ -1284,23 +1155,16 @@ const Index = () => {
       return;
     }
 
+    if (!currentProjectId) {
+      toast.error("Veuillez d'abord sélectionner ou créer un projet");
+      return;
+    }
+
     setGeneratingImageIndex(index);
-    try {
-      // Use async polling mode for single image generation too
-      const result = await generateImageAsync(prompt.prompt, index);
-      
-      if (result.success && result.imageUrl) {
-        setGeneratedPrompts(prev => {
-          const updatedPrompts = [...prev];
-          updatedPrompts[index] = { ...updatedPrompts[index], imageUrl: result.imageUrl };
-          return updatedPrompts;
-        });
-        toast.success("Image générée !");
-      }
-    } catch (error: any) {
-      console.error("Error generating image:", error);
-      toast.error(error.message || "Erreur lors de la génération de l'image");
-    } finally {
+    
+    // Start background job
+    const result = await startJob('single_image', { sceneIndex: index });
+    if (!result) {
       setGeneratingImageIndex(null);
     }
   };
