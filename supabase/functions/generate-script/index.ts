@@ -82,7 +82,7 @@ serve(async (req) => {
         input: {
           prompt: userPrompt,
           system_prompt: systemPrompt,
-          max_tokens: 4096,
+          max_tokens: 16384,
           temperature: 0.7,
         }
       }
