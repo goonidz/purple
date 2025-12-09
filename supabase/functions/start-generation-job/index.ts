@@ -277,7 +277,7 @@ async function processJob(
 
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    const isCpuTimeout = errorMessage.includes('CPU') || errorMessage.includes('timeout') || errorMessage.includes('time limit');
+    const isCpuTimeout = errorMessage.includes('CPU') || errorMessage.includes('timeout') || errorMessage.includes('time limit') || errorMessage.includes('CPU_TIMEOUT_PREEMPTIVE');
     
     console.error(`Job ${jobId} failed:`, error);
     
@@ -530,7 +530,7 @@ async function processChainedJob(
 
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    const isCpuTimeout = errorMessage.includes('CPU') || errorMessage.includes('timeout') || errorMessage.includes('time limit');
+    const isCpuTimeout = errorMessage.includes('CPU') || errorMessage.includes('timeout') || errorMessage.includes('time limit') || errorMessage.includes('CPU_TIMEOUT_PREEMPTIVE');
     
     console.error(`Chained job ${jobId} failed:`, error);
     
@@ -754,135 +754,172 @@ async function processImagesJob(
   let successCount = 0;
   let failedCount = 0;
 
-  // Process in batches of 100 for images (parallel)
-  const batchSize = 100;
+  // Process images one by one to allow progress tracking and early termination
+  // Edge function has ~150s CPU limit, so we need to save progress frequently
+  const JOB_START_TIME = Date.now();
+  const MAX_JOB_DURATION_MS = 120000; // 2 minutes - leave buffer before CPU timeout
+  
+  for (let i = 0; i < promptsToProcess.length; i++) {
+    // Check if we're approaching timeout - if so, mark for continuation
+    const elapsed = Date.now() - JOB_START_TIME;
+    if (elapsed > MAX_JOB_DURATION_MS) {
+      console.log(`Approaching timeout after ${elapsed}ms. Processed ${successCount} images. Marking for continuation...`);
+      
+      // Update job metadata to indicate partial completion
+      await adminClient
+        .from('generation_jobs')
+        .update({ 
+          metadata: {
+            ...metadata,
+            partialCompletion: true,
+            processedCount: successCount,
+            remainingCount: promptsToProcess.length - i
+          }
+        })
+        .eq('id', jobId);
+      
+      // Throw a special error to trigger continuation
+      throw new Error(`CPU_TIMEOUT_PREEMPTIVE: Processed ${successCount} images before timeout`);
+    }
+    
+    const { prompt, index } = promptsToProcess[i];
+    
+    try {
+      const requestBody: any = {
+        prompt: prompt.prompt,
+        width: imageWidth,
+        height: imageHeight,
+        model: imageModel,
+        async: true
+      };
 
-  for (let batchStart = 0; batchStart < promptsToProcess.length; batchStart += batchSize) {
-    const batch = promptsToProcess.slice(batchStart, batchStart + batchSize);
+      if (styleReferenceUrls.length > 0) {
+        requestBody.image_urls = styleReferenceUrls;
+      }
 
-    const batchPromises = batch.map(async ({ prompt, index }: any) => {
-      try {
-        const requestBody: any = {
-          prompt: prompt.prompt,
-          width: imageWidth,
-          height: imageHeight,
-          model: imageModel,
-          async: true
-        };
+      // Start async generation
+      const startResponse = await fetch(`${supabaseUrl}/functions/v1/generate-image-seedream`, {
+        method: 'POST',
+        headers: {
+          'Authorization': authHeader,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody),
+      });
 
-        if (styleReferenceUrls.length > 0) {
-          requestBody.image_urls = styleReferenceUrls;
+      if (!startResponse.ok) {
+        console.error(`Failed to start generation for scene ${index + 1}: ${startResponse.status}`);
+        failedCount++;
+        continue;
+      }
+
+      const startData = await startResponse.json();
+      const predictionId = startData.predictionId;
+
+      if (!predictionId) {
+        console.error(`No prediction ID for scene ${index + 1}`);
+        failedCount++;
+        continue;
+      }
+
+      // Poll for completion with shorter timeout per image
+      let imageUrl = null;
+      const maxWaitMs = 300000; // 5 minutes per image
+      const pollIntervalMs = 3000;
+      const imageStartTime = Date.now();
+
+      while (Date.now() - imageStartTime < maxWaitMs) {
+        // Also check overall job timeout during polling
+        if (Date.now() - JOB_START_TIME > MAX_JOB_DURATION_MS) {
+          console.log(`Job timeout reached while polling for image ${index + 1}`);
+          throw new Error(`CPU_TIMEOUT_PREEMPTIVE: Processed ${successCount} images before timeout`);
         }
+        
+        await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
 
-        // Start async generation
-        const startResponse = await fetch(`${supabaseUrl}/functions/v1/generate-image-seedream`, {
+        const statusResponse = await fetch(`${supabaseUrl}/functions/v1/generate-image-seedream`, {
           method: 'POST',
           headers: {
             'Authorization': authHeader,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify(requestBody),
+          body: JSON.stringify({ predictionId }),
         });
 
-        if (!startResponse.ok) {
-          throw new Error(`Failed to start generation: ${startResponse.status}`);
-        }
+        if (!statusResponse.ok) continue;
 
-        const startData = await startResponse.json();
-        const predictionId = startData.predictionId;
+        const statusData = await statusResponse.json();
 
-        if (!predictionId) {
-          throw new Error("No prediction ID returned");
-        }
+        if (statusData.status === 'succeeded') {
+          const output = Array.isArray(statusData.output) ? statusData.output[0] : statusData.output;
+          if (output) {
+            // Download and upload to Supabase storage
+            const imageResponse = await fetch(output);
+            if (imageResponse.ok) {
+              const blob = await imageResponse.blob();
+              const timestamp = Date.now();
+              const filename = `${projectId}/scene_${index + 1}_${timestamp}.jpg`;
 
-        // Poll for completion
-        let imageUrl = null;
-        const maxWaitMs = 600000; // 10 minutes
-        const pollIntervalMs = 3000;
-        const startTime = Date.now();
+              const { error: uploadError } = await adminClient.storage
+                .from('generated-images')
+                .upload(filename, blob, {
+                  contentType: 'image/jpeg',
+                  upsert: true
+                });
 
-        while (Date.now() - startTime < maxWaitMs) {
-          await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
-
-          const statusResponse = await fetch(`${supabaseUrl}/functions/v1/generate-image-seedream`, {
-            method: 'POST',
-            headers: {
-              'Authorization': authHeader,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ predictionId }),
-          });
-
-          if (!statusResponse.ok) continue;
-
-          const statusData = await statusResponse.json();
-
-          if (statusData.status === 'succeeded') {
-            const output = Array.isArray(statusData.output) ? statusData.output[0] : statusData.output;
-            if (output) {
-              // Download and upload to Supabase storage
-              const imageResponse = await fetch(output);
-              if (imageResponse.ok) {
-                const blob = await imageResponse.blob();
-                const timestamp = Date.now();
-                const filename = `${projectId}/scene_${index + 1}_${timestamp}.jpg`;
-
-                const { error: uploadError } = await adminClient.storage
+              if (!uploadError) {
+                const { data: { publicUrl } } = adminClient.storage
                   .from('generated-images')
-                  .upload(filename, blob, {
-                    contentType: 'image/jpeg',
-                    upsert: true
-                  });
-
-                if (!uploadError) {
-                  const { data: { publicUrl } } = adminClient.storage
-                    .from('generated-images')
-                    .getPublicUrl(filename);
-                  
-                  imageUrl = publicUrl;
-                }
+                  .getPublicUrl(filename);
+                
+                imageUrl = publicUrl;
               }
             }
-            break;
           }
-
-          if (statusData.status === 'failed' || statusData.status === 'canceled') {
-            throw new Error(`Generation ${statusData.status}`);
-          }
+          break;
         }
 
-        if (imageUrl) {
-          updatedPrompts[index] = { ...updatedPrompts[index], imageUrl };
-          successCount++;
-          
-          // Update progress (only count successes) and save image immediately
-          await adminClient
-            .from('generation_jobs')
-            .update({ progress: successCount })
-            .eq('id', jobId);
-          
-          await adminClient
-            .from('projects')
-            .update({ prompts: updatedPrompts })
-            .eq('id', projectId);
-            
-          console.log(`Image ${index + 1} saved successfully, progress: ${successCount}/${promptsToProcess.length}`);
-        } else {
-          failedCount++;
-          console.error(`Image ${index + 1} failed: no image URL after polling`);
+        if (statusData.status === 'failed' || statusData.status === 'canceled') {
+          console.error(`Generation ${statusData.status} for scene ${index + 1}`);
+          break;
         }
-
-      } catch (error) {
-        failedCount++;
-        console.error(`Error generating image for scene ${index + 1}:`, error);
-        // Don't increment progress on failure - only count successful images
       }
-    });
 
-    await Promise.all(batchPromises);
-    
-    console.log(`Batch completed. Success: ${successCount}, Failed: ${failedCount}`);
+      if (imageUrl) {
+        updatedPrompts[index] = { ...updatedPrompts[index], imageUrl };
+        successCount++;
+        
+        // Update progress and save image immediately
+        await adminClient
+          .from('generation_jobs')
+          .update({ 
+            progress: successCount,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', jobId);
+        
+        await adminClient
+          .from('projects')
+          .update({ prompts: updatedPrompts })
+          .eq('id', projectId);
+          
+        console.log(`Image ${index + 1} saved successfully, progress: ${successCount}/${promptsToProcess.length}`);
+      } else {
+        failedCount++;
+        console.error(`Image ${index + 1} failed: no image URL after polling`);
+      }
+
+    } catch (error) {
+      // Re-throw timeout errors to trigger continuation
+      if (error instanceof Error && error.message.includes('CPU_TIMEOUT_PREEMPTIVE')) {
+        throw error;
+      }
+      failedCount++;
+      console.error(`Error generating image for scene ${index + 1}:`, error);
+    }
   }
+  
+  console.log(`Image generation completed. Success: ${successCount}, Failed: ${failedCount}`);
 }
 
 async function processTranscriptionJob(
