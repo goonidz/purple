@@ -69,16 +69,6 @@ export function JobProgressIndicator({ job, onCancel, className }: JobProgressIn
             )}
           </div>
         </div>
-        {isActive && onCancel && (
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7 shrink-0"
-            onClick={() => onCancel(job.id)}
-          >
-            <X className="h-3.5 w-3.5" />
-          </Button>
-        )}
       </div>
       {isActive && (
         <p className="text-xs text-muted-foreground mt-2">
