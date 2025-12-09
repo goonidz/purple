@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { parseStyleReferenceUrls, serializeStyleReferenceUrls } from "@/lib/styleReferenceHelpers";
+import { parseTranscriptToScenes } from "@/lib/sceneParser";
 import { useNavigate, Link, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -351,14 +352,26 @@ const Projects = () => {
   };
 
   const handleFinalizeConfiguration = async () => {
-    if (!currentProjectId) return;
+    if (!currentProjectId || !transcriptData) return;
     
     const projectId = currentProjectId; // Sauvegarder l'ID avant de réinitialiser
     const shouldSemiAuto = semiAutoMode; // Sauvegarder le mode avant de réinitialiser
+    const transcript = transcriptData; // Sauvegarder les données de transcription
     
     setIsCreating(true);
     try {
-      // Save all configuration to database (including image settings)
+      // Generate scenes from transcript BEFORE saving
+      const generatedScenes = parseTranscriptToScenes(
+        transcript,
+        sceneDuration0to1,
+        sceneDuration1to3,
+        sceneDuration3plus,
+        range1End,
+        range2End,
+        true // preferSentenceBoundaries
+      );
+
+      // Save all configuration + generated scenes to database
       const { error } = await supabase
         .from("projects")
         .update({
@@ -372,6 +385,7 @@ const Projects = () => {
           image_model: imageModel,
           prompt_system_message: promptSystemMessage || null,
           style_reference_url: serializeStyleReferenceUrls(styleReferenceUrls),
+          scenes: generatedScenes as any, // Save generated scenes
         })
         .eq("id", projectId);
 
@@ -386,7 +400,7 @@ const Projects = () => {
         setCalendarEntryId(null);
       }
 
-      toast.success("Configuration enregistrée !");
+      toast.success(`Configuration enregistrée ! ${generatedScenes.length} scènes générées.`);
       setIsDialogOpen(false);
       setWorkflowStep("upload");
       setNewProjectName("");
