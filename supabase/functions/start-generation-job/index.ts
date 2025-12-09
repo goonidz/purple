@@ -237,8 +237,146 @@ async function processJob(
 
     console.log(`Job ${jobId} completed successfully`);
 
+    // Semi-automatic mode: chain to next job
+    if (metadata.semiAutoMode === true) {
+      await chainNextJob(projectId, userId, jobType, authHeader, adminClient);
+    }
+
   } catch (error) {
     console.error(`Job ${jobId} failed:`, error);
+    
+    await adminClient
+      .from('generation_jobs')
+      .update({ 
+        status: 'failed',
+        error_message: error instanceof Error ? error.message : 'Unknown error',
+        completed_at: new Date().toISOString()
+      })
+      .eq('id', jobId);
+  }
+}
+
+// Chain to the next job in semi-automatic mode
+async function chainNextJob(
+  projectId: string,
+  userId: string,
+  completedJobType: string,
+  authHeader: string,
+  adminClient: any
+) {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+  
+  let nextJobType: string | null = null;
+  
+  // Determine next job in the pipeline
+  if (completedJobType === 'prompts') {
+    nextJobType = 'images';
+  } else if (completedJobType === 'images') {
+    nextJobType = 'thumbnails';
+  }
+  // After thumbnails, the pipeline is complete
+  
+  if (!nextJobType) {
+    console.log(`Semi-automatic pipeline completed for project ${projectId}`);
+    return;
+  }
+  
+  console.log(`Semi-automatic mode: Chaining from ${completedJobType} to ${nextJobType} for project ${projectId}`);
+  
+  // Get project data for the next job
+  const { data: project } = await adminClient
+    .from('projects')
+    .select('*')
+    .eq('id', projectId)
+    .single();
+    
+  if (!project) {
+    console.error(`Project ${projectId} not found for chaining`);
+    return;
+  }
+  
+  // Calculate total for the next job
+  let total = 0;
+  if (nextJobType === 'images') {
+    const prompts = (project.prompts as any[]) || [];
+    total = prompts.filter((p: any) => p && !p.imageUrl).length;
+  } else if (nextJobType === 'thumbnails') {
+    total = 3; // Always 3 thumbnails
+  }
+  
+  // Create the next job
+  const { data: nextJob, error: jobError } = await adminClient
+    .from('generation_jobs')
+    .insert({
+      project_id: projectId,
+      user_id: userId,
+      job_type: nextJobType,
+      status: 'pending',
+      progress: 0,
+      total,
+      metadata: {
+        semiAutoMode: true,
+        skipExisting: true,
+        started_at: new Date().toISOString(),
+      }
+    })
+    .select()
+    .single();
+    
+  if (jobError) {
+    console.error(`Error creating chained job ${nextJobType}:`, jobError);
+    return;
+  }
+  
+  console.log(`Created chained job ${nextJob.id} for ${nextJobType}`);
+  
+  // Start processing the next job
+  EdgeRuntime.waitUntil(processChainedJob(nextJob.id, projectId, nextJobType, userId, { semiAutoMode: true, skipExisting: true }, authHeader, adminClient));
+}
+
+// Process a chained job (similar to processJob but reuses adminClient)
+async function processChainedJob(
+  jobId: string, 
+  projectId: string, 
+  jobType: string,
+  userId: string,
+  metadata: Record<string, any>,
+  authHeader: string,
+  adminClient: any
+) {
+  try {
+    // Update job status to processing
+    await adminClient
+      .from('generation_jobs')
+      .update({ status: 'processing' })
+      .eq('id', jobId);
+
+    console.log(`Chained job ${jobId} started processing`);
+
+    if (jobType === 'images') {
+      await processImagesJob(jobId, projectId, userId, metadata, authHeader, adminClient);
+    } else if (jobType === 'thumbnails') {
+      await processThumbnailsJob(jobId, projectId, userId, metadata, authHeader, adminClient);
+    }
+
+    // Mark job as completed
+    await adminClient
+      .from('generation_jobs')
+      .update({ 
+        status: 'completed',
+        completed_at: new Date().toISOString()
+      })
+      .eq('id', jobId);
+
+    console.log(`Chained job ${jobId} completed successfully`);
+
+    // Continue chaining if semiAutoMode
+    if (metadata.semiAutoMode === true) {
+      await chainNextJob(projectId, userId, jobType, authHeader, adminClient);
+    }
+
+  } catch (error) {
+    console.error(`Chained job ${jobId} failed:`, error);
     
     await adminClient
       .from('generation_jobs')
