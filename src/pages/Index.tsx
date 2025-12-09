@@ -187,52 +187,17 @@ const Index = () => {
     if (job.job_type === 'prompts') {
       setIsGeneratingPrompts(false);
       
-      // Semi-auto: start images generation after prompts complete
-      if (isSemiAuto && startJobRef.current) {
+      // Semi-auto: backend already chains to images job, just update UI state
+      if (isSemiAuto) {
         toast.info("Génération des images en cours...");
-        startJobRef.current('images', { skipExisting: false, semiAutoMode: true, thumbnailPresetId }).then(() => {
-          setIsGeneratingImages(true);
-        });
+        setIsGeneratingImages(true);
       }
     } else if (job.job_type === 'images') {
       setIsGeneratingImages(false);
       
-      // Semi-auto: start thumbnails generation after images complete
-      if (isSemiAuto && startJobRef.current && thumbnailPresetId) {
-        // Fetch thumbnail preset data
-        supabase
-          .from("thumbnail_presets")
-          .select("*")
-          .eq("id", thumbnailPresetId)
-          .single()
-          .then(async ({ data: preset, error }) => {
-            if (error || !preset) {
-              toast.error("Preset de miniatures non trouvé. Miniatures ignorées.");
-              toast.success("🎉 Génération semi-automatique terminée (sans miniatures) !");
-              return;
-            }
-            
-            // Get project data for script and title
-            const projectId = currentProjectIdRef.current;
-            const { data: project } = await supabase
-              .from("projects")
-              .select("name, prompts")
-              .eq("id", projectId)
-              .single();
-            
-            const prompts = (project?.prompts as any[]) || [];
-            const videoScript = prompts.map((p: any) => p?.text || '').join(' ');
-            
-            toast.info("Génération des miniatures en cours...");
-            startJobRef.current!('thumbnails', { 
-              semiAutoMode: true,
-              videoScript,
-              videoTitle: project?.name || '',
-              exampleUrls: preset.example_urls || [],
-              characterRefUrl: preset.character_ref_url,
-              customPrompt: preset.custom_prompt
-            });
-          });
+      // Semi-auto: backend already chains to thumbnails job if preset is set
+      if (isSemiAuto && thumbnailPresetId) {
+        toast.info("Génération des miniatures en cours...");
       } else if (isSemiAuto && !thumbnailPresetId) {
         toast.success("🎉 Génération semi-automatique terminée (sans miniatures - aucun preset sélectionné) !");
       }

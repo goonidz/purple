@@ -448,13 +448,58 @@ async function chainNextJob(
     return;
   }
   
-  // Calculate total for the next job
+  // Calculate total and prepare metadata for the next job
   let total = 0;
+  let jobMetadata: Record<string, any> = {
+    semiAutoMode: true,
+    skipExisting: true,
+    started_at: new Date().toISOString(),
+  };
+  
   if (nextJobType === 'images') {
     const prompts = (project.prompts as any[]) || [];
     total = prompts.filter((p: any) => p && !p.imageUrl).length;
   } else if (nextJobType === 'thumbnails') {
     total = 3; // Always 3 thumbnails
+    
+    // For thumbnails, we need to fetch the thumbnail preset data
+    const thumbnailPresetId = project.thumbnail_preset_id;
+    
+    if (!thumbnailPresetId) {
+      console.log(`No thumbnail preset selected for project ${projectId}. Skipping thumbnails.`);
+      console.log(`Semi-automatic pipeline completed for project ${projectId} (without thumbnails)`);
+      return;
+    }
+    
+    // Fetch the thumbnail preset
+    const { data: thumbnailPreset, error: presetError } = await adminClient
+      .from('thumbnail_presets')
+      .select('*')
+      .eq('id', thumbnailPresetId)
+      .single();
+    
+    if (presetError || !thumbnailPreset) {
+      console.error(`Thumbnail preset ${thumbnailPresetId} not found. Skipping thumbnails.`);
+      console.log(`Semi-automatic pipeline completed for project ${projectId} (without thumbnails)`);
+      return;
+    }
+    
+    // Build the video script from prompts
+    const prompts = (project.prompts as any[]) || [];
+    const videoScript = prompts.map((p: any) => p?.text || '').join(' ');
+    
+    // Add thumbnail-specific metadata
+    jobMetadata = {
+      ...jobMetadata,
+      videoScript,
+      videoTitle: project.name || '',
+      exampleUrls: thumbnailPreset.example_urls || [],
+      characterRefUrl: thumbnailPreset.character_ref_url,
+      customPrompt: thumbnailPreset.custom_prompt,
+      imageModel: project.image_model || 'seedream-4.5'
+    };
+    
+    console.log(`Thumbnail preset loaded: ${thumbnailPreset.name}`);
   }
   
   // Create the next job
@@ -467,11 +512,7 @@ async function chainNextJob(
       status: 'pending',
       progress: 0,
       total,
-      metadata: {
-        semiAutoMode: true,
-        skipExisting: true,
-        started_at: new Date().toISOString(),
-      }
+      metadata: jobMetadata
     })
     .select()
     .single();
@@ -484,7 +525,7 @@ async function chainNextJob(
   console.log(`Created chained job ${nextJob.id} for ${nextJobType}`);
   
   // Start processing the next job
-  EdgeRuntime.waitUntil(processChainedJob(nextJob.id, projectId, nextJobType, userId, { semiAutoMode: true, skipExisting: true }, authHeader, adminClient));
+  EdgeRuntime.waitUntil(processChainedJob(nextJob.id, projectId, nextJobType, userId, jobMetadata, authHeader, adminClient));
 }
 
 // Process a chained job (similar to processJob but reuses adminClient)
