@@ -61,22 +61,43 @@ serve(async (req) => {
     const adminClient = createClient(supabaseUrl, supabaseServiceKey);
 
     // Check if there's already an active job of this type for this project
-    const { data: existingJob } = await adminClient
+    // For single_prompt and single_image, allow multiple jobs but not for the same scene
+    let existingJobQuery = adminClient
       .from('generation_jobs')
-      .select('id, status')
+      .select('id, status, metadata')
       .eq('project_id', projectId)
       .eq('job_type', jobType)
-      .in('status', ['pending', 'processing'])
-      .maybeSingle();
+      .in('status', ['pending', 'processing']);
 
-    if (existingJob) {
-      return new Response(
-        JSON.stringify({ 
-          error: "A job of this type is already running for this project",
-          existingJobId: existingJob.id 
-        }),
-        { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+    const { data: existingJobs } = await existingJobQuery;
+
+    if (existingJobs && existingJobs.length > 0) {
+      // For single jobs, check if the same scene is already being processed
+      if (jobType === 'single_prompt' || jobType === 'single_image') {
+        const sceneIndex = metadata.sceneIndex;
+        const sameSceneJob = existingJobs.find(
+          (j: any) => j.metadata?.sceneIndex === sceneIndex
+        );
+        if (sameSceneJob) {
+          return new Response(
+            JSON.stringify({ 
+              error: "Cette scène est déjà en cours de génération",
+              existingJobId: sameSceneJob.id 
+            }),
+            { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+        // Allow multiple single jobs for different scenes
+      } else {
+        // For other job types, block if any is running
+        return new Response(
+          JSON.stringify({ 
+            error: "A job of this type is already running for this project",
+            existingJobId: existingJobs[0].id 
+          }),
+          { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
     }
 
     // Get project data to determine total items
