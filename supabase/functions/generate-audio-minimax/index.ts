@@ -6,70 +6,8 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-// MiniMax voice IDs - complete list
-const MINIMAX_VOICES: Record<string, string> = {
-  // English voices
-  "english_expressive_narrator": "English_expressive_narrator",
-  "calm_american_man": "Calm_American_Man",
-  "warm_american_woman": "Warm_American_Woman",
-  "british_gentleman": "British_Gentleman",
-  "british_lady": "British_Lady",
-  "friendly_american_man": "Friendly_American_Man",
-  "friendly_american_woman": "Friendly_American_Woman",
-  "professional_american_man": "Professional_American_Man",
-  "professional_american_woman": "Professional_American_Woman",
-  "excited_american_man": "Excited_American_Man",
-  "excited_american_woman": "Excited_American_Woman",
-  "soft_american_man": "Soft_American_Man",
-  "soft_american_woman": "Soft_American_Woman",
-  "deep_american_man": "Deep_American_Man",
-  "youthful_american_man": "Youthful_American_Man",
-  "youthful_american_woman": "Youthful_American_Woman",
-  "mature_american_man": "Mature_American_Man",
-  "mature_american_woman": "Mature_American_Woman",
-  // French voices
-  "french_graceful_man": "French_Graceful_Man",
-  "french_mature_lady": "French_Mature_Lady",
-  "french_warm_man": "French_Warm_Man",
-  "french_sweet_lady": "French_Sweet_Lady",
-  // Spanish voices
-  "spanish_trustworth_man": "Spanish_Trustworth_Man",
-  "spanish_sweet_lady": "Spanish_Sweet_Lady",
-  // German voices
-  "german_gentle_man": "German_Gentle_Man",
-  "german_sweet_lady": "German_Sweet_Lady",
-  // Italian voices
-  "italian_warm_man": "Italian_Warm_Man",
-  "italian_sweet_lady": "Italian_Sweet_Lady",
-  // Portuguese voices
-  "portuguese_warm_man": "Portuguese_Warm_Man",
-  "portuguese_sweet_lady": "Portuguese_Sweet_Lady",
-  // Chinese voices
-  "chinese_gentle_lady": "Chinese_Gentle_Lady",
-  "chinese_calm_man": "Chinese_Calm_Man",
-  // Japanese voices
-  "japanese_gentle_lady": "Japanese_Gentle_Lady",
-  "japanese_calm_man": "Japanese_Calm_Man",
-  // Korean voices
-  "korean_gentle_lady": "Korean_Gentle_Lady",
-  "korean_calm_man": "Korean_Calm_Man",
-  // Arabic voices
-  "arabic_gentle_man": "Arabic_Gentle_Man",
-  "arabic_sweet_lady": "Arabic_Sweet_Lady",
-  // Russian voices
-  "russian_calm_man": "Russian_Calm_Man",
-  "russian_sweet_lady": "Russian_Sweet_Lady",
-  // Hindi voices
-  "hindi_calm_man": "Hindi_Calm_Man",
-  "hindi_sweet_lady": "Hindi_Sweet_Lady",
-  // Legacy mappings for backwards compatibility
-  "english_narrator": "English_expressive_narrator",
-  "english_male": "Calm_American_Man",
-  "english_female": "Warm_American_Woman",
-  "english_british": "British_Gentleman",
-  "french_male": "French_Graceful_Man",
-  "french_female": "French_Mature_Lady",
-};
+// MiniMax uses voice_id directly - no mapping needed
+// The frontend sends the exact voice_id from the official list
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -136,7 +74,8 @@ serve(async (req) => {
       );
     }
 
-    const voiceId = MINIMAX_VOICES[voice.toLowerCase()] || MINIMAX_VOICES.english_narrator;
+    // Use voice directly as voice_id - frontend sends exact MiniMax voice IDs
+    const voiceId = voice || "English_expressive_narrator";
 
     console.log("Calling MiniMax TTS with voice:", voice, "voiceId:", voiceId, "model:", model);
 
