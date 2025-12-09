@@ -1,13 +1,29 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Loader2, Plus, Upload } from "lucide-react";
+import { Loader2, Plus, Upload, Download } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { parseStyleReferenceUrls } from "@/lib/styleReferenceHelpers";
+
+interface Preset {
+  id: string;
+  name: string;
+  scene_duration_0to1: number;
+  scene_duration_1to3: number;
+  scene_duration_3plus: number;
+  example_prompts: string[];
+  image_width: number;
+  image_height: number;
+  aspect_ratio: string;
+  style_reference_url: string | null;
+  image_model: string;
+  prompt_system_message: string | null;
+}
 
 interface ProjectConfigurationModalProps {
   transcriptData: any;
@@ -37,6 +53,70 @@ export const ProjectConfigurationModal = ({
   const [styleReferenceUrls, setStyleReferenceUrls] = useState<string[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  
+  // Preset loading
+  const [presets, setPresets] = useState<Preset[]>([]);
+  const [isLoadingPresets, setIsLoadingPresets] = useState(false);
+  const [selectedPresetId, setSelectedPresetId] = useState<string>("");
+
+  // Load presets on mount
+  useEffect(() => {
+    loadPresets();
+  }, []);
+
+  const loadPresets = async () => {
+    setIsLoadingPresets(true);
+    try {
+      const { data, error } = await supabase
+        .from("presets")
+        .select("*")
+        .order("name", { ascending: true });
+
+      if (error) throw error;
+      
+      const mappedPresets: Preset[] = (data || []).map(preset => ({
+        id: preset.id,
+        name: preset.name,
+        scene_duration_0to1: preset.scene_duration_0to1 || 4,
+        scene_duration_1to3: preset.scene_duration_1to3 || 6,
+        scene_duration_3plus: preset.scene_duration_3plus || 8,
+        example_prompts: Array.isArray(preset.example_prompts) 
+          ? preset.example_prompts.filter((p): p is string => typeof p === 'string')
+          : [],
+        image_width: preset.image_width || 1920,
+        image_height: preset.image_height || 1080,
+        aspect_ratio: preset.aspect_ratio || "16:9",
+        style_reference_url: preset.style_reference_url,
+        image_model: (preset as any).image_model || 'seedream-4.5',
+        prompt_system_message: (preset as any).prompt_system_message || null,
+      }));
+      
+      setPresets(mappedPresets);
+    } catch (error: any) {
+      console.error("Error loading presets:", error);
+    } finally {
+      setIsLoadingPresets(false);
+    }
+  };
+
+  const handleLoadPreset = (presetId: string) => {
+    const preset = presets.find(p => p.id === presetId);
+    if (preset) {
+      setSceneDuration0to1(preset.scene_duration_0to1);
+      setSceneDuration1to3(preset.scene_duration_1to3);
+      setSceneDuration3plus(preset.scene_duration_3plus);
+      setExamplePrompts(preset.example_prompts.length > 0 ? preset.example_prompts : ["", "", ""]);
+      setImageWidth(preset.image_width);
+      setImageHeight(preset.image_height);
+      setAspectRatio(preset.aspect_ratio);
+      setImageModel(preset.image_model);
+      if (preset.style_reference_url) {
+        setStyleReferenceUrls(parseStyleReferenceUrls(preset.style_reference_url));
+      }
+      setSelectedPresetId(presetId);
+      toast.success(`Preset "${preset.name}" chargé !`);
+    }
+  };
 
   const handleStyleImageUpload = async (files: FileList) => {
     if (styleReferenceUrls.length >= 15) {
@@ -154,6 +234,39 @@ export const ProjectConfigurationModal = ({
 
       {step === "review" && (
         <div className="space-y-4">
+          {/* Preset selector */}
+          <div className="rounded-lg border p-4 bg-primary/5 border-primary/20">
+            <div className="flex items-center gap-2 mb-3">
+              <Download className="h-4 w-4 text-primary" />
+              <h3 className="font-semibold text-sm">Charger un preset (optionnel)</h3>
+            </div>
+            {isLoadingPresets ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Chargement des presets...
+              </div>
+            ) : presets.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                Aucun preset sauvegardé. Vous pourrez en créer après avoir configuré un projet.
+              </p>
+            ) : (
+              <div className="flex gap-2">
+                <Select value={selectedPresetId} onValueChange={handleLoadPreset}>
+                  <SelectTrigger className="flex-1 bg-background">
+                    <SelectValue placeholder="Sélectionner un preset..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {presets.map((preset) => (
+                      <SelectItem key={preset.id} value={preset.id}>
+                        {preset.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+          </div>
+
           <div className="rounded-lg border p-4 max-h-60 overflow-y-auto bg-muted/30">
             <h3 className="font-semibold mb-2 text-sm">Transcription :</h3>
             {transcriptData.full_text ? (
