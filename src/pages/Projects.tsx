@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { parseStyleReferenceUrls, serializeStyleReferenceUrls } from "@/lib/styleReferenceHelpers";
 import { useNavigate, Link, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
@@ -13,7 +13,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Loader2, Plus, Trash2, Sparkles, User as UserIcon, Pencil, Check, X } from "lucide-react";
+import { Loader2, Plus, Trash2, Sparkles, User as UserIcon, Pencil, Check, X, Cloud } from "lucide-react";
 import { toast } from "sonner";
 import type { User } from "@supabase/supabase-js";
 import { Label } from "@/components/ui/label";
@@ -22,6 +22,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { PresetManager } from "@/components/PresetManager";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import OnboardingDialog from "@/components/OnboardingDialog";
+import { useGenerationJobs, GenerationJob } from "@/hooks/useGenerationJobs";
+import { ActiveJobsBanner } from "@/components/JobProgressIndicator";
 
 interface Project {
   id: string;
@@ -64,6 +66,43 @@ const Projects = () => {
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
   const [editingProjectName, setEditingProjectName] = useState("");
   const [calendarEntryId, setCalendarEntryId] = useState<string | null>(null);
+
+  // Job management for background transcription
+  const handleTranscriptionComplete = useCallback(async (job: GenerationJob) => {
+    toast.success("Transcription terminée en arrière-plan !");
+    // Load the transcript from the project
+    if (currentProjectId) {
+      const { data: projectData } = await supabase
+        .from("projects")
+        .select("transcript_json")
+        .eq("id", currentProjectId)
+        .single();
+      
+      if (projectData?.transcript_json) {
+        setTranscriptData(projectData.transcript_json);
+        setWorkflowStep("review");
+      }
+    }
+    setIsCreating(false);
+    loadProjects();
+  }, [currentProjectId]);
+
+  const handleTranscriptionFailed = useCallback((job: GenerationJob) => {
+    toast.error(`Erreur de transcription: ${job.error_message || 'Échec de la transcription'}`);
+    setWorkflowStep("upload");
+    setIsCreating(false);
+  }, []);
+
+  const { 
+    activeJobs, 
+    startJob, 
+    cancelJob, 
+    hasActiveJob 
+  } = useGenerationJobs({
+    projectId: currentProjectId,
+    onJobComplete: handleTranscriptionComplete,
+    onJobFailed: handleTranscriptionFailed
+  });
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -138,35 +177,18 @@ const Projects = () => {
       if (projectError) throw projectError;
 
       setCurrentProjectId(projectData.id);
-      toast.success("Transcription en cours...");
-
-      // Call transcription edge function
-      const { data: transcriptionResult, error: transcriptError } = await supabase.functions.invoke(
-        "transcribe-audio",
-        {
-          body: { audioUrl },
-        }
-      );
-
-      if (transcriptError) throw transcriptError;
-
-      // Update project with transcript
-      const { error: updateError } = await supabase
-        .from("projects")
-        .update({ transcript_json: transcriptionResult })
-        .eq("id", projectData.id);
-
-      if (updateError) throw updateError;
-
-      setTranscriptData(transcriptionResult);
-      setWorkflowStep("review");
-      toast.success("Transcription terminée !");
-      await loadProjects();
+      
+      // Start background transcription job
+      const result = await startJob('transcription', { audioUrl });
+      if (result) {
+        toast.info("Transcription lancée en arrière-plan. Vous pouvez quitter cette page.");
+      } else {
+        throw new Error("Impossible de démarrer la transcription");
+      }
     } catch (error: any) {
       console.error("Error with calendar transcription:", error);
       toast.error("Erreur lors de la transcription: " + error.message);
       setWorkflowStep("upload");
-    } finally {
       setIsCreating(false);
     }
   };
@@ -266,33 +288,17 @@ const Projects = () => {
 
       setCurrentProjectId(projectData.id);
       setWorkflowStep("transcription");
-      toast.success("Audio importé, transcription en cours...");
-
-      // Call transcription edge function
-      const { data: transcriptionResult, error: transcriptError } = await supabase.functions.invoke(
-        "transcribe-audio",
-        {
-          body: { audioUrl: publicUrl },
-        }
-      );
-
-      if (transcriptError) throw transcriptError;
-
-      // Update project with transcript
-      const { error: updateError } = await supabase
-        .from("projects")
-        .update({ transcript_json: transcriptionResult })
-        .eq("id", projectData.id);
-
-      if (updateError) throw updateError;
-
-      setTranscriptData(transcriptionResult);
-      setWorkflowStep("review");
-      toast.success("Transcription terminée !");
+      
+      // Start background transcription job
+      const result = await startJob('transcription', { audioUrl: publicUrl });
+      if (result) {
+        toast.info("Transcription lancée en arrière-plan. Vous pouvez quitter cette page.");
+      } else {
+        throw new Error("Impossible de démarrer la transcription");
+      }
     } catch (error: any) {
       console.error("Error creating project:", error);
       toast.error("Erreur : " + (error.message || "Erreur inconnue"));
-    } finally {
       setIsCreating(false);
     }
   };
@@ -604,11 +610,32 @@ const Projects = () => {
                 )}
 
                 {workflowStep === "transcription" && (
-                  <div className="flex flex-col items-center justify-center py-12 gap-4">
-                    <Loader2 className="h-12 w-12 animate-spin text-primary" />
-                    <p className="text-sm text-muted-foreground">
-                      Transcription en cours...
+                  <div className="flex flex-col items-center justify-center py-8 gap-4">
+                    <div className="flex items-center gap-2 text-primary">
+                      <Cloud className="h-8 w-8" />
+                      <Loader2 className="h-8 w-8 animate-spin" />
+                    </div>
+                    <p className="text-sm font-medium">
+                      Transcription en cours en arrière-plan...
                     </p>
+                    <p className="text-xs text-muted-foreground text-center max-w-sm">
+                      Vous pouvez fermer cette fenêtre ou quitter la page. La transcription continuera en arrière-plan et sera disponible quand vous reviendrez.
+                    </p>
+                    <ActiveJobsBanner 
+                      jobs={activeJobs} 
+                      onCancel={cancelJob}
+                      className="w-full"
+                    />
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => {
+                        setIsDialogOpen(false);
+                        toast.info("La transcription continue en arrière-plan");
+                      }}
+                    >
+                      Fermer et continuer plus tard
+                    </Button>
                   </div>
                 )}
 
