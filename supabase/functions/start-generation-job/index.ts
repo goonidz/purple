@@ -754,8 +754,8 @@ async function processImagesJob(
   let successCount = 0;
   let failedCount = 0;
 
-  // Process images in batches of 8 for maximum parallelism while managing timeout
-  const BATCH_SIZE = 8;
+  // Process images in batches of 4 for balance between speed and timeout management
+  const BATCH_SIZE = 4;
   const JOB_START_TIME = Date.now();
   const MAX_JOB_DURATION_MS = 120000; // 2 minutes - leave buffer before CPU timeout
   
