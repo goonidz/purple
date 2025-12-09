@@ -44,3 +44,6 @@ verify_jwt = false
 
 [functions.generate-audio-minimax]
 verify_jwt = false
+
+[functions.repair-missing-images]
+verify_jwt = false
