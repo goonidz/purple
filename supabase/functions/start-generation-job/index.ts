@@ -806,181 +806,96 @@ async function processImagesJob(
     .map((prompt: any, index: number) => ({ prompt, index }))
     .filter(({ prompt }: any) => prompt && (!skipExisting || !prompt.imageUrl));
 
-  const updatedPrompts = [...prompts];
-  let successCount = 0;
-  let failedCount = 0;
+  if (promptsToProcess.length === 0) {
+    console.log("No images to generate");
+    return;
+  }
 
-  // Process images in batches of 4 for balance between speed and timeout management
-  const BATCH_SIZE = 4;
-  const JOB_START_TIME = Date.now();
-  const MAX_JOB_DURATION_MS = 120000; // 2 minutes - leave buffer before CPU timeout
+  console.log(`Starting webhook-based image generation for ${promptsToProcess.length} scenes`);
+
+  // Build webhook URL
+  const webhookUrl = `${supabaseUrl}/functions/v1/replicate-webhook`;
+
+  // Start all generations with webhooks (non-blocking)
+  let startedCount = 0;
   
-  for (let batchStart = 0; batchStart < promptsToProcess.length; batchStart += BATCH_SIZE) {
-    // Check if we're approaching timeout - if so, mark for continuation
-    const elapsed = Date.now() - JOB_START_TIME;
-    if (elapsed > MAX_JOB_DURATION_MS) {
-      console.log(`Approaching timeout after ${elapsed}ms. Processed ${successCount} images. Marking for continuation...`);
-      
-      // Update job metadata to indicate partial completion
-      await adminClient
-        .from('generation_jobs')
-        .update({ 
-          metadata: {
-            ...metadata,
-            partialCompletion: true,
-            processedCount: successCount,
-            remainingCount: promptsToProcess.length - batchStart
-          }
-        })
-        .eq('id', jobId);
-      
-      // Throw a special error to trigger continuation
-      throw new Error(`CPU_TIMEOUT_PREEMPTIVE: Processed ${successCount} images before timeout`);
-    }
-    
-    const batch = promptsToProcess.slice(batchStart, batchStart + BATCH_SIZE);
-    
-    // Process batch in parallel
-    const batchResults = await Promise.all(batch.map(async ({ prompt, index }: any) => {
-      try {
-        const requestBody: any = {
-          prompt: prompt.prompt,
-          width: imageWidth,
-          height: imageHeight,
-          model: imageModel,
-          async: true
-        };
+  for (const { prompt, index } of promptsToProcess) {
+    try {
+      const requestBody: any = {
+        prompt: prompt.prompt,
+        width: imageWidth,
+        height: imageHeight,
+        model: imageModel,
+        async: true,
+        webhook_url: webhookUrl,
+      };
 
-        if (styleReferenceUrls.length > 0) {
-          requestBody.image_urls = styleReferenceUrls;
-        }
+      if (styleReferenceUrls.length > 0) {
+        requestBody.image_urls = styleReferenceUrls;
+      }
 
-        // Start async generation
-        const startResponse = await fetch(`${supabaseUrl}/functions/v1/generate-image-seedream`, {
-          method: 'POST',
-          headers: {
-            'Authorization': authHeader,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(requestBody),
+      // Start async generation with webhook
+      const startResponse = await fetch(`${supabaseUrl}/functions/v1/generate-image-seedream`, {
+        method: 'POST',
+        headers: {
+          'Authorization': authHeader,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody),
+      });
+
+      if (!startResponse.ok) {
+        console.error(`Failed to start generation for scene ${index + 1}: ${startResponse.status}`);
+        continue;
+      }
+
+      const startData = await startResponse.json();
+      const predictionId = startData.predictionId;
+
+      if (!predictionId) {
+        console.error(`No prediction ID for scene ${index + 1}`);
+        continue;
+      }
+
+      // Save to pending_predictions table
+      const { error: insertError } = await adminClient
+        .from('pending_predictions')
+        .insert({
+          job_id: jobId,
+          prediction_id: predictionId,
+          prediction_type: 'scene_image',
+          scene_index: index,
+          project_id: projectId,
+          user_id: userId,
+          metadata: { prompt: prompt.prompt },
+          status: 'pending'
         });
 
-        if (!startResponse.ok) {
-          console.error(`Failed to start generation for scene ${index + 1}: ${startResponse.status}`);
-          return { success: false, index };
-        }
-
-        const startData = await startResponse.json();
-        const predictionId = startData.predictionId;
-
-        if (!predictionId) {
-          console.error(`No prediction ID for scene ${index + 1}`);
-          return { success: false, index };
-        }
-
-        // Poll for completion
-        let imageUrl = null;
-        const maxWaitMs = 300000; // 5 minutes per image
-        const pollIntervalMs = 1000; // Poll every 1 second for faster response
-        const imageStartTime = Date.now();
-        let isFirstPoll = true;
-
-        while (Date.now() - imageStartTime < maxWaitMs) {
-          // Only wait before polling if not the first check
-          if (!isFirstPoll) {
-            await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
-          }
-          isFirstPoll = false;
-
-          const statusResponse = await fetch(`${supabaseUrl}/functions/v1/generate-image-seedream`, {
-            method: 'POST',
-            headers: {
-              'Authorization': authHeader,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ predictionId }),
-          });
-
-          if (!statusResponse.ok) continue;
-
-          const statusData = await statusResponse.json();
-
-          if (statusData.status === 'succeeded') {
-            const output = Array.isArray(statusData.output) ? statusData.output[0] : statusData.output;
-            if (output) {
-              // Download and upload to Supabase storage
-              const imageResponse = await fetch(output);
-              if (imageResponse.ok) {
-                const blob = await imageResponse.blob();
-                const timestamp = Date.now();
-                const filename = `${projectId}/scene_${index + 1}_${timestamp}.jpg`;
-
-                const { error: uploadError } = await adminClient.storage
-                  .from('generated-images')
-                  .upload(filename, blob, {
-                    contentType: 'image/jpeg',
-                    upsert: true
-                  });
-
-                if (!uploadError) {
-                  const { data: { publicUrl } } = adminClient.storage
-                    .from('generated-images')
-                    .getPublicUrl(filename);
-                  
-                  imageUrl = publicUrl;
-                }
-              }
-            }
-            break;
-          }
-
-          if (statusData.status === 'failed' || statusData.status === 'canceled') {
-            console.error(`Generation ${statusData.status} for scene ${index + 1}`);
-            break;
-          }
-        }
-
-        if (imageUrl) {
-          return { success: true, index, imageUrl };
-        } else {
-          console.error(`Image ${index + 1} failed: no image URL after polling`);
-          return { success: false, index };
-        }
-
-      } catch (error) {
-        console.error(`Error generating image for scene ${index + 1}:`, error);
-        return { success: false, index };
-      }
-    }));
-    
-    // Process batch results - update prompts and progress
-    for (const result of batchResults) {
-      if (result.success && result.imageUrl) {
-        updatedPrompts[result.index] = { ...updatedPrompts[result.index], imageUrl: result.imageUrl };
-        successCount++;
+      if (insertError) {
+        console.error(`Error saving prediction ${predictionId}:`, insertError);
       } else {
-        failedCount++;
+        startedCount++;
+        console.log(`Scene ${index + 1} generation started: ${predictionId}`);
       }
+
+    } catch (error) {
+      console.error(`Error starting generation for scene ${index + 1}:`, error);
     }
-    
-    // Update progress and save after each batch
+  }
+
+  console.log(`Started ${startedCount}/${promptsToProcess.length} image generations. Waiting for webhooks...`);
+
+  // Update job total to match actually started generations
+  if (startedCount > 0) {
     await adminClient
       .from('generation_jobs')
-      .update({ 
-        progress: successCount,
-        updated_at: new Date().toISOString()
-      })
+      .update({ total: startedCount })
       .eq('id', jobId);
-    
-    await adminClient
-      .from('projects')
-      .update({ prompts: updatedPrompts })
-      .eq('id', projectId);
-      
-    console.log(`Batch completed. Progress: ${successCount}/${promptsToProcess.length}, Failed: ${failedCount}`);
   }
-  
-  console.log(`Image generation completed. Success: ${successCount}, Failed: ${failedCount}`);
+
+  // Job stays in 'processing' status - the webhook will mark it complete
+  // Throw special marker to prevent the job from being marked complete by processJob
+  throw new Error("WEBHOOK_MODE_ACTIVE");
 }
 
 async function processTranscriptionJob(
