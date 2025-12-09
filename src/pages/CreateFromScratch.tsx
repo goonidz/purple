@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate, Link, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import type { User } from "@supabase/supabase-js";
 import { Button } from "@/components/ui/button";
@@ -50,6 +50,7 @@ RÈGLES IMPORTANTES:
 
 const CreateFromScratch = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [user, setUser] = useState<User | null>(null);
   const [step, setStep] = useState<WorkflowStep>("topic");
   
@@ -85,7 +86,7 @@ const CreateFromScratch = () => {
   const [audioUrl, setAudioUrl] = useState("");
   const [projectId, setProjectId] = useState<string | null>(null);
 
-  // Check authentication
+  // Check authentication and load continued project if any
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null);
@@ -93,6 +94,12 @@ const CreateFromScratch = () => {
         navigate("/auth");
       } else {
         loadPresets();
+        
+        // Check if continuing an existing project
+        const continueProjectId = searchParams.get("continue");
+        if (continueProjectId) {
+          loadExistingProject(continueProjectId);
+        }
       }
     });
 
@@ -104,7 +111,33 @@ const CreateFromScratch = () => {
     });
 
     return () => subscription.unsubscribe();
-  }, [navigate]);
+  }, [navigate, searchParams]);
+
+  // Load existing project with script (continue workflow)
+  const loadExistingProject = async (projectIdToLoad: string) => {
+    try {
+      const { data, error } = await supabase
+        .from("projects")
+        .select("id, name, summary")
+        .eq("id", projectIdToLoad)
+        .single();
+
+      if (error) throw error;
+
+      if (data && data.summary) {
+        setProjectId(data.id);
+        setProjectName(data.name || "");
+        setGeneratedScript(data.summary);
+        setWordCount(data.summary.split(/\s+/).length);
+        setEstimatedDuration(Math.round(data.summary.split(/\s+/).length / 2.5));
+        setStep("script");
+        toast.success("Script récupéré ! Continuez avec la génération audio.");
+      }
+    } catch (error) {
+      console.error("Error loading existing project:", error);
+      toast.error("Erreur lors du chargement du projet");
+    }
+  };
 
   const loadPresets = async () => {
     try {
