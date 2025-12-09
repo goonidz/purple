@@ -30,20 +30,6 @@ serve(async (req) => {
       });
     }
 
-    const supabaseAuth = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-      { global: { headers: { Authorization: authHeader } } }
-    );
-
-    const { data: { user }, error: userError } = await supabaseAuth.auth.getUser();
-    if (userError || !user) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
     const { 
       script, 
       voice = 'English_expressive_narrator', 
@@ -55,8 +41,34 @@ serve(async (req) => {
       englishNormalization = true,
       emotion = 'neutral',
       projectId,
-      jobId // If provided, this is a job-based call
+      jobId, // If provided, this is a job-based call
+      userId: passedUserId // If provided from internal call with service role
     } = await req.json();
+
+    let userId: string;
+    
+    // Check if this is an internal call with service role (userId passed directly)
+    if (passedUserId && authHeader.includes(Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? 'NO_MATCH')) {
+      // Internal call from start-generation-job with service role
+      userId = passedUserId;
+      console.log("Internal service role call for user:", userId);
+    } else {
+      // External call - verify user auth
+      const supabaseAuth = createClient(
+        Deno.env.get('SUPABASE_URL') ?? '',
+        Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+        { global: { headers: { Authorization: authHeader } } }
+      );
+
+      const { data: { user }, error: userError } = await supabaseAuth.auth.getUser();
+      if (userError || !user) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      userId = user.id;
+    }
 
     if (!script) {
       throw new Error("Script is required");
@@ -72,7 +84,7 @@ serve(async (req) => {
 
     const { data: apiKeyData, error: apiKeyError } = await supabaseAdmin.rpc(
       'get_user_api_key_for_service',
-      { target_user_id: user.id, key_name: 'minimax' }
+      { target_user_id: userId, key_name: 'minimax' }
     );
 
     if (apiKeyError || !apiKeyData) {
@@ -108,7 +120,7 @@ serve(async (req) => {
         supabaseAdmin,
         jobId,
         projectId,
-        user.id,
+        userId,
         script,
         apiKeyData,
         model,
@@ -153,7 +165,7 @@ serve(async (req) => {
 
     // Generate unique filename
     const timestamp = Date.now();
-    const filename = `${user.id}/${projectId || 'temp'}/${timestamp}_minimax_generated.mp3`;
+    const filename = `${userId}/${projectId || 'temp'}/${timestamp}_minimax_generated.mp3`;
 
     // Upload to Supabase Storage
     const { data: uploadData, error: uploadError } = await supabaseAdmin.storage
