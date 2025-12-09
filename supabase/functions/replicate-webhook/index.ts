@@ -340,10 +340,15 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
 
   console.log(`Job ${jobId} marked as completed. Success: ${successfulPredictions.length}, Failed: ${failedCount}`);
 
-  // Handle semi-auto mode chaining
+  // Handle semi-auto mode chaining - only if no failures or very few failures
   const metadata = job.metadata || {};
   if (metadata.semiAutoMode === true) {
-    await chainNextJobFromWebhook(adminClient, job.project_id, job.user_id, job.job_type, metadata);
+    // If there are failed predictions, don't chain to next step - let user handle regeneration
+    if (failedCount > 0) {
+      console.log(`Job ${jobId}: ${failedCount} failed predictions - NOT chaining to next step. User needs to regenerate failed images.`);
+    } else {
+      await chainNextJobFromWebhook(adminClient, job.project_id, job.user_id, job.job_type, metadata);
+    }
   }
 }
 
