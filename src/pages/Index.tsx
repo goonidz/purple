@@ -180,7 +180,8 @@ const Index = () => {
       'transcription': 'Transcription terminée !',
       'prompts': 'Prompts générés en arrière-plan !',
       'images': 'Images générées en arrière-plan !',
-      'thumbnails': 'Miniatures générées en arrière-plan !'
+      'thumbnails': 'Miniatures générées en arrière-plan !',
+      'test_images': 'Test des 2 premières scènes terminé !'
     };
     toast.success(messages[job.job_type] || 'Génération terminée !');
     
@@ -189,6 +190,10 @@ const Index = () => {
       setIsGeneratingPrompts(false);
     } else if (job.job_type === 'images') {
       setIsGeneratingImages(false);
+    } else if (job.job_type === 'test_images') {
+      setIsGeneratingPrompts(false);
+      setIsGeneratingImages(false);
+      setHasTestedFirstTwo(true);
     }
     
     // Reload project data to get updated data - use ref to get current value
@@ -239,6 +244,9 @@ const Index = () => {
       setIsGeneratingPrompts(false);
     } else if (job.job_type === 'images') {
       setIsGeneratingImages(false);
+    } else if (job.job_type === 'test_images') {
+      setIsGeneratingPrompts(false);
+      setIsGeneratingImages(false);
     }
   }, []);
 
@@ -256,8 +264,8 @@ const Index = () => {
 
   // Sync generating states with active jobs
   useEffect(() => {
-    setIsGeneratingPrompts(hasActiveJob('prompts'));
-    setIsGeneratingImages(hasActiveJob('images'));
+    setIsGeneratingPrompts(hasActiveJob('prompts') || hasActiveJob('test_images'));
+    setIsGeneratingImages(hasActiveJob('images') || hasActiveJob('test_images'));
   }, [activeJobs, hasActiveJob]);
 
   // Scroll to top button visibility
@@ -1308,134 +1316,19 @@ const Index = () => {
       return;
     }
 
-    const scenesToTest = scenes.slice(0, 2);
-    const sceneCount = Math.min(scenes.length, 2);
-
-    if (scenes.length < 2) {
-      toast.info(`Mode test : génération de la ${scenes.length} scène disponible`);
-    } else {
-      toast.info(`Mode test : génération des 2 premières scènes`);
+    // Check if already has active job
+    if (hasActiveJob('test_images')) {
+      toast.info("Un test est déjà en cours");
+      return;
     }
 
-    setIsGeneratingPrompts(true);
-    setGeneratedPrompts([]);
-    cancelGenerationRef.current = false;
-
-    try {
-      // Step 1: Generate summary
-      toast.info("Génération du résumé global...");
-      const fullTranscript = transcriptData?.segments?.filter(seg => seg).map(seg => seg.text).join(' ') || '';
-      
-      const { data: summaryData, error: summaryError } = await supabase.functions.invoke('generate-summary', {
-        body: { transcript: fullTranscript }
-      });
-
-      if (summaryError) throw summaryError;
-      
-      const summary = summaryData.summary;
-      await supabase
-        .from("projects")
-        .update({ summary })
-        .eq("id", currentProjectId);
-
-      // Step 2: Generate prompts for first 2 scenes
-      const prompts: GeneratedPrompt[] = [];
-      const filteredPrompts = examplePrompts.filter(p => p.trim() !== "");
-      
-      toast.info(`Génération des prompts pour ${sceneCount} scènes...`);
-
-      for (let i = 0; i < sceneCount; i++) {
-        const scene = scenesToTest[i];
-        
-        // Get previous prompts from already generated ones in this loop
-        const previousPrompts = prompts
-          .slice(Math.max(0, i - 3), i)
-          .filter(p => p.prompt && p.prompt !== "Erreur lors de la génération")
-          .map(p => p.prompt);
-        
-        try {
-          const { data, error } = await supabase.functions.invoke("generate-prompts", {
-            body: { 
-              scene: scene.text,
-              summary,
-              examplePrompts: filteredPrompts,
-              sceneIndex: i + 1,
-              totalScenes: scenes.length,
-              startTime: scene.startTime,
-              endTime: scene.endTime,
-              customSystemPrompt: promptSystemMessage || undefined,
-              previousPrompts
-            },
-          });
-
-          if (error) throw error;
-
-          prompts.push({
-            scene: `Scène ${i + 1} (${formatTimecode(scene.startTime)} - ${formatTimecode(scene.endTime)})`,
-            prompt: data.prompt,
-            text: scene.text,
-            startTime: scene.startTime,
-            endTime: scene.endTime,
-            duration: scene.endTime - scene.startTime
-          });
-        } catch (sceneError: any) {
-          console.error(`Error generating prompt for scene ${i + 1}:`, sceneError);
-          prompts.push({
-            scene: `Scène ${i + 1} (${formatTimecode(scene.startTime)} - ${formatTimecode(scene.endTime)})`,
-            prompt: "Erreur lors de la génération",
-            text: scene.text,
-            startTime: scene.startTime,
-            endTime: scene.endTime,
-            duration: scene.endTime - scene.startTime
-          });
-        }
-      }
-
-      setGeneratedPrompts(prompts);
-      toast.success(`${sceneCount} prompts générés !`);
-      
-      setIsGeneratingPrompts(false);
-
-      // Step 3: Generate images for these 2 scenes in parallel
-      toast.info("Génération des images en parallèle...");
+    // Start background job
+    const result = await startJob('test_images');
+    if (result) {
+      setIsGeneratingPrompts(true);
       setIsGeneratingImages(true);
-
-      const imagePromises = prompts.map(async (prompt, i) => {
-        if (!prompt.prompt || prompt.prompt === "Erreur lors de la génération") {
-          return { success: false, index: i };
-        }
-
-        try {
-          // Use async polling mode to avoid edge function timeouts
-          const result = await generateImageAsync(prompt.prompt, i);
-          
-          if (result.success && result.imageUrl) {
-            setGeneratedPrompts(prev => {
-              const updatedPrompts = [...prev];
-              updatedPrompts[i] = { ...updatedPrompts[i], imageUrl: result.imageUrl };
-              return updatedPrompts;
-            });
-          }
-          
-          return { success: result.success, index: i };
-        } catch (error: any) {
-          console.error(`Error generating image ${i + 1}:`, error);
-          toast.error(`Erreur image ${i + 1}: ${error.message}`);
-          return { success: false, index: i };
-        }
-      });
-
-      await Promise.all(imagePromises);
-
-      setGeneratingImageIndex(null);
-      setIsGeneratingImages(false);
-      setHasTestedFirstTwo(true);
-      toast.success("Test terminé ! 2 scènes avec prompts et images générés en parallèle.");
-    } catch (error: any) {
-      console.error("Error in test:", error);
-      toast.error(error.message || "Erreur lors du test");
-      setIsGeneratingPrompts(false);
-      setIsGeneratingImages(false);
+      setGeneratedPrompts([]); // Clear prompts to show fresh results
+      toast.info("Test des 2 premières scènes lancé en arrière-plan. Vous pouvez quitter cette page.");
     }
   };
 

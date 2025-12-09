@@ -425,7 +425,12 @@ export type Database = {
         | "completed"
         | "failed"
         | "cancelled"
-      job_type: "transcription" | "prompts" | "images" | "thumbnails"
+      job_type:
+        | "transcription"
+        | "prompts"
+        | "images"
+        | "thumbnails"
+        | "test_images"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -554,7 +559,13 @@ export const Constants = {
   public: {
     Enums: {
       job_status: ["pending", "processing", "completed", "failed", "cancelled"],
-      job_type: ["transcription", "prompts", "images", "thumbnails"],
+      job_type: [
+        "transcription",
+        "prompts",
+        "images",
+        "thumbnails",
+        "test_images",
+      ],
     },
   },
 } as const
