@@ -1520,9 +1520,9 @@ const Index = () => {
               </TabsList>
             </div>
 
-            {/* Banner fixe pour les jobs actifs - sticky au scroll */}
+            {/* Banner fixe pour les jobs actifs - sticky sous le header */}
             {activeJobs.length > 0 && (
-              <div className="sticky top-0 z-40 bg-background border rounded-lg p-3 mb-4 shadow-md -mx-2">
+              <div className="sticky top-20 z-30 bg-background border rounded-lg p-3 mb-4 shadow-md">
                 <ActiveJobsBanner 
                   jobs={activeJobs} 
                   onCancel={cancelJob}
