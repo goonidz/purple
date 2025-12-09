@@ -204,6 +204,20 @@ const Projects = () => {
       setNewProjectName(project.name || "");
       setIsDialogOpen(true);
       
+      // Check if there's already a transcription job running for this project
+      const { data: existingJobs } = await supabase
+        .from("generation_jobs")
+        .select("*")
+        .eq("project_id", projectId)
+        .eq("job_type", "transcription")
+        .in("status", ["pending", "processing"]);
+      
+      if (existingJobs && existingJobs.length > 0) {
+        // Job already running, just track it
+        toast.info("Transcription déjà en cours. Veuillez patienter...");
+        return;
+      }
+      
       // Start background transcription job
       const result = await startJob('transcription', { audioUrl: project.audio_url }, projectId);
       if (result) {
