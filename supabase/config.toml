@@ -32,3 +32,9 @@ verify_jwt = false
 
 [functions.replicate-webhook]
 verify_jwt = false
+
+[functions.generate-script]
+verify_jwt = false
+
+[functions.generate-audio-tts]
+verify_jwt = false

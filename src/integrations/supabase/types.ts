@@ -513,6 +513,9 @@ export type Database = {
         | "test_images"
         | "single_prompt"
         | "single_image"
+        | "script_generation"
+        | "audio_generation"
+        | "full_video"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -649,6 +652,9 @@ export const Constants = {
         "test_images",
         "single_prompt",
         "single_image",
+        "script_generation",
+        "audio_generation",
+        "full_video",
       ],
     },
   },
