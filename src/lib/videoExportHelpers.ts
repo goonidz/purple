@@ -51,7 +51,8 @@ export function generatePremiereXML(
     const duration = endFrame - startFrame;
     
     const filename = `clip_${(index + 1).toString().padStart(3, '0')}_img.jpg`;
-    const imagePath = `media/${filename}`;
+    // Files are at root level for DaVinci Resolve automatic relinking
+    const imagePath = filename;
     
     return `      <clipitem id="clipitem-${index + 1}">
         <name>Scene ${index + 1}</name>
@@ -118,7 +119,7 @@ export function generatePremiereXML(
                 <out>${totalDurationFrames}</out>
                 <file id="audio-file-1">
                   <name>audio.mp3</name>
-                  <pathurl>media/audio.mp3</pathurl>
+                  <pathurl>audio.mp3</pathurl>
                   <duration>${totalDurationFrames}</duration>
                   <samplerate>48000</samplerate>
                   <channelcount>2</channelcount>
@@ -338,21 +339,18 @@ export async function downloadImagesAsZip(
   const srtFilename = exportFilename.replace(/\.(xml|edl|csv)$/, '.srt');
   zip.file(srtFilename, srtContent);
   
-  // Create media folder for both images and audio
-  const mediaFolder = zip.folder('media');
-  
-  // Add audio file if provided
+  // Add audio file at root level (for DaVinci Resolve automatic relinking)
   if (audioUrl) {
     try {
       const audioResponse = await fetch(audioUrl);
       const audioBlob = await audioResponse.blob();
-      mediaFolder?.file('audio.mp3', audioBlob);
+      zip.file('audio.mp3', audioBlob);
     } catch (error) {
       console.error('Failed to download audio file:', error);
     }
   }
   
-  // Download and add each image into media/ subfolder, converting to JPEG
+  // Add each image at root level, converting to JPEG (for DaVinci Resolve automatic relinking)
   for (let i = 0; i < prompts.length; i++) {
     const prompt = prompts[i];
     if (prompt.imageUrl) {
@@ -364,12 +362,28 @@ export async function downloadImagesAsZip(
         const jpegBlob = await convertToJpeg(blob);
         
         const filename = `clip_${(i + 1).toString().padStart(3, '0')}_img.jpg`;
-        mediaFolder?.file(filename, jpegBlob);
+        zip.file(filename, jpegBlob);
       } catch (error) {
         console.error(`Failed to download image ${i + 1}:`, error);
       }
     }
   }
+  
+  // Add README with instructions
+  const readme = `INSTRUCTIONS DAVINCI RESOLVE
+============================
+
+1. Extraire ce ZIP dans un dossier
+2. Dans DaVinci Resolve, importer le fichier XML
+3. Les médias seront automatiquement liés
+
+Fichiers inclus:
+- ${exportFilename} (timeline)
+- ${srtFilename} (sous-titres)
+- audio.mp3 (piste audio)
+- clip_XXX_img.jpg (images des scènes)
+`;
+  zip.file('LISEZ-MOI.txt', readme);
   
   // Generate and download ZIP
   const zipBlob = await zip.generateAsync({ type: 'blob' });
