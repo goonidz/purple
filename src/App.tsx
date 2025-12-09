@@ -11,6 +11,7 @@ import Workspace from "./pages/Workspace";
 import TestScenes from "./pages/TestScenes";
 import Profile from "./pages/Profile";
 import Calendar from "./pages/Calendar";
+import CreateFromScratch from "./pages/CreateFromScratch";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -27,6 +28,7 @@ const App = () => (
           <Route path="/projects" element={<Projects />} />
           <Route path="/workspace" element={<Workspace />} />
           <Route path="/calendar" element={<Calendar />} />
+          <Route path="/create-from-scratch" element={<CreateFromScratch />} />
           <Route path="/test-scenes" element={<TestScenes />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/auth" element={<Auth />} />

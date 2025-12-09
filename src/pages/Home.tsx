@@ -79,7 +79,7 @@ const Home = () => {
             </Card>
           </Link>
 
-          <Link to="/workspace?mode=scratch" className="group">
+          <Link to="/create-from-scratch" className="group">
             <Card className="p-8 hover:shadow-xl transition-all duration-300 hover:scale-105 border-2 hover:border-secondary/50 bg-card/50 backdrop-blur h-full">
               <div className="flex flex-col items-center text-center space-y-4">
                 <div className="h-20 w-20 rounded-full bg-secondary/10 flex items-center justify-center group-hover:bg-secondary/20 transition-colors">
