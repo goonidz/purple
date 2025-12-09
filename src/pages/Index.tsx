@@ -1520,9 +1520,9 @@ const Index = () => {
               </TabsList>
             </div>
 
-            {/* Banner fixe pour les jobs actifs - toujours visible */}
+            {/* Banner fixe pour les jobs actifs - toujours visible, sous le header */}
             {activeJobs.length > 0 && (
-              <div className="sticky top-0 z-50 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 py-2 -mx-6 px-6 border-b">
+              <div className="sticky top-16 z-40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 py-2 -mx-6 px-6 border-b">
                 <ActiveJobsBanner 
                   jobs={activeJobs} 
                   onCancel={cancelJob}
@@ -1976,12 +1976,6 @@ const Index = () => {
                             Suppr. images
                           </Button>
                         </div>
-                        
-                        {/* Jobs en cours */}
-                        <ActiveJobsBanner 
-                          jobs={activeJobs} 
-                          onCancel={cancelJob}
-                        />
                       </div>
                       
                       {/* Cards d'état */}
