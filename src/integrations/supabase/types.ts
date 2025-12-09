@@ -491,6 +491,57 @@ export type Database = {
         }
         Relationships: []
       }
+      tts_presets: {
+        Row: {
+          created_at: string
+          emotion: string | null
+          english_normalization: boolean | null
+          id: string
+          language_boost: string | null
+          model: string | null
+          name: string
+          pitch: number | null
+          provider: string
+          speed: number | null
+          updated_at: string
+          user_id: string
+          voice_id: string
+          volume: number | null
+        }
+        Insert: {
+          created_at?: string
+          emotion?: string | null
+          english_normalization?: boolean | null
+          id?: string
+          language_boost?: string | null
+          model?: string | null
+          name: string
+          pitch?: number | null
+          provider?: string
+          speed?: number | null
+          updated_at?: string
+          user_id: string
+          voice_id: string
+          volume?: number | null
+        }
+        Update: {
+          created_at?: string
+          emotion?: string | null
+          english_normalization?: boolean | null
+          id?: string
+          language_boost?: string | null
+          model?: string | null
+          name?: string
+          pitch?: number | null
+          provider?: string
+          speed?: number | null
+          updated_at?: string
+          user_id?: string
+          voice_id?: string
+          volume?: number | null
+        }
+        Relationships: []
+      }
       user_api_keys: {
         Row: {
           created_at: string | null

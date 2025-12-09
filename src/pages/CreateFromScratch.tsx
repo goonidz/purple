@@ -32,6 +32,30 @@ interface ScriptPreset {
   language: string;
 }
 
+interface TtsPreset {
+  id: string;
+  name: string;
+  provider: string;
+  voice_id: string;
+  model: string | null;
+  speed: number;
+  pitch: number;
+  volume: number;
+  language_boost: string;
+  english_normalization: boolean;
+  emotion: string;
+}
+
+const MINIMAX_EMOTIONS = [
+  { id: "neutral", name: "Neutre" },
+  { id: "happy", name: "Joyeux" },
+  { id: "sad", name: "Triste" },
+  { id: "angry", name: "En colère" },
+  { id: "fearful", name: "Effrayé" },
+  { id: "disgusted", name: "Dégoûté" },
+  { id: "surprised", name: "Surpris" },
+];
+
 const ELEVENLABS_VOICE_OPTIONS = [
   { id: "daniel", name: "Daniel", language: "fr" },
   { id: "charlotte", name: "Charlotte", language: "fr" },
@@ -220,8 +244,21 @@ const CreateFromScratch = () => {
   const [minimaxVolume, setMinimaxVolume] = useState(1.0);
   const [minimaxLanguageBoost, setMinimaxLanguageBoost] = useState("auto");
   const [minimaxEnglishNormalization, setMinimaxEnglishNormalization] = useState(true);
+  const [minimaxEmotion, setMinimaxEmotion] = useState("neutral");
   const [isGeneratingAudio, setIsGeneratingAudio] = useState(false);
   const [audioUrl, setAudioUrl] = useState("");
+  
+  // TTS Preset management
+  const [ttsPresets, setTtsPresets] = useState<TtsPreset[]>([]);
+  const [selectedTtsPresetId, setSelectedTtsPresetId] = useState<string>("");
+  const [saveTtsPresetDialogOpen, setSaveTtsPresetDialogOpen] = useState(false);
+  const [editTtsPresetDialogOpen, setEditTtsPresetDialogOpen] = useState(false);
+  const [duplicateTtsPresetDialogOpen, setDuplicateTtsPresetDialogOpen] = useState(false);
+  const [newTtsPresetName, setNewTtsPresetName] = useState("");
+  const [editTtsPresetName, setEditTtsPresetName] = useState("");
+  const [editingTtsPresetId, setEditingTtsPresetId] = useState<string | null>(null);
+  const [isSavingTtsPreset, setIsSavingTtsPreset] = useState(false);
+  const [ttsPresetPopoverOpen, setTtsPresetPopoverOpen] = useState(false);
   
   // Axes step
   const [videoAxes, setVideoAxes] = useState<VideoAxe[]>([]);
@@ -237,6 +274,7 @@ const CreateFromScratch = () => {
         navigate("/auth");
       } else {
         loadPresets();
+        loadTtsPresets();
         
         // Check if continuing an existing project
         const continueProjectId = searchParams.get("continue");
@@ -443,6 +481,207 @@ const CreateFromScratch = () => {
       toast.error("Erreur lors de la duplication");
     } finally {
       setIsSavingPreset(false);
+    }
+  };
+
+  // TTS Preset functions
+  const loadTtsPresets = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("tts_presets")
+        .select("*")
+        .order("name", { ascending: true });
+
+      if (error) throw error;
+      setTtsPresets(data || []);
+    } catch (error) {
+      console.error("Error loading TTS presets:", error);
+    }
+  };
+
+  const handleLoadTtsPreset = (presetId: string) => {
+    const preset = ttsPresets.find(p => p.id === presetId);
+    if (preset) {
+      setTtsProvider(preset.provider as "elevenlabs" | "minimax");
+      setSelectedVoice(preset.voice_id);
+      if (preset.model) setMinimaxModel(preset.model);
+      setMinimaxSpeed(preset.speed);
+      setMinimaxPitch(preset.pitch);
+      setMinimaxVolume(preset.volume);
+      setMinimaxLanguageBoost(preset.language_boost);
+      setMinimaxEnglishNormalization(preset.english_normalization);
+      setMinimaxEmotion(preset.emotion);
+      setSelectedTtsPresetId(presetId);
+      toast.success(`Preset TTS "${preset.name}" chargé`);
+    }
+  };
+
+  const handleSaveTtsPreset = async () => {
+    if (!newTtsPresetName.trim()) {
+      toast.error("Veuillez entrer un nom pour le preset");
+      return;
+    }
+
+    setIsSavingTtsPreset(true);
+    try {
+      const { error } = await supabase
+        .from("tts_presets")
+        .insert([{
+          user_id: user!.id,
+          name: newTtsPresetName.trim(),
+          provider: ttsProvider,
+          voice_id: selectedVoice,
+          model: ttsProvider === "minimax" ? minimaxModel : null,
+          speed: minimaxSpeed,
+          pitch: minimaxPitch,
+          volume: minimaxVolume,
+          language_boost: minimaxLanguageBoost,
+          english_normalization: minimaxEnglishNormalization,
+          emotion: minimaxEmotion
+        }]);
+
+      if (error) throw error;
+
+      toast.success("Preset TTS sauvegardé !");
+      setSaveTtsPresetDialogOpen(false);
+      setNewTtsPresetName("");
+      loadTtsPresets();
+    } catch (error: any) {
+      console.error("Error saving TTS preset:", error);
+      toast.error("Erreur lors de la sauvegarde");
+    } finally {
+      setIsSavingTtsPreset(false);
+    }
+  };
+
+  const handleDeleteTtsPreset = async (presetId: string) => {
+    const preset = ttsPresets.find(p => p.id === presetId);
+    if (!preset) return;
+
+    if (!confirm(`Supprimer le preset TTS "${preset.name}" ?`)) return;
+
+    try {
+      const { error } = await supabase
+        .from("tts_presets")
+        .delete()
+        .eq("id", presetId);
+
+      if (error) throw error;
+
+      toast.success("Preset TTS supprimé");
+      if (selectedTtsPresetId === presetId) {
+        setSelectedTtsPresetId("");
+      }
+      loadTtsPresets();
+    } catch (error: any) {
+      console.error("Error deleting TTS preset:", error);
+      toast.error("Erreur lors de la suppression");
+    }
+  };
+
+  const handleOpenEditTtsPreset = (presetId: string) => {
+    const preset = ttsPresets.find(p => p.id === presetId);
+    if (!preset) return;
+    setEditingTtsPresetId(presetId);
+    setEditTtsPresetName(preset.name);
+    // Load preset values into current state for editing
+    setTtsProvider(preset.provider as "elevenlabs" | "minimax");
+    setSelectedVoice(preset.voice_id);
+    if (preset.model) setMinimaxModel(preset.model);
+    setMinimaxSpeed(preset.speed);
+    setMinimaxPitch(preset.pitch);
+    setMinimaxVolume(preset.volume);
+    setMinimaxLanguageBoost(preset.language_boost);
+    setMinimaxEnglishNormalization(preset.english_normalization);
+    setMinimaxEmotion(preset.emotion);
+    setEditTtsPresetDialogOpen(true);
+  };
+
+  const handleUpdateTtsPreset = async () => {
+    if (!editingTtsPresetId || !editTtsPresetName.trim()) {
+      toast.error("Veuillez entrer un nom pour le preset");
+      return;
+    }
+
+    setIsSavingTtsPreset(true);
+    try {
+      const { error } = await supabase
+        .from("tts_presets")
+        .update({
+          name: editTtsPresetName.trim(),
+          provider: ttsProvider,
+          voice_id: selectedVoice,
+          model: ttsProvider === "minimax" ? minimaxModel : null,
+          speed: minimaxSpeed,
+          pitch: minimaxPitch,
+          volume: minimaxVolume,
+          language_boost: minimaxLanguageBoost,
+          english_normalization: minimaxEnglishNormalization,
+          emotion: minimaxEmotion
+        })
+        .eq("id", editingTtsPresetId);
+
+      if (error) throw error;
+
+      toast.success("Preset TTS mis à jour !");
+      setEditTtsPresetDialogOpen(false);
+      setEditingTtsPresetId(null);
+      loadTtsPresets();
+    } catch (error: any) {
+      console.error("Error updating TTS preset:", error);
+      toast.error("Erreur lors de la mise à jour");
+    } finally {
+      setIsSavingTtsPreset(false);
+    }
+  };
+
+  const handleOpenDuplicateTtsPreset = (presetId: string) => {
+    const preset = ttsPresets.find(p => p.id === presetId);
+    if (!preset) return;
+    setEditingTtsPresetId(presetId);
+    setNewTtsPresetName(`${preset.name} (copie)`);
+    setDuplicateTtsPresetDialogOpen(true);
+  };
+
+  const handleDuplicateTtsPreset = async () => {
+    if (!editingTtsPresetId || !newTtsPresetName.trim()) {
+      toast.error("Veuillez entrer un nom pour le preset");
+      return;
+    }
+
+    const preset = ttsPresets.find(p => p.id === editingTtsPresetId);
+    if (!preset) return;
+
+    setIsSavingTtsPreset(true);
+    try {
+      const { error } = await supabase
+        .from("tts_presets")
+        .insert([{
+          user_id: user!.id,
+          name: newTtsPresetName.trim(),
+          provider: preset.provider,
+          voice_id: preset.voice_id,
+          model: preset.model,
+          speed: preset.speed,
+          pitch: preset.pitch,
+          volume: preset.volume,
+          language_boost: preset.language_boost,
+          english_normalization: preset.english_normalization,
+          emotion: preset.emotion
+        }]);
+
+      if (error) throw error;
+
+      toast.success("Preset TTS dupliqué !");
+      setDuplicateTtsPresetDialogOpen(false);
+      setEditingTtsPresetId(null);
+      setNewTtsPresetName("");
+      loadTtsPresets();
+    } catch (error: any) {
+      console.error("Error duplicating TTS preset:", error);
+      toast.error("Erreur lors de la duplication");
+    } finally {
+      setIsSavingTtsPreset(false);
     }
   };
 
@@ -708,6 +947,7 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
             volume: minimaxVolume,
             languageBoost: minimaxLanguageBoost,
             englishNormalization: minimaxEnglishNormalization,
+            emotion: minimaxEmotion,
             projectId 
           }
         : { script: generatedScript, voice: selectedVoice, projectId };
@@ -1096,6 +1336,102 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                   placeholder="Le script apparaîtra ici..."
                 />
 
+                {/* TTS Presets */}
+                <div className="space-y-2">
+                  <Label>Preset TTS</Label>
+                  <div className="flex gap-2">
+                    <Popover open={ttsPresetPopoverOpen} onOpenChange={setTtsPresetPopoverOpen}>
+                      <PopoverTrigger asChild>
+                        <Button variant="outline" className="flex-1 justify-between">
+                          <span className="flex items-center gap-2">
+                            <FolderOpen className="h-4 w-4" />
+                            {selectedTtsPresetId 
+                              ? ttsPresets.find(p => p.id === selectedTtsPresetId)?.name || "Sélectionner..."
+                              : "Sélectionner un preset..."}
+                          </span>
+                          <ChevronDown className="h-4 w-4 opacity-50" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-80 p-0" align="start">
+                        <div className="p-2 border-b">
+                          <p className="text-sm font-medium">Presets TTS sauvegardés</p>
+                        </div>
+                        {ttsPresets.length === 0 ? (
+                          <div className="p-4 text-center text-sm text-muted-foreground">
+                            Aucun preset TTS sauvegardé
+                          </div>
+                        ) : (
+                          <div className="max-h-60 overflow-y-auto">
+                            {ttsPresets.map((preset) => (
+                              <div 
+                                key={preset.id}
+                                className="flex items-center justify-between p-2 hover:bg-muted cursor-pointer"
+                              >
+                                <div 
+                                  className="flex-1 pr-2"
+                                  onClick={() => {
+                                    handleLoadTtsPreset(preset.id);
+                                    setTtsPresetPopoverOpen(false);
+                                  }}
+                                >
+                                  <p className="font-medium text-sm">{preset.name}</p>
+                                  <p className="text-xs text-muted-foreground">
+                                    {preset.provider === "minimax" ? "MiniMax" : "ElevenLabs"} - {preset.voice_id}
+                                  </p>
+                                </div>
+                                <div className="flex gap-1">
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-7 w-7"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleOpenEditTtsPreset(preset.id);
+                                      setTtsPresetPopoverOpen(false);
+                                    }}
+                                  >
+                                    <Pencil className="h-3 w-3" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-7 w-7"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleOpenDuplicateTtsPreset(preset.id);
+                                      setTtsPresetPopoverOpen(false);
+                                    }}
+                                  >
+                                    <Copy className="h-3 w-3" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-7 w-7 text-destructive hover:text-destructive"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleDeleteTtsPreset(preset.id);
+                                    }}
+                                  >
+                                    <Trash2 className="h-3 w-3" />
+                                  </Button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </PopoverContent>
+                    </Popover>
+                    <Button
+                      variant="outline"
+                      onClick={() => setSaveTtsPresetDialogOpen(true)}
+                    >
+                      <Save className="h-4 w-4 mr-2" />
+                      Sauvegarder
+                    </Button>
+                  </div>
+                </div>
+
                 <div className="space-y-4">
                   <Label>Fournisseur TTS</Label>
                   <Select 
@@ -1223,6 +1559,22 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                         onChange={(e) => setMinimaxEnglishNormalization(e.target.checked)}
                         className="h-5 w-5 rounded border-gray-300 text-primary focus:ring-primary"
                       />
+                    </div>
+
+                    <div className="space-y-4">
+                      <Label>Émotion</Label>
+                      <Select value={minimaxEmotion} onValueChange={setMinimaxEmotion}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {MINIMAX_EMOTIONS.map((emotion) => (
+                            <SelectItem key={emotion.id} value={emotion.id}>
+                              {emotion.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
                   </>
                 )}
@@ -1411,6 +1763,217 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
             </Button>
             <Button onClick={handleDuplicatePreset} disabled={isSavingPreset || !newPresetName.trim()}>
               {isSavingPreset ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Copy className="mr-2 h-4 w-4" />}
+              Dupliquer
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Save TTS Preset Dialog */}
+      <Dialog open={saveTtsPresetDialogOpen} onOpenChange={setSaveTtsPresetDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Sauvegarder le preset TTS</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="newTtsPresetName">Nom du preset</Label>
+              <Input
+                id="newTtsPresetName"
+                placeholder="Ma configuration TTS..."
+                value={newTtsPresetName}
+                onChange={(e) => setNewTtsPresetName(e.target.value)}
+              />
+            </div>
+            <div className="p-4 bg-muted rounded-lg text-sm">
+              <p className="font-medium mb-2">Configuration actuelle :</p>
+              <ul className="space-y-1 text-muted-foreground">
+                <li>Fournisseur : {ttsProvider === "minimax" ? "MiniMax" : "ElevenLabs"}</li>
+                <li>Voix : {selectedVoice}</li>
+                {ttsProvider === "minimax" && (
+                  <>
+                    <li>Modèle : {minimaxModel}</li>
+                    <li>Vitesse : {minimaxSpeed}x</li>
+                    <li>Pitch : {minimaxPitch}</li>
+                    <li>Émotion : {MINIMAX_EMOTIONS.find(e => e.id === minimaxEmotion)?.name || minimaxEmotion}</li>
+                  </>
+                )}
+              </ul>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSaveTtsPresetDialogOpen(false)}>
+              Annuler
+            </Button>
+            <Button onClick={handleSaveTtsPreset} disabled={isSavingTtsPreset || !newTtsPresetName.trim()}>
+              {isSavingTtsPreset ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+              Sauvegarder
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit TTS Preset Dialog */}
+      <Dialog open={editTtsPresetDialogOpen} onOpenChange={setEditTtsPresetDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Modifier le preset TTS</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="editTtsPresetName">Nom du preset</Label>
+              <Input
+                id="editTtsPresetName"
+                placeholder="Ma configuration TTS..."
+                value={editTtsPresetName}
+                onChange={(e) => setEditTtsPresetName(e.target.value)}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Fournisseur</Label>
+                <Select 
+                  value={ttsProvider} 
+                  onValueChange={(v: "elevenlabs" | "minimax") => {
+                    setTtsProvider(v);
+                    setSelectedVoice(v === "elevenlabs" ? "daniel" : "English_expressive_narrator");
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="elevenlabs">ElevenLabs</SelectItem>
+                    <SelectItem value="minimax">MiniMax</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Voix</Label>
+                <Select value={selectedVoice} onValueChange={setSelectedVoice}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(ttsProvider === "elevenlabs" ? ELEVENLABS_VOICE_OPTIONS : MINIMAX_VOICE_OPTIONS).map((voice) => (
+                      <SelectItem key={voice.id} value={voice.id}>
+                        {voice.name} ({voice.language.toUpperCase()})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            {ttsProvider === "minimax" && (
+              <>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Modèle</Label>
+                    <Select value={minimaxModel} onValueChange={setMinimaxModel}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {MINIMAX_MODEL_OPTIONS.map((model) => (
+                          <SelectItem key={model.id} value={model.id}>
+                            {model.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Émotion</Label>
+                    <Select value={minimaxEmotion} onValueChange={setMinimaxEmotion}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {MINIMAX_EMOTIONS.map((emotion) => (
+                          <SelectItem key={emotion.id} value={emotion.id}>
+                            {emotion.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label>Vitesse ({minimaxSpeed.toFixed(1)}x)</Label>
+                    <input
+                      type="range"
+                      min="0.5"
+                      max="2.0"
+                      step="0.1"
+                      value={minimaxSpeed}
+                      onChange={(e) => setMinimaxSpeed(parseFloat(e.target.value))}
+                      className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Pitch ({minimaxPitch > 0 ? '+' : ''}{minimaxPitch})</Label>
+                    <input
+                      type="range"
+                      min="-12"
+                      max="12"
+                      step="1"
+                      value={minimaxPitch}
+                      onChange={(e) => setMinimaxPitch(parseInt(e.target.value))}
+                      className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Volume ({(minimaxVolume * 100).toFixed(0)}%)</Label>
+                    <input
+                      type="range"
+                      min="0.1"
+                      max="1.0"
+                      step="0.1"
+                      value={minimaxVolume}
+                      onChange={(e) => setMinimaxVolume(parseFloat(e.target.value))}
+                      className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
+                    />
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditTtsPresetDialogOpen(false)}>
+              Annuler
+            </Button>
+            <Button onClick={handleUpdateTtsPreset} disabled={isSavingTtsPreset || !editTtsPresetName.trim()}>
+              {isSavingTtsPreset ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+              Enregistrer
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Duplicate TTS Preset Dialog */}
+      <Dialog open={duplicateTtsPresetDialogOpen} onOpenChange={setDuplicateTtsPresetDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Dupliquer le preset TTS</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="duplicateTtsPresetName">Nom du nouveau preset</Label>
+              <Input
+                id="duplicateTtsPresetName"
+                placeholder="Ma configuration TTS (copie)..."
+                value={newTtsPresetName}
+                onChange={(e) => setNewTtsPresetName(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDuplicateTtsPresetDialogOpen(false)}>
+              Annuler
+            </Button>
+            <Button onClick={handleDuplicateTtsPreset} disabled={isSavingTtsPreset || !newTtsPresetName.trim()}>
+              {isSavingTtsPreset ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Copy className="mr-2 h-4 w-4" />}
               Dupliquer
             </Button>
           </DialogFooter>
