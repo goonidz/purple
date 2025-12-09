@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Loader2, Sparkles, FileText, Mic, ArrowRight, Check, RefreshCw, ChevronDown, Save, Trash2, FolderOpen } from "lucide-react";
+import { Loader2, Sparkles, FileText, Mic, ArrowRight, Check, RefreshCw, ChevronDown, Save, Trash2, FolderOpen, Pencil, Copy } from "lucide-react";
 import { toast } from "sonner";
 
 type WorkflowStep = "topic" | "script" | "audio" | "complete";
@@ -60,7 +60,12 @@ const CreateFromScratch = () => {
   const [presets, setPresets] = useState<ScriptPreset[]>([]);
   const [selectedPresetId, setSelectedPresetId] = useState<string>("");
   const [savePresetDialogOpen, setSavePresetDialogOpen] = useState(false);
+  const [editPresetDialogOpen, setEditPresetDialogOpen] = useState(false);
+  const [duplicatePresetDialogOpen, setDuplicatePresetDialogOpen] = useState(false);
   const [newPresetName, setNewPresetName] = useState("");
+  const [editPresetName, setEditPresetName] = useState("");
+  const [editPresetPrompt, setEditPresetPrompt] = useState("");
+  const [editingPresetId, setEditingPresetId] = useState<string | null>(null);
   const [isSavingPreset, setIsSavingPreset] = useState(false);
   
   // Script step
@@ -171,6 +176,92 @@ const CreateFromScratch = () => {
     } catch (error: any) {
       console.error("Error deleting preset:", error);
       toast.error("Erreur lors de la suppression");
+    }
+  };
+
+  const handleOpenEditPreset = (presetId: string) => {
+    const preset = presets.find(p => p.id === presetId);
+    if (!preset) return;
+    setEditingPresetId(presetId);
+    setEditPresetName(preset.name);
+    setEditPresetPrompt(preset.custom_prompt || DEFAULT_PROMPT);
+    setEditPresetDialogOpen(true);
+  };
+
+  const handleUpdatePreset = async () => {
+    if (!editingPresetId || !editPresetName.trim()) {
+      toast.error("Veuillez entrer un nom pour le preset");
+      return;
+    }
+
+    setIsSavingPreset(true);
+    try {
+      const { error } = await supabase
+        .from("script_presets")
+        .update({
+          name: editPresetName.trim(),
+          custom_prompt: editPresetPrompt
+        })
+        .eq("id", editingPresetId);
+
+      if (error) throw error;
+
+      toast.success("Preset mis à jour !");
+      setEditPresetDialogOpen(false);
+      setEditingPresetId(null);
+      loadPresets();
+      
+      // Reload current prompt if this preset is selected
+      if (selectedPresetId === editingPresetId) {
+        setCustomPrompt(editPresetPrompt);
+      }
+    } catch (error: any) {
+      console.error("Error updating preset:", error);
+      toast.error("Erreur lors de la mise à jour");
+    } finally {
+      setIsSavingPreset(false);
+    }
+  };
+
+  const handleOpenDuplicatePreset = (presetId: string) => {
+    const preset = presets.find(p => p.id === presetId);
+    if (!preset) return;
+    setEditingPresetId(presetId);
+    setNewPresetName(`${preset.name} (copie)`);
+    setDuplicatePresetDialogOpen(true);
+  };
+
+  const handleDuplicatePreset = async () => {
+    if (!editingPresetId || !newPresetName.trim()) {
+      toast.error("Veuillez entrer un nom pour le preset");
+      return;
+    }
+
+    const preset = presets.find(p => p.id === editingPresetId);
+    if (!preset) return;
+
+    setIsSavingPreset(true);
+    try {
+      const { error } = await supabase
+        .from("script_presets")
+        .insert([{
+          user_id: user!.id,
+          name: newPresetName.trim(),
+          custom_prompt: preset.custom_prompt
+        }]);
+
+      if (error) throw error;
+
+      toast.success("Preset dupliqué !");
+      setDuplicatePresetDialogOpen(false);
+      setEditingPresetId(null);
+      setNewPresetName("");
+      loadPresets();
+    } catch (error: any) {
+      console.error("Error duplicating preset:", error);
+      toast.error("Erreur lors de la duplication");
+    } finally {
+      setIsSavingPreset(false);
     }
   };
 
@@ -361,11 +452,11 @@ const CreateFromScratch = () => {
                 </div>
 
                 {/* Preset selector */}
-                <div className="flex items-center gap-2">
-                  <div className="flex-1">
-                    <Label>Charger un preset</Label>
-                    <Select value={selectedPresetId} onValueChange={handleLoadPreset}>
-                      <SelectTrigger>
+                <div className="space-y-2">
+                  <Label>Charger un preset</Label>
+                  <div className="flex items-center gap-2">
+                    <Select value={selectedPresetId} onValueChange={handleLoadPreset} >
+                      <SelectTrigger className="flex-1">
                         <SelectValue placeholder="Sélectionner un preset..." />
                       </SelectTrigger>
                       <SelectContent>
@@ -376,17 +467,35 @@ const CreateFromScratch = () => {
                         ))}
                       </SelectContent>
                     </Select>
+                    {selectedPresetId && (
+                      <>
+                        <Button 
+                          variant="ghost" 
+                          size="icon"
+                          onClick={() => handleOpenEditPreset(selectedPresetId)}
+                          title="Modifier"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button 
+                          variant="ghost" 
+                          size="icon"
+                          onClick={() => handleOpenDuplicatePreset(selectedPresetId)}
+                          title="Dupliquer"
+                        >
+                          <Copy className="h-4 w-4" />
+                        </Button>
+                        <Button 
+                          variant="ghost" 
+                          size="icon"
+                          onClick={() => handleDeletePreset(selectedPresetId)}
+                          title="Supprimer"
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </>
+                    )}
                   </div>
-                  {selectedPresetId && (
-                    <Button 
-                      variant="ghost" 
-                      size="icon"
-                      className="mt-6"
-                      onClick={() => handleDeletePreset(selectedPresetId)}
-                    >
-                      <Trash2 className="h-4 w-4 text-destructive" />
-                    </Button>
-                  )}
                 </div>
 
                 <div className="space-y-4">
@@ -617,6 +726,74 @@ const CreateFromScratch = () => {
             <Button onClick={handleSavePreset} disabled={isSavingPreset || !newPresetName.trim()}>
               {isSavingPreset ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
               Sauvegarder
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Preset Dialog */}
+      <Dialog open={editPresetDialogOpen} onOpenChange={setEditPresetDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Modifier le preset</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="editPresetName">Nom du preset</Label>
+              <Input
+                id="editPresetName"
+                placeholder="Mon style de script..."
+                value={editPresetName}
+                onChange={(e) => setEditPresetName(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="editPresetPrompt">Prompt personnalisé</Label>
+              <Textarea
+                id="editPresetPrompt"
+                value={editPresetPrompt}
+                onChange={(e) => setEditPresetPrompt(e.target.value)}
+                className="min-h-[200px] font-mono text-sm"
+                placeholder="Instructions pour Claude IA..."
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditPresetDialogOpen(false)}>
+              Annuler
+            </Button>
+            <Button onClick={handleUpdatePreset} disabled={isSavingPreset || !editPresetName.trim()}>
+              {isSavingPreset ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+              Enregistrer
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Duplicate Preset Dialog */}
+      <Dialog open={duplicatePresetDialogOpen} onOpenChange={setDuplicatePresetDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Dupliquer le preset</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="duplicatePresetName">Nom du nouveau preset</Label>
+              <Input
+                id="duplicatePresetName"
+                placeholder="Mon style de script (copie)..."
+                value={newPresetName}
+                onChange={(e) => setNewPresetName(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDuplicatePresetDialogOpen(false)}>
+              Annuler
+            </Button>
+            <Button onClick={handleDuplicatePreset} disabled={isSavingPreset || !newPresetName.trim()}>
+              {isSavingPreset ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Copy className="mr-2 h-4 w-4" />}
+              Dupliquer
             </Button>
           </DialogFooter>
         </DialogContent>
