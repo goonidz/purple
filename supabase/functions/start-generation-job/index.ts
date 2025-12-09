@@ -469,7 +469,7 @@ async function processImagesJob(
 
         // Poll for completion
         let imageUrl = null;
-        const maxWaitMs = 300000; // 5 minutes
+        const maxWaitMs = 600000; // 10 minutes
         const pollIntervalMs = 3000;
         const startTime = Date.now();
 
@@ -795,7 +795,7 @@ async function processTestImagesJob(
 
       // Poll for completion
       let imageUrl = null;
-      const maxWaitMs = 300000; // 5 minutes
+      const maxWaitMs = 600000; // 10 minutes
       const pollIntervalMs = 3000;
       const startTime = Date.now();
 
@@ -1118,7 +1118,7 @@ async function processSingleImageJob(
 
   // Poll for completion
   let imageUrl = null;
-  const maxWaitMs = 300000; // 5 minutes
+  const maxWaitMs = 600000; // 10 minutes
   const pollIntervalMs = 3000;
   const startTime = Date.now();
 
