@@ -57,6 +57,16 @@ serve(async (req) => {
 
     // Handle based on status
     if (status === 'succeeded' && output) {
+      // Handle script generation (text output)
+      if (prediction.prediction_type === 'script') {
+        await handleScriptCompletion(adminClient, prediction, output);
+        return new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      
+      // Handle image generation
       const imageOutput = Array.isArray(output) ? output[0] : output;
       
       if (imageOutput) {
@@ -334,6 +344,68 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
   const metadata = job.metadata || {};
   if (metadata.semiAutoMode === true) {
     await chainNextJobFromWebhook(adminClient, job.project_id, job.user_id, job.job_type, metadata);
+  }
+}
+
+async function handleScriptCompletion(adminClient: any, prediction: any, output: any) {
+  const jobId = prediction.job_id;
+  
+  console.log("Handling script completion for job:", jobId);
+  
+  // Parse the script from output
+  let script = "";
+  if (Array.isArray(output)) {
+    script = output.join("");
+  } else if (typeof output === "string") {
+    script = output;
+  } else {
+    script = String(output);
+  }
+  
+  console.log("Script generated, length:", script.length);
+  
+  // Update pending prediction
+  await adminClient
+    .from('pending_predictions')
+    .update({
+      status: 'completed',
+      result_url: null, // No URL for text
+      completed_at: new Date().toISOString(),
+      metadata: {
+        ...prediction.metadata,
+        script,
+        wordCount: script.split(/\s+/).length,
+        estimatedDuration: Math.round(script.split(/\s+/).length / 2.5)
+      }
+    })
+    .eq('id', prediction.id);
+  
+  // Update job with script result
+  if (jobId) {
+    const { data: job } = await adminClient
+      .from('generation_jobs')
+      .select('metadata')
+      .eq('id', jobId)
+      .single();
+    
+    const metadata = job?.metadata || {};
+    
+    await adminClient
+      .from('generation_jobs')
+      .update({
+        status: 'completed',
+        progress: 1,
+        completed_at: new Date().toISOString(),
+        metadata: {
+          ...metadata,
+          script,
+          wordCount: script.split(/\s+/).length,
+          estimatedDuration: Math.round(script.split(/\s+/).length / 2.5)
+        }
+      })
+      .eq('id', jobId);
+    
+    console.log(`Script job ${jobId} completed successfully`);
   }
 }
 

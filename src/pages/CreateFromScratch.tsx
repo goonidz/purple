@@ -281,6 +281,59 @@ const CreateFromScratch = () => {
     "Finalisation en cours...",
   ];
 
+  // Job polling for script generation
+  const [scriptJobId, setScriptJobId] = useState<string | null>(null);
+
+  // Poll for script job completion
+  useEffect(() => {
+    if (!scriptJobId || !isGeneratingScript) return;
+
+    const pollInterval = setInterval(async () => {
+      try {
+        const { data: jobs, error } = await supabase
+          .from('generation_jobs')
+          .select('*')
+          .eq('id', scriptJobId)
+          .single();
+
+        if (error) {
+          console.error("Error polling job:", error);
+          return;
+        }
+
+        if (jobs.status === 'completed') {
+          clearInterval(pollInterval);
+          setIsGeneratingScript(false);
+          setGenerationProgress(100);
+          setGenerationMessage("Script terminé !");
+
+          // Get script from job metadata
+          const metadata = jobs.metadata as any;
+          if (metadata?.script) {
+            setGeneratedScript(metadata.script);
+            setWordCount(metadata.wordCount || 0);
+            setEstimatedDuration(metadata.estimatedDuration || 0);
+            setStep("script");
+            toast.success("Script généré avec succès !");
+          }
+          setScriptJobId(null);
+        } else if (jobs.status === 'failed') {
+          clearInterval(pollInterval);
+          setIsGeneratingScript(false);
+          setScriptJobId(null);
+          toast.error(jobs.error_message || "Erreur lors de la génération du script");
+        } else {
+          // Update progress message based on time elapsed
+          setGenerationProgress(prev => Math.min(prev + 2, 85));
+        }
+      } catch (err) {
+        console.error("Polling error:", err);
+      }
+    }, 3000);
+
+    return () => clearInterval(pollInterval);
+  }, [scriptJobId, isGeneratingScript]);
+
   const handleGenerateScript = async () => {
     if (!customPrompt.trim()) {
       toast.error("Veuillez entrer un prompt");
@@ -291,10 +344,10 @@ const CreateFromScratch = () => {
     setGenerationProgress(0);
     setGenerationMessage(GENERATION_MESSAGES[0]);
 
-    // Progress animation - slower updates every 5 seconds
+    // Progress animation - slower updates every 8 seconds
     const progressInterval = setInterval(() => {
       setGenerationProgress(prev => {
-        const newProgress = Math.min(prev + Math.random() * 5, 85);
+        const newProgress = Math.min(prev + Math.random() * 4, 80);
         const messageIndex = Math.min(
           Math.floor(newProgress / 12),
           GENERATION_MESSAGES.length - 1
@@ -302,55 +355,88 @@ const CreateFromScratch = () => {
         setGenerationMessage(GENERATION_MESSAGES[messageIndex]);
         return newProgress;
       });
-    }, 5000);
+    }, 8000);
 
     try {
-      const { data, error } = await supabase.functions.invoke('generate-script', {
+      // Create a temporary project just for the job (will be updated later)
+      const tempProjectName = projectName.trim() || `Script-${Date.now()}`;
+      
+      const { data: tempProject, error: projectError } = await supabase
+        .from("projects")
+        .insert([{
+          user_id: user!.id,
+          name: tempProjectName,
+        }])
+        .select()
+        .single();
+
+      if (projectError) throw projectError;
+      
+      setProjectId(tempProject.id);
+
+      // Start the script generation job via backend
+      const { data, error } = await supabase.functions.invoke('start-generation-job', {
         body: {
-          customPrompt
+          projectId: tempProject.id,
+          jobType: 'script_generation',
+          metadata: {
+            customPrompt
+          }
         }
       });
 
+      clearInterval(progressInterval);
+
       if (error) throw error;
 
-      clearInterval(progressInterval);
-      setGenerationProgress(100);
-      setGenerationMessage("Script terminé !");
-
-      setGeneratedScript(data.script);
-      setWordCount(data.wordCount || 0);
-      setEstimatedDuration(data.estimatedDuration || 0);
-      setStep("script");
-      toast.success("Script généré avec succès !");
+      if (data.jobId) {
+        setScriptJobId(data.jobId);
+        toast.info("Génération du script en cours... Vous pouvez quitter cette page, le script sera sauvegardé.");
+      } else {
+        throw new Error("Pas de job ID reçu");
+      }
     } catch (error: any) {
-      console.error("Error generating script:", error);
-      toast.error(error.message || "Erreur lors de la génération du script");
-    } finally {
+      console.error("Error starting script generation:", error);
       clearInterval(progressInterval);
       setIsGeneratingScript(false);
+      toast.error(error.message || "Erreur lors du lancement de la génération");
     }
   };
 
   const handleRegenerateScript = async () => {
+    if (!projectId) {
+      toast.error("Erreur: projet non trouvé");
+      return;
+    }
+
     setIsGeneratingScript(true);
+    setGenerationProgress(0);
+    setGenerationMessage("Régénération en cours...");
+
     try {
-      const { data, error } = await supabase.functions.invoke('generate-script', {
+      // Start the script generation job via backend
+      const { data, error } = await supabase.functions.invoke('start-generation-job', {
         body: {
-          customPrompt
+          projectId,
+          jobType: 'script_generation',
+          metadata: {
+            customPrompt
+          }
         }
       });
 
       if (error) throw error;
 
-      setGeneratedScript(data.script);
-      setWordCount(data.wordCount || 0);
-      setEstimatedDuration(data.estimatedDuration || 0);
-      toast.success("Script régénéré !");
+      if (data.jobId) {
+        setScriptJobId(data.jobId);
+        toast.info("Régénération du script en cours...");
+      } else {
+        throw new Error("Pas de job ID reçu");
+      }
     } catch (error: any) {
       console.error("Error regenerating script:", error);
-      toast.error(error.message || "Erreur lors de la régénération");
-    } finally {
       setIsGeneratingScript(false);
+      toast.error(error.message || "Erreur lors de la régénération");
     }
   };
 
@@ -365,28 +451,25 @@ const CreateFromScratch = () => {
       return;
     }
 
+    if (!projectId) {
+      toast.error("Erreur: projet non trouvé");
+      return;
+    }
+
     setIsGeneratingAudio(true);
     try {
-      // First create the project
-      const { data: projectData, error: projectError } = await supabase
+      // Update project name if changed
+      await supabase
         .from("projects")
-        .insert([{
-          user_id: user!.id,
-          name: projectName.trim(),
-        }])
-        .select()
-        .single();
-
-      if (projectError) throw projectError;
-      
-      setProjectId(projectData.id);
+        .update({ name: projectName.trim() })
+        .eq("id", projectId);
 
       // Generate audio
       const { data, error } = await supabase.functions.invoke('generate-audio-tts', {
         body: {
           script: generatedScript,
           voice: selectedVoice,
-          projectId: projectData.id
+          projectId
         }
       });
 
@@ -396,7 +479,7 @@ const CreateFromScratch = () => {
       await supabase
         .from("projects")
         .update({ audio_url: data.audioUrl })
-        .eq("id", projectData.id);
+        .eq("id", projectId);
 
       setAudioUrl(data.audioUrl);
       setStep("audio");

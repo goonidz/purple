@@ -13,7 +13,7 @@ const corsHeaders = {
 
 interface JobRequest {
   projectId: string;
-  jobType: 'transcription' | 'prompts' | 'images' | 'thumbnails' | 'test_images' | 'single_prompt' | 'single_image';
+  jobType: 'transcription' | 'prompts' | 'images' | 'thumbnails' | 'test_images' | 'single_prompt' | 'single_image' | 'script_generation';
   metadata?: Record<string, any>;
 }
 
@@ -170,6 +170,8 @@ serve(async (req) => {
       total = 1; // Single item
     } else if (jobType === 'thumbnails') {
       total = 3; // Always generate 3 thumbnails
+    } else if (jobType === 'script_generation') {
+      total = 1; // Single script generation
     }
 
     // Create the job record
@@ -257,6 +259,8 @@ async function processJob(
       await processSingleImageJob(jobId, projectId, userId, metadata, authHeader, adminClient);
     } else if (jobType === 'thumbnails') {
       await processThumbnailsJob(jobId, projectId, userId, metadata, authHeader, adminClient);
+    } else if (jobType === 'script_generation') {
+      await processScriptGenerationJob(jobId, projectId, userId, metadata, authHeader, adminClient);
     }
 
     // Mark job as completed
@@ -1695,6 +1699,53 @@ async function processThumbnailsJob(
   // Job stays in 'processing' status - the webhook will mark it complete
   // Do NOT mark as completed here - that's the webhook's job
   console.log(`Thumbnail generations started. Waiting for webhooks...`);
+  
+  // Throw a special marker to prevent the job from being marked complete by processJob
+  throw new Error("WEBHOOK_MODE_ACTIVE");
+}
+
+async function processScriptGenerationJob(
+  jobId: string,
+  projectId: string,
+  userId: string,
+  metadata: Record<string, any>,
+  authHeader: string,
+  adminClient: any
+) {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+  
+  const customPrompt = metadata.customPrompt;
+  
+  if (!customPrompt) {
+    throw new Error("Custom prompt is required for script generation");
+  }
+  
+  console.log(`Starting script generation job ${jobId}`);
+  
+  // Call the generate-script function with webhook mode
+  const response = await fetch(`${supabaseUrl}/functions/v1/generate-script`, {
+    method: 'POST',
+    headers: {
+      'Authorization': authHeader,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      customPrompt,
+      jobId,
+      useWebhook: true
+    }),
+  });
+  
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.error || `Script generation failed: ${response.status}`);
+  }
+  
+  const data = await response.json();
+  console.log(`Script generation started: ${data.predictionId}`);
+  
+  // Job stays in 'processing' status - the webhook will mark it complete
+  console.log(`Script generation job ${jobId} waiting for webhook...`);
   
   // Throw a special marker to prevent the job from being marked complete by processJob
   throw new Error("WEBHOOK_MODE_ACTIVE");

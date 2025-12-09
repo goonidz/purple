@@ -24,10 +24,9 @@ serve(async (req) => {
     }
 
     // Create admin client to verify user
-    const supabaseAdmin = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-    );
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
     // Get user from token
     const token = authHeader.replace('Bearer ', '');
@@ -43,16 +42,15 @@ serve(async (req) => {
 
     console.log("User authenticated:", user.id);
 
-    const { customPrompt } = await req.json();
+    const { customPrompt, jobId, useWebhook } = await req.json();
 
     if (!customPrompt) {
       throw new Error("Custom prompt is required");
     }
 
-    console.log("Generating script with custom prompt");
+    console.log("Generating script with custom prompt, useWebhook:", useWebhook);
 
-    // Get user's Replicate API key from Vault (reuse supabaseAdmin from above)
-
+    // Get user's Replicate API key from Vault
     const { data: apiKeyData, error: apiKeyError } = await supabaseAdmin.rpc(
       'get_user_api_key_for_service',
       { target_user_id: user.id, key_name: 'replicate' }
@@ -75,7 +73,55 @@ serve(async (req) => {
 
     console.log("Calling Claude via Replicate...");
 
-    // Use Claude 4.5 Sonnet via Replicate
+    // If using webhook mode, create async prediction
+    if (useWebhook && jobId) {
+      const webhookUrl = `${supabaseUrl}/functions/v1/replicate-webhook`;
+      
+      console.log("Creating async prediction with webhook:", webhookUrl);
+      
+      const prediction = await replicate.predictions.create({
+        model: "anthropic/claude-4.5-sonnet",
+        input: {
+          prompt: userPrompt,
+          system_prompt: systemPrompt,
+          max_tokens: 16384,
+          temperature: 0.7,
+        },
+        webhook: webhookUrl,
+        webhook_events_filter: ["completed"],
+      });
+
+      console.log("Prediction created:", prediction.id);
+
+      // Store prediction in pending_predictions
+      const { error: insertError } = await supabaseAdmin
+        .from('pending_predictions')
+        .insert({
+          prediction_id: prediction.id,
+          prediction_type: 'script',
+          user_id: user.id,
+          job_id: jobId,
+          status: 'pending',
+          metadata: {
+            customPrompt,
+          }
+        });
+
+      if (insertError) {
+        console.error("Error storing prediction:", insertError);
+      }
+
+      return new Response(
+        JSON.stringify({ 
+          status: 'processing',
+          predictionId: prediction.id,
+          message: 'Script generation started'
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Synchronous mode (fallback)
     const output = await replicate.run(
       "anthropic/claude-4.5-sonnet",
       {
