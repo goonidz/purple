@@ -670,285 +670,298 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle }: Thumb
           <TabsTrigger value="history">Historique ({thumbnailHistory.length})</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="generate" className="mt-6">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            {/* Left Column - Configuration */}
-            <div className="space-y-6">
-              {/* Presets */}
-              <Card className="p-4 bg-muted/30">
-                <Label className="text-sm font-medium mb-3 block">Presets</Label>
-                <div className="flex gap-2 items-center">
-                  <Select value={selectedPresetId} onValueChange={(value) => {
-                    setSelectedPresetId(value);
-                    loadPreset(value);
-                  }}>
-                    <SelectTrigger className="flex-1">
-                      <SelectValue placeholder="Sélectionner un preset..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {presets.map((preset) => (
-                        <SelectItem key={preset.id} value={preset.id}>
-                          {preset.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Button onClick={openEditDialog} disabled={!selectedPresetId} size="icon" variant="outline">
-                    <Edit className="w-4 h-4" />
-                  </Button>
-                  <Button onClick={openDuplicateDialog} disabled={!selectedPresetId} size="icon" variant="outline">
-                    <Copy className="w-4 h-4" />
-                  </Button>
-                  <Button onClick={deletePreset} disabled={!selectedPresetId} size="icon" variant="outline">
-                    <Trash2 className="w-4 h-4" />
-                  </Button>
-                </div>
-                <div className="flex gap-2 mt-3">
-                  <Input
-                    placeholder="Nom du nouveau preset..."
-                    value={newPresetName}
-                    onChange={(e) => setNewPresetName(e.target.value)}
-                    className="flex-1"
-                  />
-                  <Button onClick={saveAsPreset} disabled={isSavingPreset || !newPresetName.trim()} variant="outline">
-                    {isSavingPreset ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                  </Button>
-                </div>
-              </Card>
+        <TabsContent value="generate" className="space-y-6">
+          {/* Gestion des presets */}
+          <Card className="p-4 bg-muted/30">
+            <Label className="text-sm font-medium mb-2 block">Presets</Label>
+            <div className="flex gap-2">
+              <Select value={selectedPresetId} onValueChange={(value) => {
+                setSelectedPresetId(value);
+                loadPreset(value);
+              }}>
+                <SelectTrigger className="flex-1">
+                  <SelectValue placeholder="Sélectionner un preset" />
+                </SelectTrigger>
+                <SelectContent>
+                  {presets.map((preset) => (
+                    <SelectItem key={preset.id} value={preset.id}>
+                      {preset.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                onClick={openEditDialog}
+                disabled={!selectedPresetId}
+                size="icon"
+                variant="outline"
+                title="Modifier le preset"
+              >
+                <Edit className="w-4 h-4" />
+              </Button>
+              <Button
+                onClick={openDuplicateDialog}
+                disabled={!selectedPresetId}
+                size="icon"
+                variant="outline"
+                title="Dupliquer le preset"
+              >
+                <Copy className="w-4 h-4" />
+              </Button>
+              <Button
+                onClick={deletePreset}
+                disabled={!selectedPresetId}
+                size="icon"
+                variant="outline"
+                title="Supprimer le preset"
+              >
+                <Trash2 className="w-4 h-4" />
+              </Button>
+            </div>
 
-              {/* Exemples de style */}
-              <div className="space-y-3">
-                <Label className="text-sm font-medium">Exemples de style</Label>
-                <div
-                  className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors ${
-                    isDraggingExamples ? 'border-primary bg-primary/10' : 'border-muted-foreground/25 hover:border-muted-foreground/50'
-                  }`}
-                  onDragOver={handleDragOverExamples}
-                  onDragLeave={handleDragLeaveExamples}
-                  onDrop={handleDropExamples}
-                  onClick={() => document.getElementById('example-upload')?.click()}
-                >
-                  <input
-                    id="example-upload"
-                    type="file"
-                    multiple
-                    accept="image/*"
-                    className="hidden"
-                    onChange={(e) => e.target.files && handleExampleUpload(e.target.files)}
-                  />
-                  <Upload className="w-6 h-6 mx-auto mb-2 text-muted-foreground" />
-                  <p className="text-sm text-muted-foreground">Glisser ou cliquer pour ajouter</p>
-                </div>
-                {exampleUrls.length > 0 && (
-                  <div className="flex flex-wrap gap-3">
-                    {exampleUrls.map((url, index) => (
-                      <div key={index} className="relative group">
-                        <img
-                          src={url}
-                          alt={`Exemple ${index + 1}`}
-                          className="w-20 h-12 object-cover rounded-md border cursor-pointer hover:opacity-80 transition-opacity"
-                          onClick={() => setPreviewImage(url)}
-                        />
-                        <Button
-                          variant="destructive"
-                          size="icon"
-                          className="absolute -top-2 -right-2 h-5 w-5 opacity-0 group-hover:opacity-100 transition-opacity"
-                          onClick={(e) => { e.stopPropagation(); removeExample(index); }}
-                        >
-                          <X className="w-3 h-3" />
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
+            <div className="flex gap-2 mt-4">
+              <Input
+                placeholder="Nom du preset"
+                value={newPresetName}
+                onChange={(e) => setNewPresetName(e.target.value)}
+                className="flex-1"
+              />
+              <Button
+                onClick={saveAsPreset}
+                disabled={isSavingPreset || !newPresetName.trim()}
+                size="sm"
+              >
+                {isSavingPreset ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Save className="w-4 h-4" />
                 )}
-              </div>
+              </Button>
+            </div>
+          </Card>
 
-              {/* Personnage de référence */}
-              <div className="space-y-3">
-                <Label className="text-sm font-medium">Personnage de référence (optionnel)</Label>
-                {characterRefUrl ? (
-                  <div className="relative group inline-block">
-                    <img src={characterRefUrl} alt="Personnage" className="w-24 h-24 object-cover rounded-lg border" />
+          {/* Exemples de miniatures */}
+          <div>
+            <Label className="mb-2">Exemples de miniatures (style)</Label>
+            <div
+              className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors ${
+                isDraggingExamples ? 'border-primary bg-primary/10' : 'border-muted-foreground/25'
+              }`}
+              onDragOver={handleDragOverExamples}
+              onDragLeave={handleDragLeaveExamples}
+              onDrop={handleDropExamples}
+              onClick={() => document.getElementById('example-upload')?.click()}
+            >
+              <input
+                id="example-upload"
+                type="file"
+                multiple
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => e.target.files && handleExampleUpload(e.target.files)}
+              />
+              <Upload className="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
+              <p className="text-sm text-muted-foreground">
+                Glisse ou clique pour ajouter des exemples
+              </p>
+            </div>
+
+            {exampleUrls.length > 0 && (
+              <div className="grid grid-cols-3 gap-4 mt-4">
+                {exampleUrls.map((url, index) => (
+                  <div key={index} className="relative group">
+                    <img
+                      src={url}
+                      alt={`Example ${index + 1}`}
+                      className="w-full h-auto max-h-40 object-contain rounded-lg border bg-muted/50 cursor-pointer hover:opacity-90 transition-opacity"
+                      onClick={() => setPreviewImage(url)}
+                    />
                     <Button
                       variant="destructive"
                       size="icon"
-                      className="absolute -top-2 -right-2 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
-                      onClick={() => setCharacterRefUrl("")}
+                      className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeExample(index);
+                      }}
                     >
-                      <X className="w-3 h-3" />
+                      <X className="w-4 h-4" />
                     </Button>
                   </div>
-                ) : (
-                  <div
-                    className={`border-2 border-dashed rounded-lg p-4 text-center cursor-pointer transition-colors w-24 h-24 flex flex-col items-center justify-center ${
-                      isDraggingCharacter ? 'border-primary bg-primary/10' : 'border-muted-foreground/25 hover:border-muted-foreground/50'
-                    }`}
-                    onDragOver={handleDragOverCharacter}
-                    onDragLeave={handleDragLeaveCharacter}
-                    onDrop={handleDropCharacter}
-                    onClick={() => document.getElementById('character-upload')?.click()}
-                  >
-                    <input
-                      id="character-upload"
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={(e) => e.target.files?.[0] && handleCharacterUpload(e.target.files[0])}
-                    />
-                    <ImageIcon className="w-6 h-6 text-muted-foreground" />
-                    <p className="text-xs text-muted-foreground mt-1">Ajouter</p>
-                  </div>
-                )}
+                ))}
               </div>
-
-              {/* Idée / direction */}
-              <div className="space-y-3">
-                <Label className="text-sm font-medium">Ton idée ou direction (optionnel)</Label>
-                <Textarea
-                  value={userIdea}
-                  onChange={(e) => setUserIdea(e.target.value)}
-                  rows={2}
-                  className="resize-none"
-                  placeholder="Ex: Un effet avant/après, un visage choqué avec du texte rouge..."
-                />
-              </div>
-
-              {/* Modèle */}
-              <div className="space-y-3">
-                <Label className="text-sm font-medium">Modèle de génération</Label>
-                <Select value={imageModel} onValueChange={setImageModel}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="seedream-4.5">SeedDream 4.5 (Recommandé)</SelectItem>
-                    <SelectItem value="seedream-4">SeedDream 4.0</SelectItem>
-                    <SelectItem value="z-image-turbo">Z-Image Turbo (Rapide)</SelectItem>
-                  </SelectContent>
-                </Select>
-                {imageModel === 'z-image-turbo' && exampleUrls.length > 0 && (
-                  <p className="text-xs text-amber-500">⚠️ Z-Image Turbo ne supporte pas les images de référence.</p>
-                )}
-              </div>
-
-              {/* Option varier */}
-              <div className="flex items-center gap-3 py-2">
-                <Checkbox
-                  id="avoid-previous"
-                  checked={avoidPreviousPrompts}
-                  onCheckedChange={(checked) => setAvoidPreviousPrompts(checked === true)}
-                />
-                <Label htmlFor="avoid-previous" className="text-sm cursor-pointer">
-                  Éviter de répéter les idées des miniatures précédentes
-                </Label>
-              </div>
-
-              {/* Prompt système - collapsible */}
-              <details className="group border rounded-lg p-3">
-                <summary className="text-sm font-medium cursor-pointer hover:text-foreground/80 list-none flex items-center gap-2">
-                  <span className="text-xs text-muted-foreground group-open:rotate-90 transition-transform">▶</span>
-                  Prompt système personnalisé
-                </summary>
-                <div className="mt-3 space-y-3">
-                  <Textarea
-                    value={customPrompt}
-                    onChange={(e) => setCustomPrompt(e.target.value)}
-                    rows={10}
-                    className="font-mono text-xs"
-                  />
-                  <Button variant="ghost" size="sm" onClick={() => setCustomPrompt(DEFAULT_THUMBNAIL_PROMPT)}>
-                    Réinitialiser au prompt par défaut
-                  </Button>
-                </div>
-              </details>
-
-              {/* Bouton de génération */}
-              <Button
-                onClick={generateThumbnails}
-                disabled={isGenerating || exampleUrls.length === 0}
-                className="w-full"
-                size="lg"
-              >
-                {isGenerating ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Génération...
-                  </>
-                ) : (
-                  "Générer 3 miniatures"
-                )}
-              </Button>
-
-              {getJobByType('thumbnails') && (
-                <JobProgressIndicator job={getJobByType('thumbnails')!} />
-              )}
-            </div>
-
-            {/* Right Column - Results */}
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h4 className="font-medium text-sm">Résultats</h4>
-                {generatedThumbnails.length > 0 && (
-                  <span className="text-xs text-muted-foreground">{generatedThumbnails.length}/3</span>
-                )}
-              </div>
-              
-              {generatedThumbnails.length === 0 && !isGenerating ? (
-                <Card className="p-8 text-center border-dashed">
-                  <ImageIcon className="w-10 h-10 mx-auto mb-3 text-muted-foreground/50" />
-                  <p className="text-sm text-muted-foreground">Les miniatures apparaîtront ici</p>
-                </Card>
-              ) : (
-                <div className="space-y-4">
-                  {generatedThumbnails.map((url, index) => (
-                    <Card key={index} className="overflow-hidden">
-                      <img
-                        src={url}
-                        alt={`Generated ${index + 1}`}
-                        className="w-full aspect-video object-cover cursor-pointer hover:opacity-90 transition-opacity"
-                        onClick={() => setPreviewImage(url)}
-                      />
-                      <div className="p-3 space-y-2">
-                        {generatedPrompts[index] && (
-                          <p className="text-xs text-muted-foreground line-clamp-2">{generatedPrompts[index]}</p>
-                        )}
-                        <div className="flex gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="flex-1 h-8"
-                            onClick={() => downloadThumbnail(url, index)}
-                          >
-                            <Download className="w-3 h-3 mr-1" />
-                            Télécharger
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-8"
-                            onClick={() => openEditImageDialog(url)}
-                          >
-                            <Edit className="w-3 h-3" />
-                          </Button>
-                        </div>
-                      </div>
-                    </Card>
-                  ))}
-                  
-                  {/* Placeholders for loading */}
-                  {isGenerating && generatedThumbnails.length < 3 && (
-                    Array.from({ length: 3 - generatedThumbnails.length }).map((_, i) => (
-                      <Card key={`placeholder-${i}`} className="overflow-hidden animate-pulse">
-                        <div className="w-full aspect-video bg-muted flex items-center justify-center">
-                          <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-                        </div>
-                      </Card>
-                    ))
-                  )}
-                </div>
-              )}
-            </div>
+            )}
           </div>
+
+          {/* Référence du personnage (optionnel) */}
+          <div>
+            <Label className="mb-2">
+              Personnage de référence (optionnel)
+            </Label>
+            <div
+              className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors ${
+                isDraggingCharacter ? 'border-primary bg-primary/10' : 'border-muted-foreground/25'
+              }`}
+              onDragOver={handleDragOverCharacter}
+              onDragLeave={handleDragLeaveCharacter}
+              onDrop={handleDropCharacter}
+              onClick={() => document.getElementById('character-upload')?.click()}
+            >
+              <input
+                id="character-upload"
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => e.target.files?.[0] && handleCharacterUpload(e.target.files[0])}
+              />
+              <ImageIcon className="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
+              <p className="text-sm text-muted-foreground">
+                Ajoute une image de ton personnage (optionnel)
+              </p>
+            </div>
+
+            {characterRefUrl && (
+              <div className="relative group mt-4 inline-block">
+                <img
+                  src={characterRefUrl}
+                  alt="Character reference"
+                  className="w-48 h-48 object-cover rounded-lg border"
+                />
+                <Button
+                  variant="destructive"
+                  size="icon"
+                  className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity"
+                  onClick={() => setCharacterRefUrl("")}
+                >
+                  <X className="w-4 h-4" />
+                </Button>
+              </div>
+            )}
+          </div>
+
+          {/* Idée / direction pour les miniatures (optionnel) */}
+          <div className="space-y-2">
+            <Label className="text-sm">
+              Ton idée / direction (optionnel)
+            </Label>
+            <Textarea
+              value={userIdea}
+              onChange={(e) => setUserIdea(e.target.value)}
+              rows={2}
+              className="text-sm"
+              placeholder="Ex: Je veux une miniature avec un effet avant/après, ou un visage choqué avec du texte rouge..."
+            />
+          </div>
+
+          {/* Prompt système personnalisable */}
+          <div className="space-y-2">
+            <Label className="flex items-center gap-2">
+              Prompt système (modifiable)
+            </Label>
+            <Textarea
+              value={customPrompt}
+              onChange={(e) => setCustomPrompt(e.target.value)}
+              rows={10}
+              className="font-mono text-sm"
+              placeholder="Entrez votre prompt personnalisé..."
+            />
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setCustomPrompt(DEFAULT_THUMBNAIL_PROMPT)}
+              className="text-muted-foreground"
+            >
+              Réinitialiser au prompt par défaut
+            </Button>
+          </div>
+
+          {/* Sélection du modèle d'image */}
+          <div className="space-y-2">
+            <Label>Modèle de génération d'image</Label>
+            <Select value={imageModel} onValueChange={setImageModel}>
+              <SelectTrigger>
+                <SelectValue placeholder="Choisir un modèle" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="seedream-4.5">SeedDream 4.5 (Recommandé)</SelectItem>
+                <SelectItem value="seedream-4">SeedDream 4.0</SelectItem>
+                <SelectItem value="z-image-turbo">Z-Image Turbo (Rapide)</SelectItem>
+              </SelectContent>
+            </Select>
+            {imageModel === 'z-image-turbo' && exampleUrls.length > 0 && (
+              <p className="text-xs text-amber-500">
+                ⚠️ Z-Image Turbo ne supporte pas les images de référence. Elles seront ignorées.
+              </p>
+            )}
+          </div>
+
+          {/* Option pour éviter les prompts précédents */}
+          <div className="flex items-center space-x-2">
+            <Checkbox
+              id="avoid-previous"
+              checked={avoidPreviousPrompts}
+              onCheckedChange={(checked) => setAvoidPreviousPrompts(checked === true)}
+            />
+            <Label htmlFor="avoid-previous" className="text-sm cursor-pointer">
+              Éviter de répéter les idées des miniatures précédentes
+            </Label>
+          </div>
+
+          {/* Bouton de génération */}
+          <Button
+            onClick={generateThumbnails}
+            disabled={isGenerating || exampleUrls.length === 0}
+            className="w-full"
+            size="lg"
+          >
+            {isGenerating ? (
+              <>
+                <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                Génération en cours...
+              </>
+            ) : (
+              "Générer 3 miniatures"
+            )}
+          </Button>
+
+          {/* Job progress indicator */}
+          {getJobByType('thumbnails') && (
+            <JobProgressIndicator job={getJobByType('thumbnails')!} />
+          )}
+
+          {/* Résultats de génération */}
+          {generatedThumbnails.length > 0 && (
+            <div className="space-y-4">
+              <h4 className="font-semibold">Miniatures générées</h4>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {generatedThumbnails.map((url, index) => (
+                  <div key={index} className="space-y-2">
+                    <img
+                      src={url}
+                      alt={`Generated ${index + 1}`}
+                      className="w-full aspect-video object-cover rounded-lg border cursor-pointer hover:opacity-80 transition-opacity"
+                      onClick={() => setPreviewImage(url)}
+                    />
+                    {generatedPrompts[index] && (
+                      <div className="p-2 bg-muted rounded text-xs text-muted-foreground max-h-24 overflow-y-auto">
+                        <p className="font-medium text-foreground mb-1">Prompt {index + 1}:</p>
+                        {generatedPrompts[index]}
+                      </div>
+                    )}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full"
+                      onClick={() => downloadThumbnail(url, index)}
+                    >
+                      <Download className="w-4 h-4 mr-2" />
+                      Télécharger
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </TabsContent>
 
         <TabsContent value="history" className="space-y-4">
