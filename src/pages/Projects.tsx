@@ -178,8 +178,8 @@ const Projects = () => {
 
       setCurrentProjectId(projectData.id);
       
-      // Start background transcription job
-      const result = await startJob('transcription', { audioUrl });
+      // Start background transcription job with explicit projectId
+      const result = await startJob('transcription', { audioUrl }, projectData.id);
       if (result) {
         toast.info("Transcription lancée en arrière-plan. Vous pouvez quitter cette page.");
       } else {
@@ -289,8 +289,8 @@ const Projects = () => {
       setCurrentProjectId(projectData.id);
       setWorkflowStep("transcription");
       
-      // Start background transcription job
-      const result = await startJob('transcription', { audioUrl: publicUrl });
+      // Start background transcription job with explicit projectId
+      const result = await startJob('transcription', { audioUrl: publicUrl }, projectData.id);
       if (result) {
         toast.info("Transcription lancée en arrière-plan. Vous pouvez quitter cette page.");
       } else {

@@ -112,9 +112,12 @@ export function useGenerationJobs({ projectId, onJobComplete, onJobFailed }: Use
 
   const startJob = useCallback(async (
     jobType: JobType, 
-    metadata: Record<string, any> = {}
+    metadata: Record<string, any> = {},
+    overrideProjectId?: string
   ): Promise<{ jobId: string; total: number } | null> => {
-    if (!projectId) {
+    const targetProjectId = overrideProjectId || projectId;
+    
+    if (!targetProjectId) {
       toast.error("Aucun projet sélectionné");
       return null;
     }
@@ -123,7 +126,7 @@ export function useGenerationJobs({ projectId, onJobComplete, onJobFailed }: Use
 
     try {
       const { data, error } = await supabase.functions.invoke('start-generation-job', {
-        body: { projectId, jobType, metadata }
+        body: { projectId: targetProjectId, jobType, metadata }
       });
 
       if (error) throw error;
