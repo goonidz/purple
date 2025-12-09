@@ -24,21 +24,36 @@ serve(async (req) => {
       throw new Error("LOVABLE_API_KEY is not configured");
     }
 
-    const systemPrompt = `Tu es un expert en création de contenu vidéo. 
-L'utilisateur te donne une idée de vidéo. Tu dois proposer exactement 4 axes/angles différents pour aborder ce sujet.
+    const systemPrompt = `Tu es un expert en création de contenu vidéo et en argumentation. 
+L'utilisateur te donne une idée de vidéo. Tu dois proposer exactement 4 THÈSES différentes pour cette vidéo.
 
-Chaque axe doit être:
-- Distinct et créatif
-- Accrocheur pour YouTube
-- Formulé en 1-2 phrases maximum
+Chaque thèse doit être:
+- Un angle argumentatif fort et clair
+- Accompagnée d'une explication de la direction que prendra le script
 
 IMPORTANT: Réponds UNIQUEMENT avec un JSON valide dans ce format exact:
 {
   "axes": [
-    {"id": 1, "title": "Titre court de l'axe", "description": "Description en 1-2 phrases de l'angle proposé"},
-    {"id": 2, "title": "Titre court de l'axe", "description": "Description en 1-2 phrases de l'angle proposé"},
-    {"id": 3, "title": "Titre court de l'axe", "description": "Description en 1-2 phrases de l'angle proposé"},
-    {"id": 4, "title": "Titre court de l'axe", "description": "Description en 1-2 phrases de l'angle proposé"}
+    {
+      "id": 1, 
+      "title": "La thèse principale en une phrase percutante", 
+      "description": "Ce que le script va démontrer/expliquer et comment il va s'y prendre (2-3 phrases)"
+    },
+    {
+      "id": 2, 
+      "title": "Une autre thèse possible", 
+      "description": "Direction et argumentation que le script va suivre"
+    },
+    {
+      "id": 3, 
+      "title": "Une thèse alternative", 
+      "description": "Comment le script va aborder le sujet sous cet angle"
+    },
+    {
+      "id": 4, 
+      "title": "Une dernière thèse différente", 
+      "description": "L'approche narrative et argumentative du script"
+    }
   ]
 }
 

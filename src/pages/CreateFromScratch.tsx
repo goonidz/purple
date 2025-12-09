@@ -416,14 +416,15 @@ const CreateFromScratch = () => {
   const handleSelectAxe = async (axe: VideoAxe) => {
     setSelectedAxe(axe);
     
-    // Combine the original prompt with the selected axe
+    // Combine the original prompt with the selected thesis
     const enhancedPrompt = `${customPrompt}
 
-AXE CHOISI POUR LA VIDÉO:
-Titre: ${axe.title}
-Description: ${axe.description}
+THÈSE CHOISIE POUR LA VIDÉO:
+"${axe.title}"
 
-Génère un script qui suit cet axe spécifique.`;
+Direction du script: ${axe.description}
+
+Génère un script qui défend et développe cette thèse spécifique. Le script doit être cohérent avec la direction indiquée.`;
     
     // Now generate the script with the enhanced prompt
     await generateScriptWithPrompt(enhancedPrompt);
@@ -647,7 +648,7 @@ Génère un script qui suit cet axe spécifique.`;
             <div className={`w-8 h-8 rounded-full flex items-center justify-center ${step === "axes" ? "bg-primary text-primary-foreground" : step === "script" || step === "audio" || step === "complete" ? "bg-primary/20 text-primary" : "bg-muted"}`}>
               {step === "script" || step === "audio" || step === "complete" ? <Check className="h-4 w-4" /> : "2"}
             </div>
-            <span className="font-medium hidden sm:inline">Axe</span>
+            <span className="font-medium hidden sm:inline">Thèse</span>
           </div>
           <div className="w-8 h-0.5 bg-muted" />
           <div className={`flex items-center gap-2 ${step === "script" ? "text-primary" : "text-muted-foreground"}`}>
@@ -833,7 +834,7 @@ Génère un script qui suit cet axe spécifique.`;
                     size="lg"
                   >
                     <Sparkles className="mr-2 h-4 w-4" />
-                    Proposer des axes avec Gemini
+                    Proposer des thèses avec Gemini
                   </Button>
                 )}
               </div>
@@ -844,9 +845,9 @@ Génère un script qui suit cet axe spécifique.`;
             <Card className="p-8">
               <div className="space-y-6">
                 <div className="text-center mb-6">
-                  <h2 className="text-2xl font-bold mb-2">Choisissez un axe</h2>
+                  <h2 className="text-2xl font-bold mb-2">Choisissez une thèse</h2>
                   <p className="text-muted-foreground">
-                    Sélectionnez l'angle qui correspond le mieux à votre vision
+                    Sélectionnez l'argument principal et la direction du script
                   </p>
                 </div>
 
@@ -903,7 +904,7 @@ Génère un script qui suit cet axe spécifique.`;
                     disabled={isGeneratingScript}
                   >
                     <RefreshCw className="mr-2 h-4 w-4" />
-                    Régénérer les axes
+                    Régénérer les thèses
                   </Button>
                 </div>
               </div>
