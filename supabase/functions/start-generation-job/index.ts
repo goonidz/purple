@@ -64,7 +64,7 @@ serve(async (req) => {
     // For single_prompt and single_image, allow multiple jobs but not for the same scene
     let existingJobQuery = adminClient
       .from('generation_jobs')
-      .select('id, status, metadata')
+      .select('id, status, metadata, created_at, updated_at')
       .eq('project_id', projectId)
       .eq('job_type', jobType)
       .in('status', ['pending', 'processing']);
@@ -72,31 +72,64 @@ serve(async (req) => {
     const { data: existingJobs } = await existingJobQuery;
 
     if (existingJobs && existingJobs.length > 0) {
-      // For single jobs, check if the same scene is already being processed
-      if (jobType === 'single_prompt' || jobType === 'single_image') {
-        const sceneIndex = metadata.sceneIndex;
-        const sameSceneJob = existingJobs.find(
-          (j: any) => j.metadata?.sceneIndex === sceneIndex
-        );
-        if (sameSceneJob) {
+      // Check for stale jobs (no update in last 5 minutes = likely timed out)
+      const STALE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
+      const now = Date.now();
+      
+      const staleJobs = existingJobs.filter((job: any) => {
+        const updatedAt = new Date(job.updated_at).getTime();
+        return (now - updatedAt) > STALE_THRESHOLD_MS;
+      });
+      
+      // Clean up stale jobs - mark them as failed
+      if (staleJobs.length > 0) {
+        console.log(`Found ${staleJobs.length} stale jobs, cleaning up...`);
+        for (const staleJob of staleJobs) {
+          await adminClient
+            .from('generation_jobs')
+            .update({ 
+              status: 'failed',
+              error_message: 'Job marqué comme échoué (timeout CPU probable)',
+              completed_at: new Date().toISOString()
+            })
+            .eq('id', staleJob.id);
+          console.log(`Marked stale job ${staleJob.id} as failed`);
+        }
+      }
+      
+      // Filter out stale jobs to check for active ones
+      const activeJobs = existingJobs.filter((job: any) => {
+        const updatedAt = new Date(job.updated_at).getTime();
+        return (now - updatedAt) <= STALE_THRESHOLD_MS;
+      });
+      
+      if (activeJobs.length > 0) {
+        // For single jobs, check if the same scene is already being processed
+        if (jobType === 'single_prompt' || jobType === 'single_image') {
+          const sceneIndex = metadata.sceneIndex;
+          const sameSceneJob = activeJobs.find(
+            (j: any) => j.metadata?.sceneIndex === sceneIndex
+          );
+          if (sameSceneJob) {
+            return new Response(
+              JSON.stringify({ 
+                error: "Cette scène est déjà en cours de génération",
+                existingJobId: sameSceneJob.id 
+              }),
+              { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+            );
+          }
+          // Allow multiple single jobs for different scenes
+        } else {
+          // For other job types, block if any is running
           return new Response(
             JSON.stringify({ 
-              error: "Cette scène est déjà en cours de génération",
-              existingJobId: sameSceneJob.id 
+              error: "A job of this type is already running for this project",
+              existingJobId: activeJobs[0].id 
             }),
             { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } }
           );
         }
-        // Allow multiple single jobs for different scenes
-      } else {
-        // For other job types, block if any is running
-        return new Response(
-          JSON.stringify({ 
-            error: "A job of this type is already running for this project",
-            existingJobId: existingJobs[0].id 
-          }),
-          { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
       }
     }
 
