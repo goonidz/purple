@@ -1788,10 +1788,13 @@ async function processAudioGenerationJob(
   // Call the generate-audio-minimax function with jobId for background processing
   const functionName = provider === 'elevenlabs' ? 'generate-audio-tts' : 'generate-audio-minimax';
   
+  // Use service role key for internal calls to avoid auth token expiration issues
+  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+  
   const response = await fetch(`${supabaseUrl}/functions/v1/${functionName}`, {
     method: 'POST',
     headers: {
-      'Authorization': authHeader,
+      'Authorization': `Bearer ${serviceKey}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
@@ -1805,7 +1808,8 @@ async function processAudioGenerationJob(
       englishNormalization,
       emotion,
       projectId,
-      jobId // Pass jobId for background processing mode
+      jobId, // Pass jobId for background processing mode
+      userId // Pass userId for API key retrieval since we're using service role
     }),
   });
   
