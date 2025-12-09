@@ -6,16 +6,69 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-// MiniMax voice IDs
+// MiniMax voice IDs - complete list
 const MINIMAX_VOICES: Record<string, string> = {
   // English voices
+  "english_expressive_narrator": "English_expressive_narrator",
+  "calm_american_man": "Calm_American_Man",
+  "warm_american_woman": "Warm_American_Woman",
+  "british_gentleman": "British_Gentleman",
+  "british_lady": "British_Lady",
+  "friendly_american_man": "Friendly_American_Man",
+  "friendly_american_woman": "Friendly_American_Woman",
+  "professional_american_man": "Professional_American_Man",
+  "professional_american_woman": "Professional_American_Woman",
+  "excited_american_man": "Excited_American_Man",
+  "excited_american_woman": "Excited_American_Woman",
+  "soft_american_man": "Soft_American_Man",
+  "soft_american_woman": "Soft_American_Woman",
+  "deep_american_man": "Deep_American_Man",
+  "youthful_american_man": "Youthful_American_Man",
+  "youthful_american_woman": "Youthful_American_Woman",
+  "mature_american_man": "Mature_American_Man",
+  "mature_american_woman": "Mature_American_Woman",
+  // French voices
+  "french_graceful_man": "French_Graceful_Man",
+  "french_mature_lady": "French_Mature_Lady",
+  "french_warm_man": "French_Warm_Man",
+  "french_sweet_lady": "French_Sweet_Lady",
+  // Spanish voices
+  "spanish_trustworth_man": "Spanish_Trustworth_Man",
+  "spanish_sweet_lady": "Spanish_Sweet_Lady",
+  // German voices
+  "german_gentle_man": "German_Gentle_Man",
+  "german_sweet_lady": "German_Sweet_Lady",
+  // Italian voices
+  "italian_warm_man": "Italian_Warm_Man",
+  "italian_sweet_lady": "Italian_Sweet_Lady",
+  // Portuguese voices
+  "portuguese_warm_man": "Portuguese_Warm_Man",
+  "portuguese_sweet_lady": "Portuguese_Sweet_Lady",
+  // Chinese voices
+  "chinese_gentle_lady": "Chinese_Gentle_Lady",
+  "chinese_calm_man": "Chinese_Calm_Man",
+  // Japanese voices
+  "japanese_gentle_lady": "Japanese_Gentle_Lady",
+  "japanese_calm_man": "Japanese_Calm_Man",
+  // Korean voices
+  "korean_gentle_lady": "Korean_Gentle_Lady",
+  "korean_calm_man": "Korean_Calm_Man",
+  // Arabic voices
+  "arabic_gentle_man": "Arabic_Gentle_Man",
+  "arabic_sweet_lady": "Arabic_Sweet_Lady",
+  // Russian voices
+  "russian_calm_man": "Russian_Calm_Man",
+  "russian_sweet_lady": "Russian_Sweet_Lady",
+  // Hindi voices
+  "hindi_calm_man": "Hindi_Calm_Man",
+  "hindi_sweet_lady": "Hindi_Sweet_Lady",
+  // Legacy mappings for backwards compatibility
   "english_narrator": "English_expressive_narrator",
   "english_male": "Calm_American_Man",
   "english_female": "Warm_American_Woman",
   "english_british": "British_Gentleman",
-  // French voices
-  "french_male": "French_Male",
-  "french_female": "French_Female",
+  "french_male": "French_Graceful_Man",
+  "french_female": "French_Mature_Lady",
 };
 
 serve(async (req) => {
@@ -47,13 +100,22 @@ serve(async (req) => {
       });
     }
 
-    const { script, voice = 'english_narrator', model = 'speech-2.6-hd', projectId } = await req.json();
+    const { 
+      script, 
+      voice = 'english_expressive_narrator', 
+      model = 'speech-2.6-hd', 
+      speed = 1.0,
+      pitch = 0,
+      volume = 1.0,
+      languageBoost = 'auto',
+      projectId 
+    } = await req.json();
 
     if (!script) {
       throw new Error("Script is required");
     }
 
-    console.log("Generating audio with MiniMax, script length:", script.length, "model:", model);
+    console.log("Generating audio with MiniMax, script length:", script.length, "model:", model, "voice:", voice, "speed:", speed, "pitch:", pitch);
 
     // Get user's MiniMax API key from Vault
     const supabaseAdmin = createClient(
@@ -91,13 +153,13 @@ serve(async (req) => {
           model: model, // 'speech-2.6-hd' or 'speech-2.6-turbo'
           text: script,
           stream: false,
-          language_boost: "auto",
+          language_boost: languageBoost,
           output_format: "hex",
           voice_setting: {
             voice_id: voiceId,
-            speed: 1,
-            vol: 1,
-            pitch: 0,
+            speed: speed,
+            vol: volume,
+            pitch: pitch,
           },
           audio_setting: {
             sample_rate: 32000,

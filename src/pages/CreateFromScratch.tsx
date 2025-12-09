@@ -43,18 +43,67 @@ const ELEVENLABS_VOICE_OPTIONS = [
   { id: "brian", name: "Brian", language: "en" },
 ];
 
+// All MiniMax voices from API documentation
 const MINIMAX_VOICE_OPTIONS = [
-  { id: "english_narrator", name: "English Narrator", language: "en" },
-  { id: "english_male", name: "Calm American Man", language: "en" },
-  { id: "english_female", name: "Warm American Woman", language: "en" },
-  { id: "english_british", name: "British Gentleman", language: "en" },
-  { id: "french_male", name: "French Male", language: "fr" },
-  { id: "french_female", name: "French Female", language: "fr" },
+  // English voices
+  { id: "english_expressive_narrator", name: "Expressive Narrator", language: "en", gender: "male" },
+  { id: "calm_american_man", name: "Calm American Man", language: "en", gender: "male" },
+  { id: "warm_american_woman", name: "Warm American Woman", language: "en", gender: "female" },
+  { id: "british_gentleman", name: "British Gentleman", language: "en", gender: "male" },
+  { id: "british_lady", name: "British Lady", language: "en", gender: "female" },
+  { id: "friendly_american_man", name: "Friendly American Man", language: "en", gender: "male" },
+  { id: "friendly_american_woman", name: "Friendly American Woman", language: "en", gender: "female" },
+  { id: "professional_american_man", name: "Professional American Man", language: "en", gender: "male" },
+  { id: "professional_american_woman", name: "Professional American Woman", language: "en", gender: "female" },
+  { id: "excited_american_man", name: "Excited American Man", language: "en", gender: "male" },
+  { id: "excited_american_woman", name: "Excited American Woman", language: "en", gender: "female" },
+  { id: "soft_american_man", name: "Soft American Man", language: "en", gender: "male" },
+  { id: "soft_american_woman", name: "Soft American Woman", language: "en", gender: "female" },
+  { id: "deep_american_man", name: "Deep American Man", language: "en", gender: "male" },
+  { id: "youthful_american_man", name: "Youthful American Man", language: "en", gender: "male" },
+  { id: "youthful_american_woman", name: "Youthful American Woman", language: "en", gender: "female" },
+  { id: "mature_american_man", name: "Mature American Man", language: "en", gender: "male" },
+  { id: "mature_american_woman", name: "Mature American Woman", language: "en", gender: "female" },
+  // French voices  
+  { id: "french_graceful_man", name: "French Graceful Man", language: "fr", gender: "male" },
+  { id: "french_mature_lady", name: "French Mature Lady", language: "fr", gender: "female" },
+  { id: "french_warm_man", name: "French Warm Man", language: "fr", gender: "male" },
+  { id: "french_sweet_lady", name: "French Sweet Lady", language: "fr", gender: "female" },
+  // Spanish voices
+  { id: "spanish_trustworth_man", name: "Spanish Trustworthy Man", language: "es", gender: "male" },
+  { id: "spanish_sweet_lady", name: "Spanish Sweet Lady", language: "es", gender: "female" },
+  // German voices
+  { id: "german_gentle_man", name: "German Gentle Man", language: "de", gender: "male" },
+  { id: "german_sweet_lady", name: "German Sweet Lady", language: "de", gender: "female" },
+  // Italian voices
+  { id: "italian_warm_man", name: "Italian Warm Man", language: "it", gender: "male" },
+  { id: "italian_sweet_lady", name: "Italian Sweet Lady", language: "it", gender: "female" },
+  // Portuguese voices
+  { id: "portuguese_warm_man", name: "Portuguese Warm Man", language: "pt", gender: "male" },
+  { id: "portuguese_sweet_lady", name: "Portuguese Sweet Lady", language: "pt", gender: "female" },
+  // Chinese voices
+  { id: "chinese_gentle_lady", name: "Chinese Gentle Lady", language: "zh", gender: "female" },
+  { id: "chinese_calm_man", name: "Chinese Calm Man", language: "zh", gender: "male" },
+  // Japanese voices
+  { id: "japanese_gentle_lady", name: "Japanese Gentle Lady", language: "ja", gender: "female" },
+  { id: "japanese_calm_man", name: "Japanese Calm Man", language: "ja", gender: "male" },
+  // Korean voices
+  { id: "korean_gentle_lady", name: "Korean Gentle Lady", language: "ko", gender: "female" },
+  { id: "korean_calm_man", name: "Korean Calm Man", language: "ko", gender: "male" },
+  // Arabic voices
+  { id: "arabic_gentle_man", name: "Arabic Gentle Man", language: "ar", gender: "male" },
+  { id: "arabic_sweet_lady", name: "Arabic Sweet Lady", language: "ar", gender: "female" },
+  // Russian voices
+  { id: "russian_calm_man", name: "Russian Calm Man", language: "ru", gender: "male" },
+  { id: "russian_sweet_lady", name: "Russian Sweet Lady", language: "ru", gender: "female" },
+  // Hindi voices
+  { id: "hindi_calm_man", name: "Hindi Calm Man", language: "hi", gender: "male" },
+  { id: "hindi_sweet_lady", name: "Hindi Sweet Lady", language: "hi", gender: "female" },
 ];
 
 const MINIMAX_MODEL_OPTIONS = [
-  { id: "speech-2.6-hd", name: "HD (Haute qualité)" },
-  { id: "speech-2.6-turbo", name: "Turbo (Rapide)" },
+  { id: "speech-2.6-hd", name: "HD (Haute qualité)", description: "Meilleure qualité audio" },
+  { id: "speech-2.6-turbo", name: "Turbo (Rapide)", description: "Génération plus rapide" },
 ];
 
 
@@ -104,6 +153,10 @@ const CreateFromScratch = () => {
   const [ttsProvider, setTtsProvider] = useState<"elevenlabs" | "minimax">("elevenlabs");
   const [selectedVoice, setSelectedVoice] = useState("daniel");
   const [minimaxModel, setMinimaxModel] = useState("speech-2.6-hd");
+  const [minimaxSpeed, setMinimaxSpeed] = useState(1.0);
+  const [minimaxPitch, setMinimaxPitch] = useState(0);
+  const [minimaxVolume, setMinimaxVolume] = useState(1.0);
+  const [minimaxLanguageBoost, setMinimaxLanguageBoost] = useState("auto");
   const [isGeneratingAudio, setIsGeneratingAudio] = useState(false);
   const [audioUrl, setAudioUrl] = useState("");
   
@@ -583,7 +636,16 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
       // Generate audio based on provider
       const functionName = ttsProvider === "minimax" ? "generate-audio-minimax" : "generate-audio-tts";
       const body = ttsProvider === "minimax" 
-        ? { script: generatedScript, voice: selectedVoice, model: minimaxModel, projectId }
+        ? { 
+            script: generatedScript, 
+            voice: selectedVoice, 
+            model: minimaxModel, 
+            speed: minimaxSpeed,
+            pitch: minimaxPitch,
+            volume: minimaxVolume,
+            languageBoost: minimaxLanguageBoost,
+            projectId 
+          }
         : { script: generatedScript, voice: selectedVoice, projectId };
 
       const { data, error } = await supabase.functions.invoke(functionName, { body });
@@ -990,21 +1052,100 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                 </div>
 
                 {ttsProvider === "minimax" && (
-                  <div className="space-y-4">
-                    <Label>Modèle MiniMax</Label>
-                    <Select value={minimaxModel} onValueChange={setMinimaxModel}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {MINIMAX_MODEL_OPTIONS.map((model) => (
-                          <SelectItem key={model.id} value={model.id}>
-                            {model.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
+                  <>
+                    <div className="space-y-4">
+                      <Label>Modèle MiniMax</Label>
+                      <Select value={minimaxModel} onValueChange={setMinimaxModel}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {MINIMAX_MODEL_OPTIONS.map((model) => (
+                            <SelectItem key={model.id} value={model.id}>
+                              {model.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-4">
+                      <Label>Langue prioritaire</Label>
+                      <Select value={minimaxLanguageBoost} onValueChange={setMinimaxLanguageBoost}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="auto">Auto-détection</SelectItem>
+                          <SelectItem value="English">Anglais</SelectItem>
+                          <SelectItem value="French">Français</SelectItem>
+                          <SelectItem value="Spanish">Espagnol</SelectItem>
+                          <SelectItem value="German">Allemand</SelectItem>
+                          <SelectItem value="Italian">Italien</SelectItem>
+                          <SelectItem value="Portuguese">Portugais</SelectItem>
+                          <SelectItem value="Chinese">Chinois</SelectItem>
+                          <SelectItem value="Japanese">Japonais</SelectItem>
+                          <SelectItem value="Korean">Coréen</SelectItem>
+                          <SelectItem value="Arabic">Arabe</SelectItem>
+                          <SelectItem value="Russian">Russe</SelectItem>
+                          <SelectItem value="Hindi">Hindi</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-4">
+                      <div className="space-y-2">
+                        <Label>Vitesse ({minimaxSpeed.toFixed(1)}x)</Label>
+                        <input
+                          type="range"
+                          min="0.5"
+                          max="2.0"
+                          step="0.1"
+                          value={minimaxSpeed}
+                          onChange={(e) => setMinimaxSpeed(parseFloat(e.target.value))}
+                          className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
+                        />
+                        <div className="flex justify-between text-xs text-muted-foreground">
+                          <span>0.5x</span>
+                          <span>2.0x</span>
+                        </div>
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <Label>Pitch ({minimaxPitch > 0 ? '+' : ''}{minimaxPitch})</Label>
+                        <input
+                          type="range"
+                          min="-12"
+                          max="12"
+                          step="1"
+                          value={minimaxPitch}
+                          onChange={(e) => setMinimaxPitch(parseInt(e.target.value))}
+                          className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
+                        />
+                        <div className="flex justify-between text-xs text-muted-foreground">
+                          <span>Grave</span>
+                          <span>Aigu</span>
+                        </div>
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <Label>Volume ({(minimaxVolume * 100).toFixed(0)}%)</Label>
+                        <input
+                          type="range"
+                          min="0.1"
+                          max="1.0"
+                          step="0.1"
+                          value={minimaxVolume}
+                          onChange={(e) => setMinimaxVolume(parseFloat(e.target.value))}
+                          className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
+                        />
+                        <div className="flex justify-between text-xs text-muted-foreground">
+                          <span>10%</span>
+                          <span>100%</span>
+                        </div>
+                      </div>
+                    </div>
+                  </>
                 )}
 
                 <div className="space-y-4">
