@@ -12,7 +12,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Progress } from "@/components/ui/progress";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Loader2, Sparkles, FileText, Mic, ArrowRight, Check, RefreshCw, ChevronDown, Save, Trash2, FolderOpen, Pencil, Copy } from "lucide-react";
+import { Loader2, Sparkles, FileText, Mic, ArrowRight, Check, RefreshCw, ChevronDown, Save, Trash2, FolderOpen, Pencil, Copy, User as UserIcon } from "lucide-react";
 import { toast } from "sonner";
 
 type WorkflowStep = "topic" | "axes" | "script" | "audio" | "complete";
@@ -643,8 +643,13 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
               VidéoFlow
             </span>
           </Link>
-          <div className="text-sm text-muted-foreground">
-            Créer de zéro
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-muted-foreground">Créer de zéro</span>
+            <Link to="/profile">
+              <Button variant="ghost" size="icon">
+                <UserIcon className="h-4 w-4" />
+              </Button>
+            </Link>
           </div>
         </div>
       </header>

@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Video, History, Sparkles, Calendar, Mic, FileText } from "lucide-react";
+import { Video, History, Sparkles, Calendar, Mic, FileText, User } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
@@ -42,6 +42,11 @@ const Home = () => {
             <Link to="/projects">
               <Button variant="ghost" size="sm">
                 Mes projets
+              </Button>
+            </Link>
+            <Link to="/profile">
+              <Button variant="ghost" size="icon">
+                <User className="h-4 w-4" />
               </Button>
             </Link>
           </div>
