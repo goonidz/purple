@@ -866,11 +866,16 @@ async function processImagesJob(
         // Poll for completion
         let imageUrl = null;
         const maxWaitMs = 300000; // 5 minutes per image
-        const pollIntervalMs = 3000;
+        const pollIntervalMs = 2000; // Poll every 2 seconds (reduced from 3)
         const imageStartTime = Date.now();
+        let isFirstPoll = true;
 
         while (Date.now() - imageStartTime < maxWaitMs) {
-          await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
+          // Only wait before polling if not the first check
+          if (!isFirstPoll) {
+            await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
+          }
+          isFirstPoll = false;
 
           const statusResponse = await fetch(`${supabaseUrl}/functions/v1/generate-image-seedream`, {
             method: 'POST',
@@ -1738,11 +1743,16 @@ async function processThumbnailsJob(
       // Poll for completion
       let thumbnailUrl = null;
       const maxWaitMs = 600000; // 10 minutes
-      const pollIntervalMs = 3000;
+      const pollIntervalMs = 2000; // Poll every 2 seconds (reduced from 3)
       const startTime = Date.now();
+      let isFirstPoll = true;
 
       while (Date.now() - startTime < maxWaitMs) {
-        await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
+        // Only wait before polling if not the first check
+        if (!isFirstPoll) {
+          await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
+        }
+        isFirstPoll = false;
 
         const statusResponse = await fetch(`${supabaseUrl}/functions/v1/generate-image-seedream`, {
           method: 'POST',
