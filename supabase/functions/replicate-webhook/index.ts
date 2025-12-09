@@ -340,13 +340,78 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
 
   console.log(`Job ${jobId} marked as completed. Success: ${successfulPredictions.length}, Failed: ${failedCount}`);
 
-  // Handle semi-auto mode chaining - only if no failures or very few failures
+  // Handle semi-auto mode chaining
   const metadata = job.metadata || {};
   if (metadata.semiAutoMode === true) {
-    // If there are failed predictions, don't chain to next step - let user handle regeneration
-    if (failedCount > 0) {
-      console.log(`Job ${jobId}: ${failedCount} failed predictions - NOT chaining to next step. User needs to regenerate failed images.`);
+    // If there are failed predictions for images job, automatically retry them
+    if (failedCount > 0 && job.job_type === 'images') {
+      const retryCount = metadata.retryCount || 0;
+      const maxRetries = 3;
+      
+      if (retryCount < maxRetries) {
+        console.log(`Job ${jobId}: ${failedCount} failed images - auto-creating retry job (attempt ${retryCount + 1}/${maxRetries})`);
+        
+        // Create a retry job for failed images
+        const { data: retryJob, error: retryError } = await adminClient
+          .from('generation_jobs')
+          .insert({
+            project_id: job.project_id,
+            user_id: job.user_id,
+            job_type: 'images',
+            status: 'pending',
+            progress: 0,
+            total: failedCount,
+            metadata: {
+              ...metadata,
+              skipExisting: true,
+              isRetry: true,
+              retryCount: retryCount + 1,
+              originalJobId: jobId
+            }
+          })
+          .select()
+          .single();
+        
+        if (retryError) {
+          console.error("Error creating retry job:", retryError);
+        } else {
+          console.log(`Created retry job ${retryJob.id} for ${failedCount} failed images`);
+          
+          // Invoke start-generation-job to process the retry
+          try {
+            const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+            const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+            
+            await fetch(`${supabaseUrl}/functions/v1/start-generation-job`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${serviceRoleKey}`
+              },
+              body: JSON.stringify({
+                jobId: retryJob.id,
+                projectId: job.project_id,
+                userId: job.user_id,
+                jobType: 'images',
+                skipExisting: true,
+                semiAutoMode: true,
+                useWebhook: true
+              })
+            });
+            console.log("Triggered retry job processing");
+          } catch (fetchError) {
+            console.error("Error triggering retry job:", fetchError);
+          }
+        }
+      } else {
+        console.log(`Job ${jobId}: Max retries (${maxRetries}) reached. ${failedCount} images still failed. Moving to next step.`);
+        await chainNextJobFromWebhook(adminClient, job.project_id, job.user_id, job.job_type, metadata);
+      }
+    } else if (failedCount > 0 && job.job_type === 'thumbnails') {
+      // For thumbnails, just log and don't retry (less critical)
+      console.log(`Job ${jobId}: ${failedCount} failed thumbnails - not retrying`);
     } else {
+      // No failures, chain to next step
       await chainNextJobFromWebhook(adminClient, job.project_id, job.user_id, job.job_type, metadata);
     }
   }
