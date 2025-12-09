@@ -75,9 +75,9 @@ serve(async (req) => {
 
     console.log("Calling Claude via Replicate...");
 
-    // Use Claude Sonnet 4 via Replicate
+    // Use Claude 4.5 Sonnet via Replicate
     const output = await replicate.run(
-      "anthropic/claude-sonnet-4",
+      "anthropic/claude-4.5-sonnet",
       {
         input: {
           prompt: userPrompt,
