@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Progress } from "@/components/ui/progress";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Loader2, Sparkles, FileText, Mic, ArrowRight, Check, RefreshCw, ChevronDown, Save, Trash2, FolderOpen, Pencil, Copy } from "lucide-react";
 import { toast } from "sonner";
@@ -73,6 +74,8 @@ const CreateFromScratch = () => {
   // Script step
   const [generatedScript, setGeneratedScript] = useState("");
   const [isGeneratingScript, setIsGeneratingScript] = useState(false);
+  const [generationProgress, setGenerationProgress] = useState(0);
+  const [generationMessage, setGenerationMessage] = useState("");
   const [wordCount, setWordCount] = useState(0);
   const [estimatedDuration, setEstimatedDuration] = useState(0);
   
@@ -267,6 +270,17 @@ const CreateFromScratch = () => {
     }
   };
 
+  const GENERATION_MESSAGES = [
+    "Analyse du prompt...",
+    "Claude réfléchit à la structure...",
+    "Rédaction de l'introduction...",
+    "Développement du contenu principal...",
+    "Création des transitions...",
+    "Rédaction de la conclusion...",
+    "Optimisation du script...",
+    "Finalisation en cours...",
+  ];
+
   const handleGenerateScript = async () => {
     if (!customPrompt.trim()) {
       toast.error("Veuillez entrer un prompt");
@@ -274,6 +288,22 @@ const CreateFromScratch = () => {
     }
 
     setIsGeneratingScript(true);
+    setGenerationProgress(0);
+    setGenerationMessage(GENERATION_MESSAGES[0]);
+
+    // Progress animation
+    const progressInterval = setInterval(() => {
+      setGenerationProgress(prev => {
+        const newProgress = Math.min(prev + Math.random() * 8, 90);
+        const messageIndex = Math.min(
+          Math.floor(newProgress / 12),
+          GENERATION_MESSAGES.length - 1
+        );
+        setGenerationMessage(GENERATION_MESSAGES[messageIndex]);
+        return newProgress;
+      });
+    }, 2000);
+
     try {
       const { data, error } = await supabase.functions.invoke('generate-script', {
         body: {
@@ -282,6 +312,10 @@ const CreateFromScratch = () => {
       });
 
       if (error) throw error;
+
+      clearInterval(progressInterval);
+      setGenerationProgress(100);
+      setGenerationMessage("Script terminé !");
 
       setGeneratedScript(data.script);
       setWordCount(data.wordCount || 0);
@@ -292,6 +326,7 @@ const CreateFromScratch = () => {
       console.error("Error generating script:", error);
       toast.error(error.message || "Erreur lors de la génération du script");
     } finally {
+      clearInterval(progressInterval);
       setIsGeneratingScript(false);
     }
   };
@@ -589,24 +624,33 @@ const CreateFromScratch = () => {
                   </Collapsible>
                 </div>
 
-                <Button 
-                  onClick={handleGenerateScript} 
-                  disabled={isGeneratingScript || !customPrompt.trim() || !projectName.trim()}
-                  className="w-full"
-                  size="lg"
-                >
-                  {isGeneratingScript ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Génération du script...
-                    </>
-                  ) : (
-                    <>
-                      <FileText className="mr-2 h-4 w-4" />
-                      Générer le script avec Claude IA
-                    </>
-                  )}
-                </Button>
+                {isGeneratingScript ? (
+                  <div className="w-full space-y-4 p-6 rounded-lg border bg-card">
+                    <div className="flex items-center gap-3">
+                      <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                      <div className="flex-1">
+                        <p className="font-medium">{generationMessage}</p>
+                        <p className="text-sm text-muted-foreground">
+                          La génération peut prendre 1-2 minutes pour un script long
+                        </p>
+                      </div>
+                    </div>
+                    <Progress value={generationProgress} className="h-2" />
+                    <p className="text-xs text-center text-muted-foreground">
+                      {Math.round(generationProgress)}% complété
+                    </p>
+                  </div>
+                ) : (
+                  <Button 
+                    onClick={handleGenerateScript} 
+                    disabled={!customPrompt.trim() || !projectName.trim()}
+                    className="w-full"
+                    size="lg"
+                  >
+                    <FileText className="mr-2 h-4 w-4" />
+                    Générer le script avec Claude IA
+                  </Button>
+                )}
               </div>
             </Card>
           )}
