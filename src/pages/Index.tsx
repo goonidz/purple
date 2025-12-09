@@ -169,6 +169,12 @@ const Index = () => {
   // Background job management
   const handleJobComplete = useCallback((job: GenerationJob) => {
     toast.success(`${job.job_type === 'prompts' ? 'Prompts' : 'Images'} générés en arrière-plan !`);
+    // Reset generating states
+    if (job.job_type === 'prompts') {
+      setIsGeneratingPrompts(false);
+    } else if (job.job_type === 'images') {
+      setIsGeneratingImages(false);
+    }
     if (currentProjectId) {
       loadProjectData(currentProjectId);
     }
@@ -176,33 +182,31 @@ const Index = () => {
 
   const handleJobFailed = useCallback((job: GenerationJob) => {
     toast.error(`Erreur: ${job.error_message || 'Génération échouée'}`);
+    // Reset generating states
+    if (job.job_type === 'prompts') {
+      setIsGeneratingPrompts(false);
+    } else if (job.job_type === 'images') {
+      setIsGeneratingImages(false);
+    }
   }, []);
 
   const { 
     activeJobs, 
     startJob, 
     cancelJob, 
-    hasActiveJob 
+    hasActiveJob,
+    getJobByType
   } = useGenerationJobs({
     projectId: currentProjectId,
     onJobComplete: handleJobComplete,
     onJobFailed: handleJobFailed
   });
 
-  // Background generation functions
-  const startBackgroundPrompts = async () => {
-    const result = await startJob('prompts', { regenerate: false });
-    if (result) {
-      toast.info("Génération des prompts lancée en arrière-plan. Vous pouvez quitter cette page.");
-    }
-  };
-
-  const startBackgroundImages = async (skipExisting = true) => {
-    const result = await startJob('images', { skipExisting });
-    if (result) {
-      toast.info("Génération des images lancée en arrière-plan. Vous pouvez quitter cette page.");
-    }
-  };
+  // Sync generating states with active jobs
+  useEffect(() => {
+    setIsGeneratingPrompts(hasActiveJob('prompts'));
+    setIsGeneratingImages(hasActiveJob('images'));
+  }, [activeJobs, hasActiveJob]);
 
   // Scroll to top button visibility
   useEffect(() => {
@@ -581,125 +585,17 @@ const Index = () => {
       return;
     }
 
-    // Identifier les scènes qui n'ont pas encore de prompts
-    const scenesToProcess = testMode 
-      ? scenes.slice(0, 15)
-      : scenes.filter((scene, index) => !generatedPrompts[index] || !generatedPrompts[index].prompt || generatedPrompts[index].prompt === "Erreur lors de la génération");
-    
-    if (scenesToProcess.length === 0) {
-      toast.info("Tous les prompts ont déjà été générés !");
+    // Check if already has active job
+    if (hasActiveJob('prompts')) {
+      toast.info("Une génération de prompts est déjà en cours");
       return;
     }
 
-    const sceneCount = scenesToProcess.length;
-    toast.info(`Génération de ${sceneCount} prompt(s) manquant(s)...`);
-
-    setIsGeneratingPrompts(true);
-    cancelGenerationRef.current = false;
-
-    try {
-      toast.info("Génération du résumé global...");
-      const fullTranscript = transcriptData?.segments?.filter(seg => seg).map(seg => seg.text).join(' ') || '';
-      
-      const { data: summaryData, error: summaryError } = await supabase.functions.invoke('generate-summary', {
-        body: { transcript: fullTranscript }
-      });
-
-      if (summaryError) throw summaryError;
-      
-      const summary = summaryData.summary;
-      console.log("Global summary:", summary);
-      toast.success("Résumé global généré !");
-
-      await supabase
-        .from("projects")
-        .update({ summary })
-        .eq("id", currentProjectId);
-
-      // Créer une copie des prompts existants
-      const updatedPrompts = [...generatedPrompts];
-      const filteredPrompts = examplePrompts.filter(p => p.trim() !== "");
-      const BATCH_SIZE = 50;
-
-      // Process scenes in batches of 10 for parallel generation
-      for (let batchStart = 0; batchStart < sceneCount; batchStart += BATCH_SIZE) {
-        if (cancelGenerationRef.current) {
-          toast.info(`Génération annulée.`);
-          break;
-        }
-
-        const batchEnd = Math.min(batchStart + BATCH_SIZE, sceneCount);
-        const batch = scenesToProcess.slice(batchStart, batchEnd);
-        
-        toast.info(`Génération des scènes ${batchStart + 1}-${batchEnd} sur ${sceneCount}...`);
-
-        const batchPromises = batch.map(async (scene, batchIndex) => {
-          const originalIndex = scenes.indexOf(scene);
-          
-          // Get previous prompts to avoid repetition (last 3 prompts before this scene)
-          const previousPrompts = generatedPrompts
-            .slice(Math.max(0, originalIndex - 3), originalIndex)
-            .filter(p => p.prompt && p.prompt !== "Erreur lors de la génération")
-            .map(p => p.prompt);
-          
-          try {
-            const { data, error } = await supabase.functions.invoke("generate-prompts", {
-              body: { 
-                scene: scene.text,
-                summary,
-                examplePrompts: filteredPrompts,
-                sceneIndex: originalIndex + 1,
-                totalScenes: scenes.length,
-                startTime: scene.startTime,
-                endTime: scene.endTime,
-                customSystemPrompt: promptSystemMessage || undefined,
-                previousPrompts
-              },
-            });
-
-            if (error) throw error;
-
-            const newPrompt = {
-              scene: `Scène ${originalIndex + 1} (${formatTimecode(scene.startTime)} - ${formatTimecode(scene.endTime)})`,
-              prompt: data.prompt,
-              text: scene.text,
-              startTime: scene.startTime,
-              endTime: scene.endTime,
-              duration: scene.endTime - scene.startTime
-            };
-            return { index: originalIndex, prompt: newPrompt };
-          } catch (sceneError: any) {
-            console.error(`Error generating prompt for scene ${originalIndex + 1}:`, sceneError);
-            const errorPrompt = {
-              scene: `Scène ${originalIndex + 1} (${formatTimecode(scene.startTime)} - ${formatTimecode(scene.endTime)})`,
-              prompt: "Erreur lors de la génération",
-              text: scene.text,
-              startTime: scene.startTime,
-              endTime: scene.endTime,
-              duration: scene.endTime - scene.startTime
-            };
-            return { index: originalIndex, prompt: errorPrompt };
-          }
-        });
-
-        const batchResults = await Promise.all(batchPromises);
-        
-        // Mettre à jour uniquement les prompts générés dans le tableau
-        batchResults.forEach(result => {
-          updatedPrompts[result.index] = result.prompt;
-        });
-        
-        setGeneratedPrompts([...updatedPrompts]);
-      }
-
-      if (!cancelGenerationRef.current) {
-        toast.success(`${sceneCount} prompts générés avec succès !`);
-      }
-    } catch (error: any) {
-      console.error("Error generating prompts:", error);
-      toast.error(error.message || "Erreur lors de la génération des prompts");
-    } finally {
-      setIsGeneratingPrompts(false);
+    // Start background job
+    const result = await startJob('prompts', { regenerate: false });
+    if (result) {
+      setIsGeneratingPrompts(true);
+      toast.info("Génération des prompts lancée en arrière-plan. Vous pouvez quitter cette page.");
     }
   };
 
@@ -1499,86 +1395,22 @@ const Index = () => {
       return;
     }
 
-    setIsGeneratingImages(true);
-    cancelImageGenerationRef.current = false;
-    let successCount = 0;
-    let skippedCount = 0;
-
-    // Filter prompts to process
-    const promptsToProcess = generatedPrompts
-      .map((prompt, index) => ({ prompt, index }))
-      .filter(({ prompt }) => prompt && (!skipExisting || !prompt.imageUrl));
-
-    // Count skipped images
-    skippedCount = generatedPrompts.length - promptsToProcess.length;
-    
-    // Initialiser la progression
-    setImageGenerationProgress(0);
-    setImageGenerationTotal(promptsToProcess.length);
-
-    // Process in batches of 100
-    const batchSize = 100;
-    for (let i = 0; i < promptsToProcess.length; i += batchSize) {
-      if (cancelImageGenerationRef.current) {
-        toast.info(`Génération annulée. ${successCount} images générées.`);
-        break;
-      }
-
-      const batch = promptsToProcess.slice(i, i + batchSize);
-      const batchNumber = Math.floor(i / batchSize) + 1;
-      const totalBatches = Math.ceil(promptsToProcess.length / batchSize);
-      
-      toast.info(`Génération batch ${batchNumber}/${totalBatches} (${batch.length} images)...`);
-
-      const batchPromises = batch.map(async ({ prompt, index }) => {
-        try {
-          // Use async polling mode to avoid edge function timeouts
-          const result = await generateImageAsync(prompt.prompt, index);
-          
-          if (result.success && result.imageUrl) {
-            setGeneratedPrompts(prev => {
-              const updated = [...prev];
-              updated[index] = { ...updated[index], imageUrl: result.imageUrl };
-              return updated;
-            });
-          }
-          
-          // Update progress
-          setImageGenerationProgress(prev => prev + 1);
-          
-          return { success: result.success, index };
-        } catch (error: any) {
-          console.error(`Error generating image ${index + 1}:`, error);
-          toast.error(`Erreur image ${index + 1}: ${error.message}`);
-          
-          // Update progress even on failure
-          setImageGenerationProgress(prev => prev + 1);
-          
-          return { success: false, index };
-        }
-      });
-
-      const results = await Promise.all(batchPromises);
-      successCount += results.filter(r => r.success).length;
+    if (!currentProjectId) {
+      toast.error("Veuillez d'abord sélectionner ou créer un projet");
+      return;
     }
 
-    setIsGeneratingImages(false);
-    
-    // Réinitialiser la progression
-    setImageGenerationProgress(0);
-    setImageGenerationTotal(0);
-    
-    // Calculate missing images from generation results
-    const failedCount = promptsToProcess.length - successCount;
-    
-    if (!cancelImageGenerationRef.current) {
-      // Open statistics dialog
-      setGenerationStats({
-        generated: successCount,
-        skipped: skippedCount,
-        failed: failedCount
-      });
-      setGenerationStatsDialog(true);
+    // Check if already has active job
+    if (hasActiveJob('images')) {
+      toast.info("Une génération d'images est déjà en cours");
+      return;
+    }
+
+    // Start background job
+    const result = await startJob('images', { skipExisting });
+    if (result) {
+      setIsGeneratingImages(true);
+      toast.info("Génération des images lancée en arrière-plan. Vous pouvez quitter cette page.");
     }
   };
 
@@ -2183,23 +2015,23 @@ const Index = () => {
                               Vérifier images
                             </Button>
                           )}
-                          {isGeneratingPrompts && (
+                          {isGeneratingPrompts && getJobByType('prompts') && (
                             <Button
                               onClick={() => {
-                                cancelGenerationRef.current = true;
-                                toast.info("Annulation en cours...");
+                                const job = getJobByType('prompts');
+                                if (job) cancelJob(job.id);
                               }}
                               variant="destructive"
                               size="sm"
                             >
-                              Annuler
+                              Annuler prompts
                             </Button>
                           )}
-                          {isGeneratingImages && (
+                          {isGeneratingImages && getJobByType('images') && (
                             <Button
                               onClick={() => {
-                                cancelImageGenerationRef.current = true;
-                                toast.info("Annulation des images en cours...");
+                                const job = getJobByType('images');
+                                if (job) cancelJob(job.id);
                               }}
                               variant="destructive"
                               size="sm"
@@ -2208,6 +2040,12 @@ const Index = () => {
                             </Button>
                           )}
                         </div>
+                        
+                        {/* Jobs en cours */}
+                        <ActiveJobsBanner 
+                          jobs={activeJobs} 
+                          onCancel={cancelJob}
+                        />
                       </div>
                       
                       {/* Cards d'état */}
