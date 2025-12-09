@@ -68,6 +68,7 @@ const CreateFromScratch = () => {
   const [editPresetPrompt, setEditPresetPrompt] = useState("");
   const [editingPresetId, setEditingPresetId] = useState<string | null>(null);
   const [isSavingPreset, setIsSavingPreset] = useState(false);
+  const [presetPopoverOpen, setPresetPopoverOpen] = useState(false);
   
   // Script step
   const [generatedScript, setGeneratedScript] = useState("");
@@ -455,7 +456,7 @@ const CreateFromScratch = () => {
                 {/* Preset selector */}
                 <div className="space-y-2">
                   <Label>Charger un preset</Label>
-                  <Popover>
+                  <Popover open={presetPopoverOpen} onOpenChange={setPresetPopoverOpen}>
                     <PopoverTrigger asChild>
                       <Button variant="outline" className="w-full justify-between">
                         {selectedPresetId 
@@ -464,7 +465,7 @@ const CreateFromScratch = () => {
                         <ChevronDown className="h-4 w-4 opacity-50" />
                       </Button>
                     </PopoverTrigger>
-                    <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                    <PopoverContent className="w-[--radix-popover-trigger-width] p-0 rounded-lg overflow-hidden" align="start">
                       {presets.length === 0 ? (
                         <div className="p-4 text-center text-muted-foreground text-sm">
                           Aucun preset sauvegardé
@@ -482,6 +483,7 @@ const CreateFromScratch = () => {
                                 className="flex-1 truncate"
                                 onClick={() => {
                                   handleLoadPreset(preset.id);
+                                  setPresetPopoverOpen(false);
                                 }}
                               >
                                 {preset.name}
