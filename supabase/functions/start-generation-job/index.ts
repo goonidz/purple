@@ -425,6 +425,7 @@ async function processImagesJob(
 
   let progress = 0;
   const updatedPrompts = [...prompts];
+  let completedCount = 0;
 
   // Process in batches of 100 for images (parallel)
   const batchSize = 100;
@@ -525,28 +526,34 @@ async function processImagesJob(
 
         if (imageUrl) {
           updatedPrompts[index] = { ...updatedPrompts[index], imageUrl };
+          completedCount++;
+          
+          // Update progress and save image immediately after each completion
+          await adminClient
+            .from('generation_jobs')
+            .update({ progress: completedCount })
+            .eq('id', jobId);
+          
+          await adminClient
+            .from('projects')
+            .update({ prompts: updatedPrompts })
+            .eq('id', projectId);
+            
+          console.log(`Image ${index + 1} saved, progress: ${completedCount}/${promptsToProcess.length}`);
         }
 
       } catch (error) {
         console.error(`Error generating image for scene ${index + 1}:`, error);
+        completedCount++;
+        // Update progress even on failure
+        await adminClient
+          .from('generation_jobs')
+          .update({ progress: completedCount })
+          .eq('id', jobId);
       }
     });
 
     await Promise.all(batchPromises);
-
-    // Update progress
-    progress = Math.min(batchStart + batchSize, promptsToProcess.length);
-    
-    await adminClient
-      .from('generation_jobs')
-      .update({ progress })
-      .eq('id', jobId);
-
-    // Save prompts after each batch
-    await adminClient
-      .from('projects')
-      .update({ prompts: updatedPrompts })
-      .eq('id', projectId);
   }
 }
 
