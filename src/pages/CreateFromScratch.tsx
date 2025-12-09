@@ -15,7 +15,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Loader2, Sparkles, FileText, Mic, ArrowRight, Check, RefreshCw, ChevronDown, Save, Trash2, FolderOpen, Pencil, Copy } from "lucide-react";
 import { toast } from "sonner";
 
-type WorkflowStep = "topic" | "script" | "audio" | "complete";
+type WorkflowStep = "topic" | "axes" | "script" | "audio" | "complete";
+
+interface VideoAxe {
+  id: number;
+  title: string;
+  description: string;
+}
 
 interface ScriptPreset {
   id: string;
@@ -84,6 +90,11 @@ const CreateFromScratch = () => {
   const [selectedVoice, setSelectedVoice] = useState("daniel");
   const [isGeneratingAudio, setIsGeneratingAudio] = useState(false);
   const [audioUrl, setAudioUrl] = useState("");
+  
+  // Axes step
+  const [videoAxes, setVideoAxes] = useState<VideoAxe[]>([]);
+  const [isGeneratingAxes, setIsGeneratingAxes] = useState(false);
+  const [selectedAxe, setSelectedAxe] = useState<VideoAxe | null>(null);
   const [projectId, setProjectId] = useState<string | null>(null);
 
   // Check authentication and load continued project if any
@@ -367,12 +378,58 @@ const CreateFromScratch = () => {
     return () => clearInterval(pollInterval);
   }, [scriptJobId, isGeneratingScript]);
 
-  const handleGenerateScript = async () => {
+  // Generate video axes via Gemini
+  const handleGenerateAxes = async () => {
     if (!customPrompt.trim()) {
       toast.error("Veuillez entrer un prompt");
       return;
     }
 
+    if (!projectName.trim()) {
+      toast.error("Veuillez entrer un nom de projet");
+      return;
+    }
+
+    setIsGeneratingAxes(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('generate-video-axes', {
+        body: { customPrompt }
+      });
+
+      if (error) throw error;
+
+      if (data.axes && Array.isArray(data.axes)) {
+        setVideoAxes(data.axes);
+        setStep("axes");
+      } else {
+        throw new Error("Format de réponse invalide");
+      }
+    } catch (error: any) {
+      console.error("Error generating axes:", error);
+      toast.error(error.message || "Erreur lors de la génération des axes");
+    } finally {
+      setIsGeneratingAxes(false);
+    }
+  };
+
+  // Handle axe selection and proceed to script generation
+  const handleSelectAxe = async (axe: VideoAxe) => {
+    setSelectedAxe(axe);
+    
+    // Combine the original prompt with the selected axe
+    const enhancedPrompt = `${customPrompt}
+
+AXE CHOISI POUR LA VIDÉO:
+Titre: ${axe.title}
+Description: ${axe.description}
+
+Génère un script qui suit cet axe spécifique.`;
+    
+    // Now generate the script with the enhanced prompt
+    await generateScriptWithPrompt(enhancedPrompt);
+  };
+
+  const generateScriptWithPrompt = async (promptToUse: string) => {
     setIsGeneratingScript(true);
     setGenerationProgress(0);
     setGenerationMessage(GENERATION_MESSAGES[0]);
@@ -413,7 +470,7 @@ const CreateFromScratch = () => {
           projectId: tempProject.id,
           jobType: 'script_generation',
           metadata: {
-            customPrompt
+            customPrompt: promptToUse
           }
         }
       });
@@ -424,6 +481,7 @@ const CreateFromScratch = () => {
 
       if (data.jobId) {
         setScriptJobId(data.jobId);
+        setStep("script");
         toast.info("Génération du script en cours... Vous pouvez quitter cette page, le script sera sauvegardé.");
       } else {
         throw new Error("Pas de job ID reçu");
@@ -434,6 +492,14 @@ const CreateFromScratch = () => {
       setIsGeneratingScript(false);
       toast.error(error.message || "Erreur lors du lancement de la génération");
     }
+  };
+
+  const handleGenerateScript = async () => {
+    if (!customPrompt.trim()) {
+      toast.error("Veuillez entrer un prompt");
+      return;
+    }
+    await generateScriptWithPrompt(customPrompt);
   };
 
   const handleRegenerateScript = async () => {
@@ -569,26 +635,33 @@ const CreateFromScratch = () => {
 
       {/* Progress Steps */}
       <div className="container py-6">
-        <div className="flex items-center justify-center gap-4 mb-8">
+        <div className="flex items-center justify-center gap-3 mb-8">
           <div className={`flex items-center gap-2 ${step === "topic" ? "text-primary" : "text-muted-foreground"}`}>
             <div className={`w-8 h-8 rounded-full flex items-center justify-center ${step === "topic" ? "bg-primary text-primary-foreground" : "bg-primary/20 text-primary"}`}>
               {step !== "topic" ? <Check className="h-4 w-4" /> : "1"}
             </div>
-            <span className="font-medium">Sujet</span>
+            <span className="font-medium hidden sm:inline">Sujet</span>
           </div>
-          <div className="w-12 h-0.5 bg-muted" />
+          <div className="w-8 h-0.5 bg-muted" />
+          <div className={`flex items-center gap-2 ${step === "axes" ? "text-primary" : "text-muted-foreground"}`}>
+            <div className={`w-8 h-8 rounded-full flex items-center justify-center ${step === "axes" ? "bg-primary text-primary-foreground" : step === "script" || step === "audio" || step === "complete" ? "bg-primary/20 text-primary" : "bg-muted"}`}>
+              {step === "script" || step === "audio" || step === "complete" ? <Check className="h-4 w-4" /> : "2"}
+            </div>
+            <span className="font-medium hidden sm:inline">Axe</span>
+          </div>
+          <div className="w-8 h-0.5 bg-muted" />
           <div className={`flex items-center gap-2 ${step === "script" ? "text-primary" : "text-muted-foreground"}`}>
             <div className={`w-8 h-8 rounded-full flex items-center justify-center ${step === "script" ? "bg-primary text-primary-foreground" : step === "audio" || step === "complete" ? "bg-primary/20 text-primary" : "bg-muted"}`}>
-              {step === "audio" || step === "complete" ? <Check className="h-4 w-4" /> : "2"}
+              {step === "audio" || step === "complete" ? <Check className="h-4 w-4" /> : "3"}
             </div>
-            <span className="font-medium">Script</span>
+            <span className="font-medium hidden sm:inline">Script</span>
           </div>
-          <div className="w-12 h-0.5 bg-muted" />
+          <div className="w-8 h-0.5 bg-muted" />
           <div className={`flex items-center gap-2 ${step === "audio" || step === "complete" ? "text-primary" : "text-muted-foreground"}`}>
             <div className={`w-8 h-8 rounded-full flex items-center justify-center ${step === "audio" || step === "complete" ? "bg-primary text-primary-foreground" : "bg-muted"}`}>
-              {step === "complete" ? <Check className="h-4 w-4" /> : "3"}
+              {step === "complete" ? <Check className="h-4 w-4" /> : "4"}
             </div>
-            <span className="font-medium">Audio</span>
+            <span className="font-medium hidden sm:inline">Audio</span>
           </div>
         </div>
 
@@ -740,6 +813,43 @@ const CreateFromScratch = () => {
                   </Collapsible>
                 </div>
 
+                {isGeneratingAxes ? (
+                  <div className="w-full space-y-4 p-6 rounded-lg border bg-card">
+                    <div className="flex items-center gap-3">
+                      <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                      <div className="flex-1">
+                        <p className="font-medium">Gemini analyse votre sujet...</p>
+                        <p className="text-sm text-muted-foreground">
+                          Génération des axes en cours
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <Button 
+                    onClick={handleGenerateAxes} 
+                    disabled={!customPrompt.trim() || !projectName.trim()}
+                    className="w-full"
+                    size="lg"
+                  >
+                    <Sparkles className="mr-2 h-4 w-4" />
+                    Proposer des axes avec Gemini
+                  </Button>
+                )}
+              </div>
+            </Card>
+          )}
+
+          {step === "axes" && (
+            <Card className="p-8">
+              <div className="space-y-6">
+                <div className="text-center mb-6">
+                  <h2 className="text-2xl font-bold mb-2">Choisissez un axe</h2>
+                  <p className="text-muted-foreground">
+                    Sélectionnez l'angle qui correspond le mieux à votre vision
+                  </p>
+                </div>
+
                 {isGeneratingScript ? (
                   <div className="w-full space-y-4 p-6 rounded-lg border bg-card">
                     <div className="flex items-center gap-3">
@@ -757,16 +867,45 @@ const CreateFromScratch = () => {
                     </p>
                   </div>
                 ) : (
-                  <Button 
-                    onClick={handleGenerateScript} 
-                    disabled={!customPrompt.trim() || !projectName.trim()}
-                    className="w-full"
-                    size="lg"
-                  >
-                    <FileText className="mr-2 h-4 w-4" />
-                    Générer le script avec Claude IA
-                  </Button>
+                  <div className="grid gap-4">
+                    {videoAxes.map((axe) => (
+                      <button
+                        key={axe.id}
+                        onClick={() => handleSelectAxe(axe)}
+                        className={`p-4 rounded-lg border text-left transition-all hover:border-primary hover:bg-primary/5 ${
+                          selectedAxe?.id === axe.id ? "border-primary bg-primary/10" : "border-border"
+                        }`}
+                      >
+                        <h3 className="font-semibold text-lg mb-1">{axe.title}</h3>
+                        <p className="text-muted-foreground text-sm">{axe.description}</p>
+                      </button>
+                    ))}
+                  </div>
                 )}
+
+                <div className="flex gap-4">
+                  <Button 
+                    variant="outline"
+                    onClick={() => {
+                      setStep("topic");
+                      setVideoAxes([]);
+                      setSelectedAxe(null);
+                    }}
+                    className="flex-1"
+                    disabled={isGeneratingScript}
+                  >
+                    Retour
+                  </Button>
+                  <Button 
+                    variant="outline"
+                    onClick={handleGenerateAxes}
+                    className="flex-1"
+                    disabled={isGeneratingScript}
+                  >
+                    <RefreshCw className="mr-2 h-4 w-4" />
+                    Régénérer les axes
+                  </Button>
+                </div>
               </div>
             </Card>
           )}
