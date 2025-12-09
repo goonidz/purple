@@ -174,6 +174,9 @@ const Index = () => {
     currentProjectIdRef.current = currentProjectId;
   }, [currentProjectId]);
 
+  // Ref for startJob to use in callbacks without circular dependency
+  const startJobRef = useRef<((jobType: any, metadata?: any) => Promise<any>) | null>(null);
+
   // Background job management
   const handleJobComplete = useCallback((job: GenerationJob) => {
     const messages: Record<string, string> = {
@@ -187,11 +190,34 @@ const Index = () => {
     };
     toast.success(messages[job.job_type] || 'Génération terminée !');
     
+    // Check if semi-auto mode is enabled and chain next job
+    const metadata = job.metadata as { semiAutoMode?: boolean } | null;
+    const isSemiAuto = metadata?.semiAutoMode === true;
+    
     // Reset generating states
     if (job.job_type === 'prompts') {
       setIsGeneratingPrompts(false);
+      
+      // Semi-auto: start images generation after prompts complete
+      if (isSemiAuto && startJobRef.current) {
+        toast.info("Génération des images en cours...");
+        startJobRef.current('images', { skipExisting: false, semiAutoMode: true }).then(() => {
+          setIsGeneratingImages(true);
+        });
+      }
     } else if (job.job_type === 'images') {
       setIsGeneratingImages(false);
+      
+      // Semi-auto: start thumbnails generation after images complete
+      if (isSemiAuto && startJobRef.current) {
+        toast.info("Génération des miniatures en cours...");
+        startJobRef.current('thumbnails', { semiAutoMode: true });
+      }
+    } else if (job.job_type === 'thumbnails') {
+      // Semi-auto complete!
+      if (isSemiAuto) {
+        toast.success("🎉 Génération semi-automatique terminée !");
+      }
     } else if (job.job_type === 'test_images') {
       setIsGeneratingPrompts(false);
       setIsGeneratingImages(false);
@@ -273,6 +299,11 @@ const Index = () => {
     onJobComplete: handleJobComplete,
     onJobFailed: handleJobFailed
   });
+
+  // Keep startJobRef updated so handleJobComplete can use it
+  useEffect(() => {
+    startJobRef.current = startJob;
+  }, [startJob]);
 
   // Sync generating states with active jobs
   useEffect(() => {
@@ -3137,7 +3168,7 @@ Return ONLY the prompt text, no JSON, no title, just the optimized prompt in ENG
               <ProjectConfigurationModal
                 transcriptData={transcriptData}
                 currentProjectId={currentProjectId}
-                onComplete={async () => {
+                onComplete={async (semiAutoMode: boolean) => {
                   setShowConfigurationModal(false);
                   
                   // Fetch fresh config from database and generate scenes
@@ -3184,7 +3215,29 @@ Return ONLY the prompt text, no JSON, no title, just the optimized prompt in ENG
                       preferSentenceBoundaries
                     );
                     setScenes(generatedScenes);
+                    
+                    // Save scenes to database first
+                    await supabase
+                      .from("projects")
+                      .update({ scenes: generatedScenes as any })
+                      .eq("id", currentProjectId);
+                    
                     toast.success(`${generatedScenes.length} scènes générées !`);
+                    
+                    // If semi-auto mode, start automatic generation pipeline
+                    if (semiAutoMode) {
+                      toast.info("Mode semi-automatique activé. Génération des prompts en cours...");
+                      
+                      // Start prompts job - images will be triggered after prompts complete
+                      const result = await startJob('prompts', { 
+                        regenerate: false,
+                        semiAutoMode: true // Flag to trigger images after prompts
+                      });
+                      
+                      if (result) {
+                        setIsGeneratingPrompts(true);
+                      }
+                    }
                   }
                 }}
                 onCancel={() => setShowConfigurationModal(false)}

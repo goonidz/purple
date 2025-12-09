@@ -28,7 +28,7 @@ interface Preset {
 interface ProjectConfigurationModalProps {
   transcriptData: any;
   currentProjectId: string;
-  onComplete: () => void;
+  onComplete: (semiAutoMode: boolean) => void;
   onCancel: () => void;
 }
 
@@ -53,6 +53,7 @@ export const ProjectConfigurationModal = ({
   const [styleReferenceUrls, setStyleReferenceUrls] = useState<string[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [semiAutoMode, setSemiAutoMode] = useState(false);
   
   // Preset loading
   const [presets, setPresets] = useState<Preset[]>([]);
@@ -198,7 +199,7 @@ export const ProjectConfigurationModal = ({
       if (error) throw error;
 
       toast.success("Configuration enregistrée !");
-      onComplete();
+      onComplete(semiAutoMode);
     } catch (error: any) {
       console.error("Error saving configuration:", error);
       toast.error("Erreur lors de l'enregistrement");
@@ -545,6 +546,27 @@ export const ProjectConfigurationModal = ({
                   ))}
                 </div>
               )}
+            </div>
+          </div>
+
+          {/* Semi-automatic mode option */}
+          <div className="rounded-lg border-2 border-primary/20 bg-primary/5 p-4 space-y-3">
+            <div className="flex items-start gap-3">
+              <input
+                type="checkbox"
+                id="semi-auto-mode"
+                checked={semiAutoMode}
+                onChange={(e) => setSemiAutoMode(e.target.checked)}
+                className="mt-1 h-4 w-4 rounded border-border text-primary focus:ring-primary"
+              />
+              <div className="flex-1">
+                <label htmlFor="semi-auto-mode" className="font-medium cursor-pointer block">
+                  Mode semi-automatique
+                </label>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Génère automatiquement tous les prompts, images et miniatures sans intervention manuelle après la configuration.
+                </p>
+              </div>
             </div>
           </div>
         </div>
