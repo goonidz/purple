@@ -84,6 +84,36 @@ const Workspace = () => {
     }
   }, [currentProjectId]);
 
+  // Poll for project updates when there are active jobs (to refresh images in real-time)
+  useEffect(() => {
+    if (!currentProjectId) return;
+
+    const pollInterval = setInterval(async () => {
+      // Check if there are active image jobs for this project
+      const { data: activeJobs } = await supabase
+        .from('generation_jobs')
+        .select('id, job_type, status')
+        .eq('project_id', currentProjectId)
+        .in('status', ['pending', 'processing'])
+        .in('job_type', ['images', 'single_image']);
+
+      if (activeJobs && activeJobs.length > 0) {
+        // Refresh prompts to get new images
+        const { data: projectData } = await supabase
+          .from('projects')
+          .select('prompts')
+          .eq('id', currentProjectId)
+          .single();
+
+        if (projectData?.prompts) {
+          setGeneratedPrompts(projectData.prompts as unknown as GeneratedPrompt[]);
+        }
+      }
+    }, 5000); // Poll every 5 seconds
+
+    return () => clearInterval(pollInterval);
+  }, [currentProjectId]);
+
   const loadProjectData = async (projectId: string) => {
     try {
       const { data, error } = await supabase
