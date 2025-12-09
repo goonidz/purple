@@ -972,38 +972,59 @@ async function processSinglePromptJob(
   }
 
   const data = await response.json();
-  console.log(`Single prompt job: received prompt for scene ${sceneIndex + 1}: ${data.prompt?.substring(0, 50)}...`);
+  const newPrompt = data.prompt;
+  
+  if (!newPrompt) {
+    throw new Error("No prompt returned from generate-prompts");
+  }
+
+  console.log(`Single prompt job: received prompt for scene ${sceneIndex + 1}`);
+
+  // Re-fetch project to get latest prompts (avoid race conditions)
+  const { data: latestProject, error: refetchError } = await adminClient
+    .from('projects')
+    .select('prompts')
+    .eq('id', projectId)
+    .single();
+
+  if (refetchError) {
+    throw new Error(`Failed to refetch project: ${refetchError.message}`);
+  }
+
+  const latestPrompts = (latestProject.prompts as any[]) || [];
 
   // Update the prompts array
-  const updatedPrompts = [...existingPrompts];
+  const updatedPrompts = [...latestPrompts];
   while (updatedPrompts.length <= sceneIndex) {
     updatedPrompts.push(null);
   }
 
   updatedPrompts[sceneIndex] = {
     scene: `Scène ${sceneIndex + 1}`,
-    prompt: data.prompt,
+    prompt: newPrompt,
     text: scene.text,
     startTime: scene.startTime,
     endTime: scene.endTime,
     duration: scene.endTime - scene.startTime,
-    imageUrl: existingPrompts[sceneIndex]?.imageUrl // Preserve existing image
+    imageUrl: latestPrompts[sceneIndex]?.imageUrl // Preserve existing image
   };
 
-  console.log(`Single prompt job: saving prompts to project ${projectId}, scene ${sceneIndex + 1}`);
-
-  // Save prompts to project
-  const { error: updateError } = await adminClient
+  // Save prompts to project with explicit await
+  const { data: updateResult, error: updateError } = await adminClient
     .from('projects')
     .update({ prompts: updatedPrompts })
-    .eq('id', projectId);
+    .eq('id', projectId)
+    .select('id');
 
   if (updateError) {
-    console.error(`Single prompt job: failed to save prompts:`, updateError);
     throw new Error(`Failed to save prompts: ${updateError.message}`);
   }
 
-  console.log(`Single prompt job: prompts saved successfully for scene ${sceneIndex + 1}`);
+  if (!updateResult || updateResult.length === 0) {
+    throw new Error("Update returned no result - project may not exist");
+  }
+
+  console.log(`Single prompt job: prompts saved for scene ${sceneIndex + 1}`);
 
   // Update progress
   await adminClient
