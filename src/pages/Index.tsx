@@ -1520,9 +1520,9 @@ const Index = () => {
               </TabsList>
             </div>
 
-            {/* Banner fixe pour les jobs actifs - toujours visible, sous le header */}
+            {/* Banner fixe pour les jobs actifs - toujours visible */}
             {activeJobs.length > 0 && (
-              <div className="sticky top-16 z-40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 py-2 -mx-6 px-6 border-b">
+              <div className="bg-background border rounded-lg p-3 mb-4 shadow-sm">
                 <ActiveJobsBanner 
                   jobs={activeJobs} 
                   onCancel={cancelJob}
