@@ -60,10 +60,10 @@ const MINIMAX_EMOTIONS = [
 
 // Official MiniMax voice IDs from API documentation
 const MINIMAX_VOICE_OPTIONS = [
-  // English voices
-  { id: "English_expressive_narrator", name: "Expressive Narrator", language: "en" },
-  { id: "Insightful_speaker", name: "Insightful Speaker", language: "en" },
-  { id: "Wise_Woman", name: "Wise Woman", language: "en" },
+  // English voices - Format: Language_VoiceName (as per MiniMax API docs)
+  { id: "English_Expressive_Narrator", name: "Expressive Narrator", language: "en" },
+  { id: "English_Insightful_Speaker", name: "Insightful Speaker", language: "en" },
+  { id: "English_Wise_Woman", name: "Wise Woman", language: "en" },
   { id: "English_radiant_girl", name: "Radiant Girl", language: "en" },
   { id: "English_magnetic_voiced_man", name: "Magnetic-voiced Male", language: "en" },
   { id: "English_compelling_lady1", name: "Compelling Lady", language: "en" },
