@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Video, History, Sparkles, Calendar } from "lucide-react";
+import { Video, History, Sparkles, Calendar, Mic, FileText } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
@@ -52,74 +52,98 @@ const Home = () => {
       <div className="container flex flex-col items-center justify-center py-20 px-4">
         <div className="text-center space-y-4 mb-12 max-w-2xl">
           <h1 className="text-5xl font-bold tracking-tight sm:text-6xl bg-gradient-to-r from-foreground to-foreground/60 bg-clip-text text-transparent">
-            Transformez votre audio en vidéo
+            Créez des vidéos captivantes
           </h1>
           <p className="text-xl text-muted-foreground">
-            Créez des vidéos captivantes automatiquement à partir de vos fichiers audio
+            Générez automatiquement des vidéos à partir d'un fichier audio ou créez tout de zéro avec l'IA
           </p>
         </div>
 
-        {/* Action Cards */}
-        <div className="grid md:grid-cols-3 gap-6 w-full max-w-5xl">
+        {/* Main Action Cards - Two creation options */}
+        <div className="grid md:grid-cols-2 gap-8 w-full max-w-4xl mb-8">
           <Link to="/workspace" className="group">
-            <Card className="p-8 hover:shadow-lg transition-all duration-300 hover:scale-105 border-2 hover:border-primary/50 bg-card/50 backdrop-blur h-full">
+            <Card className="p-8 hover:shadow-xl transition-all duration-300 hover:scale-105 border-2 hover:border-primary/50 bg-card/50 backdrop-blur h-full">
               <div className="flex flex-col items-center text-center space-y-4">
-                <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
-                  <Video className="h-8 w-8 text-primary" />
+                <div className="h-20 w-20 rounded-full bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
+                  <Mic className="h-10 w-10 text-primary" />
                 </div>
-                <h3 className="text-2xl font-bold">Créer une vidéo</h3>
+                <h3 className="text-2xl font-bold">À partir d'un audio</h3>
                 <p className="text-muted-foreground">
-                  Importez un fichier audio et générez automatiquement votre vidéo avec scènes et images
+                  Importez votre fichier audio (MP3, WAV) et laissez l'IA transcrire et générer les scènes automatiquement
                 </p>
                 <Button size="lg" className="w-full mt-4">
-                  Commencer
+                  Importer un audio
                   <Sparkles className="ml-2 h-4 w-4" />
                 </Button>
               </div>
             </Card>
           </Link>
 
-          <Link to="/calendar" className="group">
-            <Card className="p-8 hover:shadow-lg transition-all duration-300 hover:scale-105 border-2 hover:border-primary/50 bg-card/50 backdrop-blur h-full">
+          <Link to="/workspace?mode=scratch" className="group">
+            <Card className="p-8 hover:shadow-xl transition-all duration-300 hover:scale-105 border-2 hover:border-secondary/50 bg-card/50 backdrop-blur h-full">
               <div className="flex flex-col items-center text-center space-y-4">
-                <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
-                  <Calendar className="h-8 w-8 text-primary" />
+                <div className="h-20 w-20 rounded-full bg-secondary/10 flex items-center justify-center group-hover:bg-secondary/20 transition-colors">
+                  <FileText className="h-10 w-10 text-secondary-foreground" />
                 </div>
-                <h3 className="text-2xl font-bold">Calendrier</h3>
+                <h3 className="text-2xl font-bold">Créer de zéro</h3>
                 <p className="text-muted-foreground">
-                  Planifiez vos vidéos, organisez vos scripts et gérez votre calendrier de contenu
+                  Générez un script avec Claude IA, puis l'audio avec ElevenLabs, et enfin les images automatiquement
                 </p>
                 <Button size="lg" variant="secondary" className="w-full mt-4">
-                  Planifier
-                </Button>
-              </div>
-            </Card>
-          </Link>
-
-          <Link to="/projects" className="group">
-            <Card className="p-8 hover:shadow-lg transition-all duration-300 hover:scale-105 border-2 hover:border-primary/50 bg-card/50 backdrop-blur h-full">
-              <div className="flex flex-col items-center text-center space-y-4">
-                <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
-                  <History className="h-8 w-8 text-primary" />
-                </div>
-                <h3 className="text-2xl font-bold">Mes projets</h3>
-                <p className="text-muted-foreground">
-                  Accédez à l'historique de tous vos projets vidéo et continuez où vous vous êtes arrêté
-                </p>
-                <Button size="lg" variant="outline" className="w-full mt-4">
-                  Voir l'historique
+                  Commencer de zéro
+                  <Sparkles className="ml-2 h-4 w-4" />
                 </Button>
               </div>
             </Card>
           </Link>
         </div>
 
+        {/* Secondary Action Cards */}
+        <div className="grid md:grid-cols-2 gap-6 w-full max-w-3xl">
+          <Link to="/calendar" className="group">
+            <Card className="p-6 hover:shadow-lg transition-all duration-300 hover:scale-105 border hover:border-primary/30 bg-card/30 backdrop-blur h-full">
+              <div className="flex items-center gap-4">
+                <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors flex-shrink-0">
+                  <Calendar className="h-6 w-6 text-primary" />
+                </div>
+                <div className="text-left">
+                  <h3 className="text-lg font-bold">Calendrier</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Planifiez vos vidéos et gérez votre calendrier de contenu
+                  </p>
+                </div>
+              </div>
+            </Card>
+          </Link>
+
+          <Link to="/projects" className="group">
+            <Card className="p-6 hover:shadow-lg transition-all duration-300 hover:scale-105 border hover:border-primary/30 bg-card/30 backdrop-blur h-full">
+              <div className="flex items-center gap-4">
+                <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors flex-shrink-0">
+                  <History className="h-6 w-6 text-primary" />
+                </div>
+                <div className="text-left">
+                  <h3 className="text-lg font-bold">Mes projets</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Accédez à l'historique de tous vos projets vidéo
+                  </p>
+                </div>
+              </div>
+            </Card>
+          </Link>
+        </div>
+
         {/* Features */}
-        <div className="grid md:grid-cols-3 gap-6 mt-16 w-full max-w-4xl">
+        <div className="grid md:grid-cols-4 gap-6 mt-16 w-full max-w-5xl">
           <div className="text-center space-y-2">
             <div className="text-3xl font-bold text-primary">🎯</div>
-            <h4 className="font-semibold">IA Puissante</h4>
-            <p className="text-sm text-muted-foreground">Génération automatique de scènes et prompts</p>
+            <h4 className="font-semibold">Claude IA</h4>
+            <p className="text-sm text-muted-foreground">Génération de scripts intelligents</p>
+          </div>
+          <div className="text-center space-y-2">
+            <div className="text-3xl font-bold text-primary">🎙️</div>
+            <h4 className="font-semibold">ElevenLabs</h4>
+            <p className="text-sm text-muted-foreground">Voix de synthèse réalistes</p>
           </div>
           <div className="text-center space-y-2">
             <div className="text-3xl font-bold text-primary">⚡</div>
