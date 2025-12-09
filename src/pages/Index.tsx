@@ -385,12 +385,6 @@ const Index = () => {
   useEffect(() => {
     const semiAuto = searchParams.get("semi_auto");
     const projectId = searchParams.get("project");
-    const thumbnailPreset = searchParams.get("thumbnail_preset");
-    
-    // Store thumbnail preset ID for later use
-    if (thumbnailPreset) {
-      thumbnailPresetIdRef.current = thumbnailPreset;
-    }
     
     if (semiAuto === "true" && projectId && scenes.length > 0 && !hasSemiAutoStartedRef.current && !hasActiveJob()) {
       hasSemiAutoStartedRef.current = true;
@@ -558,6 +552,11 @@ const Index = () => {
       }
       if (data.audio_url) {
         setAudioUrl(data.audio_url);
+      }
+      
+      // Load thumbnail preset ID for semi-auto mode
+      if (projectData.thumbnail_preset_id) {
+        thumbnailPresetIdRef.current = projectData.thumbnail_preset_id;
       }
       
       // Mark that project data has been loaded
@@ -3146,13 +3145,8 @@ Return ONLY the prompt text, no JSON, no title, just the optimized prompt in ENG
               <ProjectConfigurationModal
                 transcriptData={transcriptData}
                 currentProjectId={currentProjectId}
-                onComplete={async (semiAutoMode: boolean, thumbnailPresetId?: string) => {
+                onComplete={async (semiAutoMode: boolean) => {
                   setShowConfigurationModal(false);
-                  
-                  // Store thumbnail preset ID
-                  if (thumbnailPresetId) {
-                    thumbnailPresetIdRef.current = thumbnailPresetId;
-                  }
                   
                   // Fetch fresh config from database and generate scenes
                   const { data, error } = await supabase
@@ -3186,6 +3180,11 @@ Return ONLY the prompt text, no JSON, no title, just the optimized prompt in ENG
                     setStyleReferenceUrls(parseStyleReferenceUrls(data.style_reference_url));
                   }
                   
+                  // Store thumbnail preset ID from database
+                  if ((data as any).thumbnail_preset_id) {
+                    thumbnailPresetIdRef.current = (data as any).thumbnail_preset_id;
+                  }
+                  
                   // Generate scenes with fresh configuration
                   if (transcriptData) {
                     const generatedScenes = parseTranscriptToScenes(
@@ -3214,7 +3213,8 @@ Return ONLY the prompt text, no JSON, no title, just the optimized prompt in ENG
                       // Start prompts job - images will be triggered after prompts complete
                       const result = await startJob('prompts', { 
                         regenerate: false,
-                        semiAutoMode: true // Flag to trigger images after prompts
+                        semiAutoMode: true,
+                        thumbnailPresetId: thumbnailPresetIdRef.current
                       });
                       
                       if (result) {

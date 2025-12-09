@@ -28,7 +28,7 @@ interface Preset {
 interface ProjectConfigurationModalProps {
   transcriptData: any;
   currentProjectId: string;
-  onComplete: (semiAutoMode: boolean, thumbnailPresetId?: string) => void;
+  onComplete: (semiAutoMode: boolean) => void;
   onCancel: () => void;
 }
 
@@ -212,13 +212,14 @@ export const ProjectConfigurationModal = ({
           aspect_ratio: aspectRatio,
           image_model: imageModel,
           style_reference_url: styleReferenceUrls.length > 0 ? JSON.stringify(styleReferenceUrls) : null,
+          thumbnail_preset_id: selectedThumbnailPresetId || null,
         })
         .eq("id", currentProjectId);
 
       if (error) throw error;
 
       toast.success("Configuration enregistrée !");
-      onComplete(semiAutoMode, selectedThumbnailPresetId || undefined);
+      onComplete(semiAutoMode);
     } catch (error: any) {
       console.error("Error saving configuration:", error);
       toast.error("Erreur lors de l'enregistrement");

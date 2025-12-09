@@ -389,7 +389,7 @@ const Projects = () => {
         true // preferSentenceBoundaries
       );
 
-      // Save all configuration + generated scenes to database
+      // Save all configuration + generated scenes + thumbnail preset to database
       const { error } = await supabase
         .from("projects")
         .update({
@@ -403,7 +403,8 @@ const Projects = () => {
           image_model: imageModel,
           prompt_system_message: promptSystemMessage || null,
           style_reference_url: serializeStyleReferenceUrls(styleReferenceUrls),
-          scenes: generatedScenes as any, // Save generated scenes
+          scenes: generatedScenes as any,
+          thumbnail_preset_id: thumbnailPresetId || null,
         })
         .eq("id", projectId);
 
@@ -427,11 +428,10 @@ const Projects = () => {
       setSemiAutoMode(false);
       setSelectedThumbnailPresetId("");
       
-      // Naviguer vers le projet APRÈS avoir réinitialisé l'état
+      // Navigate to project - thumbnail preset is now stored in DB
       const params = new URLSearchParams();
       params.set('project', projectId);
       if (shouldSemiAuto) params.set('semi_auto', 'true');
-      if (thumbnailPresetId) params.set('thumbnail_preset', thumbnailPresetId);
       navigate(`/project?${params.toString()}`);
     } catch (error: any) {
       console.error("Error saving configuration:", error);

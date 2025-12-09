@@ -265,6 +265,7 @@ export type Database = {
           scenes: Json | null
           style_reference_url: string | null
           summary: string | null
+          thumbnail_preset_id: string | null
           transcript_json: Json | null
           updated_at: string
           user_id: string
@@ -287,6 +288,7 @@ export type Database = {
           scenes?: Json | null
           style_reference_url?: string | null
           summary?: string | null
+          thumbnail_preset_id?: string | null
           transcript_json?: Json | null
           updated_at?: string
           user_id: string
@@ -309,11 +311,20 @@ export type Database = {
           scenes?: Json | null
           style_reference_url?: string | null
           summary?: string | null
+          thumbnail_preset_id?: string | null
           transcript_json?: Json | null
           updated_at?: string
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "projects_thumbnail_preset_id_fkey"
+            columns: ["thumbnail_preset_id"]
+            isOneToOne: false
+            referencedRelation: "thumbnail_presets"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       thumbnail_presets: {
         Row: {
