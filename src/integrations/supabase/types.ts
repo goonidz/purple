@@ -392,6 +392,42 @@ export type Database = {
           },
         ]
       }
+      script_presets: {
+        Row: {
+          created_at: string
+          custom_prompt: string | null
+          duration: string | null
+          id: string
+          language: string | null
+          name: string
+          style: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          custom_prompt?: string | null
+          duration?: string | null
+          id?: string
+          language?: string | null
+          name: string
+          style?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          custom_prompt?: string | null
+          duration?: string | null
+          id?: string
+          language?: string | null
+          name?: string
+          style?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       thumbnail_presets: {
         Row: {
           character_ref_url: string | null

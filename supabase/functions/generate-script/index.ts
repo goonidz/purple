@@ -36,7 +36,7 @@ serve(async (req) => {
       });
     }
 
-    const { topic, style, duration, language = 'fr' } = await req.json();
+    const { topic, style, duration, language = 'fr', customPrompt } = await req.json();
 
     if (!topic) {
       throw new Error("Topic is required");
@@ -80,7 +80,8 @@ serve(async (req) => {
           ? "dramatique et captivant, avec du suspense"
           : "naturel et conversationnel";
 
-    const systemPrompt = `Tu es un scénariste professionnel pour vidéos YouTube. Tu écris des scripts captivants et optimisés pour la narration vocale.
+    // Use custom prompt if provided, otherwise use default
+    const basePrompt = customPrompt || `Tu es un scénariste professionnel pour vidéos YouTube. Tu écris des scripts captivants et optimisés pour la narration vocale.
 
 RÈGLES IMPORTANTES:
 - Écris UNIQUEMENT le texte qui sera lu à voix haute
@@ -88,7 +89,11 @@ RÈGLES IMPORTANTES:
 - Utilise un langage naturel et fluide pour la narration
 - Inclus des pauses naturelles avec des phrases courtes
 - Commence par un hook accrocheur
-- Termine par un appel à l'action ou une conclusion mémorable
+- Termine par un appel à l'action ou une conclusion mémorable`;
+
+    const systemPrompt = `${basePrompt}
+
+PARAMÈTRES DE GÉNÉRATION:
 - Durée cible: ${durationGuide}
 - Style: ${styleGuide}
 - Langue: ${language === 'fr' ? 'Français' : 'English'}`;

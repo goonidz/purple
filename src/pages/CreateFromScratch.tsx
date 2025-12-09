@@ -8,10 +8,21 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Sparkles, FileText, Mic, ArrowRight, Check, Play, RefreshCw } from "lucide-react";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Loader2, Sparkles, FileText, Mic, ArrowRight, Check, RefreshCw, ChevronDown, Save, Trash2, FolderOpen } from "lucide-react";
 import { toast } from "sonner";
 
 type WorkflowStep = "topic" | "script" | "audio" | "complete";
+
+interface ScriptPreset {
+  id: string;
+  name: string;
+  custom_prompt: string | null;
+  duration: string;
+  style: string;
+  language: string;
+}
 
 const VOICE_OPTIONS = [
   { id: "daniel", name: "Daniel", language: "fr" },
@@ -37,6 +48,16 @@ const STYLE_OPTIONS = [
   { id: "natural", name: "Naturel", description: "Conversationnel et fluide" },
 ];
 
+const DEFAULT_PROMPT = `Tu es un scénariste professionnel pour vidéos YouTube. Tu écris des scripts captivants et optimisés pour la narration vocale.
+
+RÈGLES IMPORTANTES:
+- Écris UNIQUEMENT le texte qui sera lu à voix haute
+- PAS de directions de scène, PAS de [crochets], PAS d'annotations
+- Utilise un langage naturel et fluide pour la narration
+- Inclus des pauses naturelles avec des phrases courtes
+- Commence par un hook accrocheur
+- Termine par un appel à l'action ou une conclusion mémorable`;
+
 const CreateFromScratch = () => {
   const navigate = useNavigate();
   const [user, setUser] = useState<User | null>(null);
@@ -48,6 +69,15 @@ const CreateFromScratch = () => {
   const [duration, setDuration] = useState("medium");
   const [style, setStyle] = useState("educational");
   const [language, setLanguage] = useState("fr");
+  const [customPrompt, setCustomPrompt] = useState(DEFAULT_PROMPT);
+  const [isPromptOpen, setIsPromptOpen] = useState(false);
+  
+  // Preset management
+  const [presets, setPresets] = useState<ScriptPreset[]>([]);
+  const [selectedPresetId, setSelectedPresetId] = useState<string>("");
+  const [savePresetDialogOpen, setSavePresetDialogOpen] = useState(false);
+  const [newPresetName, setNewPresetName] = useState("");
+  const [isSavingPreset, setIsSavingPreset] = useState(false);
   
   // Script step
   const [generatedScript, setGeneratedScript] = useState("");
@@ -67,6 +97,8 @@ const CreateFromScratch = () => {
       setUser(session?.user ?? null);
       if (!session) {
         navigate("/auth");
+      } else {
+        loadPresets();
       }
     });
 
@@ -79,6 +111,90 @@ const CreateFromScratch = () => {
 
     return () => subscription.unsubscribe();
   }, [navigate]);
+
+  const loadPresets = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("script_presets")
+        .select("*")
+        .order("name", { ascending: true });
+
+      if (error) throw error;
+      setPresets(data || []);
+    } catch (error) {
+      console.error("Error loading presets:", error);
+    }
+  };
+
+  const handleLoadPreset = (presetId: string) => {
+    const preset = presets.find(p => p.id === presetId);
+    if (preset) {
+      setDuration(preset.duration || "medium");
+      setStyle(preset.style || "educational");
+      setLanguage(preset.language || "fr");
+      setCustomPrompt(preset.custom_prompt || DEFAULT_PROMPT);
+      setSelectedPresetId(presetId);
+      toast.success(`Preset "${preset.name}" chargé`);
+    }
+  };
+
+  const handleSavePreset = async () => {
+    if (!newPresetName.trim()) {
+      toast.error("Veuillez entrer un nom pour le preset");
+      return;
+    }
+
+    setIsSavingPreset(true);
+    try {
+      const { error } = await supabase
+        .from("script_presets")
+        .insert([{
+          user_id: user!.id,
+          name: newPresetName.trim(),
+          custom_prompt: customPrompt,
+          duration,
+          style,
+          language
+        }]);
+
+      if (error) throw error;
+
+      toast.success("Preset sauvegardé !");
+      setSavePresetDialogOpen(false);
+      setNewPresetName("");
+      loadPresets();
+    } catch (error: any) {
+      console.error("Error saving preset:", error);
+      toast.error("Erreur lors de la sauvegarde");
+    } finally {
+      setIsSavingPreset(false);
+    }
+  };
+
+  const handleDeletePreset = async (presetId: string) => {
+    const preset = presets.find(p => p.id === presetId);
+    if (!preset) return;
+
+    if (!confirm(`Supprimer le preset "${preset.name}" ?`)) return;
+
+    try {
+      const { error } = await supabase
+        .from("script_presets")
+        .delete()
+        .eq("id", presetId);
+
+      if (error) throw error;
+
+      toast.success("Preset supprimé");
+      if (selectedPresetId === presetId) {
+        setSelectedPresetId("");
+      }
+      loadPresets();
+    } catch (error: any) {
+      console.error("Error deleting preset:", error);
+      toast.error("Erreur lors de la suppression");
+    }
+  };
 
   const handleGenerateScript = async () => {
     if (!topic.trim()) {
@@ -93,7 +209,8 @@ const CreateFromScratch = () => {
           topic: topic.trim(),
           duration,
           style,
-          language
+          language,
+          customPrompt: customPrompt !== DEFAULT_PROMPT ? customPrompt : undefined
         }
       });
 
@@ -120,7 +237,8 @@ const CreateFromScratch = () => {
           topic: topic.trim(),
           duration,
           style,
-          language
+          language,
+          customPrompt: customPrompt !== DEFAULT_PROMPT ? customPrompt : undefined
         }
       });
 
@@ -200,8 +318,12 @@ const CreateFromScratch = () => {
     }
     
     // Navigate to projects page to continue with transcription workflow
-    // The audio is already uploaded, so user can configure and proceed
     navigate(`/projects?from_scratch=true&project=${projectId}`);
+  };
+
+  const handleLoadDefaultPrompt = () => {
+    setCustomPrompt(DEFAULT_PROMPT);
+    toast.success("Prompt par défaut chargé");
   };
 
   if (!user) {
@@ -266,6 +388,35 @@ const CreateFromScratch = () => {
                   <p className="text-muted-foreground">
                     Claude IA va générer un script professionnel basé sur votre sujet
                   </p>
+                </div>
+
+                {/* Preset selector */}
+                <div className="flex items-center gap-2">
+                  <div className="flex-1">
+                    <Label>Charger un preset</Label>
+                    <Select value={selectedPresetId} onValueChange={handleLoadPreset}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Sélectionner un preset..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {presets.map((preset) => (
+                          <SelectItem key={preset.id} value={preset.id}>
+                            {preset.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {selectedPresetId && (
+                    <Button 
+                      variant="ghost" 
+                      size="icon"
+                      className="mt-6"
+                      onClick={() => handleDeletePreset(selectedPresetId)}
+                    >
+                      <Trash2 className="h-4 w-4 text-destructive" />
+                    </Button>
+                  )}
                 </div>
 
                 <div className="space-y-4">
@@ -342,6 +493,48 @@ const CreateFromScratch = () => {
                       </SelectContent>
                     </Select>
                   </div>
+
+                  {/* Custom Prompt Section */}
+                  <Collapsible open={isPromptOpen} onOpenChange={setIsPromptOpen}>
+                    <CollapsibleTrigger asChild>
+                      <Button variant="outline" className="w-full justify-between">
+                        <span className="flex items-center gap-2">
+                          <FileText className="h-4 w-4" />
+                          Prompt personnalisé
+                        </span>
+                        <ChevronDown className={`h-4 w-4 transition-transform ${isPromptOpen ? "rotate-180" : ""}`} />
+                      </Button>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent className="pt-4 space-y-3">
+                      <div className="flex justify-end gap-2">
+                        <Button 
+                          variant="ghost" 
+                          size="sm"
+                          onClick={handleLoadDefaultPrompt}
+                        >
+                          <RefreshCw className="h-3 w-3 mr-1" />
+                          Réinitialiser
+                        </Button>
+                        <Button 
+                          variant="ghost" 
+                          size="sm"
+                          onClick={() => setSavePresetDialogOpen(true)}
+                        >
+                          <Save className="h-3 w-3 mr-1" />
+                          Sauvegarder preset
+                        </Button>
+                      </div>
+                      <Textarea
+                        value={customPrompt}
+                        onChange={(e) => setCustomPrompt(e.target.value)}
+                        className="min-h-[200px] font-mono text-sm"
+                        placeholder="Instructions pour Claude IA..."
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Ce prompt sera envoyé à Claude IA pour guider la génération du script. Les variables de durée, style et langue seront ajoutées automatiquement.
+                      </p>
+                    </CollapsibleContent>
+                  </Collapsible>
                 </div>
 
                 <Button 
@@ -489,6 +682,38 @@ const CreateFromScratch = () => {
           )}
         </div>
       </div>
+
+      {/* Save Preset Dialog */}
+      <Dialog open={savePresetDialogOpen} onOpenChange={setSavePresetDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Sauvegarder le preset</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="presetName">Nom du preset</Label>
+              <Input
+                id="presetName"
+                placeholder="Mon style de script..."
+                value={newPresetName}
+                onChange={(e) => setNewPresetName(e.target.value)}
+              />
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Ce preset sauvegardera: durée ({duration}), style ({style}), langue ({language}) et le prompt personnalisé.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSavePresetDialogOpen(false)}>
+              Annuler
+            </Button>
+            <Button onClick={handleSavePreset} disabled={isSavingPreset || !newPresetName.trim()}>
+              {isSavingPreset ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+              Sauvegarder
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
