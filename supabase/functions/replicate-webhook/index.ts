@@ -364,6 +364,9 @@ async function handleScriptCompletion(adminClient: any, prediction: any, output:
   
   console.log("Script generated, length:", script.length);
   
+  const wordCount = script.split(/\s+/).length;
+  const estimatedDuration = Math.round(wordCount / 2.5);
+  
   // Update pending prediction
   await adminClient
     .from('pending_predictions')
@@ -374,8 +377,8 @@ async function handleScriptCompletion(adminClient: any, prediction: any, output:
       metadata: {
         ...prediction.metadata,
         script,
-        wordCount: script.split(/\s+/).length,
-        estimatedDuration: Math.round(script.split(/\s+/).length / 2.5)
+        wordCount,
+        estimatedDuration
       }
     })
     .eq('id', prediction.id);
@@ -384,11 +387,12 @@ async function handleScriptCompletion(adminClient: any, prediction: any, output:
   if (jobId) {
     const { data: job } = await adminClient
       .from('generation_jobs')
-      .select('metadata')
+      .select('metadata, project_id')
       .eq('id', jobId)
       .single();
     
     const metadata = job?.metadata || {};
+    const projectId = job?.project_id;
     
     await adminClient
       .from('generation_jobs')
@@ -399,11 +403,24 @@ async function handleScriptCompletion(adminClient: any, prediction: any, output:
         metadata: {
           ...metadata,
           script,
-          wordCount: script.split(/\s+/).length,
-          estimatedDuration: Math.round(script.split(/\s+/).length / 2.5)
+          wordCount,
+          estimatedDuration
         }
       })
       .eq('id', jobId);
+    
+    // Also save the script to the project's summary field for easy access
+    // This allows the CreateFromScratch page to recover the script
+    if (projectId) {
+      await adminClient
+        .from('projects')
+        .update({
+          summary: script // Use summary field to store the generated script temporarily
+        })
+        .eq('id', projectId);
+      
+      console.log(`Script saved to project ${projectId}`);
+    }
     
     console.log(`Script job ${jobId} completed successfully`);
   }
