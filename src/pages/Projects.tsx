@@ -172,6 +172,53 @@ const Projects = () => {
     }
   }, [searchParams, navigate]);
 
+  // Handle "from scratch" projects that need transcription
+  useEffect(() => {
+    const fromScratch = searchParams.get("from_scratch");
+    const projectId = searchParams.get("project");
+    const needsTranscription = searchParams.get("needs_transcription");
+    
+    if (fromScratch === "true" && projectId && needsTranscription === "true") {
+      startFromScratchTranscription(projectId);
+      // Clear URL params
+      navigate("/projects", { replace: true });
+    }
+  }, [searchParams, navigate]);
+
+  const startFromScratchTranscription = async (projectId: string) => {
+    setIsCreating(true);
+    setWorkflowStep("transcription");
+    setCurrentProjectId(projectId);
+    
+    try {
+      // Get the project's audio URL
+      const { data: project, error: projectError } = await supabase
+        .from("projects")
+        .select("audio_url, name")
+        .eq("id", projectId)
+        .single();
+      
+      if (projectError) throw projectError;
+      if (!project?.audio_url) throw new Error("Pas d'audio trouvé pour ce projet");
+      
+      setNewProjectName(project.name || "");
+      setIsDialogOpen(true);
+      
+      // Start background transcription job
+      const result = await startJob('transcription', { audioUrl: project.audio_url }, projectId);
+      if (result) {
+        toast.info("Transcription lancée en arrière-plan. Une fois terminée, vous pourrez générer les scènes.");
+      } else {
+        throw new Error("Impossible de démarrer la transcription");
+      }
+    } catch (error: any) {
+      console.error("Error with from-scratch transcription:", error);
+      toast.error("Erreur lors de la transcription: " + error.message);
+      setWorkflowStep("upload");
+      setIsCreating(false);
+    }
+  };
+
   const startCalendarTranscription = async (audioUrl: string, projectName: string) => {
     setIsCreating(true);
     setWorkflowStep("transcription");

@@ -1083,14 +1083,39 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
     }
   };
 
-  const handleContinueToVideo = () => {
+  const handleContinueToVideo = async () => {
     if (!projectId) {
       toast.error("Erreur: projet non trouvé");
       return;
     }
     
-    // Navigate directly to workspace with the project
-    navigate(`/workspace?project=${projectId}`);
+    // For "from scratch" projects, we need to trigger transcription of the audio
+    // to generate the transcript_json that the workspace needs for scene generation
+    try {
+      // First check if transcription is already done
+      const { data: project } = await supabase
+        .from("projects")
+        .select("transcript_json, audio_url")
+        .eq("id", projectId)
+        .single();
+      
+      if (project?.transcript_json && Object.keys(project.transcript_json).length > 0) {
+        // Already transcribed, go directly to workspace
+        navigate(`/workspace?project=${projectId}`);
+        return;
+      }
+      
+      if (!project?.audio_url) {
+        toast.error("Veuillez d'abord importer un fichier audio");
+        return;
+      }
+      
+      // Need to transcribe the audio first - redirect to projects page to use the transcription workflow
+      navigate(`/projects?from_scratch=true&project=${projectId}&needs_transcription=true`);
+    } catch (error) {
+      console.error("Error checking project:", error);
+      navigate(`/workspace?project=${projectId}`);
+    }
   };
 
   const handleLoadDefaultPrompt = () => {
