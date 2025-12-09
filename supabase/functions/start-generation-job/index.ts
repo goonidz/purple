@@ -1395,10 +1395,18 @@ async function processThumbnailsJob(
         completedCount++;
         console.log(`Thumbnail ${index + 1} generated successfully`);
         
-        // Update progress
+        // Update progress AND metadata with current thumbnails (for progressive display)
+        const currentThumbnails = [...successfulThumbnails].sort((a, b) => a.index - b.index);
         await adminClient
           .from('generation_jobs')
-          .update({ progress: completedCount })
+          .update({ 
+            progress: completedCount,
+            metadata: {
+              ...metadata,
+              generatedPrompts: creativePrompts,
+              generatedThumbnails: currentThumbnails.map(t => ({ url: t.url, prompt: t.prompt, index: t.index }))
+            }
+          })
           .eq('id', jobId);
       } else {
         throw new Error("Thumbnail generation timed out");

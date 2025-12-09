@@ -149,13 +149,23 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle }: Thumb
     autoRetryImages: false // No auto-retry for thumbnails
   });
 
-  // Sync isGenerating with active jobs
+  // Sync isGenerating with active jobs AND update thumbnails progressively
   useEffect(() => {
-    const hasThumbnailJob = hasActiveJob('thumbnails');
-    if (hasThumbnailJob && !isGenerating) {
+    const thumbnailJob = getJobByType('thumbnails');
+    
+    if (thumbnailJob && !isGenerating) {
       setIsGenerating(true);
     }
-  }, [activeJobs, hasActiveJob, isGenerating]);
+    
+    // Update thumbnails progressively from job metadata
+    if (thumbnailJob?.metadata?.generatedThumbnails) {
+      const thumbnails = thumbnailJob.metadata.generatedThumbnails as Array<{ url: string; prompt: string; index: number }>;
+      // Sort by index and extract URLs and prompts
+      const sorted = [...thumbnails].sort((a, b) => a.index - b.index);
+      setGeneratedThumbnails(sorted.map(t => t.url));
+      setGeneratedPrompts(sorted.map(t => t.prompt));
+    }
+  }, [activeJobs, hasActiveJob, isGenerating, getJobByType]);
 
   useEffect(() => {
     loadPresets();
