@@ -892,19 +892,24 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                       setVideoAxes([]);
                       setSelectedAxe(null);
                     }}
-                    className="flex-1"
                     disabled={isGeneratingScript}
                   >
                     Retour
                   </Button>
                   <Button 
+                    variant="secondary"
+                    onClick={() => generateScriptWithPrompt(customPrompt)}
+                    disabled={isGeneratingScript}
+                  >
+                    Aucune thèse
+                  </Button>
+                  <Button 
                     variant="outline"
                     onClick={handleGenerateAxes}
-                    className="flex-1"
                     disabled={isGeneratingScript}
                   >
                     <RefreshCw className="mr-2 h-4 w-4" />
-                    Régénérer les thèses
+                    Régénérer
                   </Button>
                 </div>
               </div>
