@@ -1422,29 +1422,30 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                       {wordCount} mots • ~{estimatedDuration}s de lecture
                     </p>
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 flex-wrap">
                     <Button 
                       variant="outline" 
-                      size="icon"
+                      size="sm"
                       onClick={() => {
                         navigator.clipboard.writeText(generatedScript);
                         toast.success("Script copié !");
                       }}
                       disabled={!generatedScript.trim()}
-                      title="Copier le script"
                     >
-                      <ClipboardCopy className="h-4 w-4" />
+                      <ClipboardCopy className="h-4 w-4 mr-2" />
+                      Copier
                     </Button>
                     <Button 
                       variant="outline" 
-                      size="icon"
+                      size="sm"
                       onClick={() => window.open("https://www.minimax.io/audio/text-to-speech", "_blank")}
-                      title="Ouvrir MiniMax TTS"
                     >
-                      <ExternalLink className="h-4 w-4" />
+                      <ExternalLink className="h-4 w-4 mr-2" />
+                      MiniMax Web
                     </Button>
                     <Button 
                       variant="outline" 
+                      size="sm"
                       onClick={handleRegenerateScript}
                       disabled={isGeneratingScript}
                     >
