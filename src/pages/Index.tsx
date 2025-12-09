@@ -331,6 +331,38 @@ const Index = () => {
     }
   }, [currentProjectId]);
 
+  // Poll for project updates to refresh images in real-time during generation
+  useEffect(() => {
+    if (!currentProjectId) return;
+
+    let lastPromptsHash = JSON.stringify(generatedPrompts.map(p => p.imageUrl));
+
+    const pollInterval = setInterval(async () => {
+      try {
+        const { data: projectData } = await supabase
+          .from('projects')
+          .select('prompts')
+          .eq('id', currentProjectId)
+          .single();
+
+        if (projectData?.prompts) {
+          const newPrompts = projectData.prompts as unknown as GeneratedPrompt[];
+          const newHash = JSON.stringify(newPrompts.map(p => p.imageUrl));
+          
+          if (newHash !== lastPromptsHash) {
+            console.log('Images updated, refreshing UI');
+            setGeneratedPrompts(newPrompts);
+            lastPromptsHash = newHash;
+          }
+        }
+      } catch (error) {
+        console.error('Error polling for images:', error);
+      }
+    }, 3000);
+
+    return () => clearInterval(pollInterval);
+  }, [currentProjectId]);
+
   // Auto-save project data when it changes
   // Note: prompts are NOT included here because they are managed by the backend job queue
   useEffect(() => {
