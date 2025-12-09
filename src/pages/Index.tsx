@@ -168,13 +168,21 @@ const Index = () => {
 
   // Background job management
   const handleJobComplete = useCallback((job: GenerationJob) => {
-    toast.success(`${job.job_type === 'prompts' ? 'Prompts' : 'Images'} générés en arrière-plan !`);
+    const messages: Record<string, string> = {
+      'transcription': 'Transcription terminée !',
+      'prompts': 'Prompts générés en arrière-plan !',
+      'images': 'Images générées en arrière-plan !',
+      'thumbnails': 'Miniatures générées en arrière-plan !'
+    };
+    toast.success(messages[job.job_type] || 'Génération terminée !');
+    
     // Reset generating states
     if (job.job_type === 'prompts') {
       setIsGeneratingPrompts(false);
     } else if (job.job_type === 'images') {
       setIsGeneratingImages(false);
     }
+    // Reload project data to get updated data
     if (currentProjectId) {
       loadProjectData(currentProjectId);
     }
@@ -1716,7 +1724,53 @@ const Index = () => {
                   </Card>
                 )}
 
-                {!transcriptData && (
+                {/* Transcription en cours en arrière-plan */}
+                {!transcriptData && hasActiveJob('transcription') && (
+                  <Card className="p-6 bg-primary/5 border-primary/30">
+                    <div className="flex flex-col items-center gap-4 text-center">
+                      <div className="relative">
+                        <Cloud className="h-12 w-12 text-primary animate-pulse" />
+                        <Loader2 className="h-6 w-6 text-primary animate-spin absolute -bottom-1 -right-1" />
+                      </div>
+                      <div>
+                        <h3 className="text-lg font-semibold mb-1">Transcription en cours...</h3>
+                        <p className="text-sm text-muted-foreground">
+                          La transcription de votre audio est en cours de traitement en arrière-plan.
+                        </p>
+                        <p className="text-sm text-muted-foreground mt-1">
+                          Vous pouvez quitter cette page, la transcription continuera.
+                        </p>
+                      </div>
+                      {getJobByType('transcription') && (
+                        <div className="w-full max-w-md space-y-2">
+                          <Progress 
+                            value={
+                              getJobByType('transcription')!.total > 0
+                                ? (getJobByType('transcription')!.progress / getJobByType('transcription')!.total) * 100
+                                : 0
+                            } 
+                            className="h-2"
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            Traitement en cours...
+                          </p>
+                        </div>
+                      )}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          const job = getJobByType('transcription');
+                          if (job) cancelJob(job.id);
+                        }}
+                      >
+                        Annuler la transcription
+                      </Button>
+                    </div>
+                  </Card>
+                )}
+
+                {!transcriptData && !hasActiveJob('transcription') && (
                   <>
                     <Card className="p-6">
                       <h2 className="text-lg font-semibold mb-4">1. Importer la transcription</h2>
