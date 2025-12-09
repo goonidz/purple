@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import type { User } from "@supabase/supabase-js";
-import { Loader2, Settings, Download, Video, Image as ImageIcon, Sparkles, Pencil, MonitorPlay } from "lucide-react";
+import { Loader2, Settings, Download, Video, Image as ImageIcon, Sparkles, Pencil, MonitorPlay, Trash2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -300,6 +300,34 @@ const Workspace = () => {
     navigate(`/?project=${currentProjectId}`);
   };
 
+  // TEMPORARY: Delete all images
+  const handleDeleteAllImages = async () => {
+    if (!currentProjectId || !user) return;
+    
+    const confirmed = window.confirm("Supprimer toutes les images ? Cette action est irréversible.");
+    if (!confirmed) return;
+
+    try {
+      const clearedPrompts = generatedPrompts.map(p => ({
+        ...p,
+        imageUrl: undefined
+      }));
+      
+      const { error } = await supabase
+        .from('projects')
+        .update({ prompts: clearedPrompts })
+        .eq('id', currentProjectId);
+
+      if (error) throw error;
+
+      setGeneratedPrompts(clearedPrompts);
+      toast.success("Toutes les images ont été supprimées");
+    } catch (error: any) {
+      console.error("Error deleting images:", error);
+      toast.error("Erreur lors de la suppression des images");
+    }
+  };
+
   const handleVideoExport = async () => {
     if (!audioUrl) {
       toast.error("Aucun audio trouvé dans le projet");
@@ -441,6 +469,16 @@ const Workspace = () => {
                       Export Vidéo
                     </>
                   )}
+                </Button>
+
+                {/* TEMPORARY: Delete all images button */}
+                <Button
+                  variant="destructive"
+                  onClick={handleDeleteAllImages}
+                  title="TEMP: Supprimer toutes les images"
+                >
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Suppr. images
                 </Button>
               </>
             )}
