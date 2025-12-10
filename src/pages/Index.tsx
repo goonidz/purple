@@ -539,6 +539,9 @@ const Index = () => {
         setAudioUrl(data.audio_url);
       }
       
+      // Load user's saved export base path
+      loadExportBasePath();
+      
       // Load thumbnail preset ID for semi-auto mode
       if (projectData.thumbnail_preset_id) {
         thumbnailPresetIdRef.current = projectData.thumbnail_preset_id;
@@ -579,6 +582,48 @@ const Index = () => {
       if (error) throw error;
     } catch (error: any) {
       console.error("Error saving project:", error);
+    }
+  };
+
+  // Load user's saved export base path from database
+  const loadExportBasePath = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      
+      const { data, error } = await supabase
+        .from('user_api_keys')
+        .select('export_base_path')
+        .eq('user_id', user.id)
+        .single();
+      
+      if (!error && data?.export_base_path) {
+        setExportBasePath(data.export_base_path);
+      }
+    } catch (error) {
+      console.error("Error loading export base path:", error);
+    }
+  };
+
+  // Save user's export base path to database
+  const saveExportBasePath = async (path: string) => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      
+      const { error } = await supabase
+        .from('user_api_keys')
+        .upsert({
+          user_id: user.id,
+          export_base_path: path,
+          updated_at: new Date().toISOString()
+        }, {
+          onConflict: 'user_id'
+        });
+      
+      if (error) throw error;
+    } catch (error) {
+      console.error("Error saving export base path:", error);
     }
   };
 
@@ -1317,6 +1362,11 @@ const Index = () => {
         toast.info("Préparation du ZIP avec les images...");
         await downloadImagesAsZip(generatedPrompts, content, filename, audioUrl || undefined);
         toast.success("Export ZIP téléchargé avec succès !");
+        
+        // Save export base path for future use
+        if (exportBasePath) {
+          await saveExportBasePath(exportBasePath);
+        }
       } else {
         console.log("Starting file download");
         await downloadFile(content, filename);
