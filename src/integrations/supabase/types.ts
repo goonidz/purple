@@ -117,7 +117,7 @@ export type Database = {
           created_at: string
           id: string
           preset_name: string | null
-          project_id: string
+          project_id: string | null
           prompts: Json
           thumbnail_urls: Json
           user_id: string
@@ -126,7 +126,7 @@ export type Database = {
           created_at?: string
           id?: string
           preset_name?: string | null
-          project_id: string
+          project_id?: string | null
           prompts?: Json
           thumbnail_urls?: Json
           user_id: string
@@ -135,7 +135,7 @@ export type Database = {
           created_at?: string
           id?: string
           preset_name?: string | null
-          project_id?: string
+          project_id?: string | null
           prompts?: Json
           thumbnail_urls?: Json
           user_id?: string
