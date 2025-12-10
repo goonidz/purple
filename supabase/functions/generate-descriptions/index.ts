@@ -49,17 +49,17 @@ serve(async (req) => {
 
     const systemPrompt = `Tu génères des descriptions YouTube ultra-courtes et naturelles.
 
-Ta tâche: écrire UNE SEULE PHRASE qui résume la vidéo de façon humaine et décontractée.
+Ta tâche: écrire UNE SEULE PHRASE à la première personne (je/nous) qui résume la vidéo.
 
 Règles:
 - UNE SEULE PHRASE, pas plus
-- Écris dans la MÊME LANGUE que le script (français si script français, anglais si script anglais)
-- Ton conversationnel, comme si tu parlais à un ami
+- Écris dans la MÊME LANGUE que le script
+- À la première personne (je parle, je vous montre, je vous explique...)
+- Ton conversationnel et authentique
 - Pas d'emojis
-- Pas de formules marketing ou sensationnelles
-- Direct et authentique`;
+- Pas de formules marketing`;
 
-    const userPrompt = `Écris UNE SEULE PHRASE naturelle et humaine qui résume cette vidéo. Même langue que le script.
+    const userPrompt = `Écris UNE SEULE PHRASE à la première personne qui résume cette vidéo. Même langue que le script.
 
 Script: ${videoScript}
 
