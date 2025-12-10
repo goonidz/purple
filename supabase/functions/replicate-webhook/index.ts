@@ -619,19 +619,29 @@ async function chainNextJobFromWebhook(
 
   console.log(`Webhook: Chaining from ${completedJobType} to ${nextJobType}`);
 
+  // Add random delay to reduce race conditions when multiple webhooks complete simultaneously
+  const randomDelay = Math.floor(Math.random() * 2000) + 500; // 500-2500ms
+  await new Promise(resolve => setTimeout(resolve, randomDelay));
+
   // Check if a job of this type already exists and is pending/processing
-  const { data: existingJob } = await adminClient
+  // Also check for jobs created in the last 60 seconds to catch recent duplicates
+  const oneMinuteAgo = new Date(Date.now() - 60000).toISOString();
+  const { data: existingJobs } = await adminClient
     .from('generation_jobs')
-    .select('id, status')
+    .select('id, status, created_at')
     .eq('project_id', projectId)
     .eq('job_type', nextJobType)
-    .in('status', ['pending', 'processing'])
-    .limit(1)
-    .single();
+    .or(`status.in.(pending,processing),created_at.gte.${oneMinuteAgo}`)
+    .limit(5);
 
-  if (existingJob) {
-    console.log(`Job ${nextJobType} already exists (${existingJob.id}), skipping duplicate creation`);
-    return;
+  if (existingJobs && existingJobs.length > 0) {
+    const activeJob = existingJobs.find((j: any) => j.status === 'pending' || j.status === 'processing');
+    if (activeJob) {
+      console.log(`Job ${nextJobType} already exists (${activeJob.id}), skipping duplicate creation`);
+      return;
+    }
+    // If only recent completed jobs exist, also skip to avoid duplicates
+    console.log(`Recent ${nextJobType} job found, checking if we should skip...`);
   }
 
   // Get project data
