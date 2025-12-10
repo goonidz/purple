@@ -219,11 +219,11 @@ serve(async (req) => {
       total = 1; // Single audio generation
     }
 
-    // Create the job record
+    // Create the job record (use null for project_id in standalone mode)
     const { data: job, error: jobError } = await adminClient
       .from('generation_jobs')
       .insert({
-        project_id: projectId,
+        project_id: isStandalone ? null : projectId,
         user_id: user.id,
         job_type: jobType,
         status: 'pending',
@@ -1783,7 +1783,7 @@ async function processThumbnailsJob(
         continue;
       }
 
-      // Save to pending_predictions table
+      // Save to pending_predictions table (use null for standalone mode)
       const { error: insertError } = await adminClient
         .from('pending_predictions')
         .insert({
@@ -1791,7 +1791,7 @@ async function processThumbnailsJob(
           prediction_id: predictionId,
           prediction_type: 'thumbnail',
           thumbnail_index: i,
-          project_id: projectId,
+          project_id: metadata?.standalone ? null : projectId,
           user_id: userId,
           metadata: { prompt },
           status: 'pending'

@@ -175,7 +175,7 @@ export type Database = {
           job_type: Database["public"]["Enums"]["job_type"]
           metadata: Json | null
           progress: number | null
-          project_id: string
+          project_id: string | null
           status: Database["public"]["Enums"]["job_status"]
           total: number | null
           updated_at: string
@@ -189,7 +189,7 @@ export type Database = {
           job_type: Database["public"]["Enums"]["job_type"]
           metadata?: Json | null
           progress?: number | null
-          project_id: string
+          project_id?: string | null
           status?: Database["public"]["Enums"]["job_status"]
           total?: number | null
           updated_at?: string
@@ -203,7 +203,7 @@ export type Database = {
           job_type?: Database["public"]["Enums"]["job_type"]
           metadata?: Json | null
           progress?: number | null
-          project_id?: string
+          project_id?: string | null
           status?: Database["public"]["Enums"]["job_status"]
           total?: number | null
           updated_at?: string

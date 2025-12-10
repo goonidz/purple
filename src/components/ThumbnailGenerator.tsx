@@ -146,10 +146,11 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
     hasActiveJob,
     getJobByType
   } = useGenerationJobs({
-    projectId,
+    projectId: standalone ? null : projectId,
     onJobComplete: handleJobComplete,
     onJobFailed: handleJobFailed,
-    autoRetryImages: false // No auto-retry for thumbnails
+    autoRetryImages: false, // No auto-retry for thumbnails
+    standalone
   });
 
   // Sync isGenerating with active jobs AND update thumbnails progressively

@@ -7,7 +7,7 @@ export type JobStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'can
 
 export interface GenerationJob {
   id: string;
-  project_id: string;
+  project_id: string | null;
   user_id: string;
   job_type: JobType;
   status: JobStatus;
@@ -25,9 +25,10 @@ interface UseGenerationJobsOptions {
   onJobComplete?: (job: GenerationJob) => void;
   onJobFailed?: (job: GenerationJob) => void;
   autoRetryImages?: boolean; // Auto-retry if images are missing after job completes
+  standalone?: boolean; // If true, jobs are tracked by user only (no project filter)
 }
 
-export function useGenerationJobs({ projectId, onJobComplete, onJobFailed, autoRetryImages = false }: UseGenerationJobsOptions) {
+export function useGenerationJobs({ projectId, onJobComplete, onJobFailed, autoRetryImages = false, standalone = false }: UseGenerationJobsOptions) {
   const [activeJobs, setActiveJobs] = useState<GenerationJob[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
@@ -109,6 +110,8 @@ export function useGenerationJobs({ projectId, onJobComplete, onJobFailed, autoR
 
   // Subscribe to realtime updates for jobs
   useEffect(() => {
+    // In standalone mode, skip all project-based tracking
+    if (standalone) return;
     if (!projectId) return;
 
     // Initial fetch - wrapped to avoid issues with callback order
@@ -188,9 +191,9 @@ export function useGenerationJobs({ projectId, onJobComplete, onJobFailed, autoR
     };
   }, [projectId, checkAndRetryMissingImages]);
 
-  // Fallback polling when realtime doesn't work
+  // Fallback polling when realtime doesn't work (also primary tracking for standalone mode)
   useEffect(() => {
-    if (!projectId || activeJobs.length === 0) return;
+    if ((!projectId && !standalone) || activeJobs.length === 0) return;
 
     console.log('Starting polling fallback for', activeJobs.length, 'active jobs:', activeJobs.map(j => j.id));
 
@@ -261,10 +264,11 @@ export function useGenerationJobs({ projectId, onJobComplete, onJobFailed, autoR
       console.log('Stopping polling fallback');
       clearInterval(pollInterval);
     };
-  }, [projectId, activeJobs.length]); // Only depend on length to avoid infinite re-renders
+  }, [projectId, standalone, activeJobs.length]); // Only depend on length to avoid infinite re-renders
 
   const fetchActiveJobs = useCallback(async () => {
-    if (!projectId) return;
+    // Skip fetch in standalone mode (no project to fetch from)
+    if (standalone || !projectId) return;
 
     try {
       const { data, error } = await supabase
@@ -284,15 +288,16 @@ export function useGenerationJobs({ projectId, onJobComplete, onJobFailed, autoR
     } catch (error) {
       console.error('Error fetching active jobs:', error);
     }
-  }, [projectId]);
+  }, [projectId, standalone]);
   const startJob = useCallback(async (
     jobType: JobType, 
     metadata: Record<string, any> = {},
     overrideProjectId?: string
   ): Promise<{ jobId: string; total: number } | null> => {
     const targetProjectId = overrideProjectId || projectId;
+    const isStandaloneJob = metadata.standalone === true;
     
-    if (!targetProjectId) {
+    if (!targetProjectId && !isStandaloneJob) {
       toast.error("Aucun projet sélectionné");
       return null;
     }
@@ -320,7 +325,7 @@ export function useGenerationJobs({ projectId, onJobComplete, onJobFailed, autoR
       // Immediately add the job to activeJobs so polling can start
       const newJob: GenerationJob = {
         id: data.jobId,
-        project_id: targetProjectId,
+        project_id: isStandaloneJob ? null : targetProjectId,
         user_id: '',
         job_type: jobType,
         status: 'pending',
@@ -333,7 +338,7 @@ export function useGenerationJobs({ projectId, onJobComplete, onJobFailed, autoR
         completed_at: null
       };
       
-      console.log('Adding new job to activeJobs:', newJob.id, newJob.job_type);
+      console.log('Adding new job to activeJobs:', newJob.id, newJob.job_type, 'standalone:', isStandaloneJob);
       
       // Force immediate state update with functional update
       setActiveJobs(prev => {
