@@ -1769,8 +1769,8 @@ const Index = () => {
                   </Card>
                 )}
 
-                {/* CTA when transcription is done but no scenes yet */}
-                {transcriptData && scenes.length === 0 && (
+                {/* CTA when transcription is done but no scenes AND no prompts yet */}
+                {transcriptData && scenes.length === 0 && generatedPrompts.length === 0 && (
                   <Card className="p-6 border-2 border-primary/50 bg-primary/5 mb-6">
                     <div className="flex items-start gap-4">
                       <div className="rounded-full bg-primary/10 p-3">
@@ -1811,7 +1811,7 @@ const Index = () => {
                       <div>{range1End}-{range2End}s: {sceneDuration1to3}s par scène</div>
                       <div>{range2End}s+: {sceneDuration3plus}s par scène</div>
                     </div>
-                    {!scenes.length && (
+                    {!scenes.length && generatedPrompts.length === 0 && (
                       <Button
                         onClick={handleGenerateScenesClick}
                         disabled={!transcriptData || isGeneratingScenes}
