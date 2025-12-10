@@ -377,12 +377,12 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
         } else {
           console.log(`Created retry job ${retryJob.id} for ${failedCount} failed images`);
           
-          // Invoke start-generation-job to process the retry
+          // Invoke start-generation-job to process the retry with proper error handling
+          const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+          const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+          
           try {
-            const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-            const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-            
-            await fetch(`${supabaseUrl}/functions/v1/start-generation-job`, {
+            const response = await fetch(`${supabaseUrl}/functions/v1/start-generation-job`, {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
@@ -398,9 +398,33 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
                 useWebhook: true
               })
             });
-            console.log("Triggered retry job processing");
+            
+            if (!response.ok) {
+              const errorText = await response.text();
+              console.error(`Retry job trigger failed with status ${response.status}:`, errorText);
+              
+              // Mark retry job as failed so it can be retried manually
+              await adminClient
+                .from('generation_jobs')
+                .update({
+                  status: 'failed',
+                  error_message: `Failed to start retry: ${errorText.substring(0, 200)}`
+                })
+                .eq('id', retryJob.id);
+            } else {
+              console.log("Triggered retry job processing successfully");
+            }
           } catch (fetchError) {
             console.error("Error triggering retry job:", fetchError);
+            
+            // Mark retry job as failed so it can be retried manually
+            await adminClient
+              .from('generation_jobs')
+              .update({
+                status: 'failed',
+                error_message: `Network error starting retry: ${fetchError instanceof Error ? fetchError.message : 'Unknown'}`
+              })
+              .eq('id', retryJob.id);
           }
         }
       } else {
