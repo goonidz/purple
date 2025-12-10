@@ -19,6 +19,7 @@ interface ExportOptions {
   width?: number;
   height?: number;
   audioUrl?: string;
+  basePath?: string; // Absolute path to export folder for DaVinci/Premiere compatibility
 }
 
 export function formatTimecode(seconds: number, framerate: number = 25): string {
@@ -36,7 +37,17 @@ export function generatePremiereXML(
   prompts: GeneratedPrompt[],
   options: ExportOptions
 ): string {
-  const { projectName, framerate = 25, width = 1920, height = 1080, mode, audioUrl } = options;
+  const { projectName, framerate = 25, width = 1920, height = 1080, mode, audioUrl, basePath } = options;
+  
+  // Build absolute file path if basePath is provided
+  const getMediaPath = (filename: string) => {
+    if (basePath) {
+      // Use file:// protocol with absolute path for DaVinci/Premiere
+      const cleanBasePath = basePath.replace(/\/$/, ''); // Remove trailing slash
+      return `file://${cleanBasePath}/media/${filename}`;
+    }
+    return `media/${filename}`;
+  };
   
   const clipItems = prompts.map((prompt, index) => {
     // First image always starts at frame 0, others use leur timecode réel
@@ -51,7 +62,7 @@ export function generatePremiereXML(
     const duration = endFrame - startFrame;
     
     const filename = `clip_${(index + 1).toString().padStart(3, '0')}_img.jpg`;
-    const imagePath = `media/${filename}`;
+    const imagePath = getMediaPath(filename);
     
     return `      <clipitem id="clipitem-${index + 1}">
         <name>Scene ${index + 1}</name>
@@ -118,7 +129,7 @@ export function generatePremiereXML(
                 <out>${totalDurationFrames}</out>
                 <file id="audio-file-1">
                   <name>audio.mp3</name>
-                  <pathurl>media/audio.mp3</pathurl>
+                  <pathurl>${getMediaPath('audio.mp3')}</pathurl>
                   <duration>${totalDurationFrames}</duration>
                   <samplerate>48000</samplerate>
                   <channelcount>2</channelcount>

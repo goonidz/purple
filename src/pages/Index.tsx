@@ -131,6 +131,7 @@ const Index = () => {
   const [exportFormat, setExportFormat] = useState<ExportFormat>("premiere-xml");
   const [exportMode, setExportMode] = useState<ExportMode>("with-images");
   const [exportFramerate, setExportFramerate] = useState<number>(25);
+  const [exportBasePath, setExportBasePath] = useState<string>("");
   const [isExporting, setIsExporting] = useState(false);
   const [audioUrl, setAudioUrl] = useState<string>("");
   const [audioFile, setAudioFile] = useState<File | null>(null);
@@ -1268,6 +1269,12 @@ const Index = () => {
     setIsExporting(true);
 
     try {
+      // Build basePath from user input - construct full path including project name folder
+      const sanitizedProjectName = (projectName || "projet_sans_nom").replace(/[/\\?%*:|"<>]/g, '_');
+      const fullBasePath = exportBasePath 
+        ? `${exportBasePath.replace(/\/$/, '')}/${sanitizedProjectName}_premiere_with_images`
+        : undefined;
+      
       const options = {
         format: exportFormat,
         mode: exportMode,
@@ -1275,7 +1282,8 @@ const Index = () => {
         framerate: exportFramerate,
         width: imageWidth,
         height: imageHeight,
-        audioUrl: audioUrl || undefined
+        audioUrl: audioUrl || undefined,
+        basePath: fullBasePath
       };
 
       console.log("Export options:", options);
@@ -2952,17 +2960,27 @@ Return ONLY the prompt text, no JSON, no title, just the optimized prompt in ENG
                     </SelectContent>
                   </Select>
                 </div>
-              </div>
 
-              {exportMode === "with-images" && (
-                <div className="rounded-lg bg-muted/50 p-4 text-sm text-muted-foreground border border-border/50">
-                  <p className="font-medium mb-1">ℹ️ À l'import dans votre logiciel de montage</p>
-                  <p>
-                    Il sera nécessaire de sélectionner manuellement le dossier <code className="px-1 py-0.5 bg-background rounded text-xs">images/</code> lors de l'import. 
-                    C'est normal que le logiciel ne trouve pas automatiquement les images.
-                  </p>
-                </div>
-              )}
+                {exportMode === "with-images" && (
+                  <div className="space-y-3 pt-2 border-t">
+                    <Label className="text-base font-semibold">Chemin du dossier de destination</Label>
+                    <p className="text-xs text-muted-foreground mb-2">
+                      Entrez le chemin absolu où vous allez extraire le ZIP. DaVinci/Premiere trouvera automatiquement les médias.
+                    </p>
+                    <Input
+                      value={exportBasePath}
+                      onChange={(e) => setExportBasePath(e.target.value)}
+                      placeholder="/Users/VotreNom/Downloads"
+                      className="font-mono text-sm"
+                    />
+                    {exportBasePath && (
+                      <p className="text-xs text-muted-foreground">
+                        Chemin final: <code className="px-1 py-0.5 bg-background rounded">{exportBasePath.replace(/\/$/, '')}/{(projectName || "projet_sans_nom").replace(/[/\\?%*:|"<>]/g, '_')}_premiere_with_images/</code>
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
 
               <div className="flex justify-end gap-3 pt-4 border-t">
                 <Button variant="outline" onClick={() => setExportDialogOpen(false)}>
