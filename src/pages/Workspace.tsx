@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import type { User } from "@supabase/supabase-js";
-import { Loader2, Settings, Download, Video, Image as ImageIcon, Sparkles, Pencil, MonitorPlay, Trash2, Hash } from "lucide-react";
+import { Loader2, Settings, Download, Video, Image as ImageIcon, Sparkles, Pencil, MonitorPlay, Trash2, Hash, FileText } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -54,6 +54,7 @@ const Workspace = () => {
   const [activeTab, setActiveTab] = useState<string>("video");
   const [isEditingName, setIsEditingName] = useState(false);
   const [editedName, setEditedName] = useState("");
+  const [transcriptText, setTranscriptText] = useState<string>("");
 
   // Check authentication
   useEffect(() => {
@@ -151,6 +152,15 @@ const Workspace = () => {
       if (data.image_width) setImageWidth(data.image_width);
       if (data.image_height) setImageHeight(data.image_height);
       if (data.aspect_ratio) setAspectRatio(data.aspect_ratio);
+      
+      // Extract transcript text from transcript_json
+      if (data.transcript_json) {
+        const transcriptData = data.transcript_json as { segments?: Array<{ text: string }> };
+        if (transcriptData.segments) {
+          const fullText = transcriptData.segments.map(s => s.text).join(' ');
+          setTranscriptText(fullText);
+        }
+      }
     } catch (error: any) {
       console.error("Error loading project:", error);
       toast.error("Erreur lors du chargement du projet");
@@ -529,6 +539,10 @@ const Workspace = () => {
                 <Hash className="h-4 w-4" />
                 Tags
               </TabsTrigger>
+              <TabsTrigger value="transcript" className="flex items-center gap-2">
+                <FileText className="h-4 w-4" />
+                Transcription
+              </TabsTrigger>
             </TabsList>
           </div>
 
@@ -581,6 +595,23 @@ const Workspace = () => {
                   videoScript={generatedPrompts.map(p => p.text).join(" ")}
                   videoTitle={projectName}
                 />
+              </div>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="transcript" className="flex-1 overflow-auto m-0">
+            <div className="p-6">
+              <div className="max-w-3xl mx-auto">
+                <h2 className="text-xl font-semibold mb-4">Transcription</h2>
+                {transcriptText ? (
+                  <div className="bg-muted/50 rounded-lg p-6 border">
+                    <p className="text-foreground leading-relaxed whitespace-pre-wrap">
+                      {transcriptText}
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-muted-foreground">Aucune transcription disponible</p>
+                )}
               </div>
             </div>
           </TabsContent>
