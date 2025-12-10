@@ -88,6 +88,30 @@ export type Database = {
         }
         Relationships: []
       }
+      generated_tags: {
+        Row: {
+          created_at: string
+          id: string
+          project_id: string
+          tags: string[]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          project_id: string
+          tags?: string[]
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          project_id?: string
+          tags?: string[]
+          user_id?: string
+        }
+        Relationships: []
+      }
       generated_thumbnails: {
         Row: {
           created_at: string

@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import type { User } from "@supabase/supabase-js";
-import { Loader2, Settings, Download, Video, Image as ImageIcon, Sparkles, Pencil, MonitorPlay, Trash2 } from "lucide-react";
+import { Loader2, Settings, Download, Video, Image as ImageIcon, Sparkles, Pencil, MonitorPlay, Trash2, Hash } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { TimelineBar } from "@/components/TimelineBar";
 import { ThumbnailGenerator } from "@/components/ThumbnailGenerator";
 import { YouTubeTester } from "@/components/YouTubeTester";
+import { TagGenerator } from "@/components/TagGenerator";
 import { toast } from "sonner";
 import { exportToVideo } from "@/lib/videoExportHelpers";
 
@@ -524,6 +525,10 @@ const Workspace = () => {
                 <MonitorPlay className="h-4 w-4" />
                 Test
               </TabsTrigger>
+              <TabsTrigger value="tags" className="flex items-center gap-2">
+                <Hash className="h-4 w-4" />
+                Tags
+              </TabsTrigger>
             </TabsList>
           </div>
 
@@ -562,6 +567,18 @@ const Workspace = () => {
               <div className="max-w-6xl mx-auto">
                 <YouTubeTester
                   projectId={currentProjectId || ""}
+                  videoTitle={projectName}
+                />
+              </div>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="tags" className="flex-1 overflow-auto m-0">
+            <div className="p-6">
+              <div className="max-w-3xl mx-auto">
+                <TagGenerator
+                  projectId={currentProjectId || ""}
+                  videoScript={generatedPrompts.map(p => p.text).join(" ")}
                   videoTitle={projectName}
                 />
               </div>
