@@ -47,31 +47,25 @@ serve(async (req) => {
       throw new Error('LOVABLE_API_KEY not configured');
     }
 
-    const systemPrompt = `You are a YouTube description generation expert.
+    const systemPrompt = `Tu génères des descriptions YouTube ultra-courtes et naturelles.
 
-Your task is to generate 1 video description that:
-- MUST be written in the EXACT SAME LANGUAGE as the video script provided (if script is in English, write in English; if script is in French, write in French; etc.)
-- Is written in first person (I/we) as if the author is speaking directly
-- Factually and clearly describes the video content
-- Stays concise (150-250 characters recommended)
-- Uses a professional and informative tone, not sensational
-- Uses NO emojis
-- Avoids superlatives and exaggeration
-- Captures the essence of the content directly
+Ta tâche: écrire UNE SEULE PHRASE qui résume la vidéo de façon humaine et décontractée.
 
-CRITICAL: First detect the language of the script, then write your ENTIRE response in that EXACT language.`;
+Règles:
+- UNE SEULE PHRASE, pas plus
+- Écris dans la MÊME LANGUE que le script (français si script français, anglais si script anglais)
+- Ton conversationnel, comme si tu parlais à un ami
+- Pas d'emojis
+- Pas de formules marketing ou sensationnelles
+- Direct et authentique`;
 
-    const userPrompt = `STEP 1: Detect the language of the script below.
-STEP 2: Generate 1 factual YouTube description in that EXACT SAME language.
-
-If the script is in English, your description MUST be in English.
-If the script is in French, your description MUST be in French.
+    const userPrompt = `Écris UNE SEULE PHRASE naturelle et humaine qui résume cette vidéo. Même langue que le script.
 
 Script: ${videoScript}
 
-Return ONLY the JSON with the description in the SAME language as the script:
+Retourne UNIQUEMENT ce JSON:
 {
-  "description": "factual description in the script's language"
+  "description": "ta phrase ici"
 }`;
 
     console.log('Calling Lovable AI Gateway for description generation...');
