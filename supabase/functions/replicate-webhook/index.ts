@@ -377,52 +377,60 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
         } else {
           console.log(`Created retry job ${retryJob.id} for ${failedCount} failed images`);
           
-          // Invoke start-generation-job to process the retry with proper error handling
+          // Invoke start-generation-job with automatic retry on failure
           const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
           const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
           
-          try {
-            const response = await fetch(`${supabaseUrl}/functions/v1/start-generation-job`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${serviceRoleKey}`
-              },
-              body: JSON.stringify({
-                jobId: retryJob.id,
-                projectId: job.project_id,
-                userId: job.user_id,
-                jobType: 'images',
-                skipExisting: true,
-                semiAutoMode: true,
-                useWebhook: true
-              })
-            });
-            
-            if (!response.ok) {
-              const errorText = await response.text();
-              console.error(`Retry job trigger failed with status ${response.status}:`, errorText);
-              
-              // Mark retry job as failed so it can be retried manually
-              await adminClient
-                .from('generation_jobs')
-                .update({
-                  status: 'failed',
-                  error_message: `Failed to start retry: ${errorText.substring(0, 200)}`
-                })
-                .eq('id', retryJob.id);
-            } else {
-              console.log("Triggered retry job processing successfully");
+          const MAX_START_RETRIES = 5;
+          const START_RETRY_DELAYS = [5000, 10000, 20000, 30000, 60000]; // 5s, 10s, 20s, 30s, 60s
+          
+          let startSuccess = false;
+          
+          for (let attempt = 0; attempt < MAX_START_RETRIES && !startSuccess; attempt++) {
+            if (attempt > 0) {
+              const delay = START_RETRY_DELAYS[attempt - 1] || 60000;
+              console.log(`Retry job start attempt ${attempt + 1}/${MAX_START_RETRIES}, waiting ${delay/1000}s...`);
+              await new Promise(resolve => setTimeout(resolve, delay));
             }
-          } catch (fetchError) {
-            console.error("Error triggering retry job:", fetchError);
             
-            // Mark retry job as failed so it can be retried manually
+            try {
+              const response = await fetch(`${supabaseUrl}/functions/v1/start-generation-job`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${serviceRoleKey}`
+                },
+                body: JSON.stringify({
+                  jobId: retryJob.id,
+                  projectId: job.project_id,
+                  userId: job.user_id,
+                  jobType: 'images',
+                  skipExisting: true,
+                  semiAutoMode: true,
+                  useWebhook: true
+                })
+              });
+              
+              if (response.ok) {
+                console.log(`Triggered retry job processing successfully on attempt ${attempt + 1}`);
+                startSuccess = true;
+              } else {
+                const errorText = await response.text();
+                console.error(`Retry job trigger attempt ${attempt + 1} failed with status ${response.status}:`, errorText);
+              }
+            } catch (fetchError) {
+              console.error(`Retry job trigger attempt ${attempt + 1} network error:`, fetchError);
+            }
+          }
+          
+          if (!startSuccess) {
+            console.error(`Failed to start retry job after ${MAX_START_RETRIES} attempts`);
+            // Mark retry job as failed only after all attempts exhausted
             await adminClient
               .from('generation_jobs')
               .update({
                 status: 'failed',
-                error_message: `Network error starting retry: ${fetchError instanceof Error ? fetchError.message : 'Unknown'}`
+                error_message: `Failed to start after ${MAX_START_RETRIES} attempts - please retry manually`
               })
               .eq('id', retryJob.id);
           }
