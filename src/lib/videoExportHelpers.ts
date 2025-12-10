@@ -39,6 +39,15 @@ export function generatePremiereXML(
 ): string {
   const { projectName, framerate = 25, width = 1920, height = 1080, mode, audioUrl, basePath } = options;
   
+  // Filter out null/undefined prompts to prevent errors
+  const validPrompts = prompts.filter((p): p is GeneratedPrompt => 
+    p !== null && p !== undefined && typeof p.startTime === 'number'
+  );
+  
+  if (validPrompts.length === 0) {
+    throw new Error('No valid scenes to export');
+  }
+  
   // Build absolute file path if basePath is provided
   const getMediaPath = (filename: string) => {
     if (basePath) {
@@ -49,12 +58,12 @@ export function generatePremiereXML(
     return `media/${filename}`;
   };
   
-  const clipItems = prompts.map((prompt, index) => {
+  const clipItems = validPrompts.map((prompt, index) => {
     // First image always starts at frame 0, others use leur timecode réel
     const startFrame = index === 0 ? 0 : Math.round(prompt.startTime * framerate);
     
     // For end frame: extend to the start of next scene, or use scene's end if last
-    const nextPrompt = prompts[index + 1];
+    const nextPrompt = validPrompts[index + 1];
     const endFrame = nextPrompt 
       ? Math.round(nextPrompt.startTime * framerate)
       : Math.round(prompt.endTime * framerate);
@@ -103,7 +112,7 @@ export function generatePremiereXML(
   }).join('\n');
 
   // Calculate total sequence duration from the last scene's end time
-  const lastEndTime = Math.max(...prompts.map(p => p.endTime));
+  const lastEndTime = Math.max(...validPrompts.map(p => p.endTime));
   const totalDurationFrames = Math.round(lastEndTime * framerate);
 
   // Generate audio track if audio is provided
