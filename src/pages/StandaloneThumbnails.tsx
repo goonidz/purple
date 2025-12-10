@@ -25,8 +25,8 @@ const StandaloneThumbnails = () => {
     checkAuth();
   }, [navigate]);
 
-  // Use a virtual project ID for standalone thumbnails
-  const virtualProjectId = "standalone-thumbnails";
+  // Use a unique virtual project ID for standalone thumbnails
+  const [virtualProjectId] = useState(() => `standalone-${crypto.randomUUID()}`);
 
   const handleStart = () => {
     if (videoTitle.trim() && videoScript.trim()) {
@@ -124,6 +124,7 @@ const StandaloneThumbnails = () => {
               projectId={virtualProjectId}
               videoScript={videoScript}
               videoTitle={videoTitle}
+              standalone={true}
             />
           </div>
         )}

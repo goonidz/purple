@@ -18,6 +18,7 @@ interface ThumbnailGeneratorProps {
   projectId: string;
   videoScript: string;
   videoTitle: string;
+  standalone?: boolean; // If true, no real project exists - standalone mode
 }
 
 interface ThumbnailPreset {
@@ -67,7 +68,7 @@ interface GeneratedThumbnailHistory {
   preset_name: string | null;
 }
 
-export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle }: ThumbnailGeneratorProps) => {
+export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standalone = false }: ThumbnailGeneratorProps) => {
   const [exampleUrls, setExampleUrls] = useState<string[]>([]);
   const [characterRefUrl, setCharacterRefUrl] = useState<string>("");
   const [generatedThumbnails, setGeneratedThumbnails] = useState<string[]>([]);
@@ -201,6 +202,12 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle }: Thumb
   };
 
   const loadThumbnailHistory = async () => {
+    // Skip history loading in standalone mode (no real project)
+    if (standalone) {
+      setThumbnailHistory([]);
+      return;
+    }
+    
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
@@ -426,7 +433,8 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle }: Thumb
         customPrompt: customPrompt !== DEFAULT_THUMBNAIL_PROMPT ? customPrompt : undefined,
         userIdea: userIdea.trim() || undefined,
         imageModel,
-        presetName
+        presetName,
+        standalone // Pass standalone flag to skip project lookup
       });
       
       toast.success("Génération démarrée ! Vous pouvez quitter cette page.");

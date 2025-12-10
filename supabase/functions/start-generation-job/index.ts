@@ -168,25 +168,33 @@ serve(async (req) => {
       }
     }
 
-    // Get project data to determine total items
-    const { data: project, error: projectError } = await adminClient
-      .from('projects')
-      .select('*')
-      .eq('id', projectId)
-      .single();
+    // Check if this is a standalone thumbnail generation (no real project)
+    const isStandalone = metadata.standalone === true && jobType === 'thumbnails';
+    
+    let project: any = null;
+    
+    // Only lookup project if not standalone
+    if (!isStandalone) {
+      const { data: projectData, error: projectError } = await adminClient
+        .from('projects')
+        .select('*')
+        .eq('id', projectId)
+        .single();
 
-    if (projectError || !project) {
-      return new Response(
-        JSON.stringify({ error: "Project not found" }),
-        { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      if (projectError || !projectData) {
+        return new Response(
+          JSON.stringify({ error: "Project not found" }),
+          { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      project = projectData;
     }
 
     // Calculate total based on job type
     let total = 0;
     if (jobType === 'prompts' || jobType === 'images') {
-      const scenes = (project.scenes as any[]) || [];
-      const prompts = (project.prompts as any[]) || [];
+      const scenes = (project?.scenes as any[]) || [];
+      const prompts = (project?.prompts as any[]) || [];
       
       if (jobType === 'prompts') {
         total = scenes.length;
@@ -199,7 +207,7 @@ serve(async (req) => {
     } else if (jobType === 'transcription') {
       total = 1; // Single transcription task
     } else if (jobType === 'test_images') {
-      const scenes = (project.scenes as any[]) || [];
+      const scenes = (project?.scenes as any[]) || [];
       total = Math.min(scenes.length, 2); // Test first 2 scenes
     } else if (jobType === 'single_prompt' || jobType === 'single_image') {
       total = 1; // Single item
