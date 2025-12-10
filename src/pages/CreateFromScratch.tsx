@@ -1484,15 +1484,29 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                   </div>
                 </div>
 
-                <Textarea
-                  value={generatedScript}
-                  onChange={(e) => {
-                    setGeneratedScript(e.target.value);
-                    setWordCount(e.target.value.split(/\s+/).filter(w => w).length);
-                  }}
-                  className="min-h-[300px] font-mono text-sm"
-                  placeholder="Le script apparaîtra ici..."
-                />
+                {isGeneratingScript ? (
+                  <div className="min-h-[300px] border rounded-md flex flex-col items-center justify-center gap-4 bg-muted/30">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                    <div className="text-center space-y-2">
+                      <p className="text-sm font-medium">{generationMessage}</p>
+                      <p className="text-xs text-muted-foreground">{Math.round(generationProgress)}%</p>
+                    </div>
+                    <Progress value={generationProgress} className="w-48" />
+                    <p className="text-xs text-muted-foreground">
+                      Vous pouvez quitter cette page, le script sera sauvegardé.
+                    </p>
+                  </div>
+                ) : (
+                  <Textarea
+                    value={generatedScript}
+                    onChange={(e) => {
+                      setGeneratedScript(e.target.value);
+                      setWordCount(e.target.value.split(/\s+/).filter(w => w).length);
+                    }}
+                    className="min-h-[300px] font-mono text-sm"
+                    placeholder="Le script apparaîtra ici..."
+                  />
+                )}
 
                 {/* Audio Section */}
                 <div className="space-y-4 border-t pt-6">
