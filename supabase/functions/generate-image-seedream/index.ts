@@ -13,7 +13,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // Get user from auth header
+    // Get auth header
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) {
       return new Response(JSON.stringify({ error: 'No authorization header' }), {
@@ -22,20 +22,40 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Initialize Supabase client
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-      { global: { headers: { Authorization: authHeader } } }
-    );
+    // Check if this is a service role key (internal call)
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+    const isServiceRoleCall = authHeader === `Bearer ${serviceRoleKey}`;
+    
+    let userId: string;
+    
+    if (isServiceRoleCall) {
+      // Internal call - get userId from request body
+      const bodyClone = req.clone();
+      const bodyData = await bodyClone.json();
+      if (!bodyData.userId) {
+        return new Response(JSON.stringify({ error: 'userId required for internal calls' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      userId = bodyData.userId;
+      console.log(`Internal call for user ${userId}`);
+    } else {
+      // Normal user call - verify user authentication
+      const supabase = createClient(
+        Deno.env.get('SUPABASE_URL') ?? '',
+        Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+        { global: { headers: { Authorization: authHeader } } }
+      );
 
-    // Get user
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
-    if (userError || !user) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError || !user) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      userId = user.id;
     }
 
     // Get user's API key from Supabase Vault using service role
@@ -46,7 +66,7 @@ Deno.serve(async (req) => {
 
     const { data: apiKey, error: apiKeyError } = await supabaseService
       .rpc('get_user_api_key_for_service', {
-        target_user_id: user.id,
+        target_user_id: userId,
         key_name: 'replicate'
       });
 
@@ -262,7 +282,7 @@ Deno.serve(async (req) => {
         const arrayBuffer = await imageBlob.arrayBuffer();
         const uint8Array = new Uint8Array(arrayBuffer);
         
-        const fileName = `${user.id}/${body.storageFolder || 'generated'}/${Date.now()}_${body.filePrefix || 'image'}.jpg`;
+        const fileName = `${userId}/${body.storageFolder || 'generated'}/${Date.now()}_${body.filePrefix || 'image'}.jpg`;
         
         const { error: uploadError } = await supabaseService.storage
           .from("generated-images")

@@ -1708,11 +1708,15 @@ async function processThumbnailsJob(
 
   console.log(`Starting thumbnails generation for project ${projectId}, webhook mode: ${useWebhook}`);
 
+  // Use service role key for internal calls
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+  const internalAuthHeader = `Bearer ${serviceRoleKey}`;
+
   // Step 1: Generate prompts with Gemini
   const promptsResponse = await fetch(`${supabaseUrl}/functions/v1/generate-thumbnail-prompts`, {
     method: 'POST',
     headers: {
-      'Authorization': authHeader,
+      'Authorization': internalAuthHeader,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
@@ -1781,14 +1785,14 @@ async function processThumbnailsJob(
         requestBody.image_urls = allImageRefs;
       }
 
-      // Start async generation
+      // Start async generation with service role key and userId
       const startResponse = await fetch(`${supabaseUrl}/functions/v1/generate-image-seedream`, {
         method: 'POST',
         headers: {
-          'Authorization': authHeader,
+          'Authorization': internalAuthHeader,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(requestBody),
+        body: JSON.stringify({ ...requestBody, userId }),
       });
 
       if (!startResponse.ok) {
