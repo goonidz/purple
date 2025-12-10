@@ -1582,9 +1582,13 @@ const Index = () => {
                   <MonitorPlay className="h-4 w-4" />
                   Test
                 </TabsTrigger>
-                <TabsTrigger value="tags" className="flex items-center gap-2">
+              <TabsTrigger value="tags" className="flex items-center gap-2">
                   <Hash className="h-4 w-4" />
                   Tags
+                </TabsTrigger>
+                <TabsTrigger value="transcript" className="flex items-center gap-2">
+                  <Type className="h-4 w-4" />
+                  Transcription
                 </TabsTrigger>
               </TabsList>
             </div>
@@ -2375,6 +2379,21 @@ const Index = () => {
                     videoScript={generatedPrompts.filter(p => p).map(p => p.text).join(" ")}
                     videoTitle={projectName}
                   />
+                </div>
+              </TabsContent>
+
+              <TabsContent value="transcript" className="m-0">
+                <div className="max-w-3xl mx-auto">
+                  <h2 className="text-xl font-semibold mb-4">Transcription</h2>
+                  {transcriptData && (transcriptData as { segments?: Array<{ text: string }> }).segments ? (
+                    <div className="bg-muted/50 rounded-lg p-6 border">
+                      <p className="text-foreground leading-relaxed whitespace-pre-wrap">
+                        {((transcriptData as { segments?: Array<{ text: string }> }).segments || []).map(s => s.text).join(' ')}
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="text-muted-foreground">Aucune transcription disponible</p>
+                  )}
                 </div>
               </TabsContent>
             </Tabs>
