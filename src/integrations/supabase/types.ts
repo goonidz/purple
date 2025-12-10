@@ -546,6 +546,7 @@ export type Database = {
         Row: {
           created_at: string | null
           eleven_labs_api_key: string | null
+          export_base_path: string | null
           id: string
           replicate_api_key: string | null
           updated_at: string | null
@@ -554,6 +555,7 @@ export type Database = {
         Insert: {
           created_at?: string | null
           eleven_labs_api_key?: string | null
+          export_base_path?: string | null
           id?: string
           replicate_api_key?: string | null
           updated_at?: string | null
@@ -562,6 +564,7 @@ export type Database = {
         Update: {
           created_at?: string | null
           eleven_labs_api_key?: string | null
+          export_base_path?: string | null
           id?: string
           replicate_api_key?: string | null
           updated_at?: string | null
