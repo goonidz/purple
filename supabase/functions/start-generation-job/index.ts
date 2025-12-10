@@ -51,7 +51,9 @@ serve(async (req) => {
     const body = await req.json();
     const { projectId, jobType, metadata = {}, jobId: existingJobId } = body as JobRequest & { jobId?: string };
 
-    if (!projectId || !jobType) {
+    // Allow null projectId for standalone jobs (like standalone thumbnails)
+    const isStandaloneRequest = metadata?.standalone === true;
+    if ((!projectId && !isStandaloneRequest) || !jobType) {
       return new Response(
         JSON.stringify({ error: "projectId and jobType are required" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
