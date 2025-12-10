@@ -1875,14 +1875,14 @@ const Index = () => {
                   </Card>
                 </div>
 
-                {scenes.length > 0 && (
+                {(scenes.length > 0 || generatedPrompts.length > 0) && (
                   <Card className="p-6">
                     <div className="space-y-4">
                       {/* Header avec titre et boutons */}
                       <div className="space-y-3">
                         <div className="flex items-center justify-between">
                           <h2 className="text-lg font-semibold">
-                            Scènes générées ({scenes.length})
+                            Scènes générées ({scenes.length > 0 ? scenes.length : generatedPrompts.length})
                             {generatedPrompts.length > 0 && ` - ${generatedPrompts.length} prompts`}
                           </h2>
                           {generatedPrompts.filter(p => p && p.imageUrl).length > 0 && (
@@ -2117,20 +2117,31 @@ const Index = () => {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {scenes.map((scene, index) => {
-                            const prompt = generatedPrompts.find((p, i) => i === index);
+                          {/* Use generatedPrompts as source when scenes is empty (legacy projects) */}
+                          {(scenes.length > 0 ? scenes : generatedPrompts).map((item, index) => {
+                            // If iterating over scenes, get matching prompt. If iterating over generatedPrompts, item IS the prompt
+                            const scene = scenes.length > 0 ? item as Scene : null;
+                            const prompt = scenes.length > 0 
+                              ? generatedPrompts.find((p, i) => i === index)
+                              : item as GeneratedPrompt;
+                            
+                            // Get timing data from scene or prompt
+                            const startTime = scene?.startTime ?? prompt?.startTime ?? 0;
+                            const endTime = scene?.endTime ?? prompt?.endTime ?? 0;
+                            const text = scene?.text ?? prompt?.text ?? '';
+                            
                             return (
                               <TableRow key={index}>
                                 <TableCell className="font-semibold">{index + 1}</TableCell>
                                 <TableCell className="text-xs whitespace-nowrap">
-                                  {formatTimecode(scene.startTime)} - {formatTimecode(scene.endTime)}
+                                  {formatTimecode(startTime)} - {formatTimecode(endTime)}
                                 </TableCell>
                                 <TableCell className="text-xs whitespace-nowrap">
-                                  {(scene.endTime - scene.startTime).toFixed(1)}s
+                                  {(endTime - startTime).toFixed(1)}s
                                 </TableCell>
                                 <TableCell className="max-w-xs">
                                   <div className="group relative">
-                                    <p className="text-sm line-clamp-3">{scene.text}</p>
+                                    <p className="text-sm line-clamp-3">{text}</p>
                                     <div className={`absolute top-0 right-0 flex gap-1 transition-opacity rounded p-1 ${
                                       editingSceneIndex === index
                                         ? 'opacity-100 bg-background/80 backdrop-blur-sm'
