@@ -52,26 +52,31 @@ serve(async (req) => {
       throw new Error("LOVABLE_API_KEY is not configured");
     }
 
-    const systemPrompt = `Tu es un expert en SEO YouTube. Génère exactement 10 mots-clés/tags pertinents pour cette vidéo.
+    const systemPrompt = `You are a YouTube SEO expert. Generate exactly 10 keyword tags for this video.
 
-RÈGLES IMPORTANTES:
-1. Génère EXACTEMENT 10 tags
-2. Les tags doivent être des MOTS-CLÉS GÉNÉRAUX (1-3 mots maximum), PAS des phrases de recherche complètes
-3. Génère les tags DANS LA MÊME LANGUE que le script de la vidéo (si le script est en anglais, tags en anglais; si en français, tags en français, etc.)
-4. Privilégie des termes larges et génériques qui couvrent le sujet
-5. Inclus le sujet principal et des termes connexes populaires
-6. Évite les tags trop spécifiques ou trop longs
-7. Pense aux catégories et thèmes généraux
+CRITICAL LANGUAGE RULE:
+- First, detect the language of the video script provided
+- Generate ALL tags in THE SAME LANGUAGE as the video script
+- If the script is in English → tags MUST be in English
+- If the script is in French → tags MUST be in French
+- If the script is in Spanish → tags MUST be in Spanish
+- etc.
 
-EXEMPLES DE BONS TAGS:
-- "investing", "ETF", "finance", "stock market", "money"
-- "investissement", "bourse", "argent", "épargne", "finances"
+TAG FORMAT RULES:
+1. Generate EXACTLY 10 tags
+2. Tags must be SHORT GENERAL KEYWORDS (1-3 words maximum)
+3. NO complete search phrases or sentences
+4. Focus on broad, popular terms related to the topic
+5. Include the main subject and related popular terms
 
-EXEMPLES DE MAUVAIS TAGS (trop spécifiques):
+GOOD EXAMPLES (for English video):
+- "investing", "ETF", "finance", "stock market", "money", "passive income"
+
+BAD EXAMPLES (too specific/too long):
 - "how to invest in ETF 2024", "best ETF for beginners to buy"
 
-Réponds UNIQUEMENT avec un tableau JSON de 10 strings, sans explication.
-Exemple: ["tag1", "tag2", "tag3", ...]`;
+Respond ONLY with a JSON array of 10 strings, no explanation.
+Example: ["tag1", "tag2", "tag3", ...]`;
 
     const userContent = `TITRE DE LA VIDÉO: ${videoTitle || "Sans titre"}
 
