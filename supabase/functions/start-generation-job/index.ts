@@ -859,14 +859,13 @@ async function processImagesJob(
   // Build webhook URL
   const webhookUrl = `${supabaseUrl}/functions/v1/replicate-webhook`;
 
-  // Batch settings to avoid "Queue is full" errors from Replicate
-  // IMPORTANT: These are conservative settings to prevent queue overflow when multiple projects run simultaneously
-  const BATCH_SIZE = 3; // Send only 3 images at a time (reduced from 5)
-  const DELAY_BETWEEN_BATCHES_MS = 5000; // 5 seconds between batches (increased from 3)
-  const DELAY_BETWEEN_REQUESTS_MS = 500; // 500ms between individual requests in a batch (increased from 200)
-  const MAX_CONCURRENT_PREDICTIONS = 15; // Maximum pending predictions across all projects
+  // Batch settings - balanced for speed vs reliability
+  // When multiple projects run in parallel, this prevents overwhelming Replicate
+  const BATCH_SIZE = 4; // Send 4 images at a time (was 5)
+  const DELAY_BETWEEN_BATCHES_MS = 4000; // 4 seconds between batches (was 3)
+  const DELAY_BETWEEN_REQUESTS_MS = 300; // 300ms between individual requests (was 200)
   const MAX_RETRIES = 3; // Maximum retries for queue full errors
-  const BASE_RETRY_DELAY_MS = 15000; // Base delay for exponential backoff (15 seconds)
+  const BASE_RETRY_DELAY_MS = 10000; // Base delay for exponential backoff (10 seconds)
 
   let startedCount = 0;
   let failedCount = 0;
@@ -874,37 +873,8 @@ async function processImagesJob(
   // Helper function to delay
   const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
   
-  // Check global pending predictions count to avoid overwhelming Replicate
-  const checkGlobalQueueCapacity = async (): Promise<boolean> => {
-    const { count } = await adminClient
-      .from('pending_predictions')
-      .select('*', { count: 'exact', head: true })
-      .eq('status', 'pending');
-    
-    return (count || 0) < MAX_CONCURRENT_PREDICTIONS;
-  };
-  
-  // Wait for queue capacity with timeout
-  const waitForQueueCapacity = async (maxWaitMs: number = 60000): Promise<boolean> => {
-    const startTime = Date.now();
-    while (Date.now() - startTime < maxWaitMs) {
-      if (await checkGlobalQueueCapacity()) {
-        return true;
-      }
-      console.log(`Queue at capacity, waiting 5s... (${Math.round((Date.now() - startTime) / 1000)}s elapsed)`);
-      await delay(5000);
-    }
-    return false;
-  };
-  
   // Process in batches
   for (let batchStart = 0; batchStart < promptsToProcess.length; batchStart += BATCH_SIZE) {
-    // Check global queue capacity before starting a new batch
-    const hasCapacity = await waitForQueueCapacity(120000); // Wait up to 2 minutes
-    if (!hasCapacity) {
-      console.log(`Queue still at capacity after 2 minutes, proceeding anyway with longer delays...`);
-    }
-    
     const batch = promptsToProcess.slice(batchStart, batchStart + BATCH_SIZE);
     console.log(`Processing batch ${Math.floor(batchStart / BATCH_SIZE) + 1}/${Math.ceil(promptsToProcess.length / BATCH_SIZE)} (${batch.length} images)`);
     
