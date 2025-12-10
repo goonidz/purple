@@ -37,7 +37,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Upload, X, Loader2, Image as ImageIcon, RefreshCw, Settings, Download, User as UserIcon, Video, Type, Sparkles, Check, Copy, FolderOpen, Pencil, AlertCircle, FileText, ArrowUp, MonitorPlay, Cloud, Trash2 } from "lucide-react";
+import { Upload, X, Loader2, Image as ImageIcon, RefreshCw, Settings, Download, User as UserIcon, Video, Type, Sparkles, Check, Copy, FolderOpen, Pencil, AlertCircle, FileText, ArrowUp, MonitorPlay, Cloud, Trash2, Hash } from "lucide-react";
 import { ProjectConfigurationModal } from "@/components/ProjectConfigurationModal";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -58,6 +58,7 @@ import { PresetManager } from "@/components/PresetManager";
 import { ThumbnailGenerator } from "@/components/ThumbnailGenerator";
 import { TitleGenerator } from "@/components/TitleGenerator";
 import { DescriptionGenerator } from "@/components/DescriptionGenerator";
+import { TagGenerator } from "@/components/TagGenerator";
 import { YouTubeTester } from "@/components/YouTubeTester";
 import { DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -1575,6 +1576,10 @@ const Index = () => {
                   <MonitorPlay className="h-4 w-4" />
                   Test
                 </TabsTrigger>
+                <TabsTrigger value="tags" className="flex items-center gap-2">
+                  <Hash className="h-4 w-4" />
+                  Tags
+                </TabsTrigger>
               </TabsList>
             </div>
 
@@ -2341,6 +2346,16 @@ const Index = () => {
                 <div className="max-w-6xl mx-auto">
                   <YouTubeTester
                     projectId={currentProjectId || ""}
+                    videoTitle={projectName}
+                  />
+                </div>
+              </TabsContent>
+
+              <TabsContent value="tags" className="m-0">
+                <div className="max-w-3xl mx-auto">
+                  <TagGenerator
+                    projectId={currentProjectId || ""}
+                    videoScript={generatedPrompts.filter(p => p).map(p => p.text).join(" ")}
                     videoTitle={projectName}
                   />
                 </div>
