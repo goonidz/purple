@@ -1,6 +1,8 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
+// Declare EdgeRuntime for background task support
+declare const EdgeRuntime: { waitUntil: (promise: Promise<unknown>) => void };
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -377,55 +379,53 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
         } else {
           console.log(`Created retry job ${retryJob.id} for ${failedCount} failed images`);
           
-          // Invoke start-generation-job with automatic retry on failure
-          const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-          const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-          
-          const MAX_START_RETRIES = 5;
-          const START_RETRY_DELAYS = [5000, 10000, 20000, 30000, 60000]; // 5s, 10s, 20s, 30s, 60s
-          
-          let startSuccess = false;
-          
-          for (let attempt = 0; attempt < MAX_START_RETRIES && !startSuccess; attempt++) {
-            if (attempt > 0) {
-              const delay = START_RETRY_DELAYS[attempt - 1] || 60000;
-              console.log(`Retry job start attempt ${attempt + 1}/${MAX_START_RETRIES}, waiting ${delay/1000}s...`);
-              await new Promise(resolve => setTimeout(resolve, delay));
+          // Use EdgeRuntime.waitUntil to ensure retry starts even after webhook response
+          const startRetryJob = async () => {
+            const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+            const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+            
+            const MAX_START_RETRIES = 5;
+            const START_RETRY_DELAYS = [5000, 10000, 20000, 30000, 60000];
+            
+            for (let attempt = 0; attempt < MAX_START_RETRIES; attempt++) {
+              if (attempt > 0) {
+                const delay = START_RETRY_DELAYS[attempt - 1] || 60000;
+                console.log(`Retry job start attempt ${attempt + 1}/${MAX_START_RETRIES}, waiting ${delay/1000}s...`);
+                await new Promise(resolve => setTimeout(resolve, delay));
+              }
+              
+              try {
+                const response = await fetch(`${supabaseUrl}/functions/v1/start-generation-job`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${serviceRoleKey}`
+                  },
+                  body: JSON.stringify({
+                    jobId: retryJob.id,
+                    projectId: job.project_id,
+                    userId: job.user_id,
+                    jobType: 'images',
+                    skipExisting: true,
+                    semiAutoMode: true,
+                    useWebhook: true
+                  })
+                });
+                
+                if (response.ok) {
+                  console.log(`Triggered retry job processing successfully on attempt ${attempt + 1}`);
+                  return; // Success, exit
+                } else {
+                  const errorText = await response.text();
+                  console.error(`Retry job trigger attempt ${attempt + 1} failed with status ${response.status}:`, errorText);
+                }
+              } catch (fetchError) {
+                console.error(`Retry job trigger attempt ${attempt + 1} network error:`, fetchError);
+              }
             }
             
-            try {
-              const response = await fetch(`${supabaseUrl}/functions/v1/start-generation-job`, {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'Authorization': `Bearer ${serviceRoleKey}`
-                },
-                body: JSON.stringify({
-                  jobId: retryJob.id,
-                  projectId: job.project_id,
-                  userId: job.user_id,
-                  jobType: 'images',
-                  skipExisting: true,
-                  semiAutoMode: true,
-                  useWebhook: true
-                })
-              });
-              
-              if (response.ok) {
-                console.log(`Triggered retry job processing successfully on attempt ${attempt + 1}`);
-                startSuccess = true;
-              } else {
-                const errorText = await response.text();
-                console.error(`Retry job trigger attempt ${attempt + 1} failed with status ${response.status}:`, errorText);
-              }
-            } catch (fetchError) {
-              console.error(`Retry job trigger attempt ${attempt + 1} network error:`, fetchError);
-            }
-          }
-          
-          if (!startSuccess) {
+            // All attempts failed
             console.error(`Failed to start retry job after ${MAX_START_RETRIES} attempts`);
-            // Mark retry job as failed only after all attempts exhausted
             await adminClient
               .from('generation_jobs')
               .update({
@@ -433,7 +433,10 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
                 error_message: `Failed to start after ${MAX_START_RETRIES} attempts - please retry manually`
               })
               .eq('id', retryJob.id);
-          }
+          };
+          
+          // Run in background so webhook can respond quickly
+          EdgeRuntime.waitUntil(startRetryJob());
         }
       } else {
         console.log(`Job ${jobId}: Max retries (${maxRetries}) reached. ${failedCount} images still failed. Moving to next step.`);
