@@ -722,6 +722,12 @@ async function processPromptsJob(
   if (!project) throw new Error("Project not found");
 
   const scenes = (project.scenes as any[]) || [];
+  
+  // SAFEGUARD: Prevent prompt generation if no scenes exist
+  if (scenes.length === 0) {
+    throw new Error("Project has no scenes. Please generate scenes first before generating prompts.");
+  }
+  
   const existingPrompts = (project.prompts as any[]) || [];
   const examplePrompts = (project.example_prompts as string[]) || [];
   const customSystemPrompt = project.prompt_system_message || undefined;
