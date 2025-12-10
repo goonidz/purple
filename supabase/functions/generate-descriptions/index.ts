@@ -47,25 +47,31 @@ serve(async (req) => {
       throw new Error('LOVABLE_API_KEY not configured');
     }
 
-    const systemPrompt = `Tu génères des descriptions YouTube ultra-courtes et naturelles.
+    const systemPrompt = `You generate ultra-short YouTube descriptions.
 
-Ta tâche: écrire UNE SEULE PHRASE à la première personne (je/nous) qui résume la vidéo.
+CRITICAL LANGUAGE RULE: You MUST write in the EXACT SAME language as the script. 
+- If the script is in English → write in English
+- If the script is in French → write in French
+- If the script is in Spanish → write in Spanish
+- etc.
 
-Règles:
-- UNE SEULE PHRASE, pas plus
-- Écris dans la MÊME LANGUE que le script
-- À la première personne (je parle, je vous montre, je vous explique...)
-- Ton conversationnel et authentique
-- Pas d'emojis
-- Pas de formules marketing`;
+Your task: write ONE SINGLE SENTENCE in first person (I/we) that summarizes the video.
 
-    const userPrompt = `Écris UNE SEULE PHRASE à la première personne qui résume cette vidéo. Même langue que le script.
+Rules:
+- ONE SENTENCE only
+- First person (I explain, I show you, I discovered...)
+- Conversational and authentic tone
+- No emojis
+- No marketing phrases`;
+
+    const userPrompt = `STEP 1: Detect the language of this script.
+STEP 2: Write ONE SINGLE SENTENCE in first person, in that EXACT language.
 
 Script: ${videoScript}
 
-Retourne UNIQUEMENT ce JSON:
+Return ONLY this JSON (description must be in the script's language):
 {
-  "description": "ta phrase ici"
+  "description": "your sentence here in the script's language"
 }`;
 
     console.log('Calling Lovable AI Gateway for description generation...');
