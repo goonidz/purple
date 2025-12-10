@@ -105,8 +105,20 @@ Ne mets RIEN d'autre que ce JSON dans ta réponse.`;
     // Parse JSON from response
     let axes;
     try {
+      // Remove markdown code fences if present
+      let cleanContent = content.trim();
+      if (cleanContent.startsWith("```json")) {
+        cleanContent = cleanContent.slice(7);
+      } else if (cleanContent.startsWith("```")) {
+        cleanContent = cleanContent.slice(3);
+      }
+      if (cleanContent.endsWith("```")) {
+        cleanContent = cleanContent.slice(0, -3);
+      }
+      cleanContent = cleanContent.trim();
+      
       // Try to extract JSON from the response
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      const jsonMatch = cleanContent.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         axes = JSON.parse(jsonMatch[0]);
       } else {
@@ -114,6 +126,7 @@ Ne mets RIEN d'autre que ce JSON dans ta réponse.`;
       }
     } catch (parseError) {
       console.error("JSON parse error:", parseError);
+      console.error("Content to parse:", content.substring(0, 500));
       throw new Error("Failed to parse AI response as JSON");
     }
 
