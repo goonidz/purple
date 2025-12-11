@@ -193,9 +193,12 @@ export function generateEDL(
 ): string {
   const { projectName, framerate = 25, mode } = options;
   
+  // Filter out null/undefined prompts
+  const validPrompts = prompts.filter((p): p is GeneratedPrompt => p !== null && p !== undefined);
+  
   let edl = `TITLE: ${projectName}\nFCM: NON-DROP FRAME\n\n`;
   
-  prompts.forEach((prompt, index) => {
+  validPrompts.forEach((prompt, index) => {
     const clipNumber = (index + 1).toString().padStart(3, '0');
     const sourceIn = formatTimecode(0, framerate);
     const sourceOut = formatTimecode(prompt.duration, framerate);
@@ -225,9 +228,12 @@ export function generateCSV(
 ): string {
   const { mode, framerate = 25 } = options;
   
+  // Filter out null/undefined prompts
+  const validPrompts = prompts.filter((p): p is GeneratedPrompt => p !== null && p !== undefined);
+  
   let csv = "Scene Number,Timecode In,Timecode Out,Duration (s),Image Path,Scene Text,Image Prompt\n";
   
-  prompts.forEach((prompt, index) => {
+  validPrompts.forEach((prompt, index) => {
     const sceneNum = index + 1;
     const timecodeIn = formatTimecode(prompt.startTime, framerate);
     const timecodeOut = formatTimecode(prompt.endTime, framerate);
@@ -268,12 +274,15 @@ function formatSrtTimecode(seconds: number): string {
 export function generateSRT(prompts: GeneratedPrompt[]): string {
   let srt = '';
   
-  prompts.forEach((prompt, index) => {
+  // Filter out null/undefined prompts
+  const validPrompts = prompts.filter((p): p is GeneratedPrompt => p !== null && p !== undefined);
+  
+  validPrompts.forEach((prompt, index) => {
     const sequenceNumber = index + 1;
     
     // Use same logic as XML: extend to next scene's start, or use scene end if last
     const startTime = index === 0 ? 0 : prompt.startTime;
-    const nextPrompt = prompts[index + 1];
+    const nextPrompt = validPrompts[index + 1];
     const endTime = nextPrompt ? nextPrompt.startTime : prompt.endTime;
     
     const startTimecode = formatSrtTimecode(startTime);
