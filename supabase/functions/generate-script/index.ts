@@ -42,13 +42,127 @@ serve(async (req) => {
 
     console.log("User authenticated:", user.id);
 
-    const { customPrompt, jobId, useWebhook } = await req.json();
+    const { customPrompt, jobId, useWebhook, scriptModel } = await req.json();
 
     if (!customPrompt) {
       throw new Error("Custom prompt is required");
     }
 
-    console.log("Generating script with custom prompt, useWebhook:", useWebhook);
+    // Default to Claude if no model specified
+    const selectedModel = scriptModel || "claude";
+    console.log(`Generating script with model: ${selectedModel}, useWebhook: ${useWebhook}`);
+
+    // Use the custom prompt directly as the user prompt
+    const systemPrompt = `Tu es un assistant d'écriture professionnel. Tu génères exactement ce que l'utilisateur demande, sans commentaires ni explications supplémentaires. Réponds uniquement avec le contenu demandé.`;
+
+    const userPrompt = customPrompt;
+
+    // Handle Gemini 3 Pro Preview via Lovable AI
+    if (selectedModel === "gemini") {
+      console.log("Using Gemini 3 Pro Preview via Lovable AI...");
+      
+      const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
+      if (!lovableApiKey) {
+        throw new Error("LOVABLE_API_KEY is not configured");
+      }
+
+      const geminiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${lovableApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'google/gemini-3-pro-preview',
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt }
+          ],
+          max_tokens: 65536,
+          temperature: 0.7,
+        }),
+      });
+
+      if (!geminiResponse.ok) {
+        const errorText = await geminiResponse.text();
+        console.error("Gemini API error:", geminiResponse.status, errorText);
+        
+        if (geminiResponse.status === 429) {
+          throw new Error("Rate limit dépassé, veuillez réessayer dans quelques instants.");
+        }
+        if (geminiResponse.status === 402) {
+          throw new Error("Crédits insuffisants. Veuillez ajouter des crédits à votre workspace Lovable.");
+        }
+        throw new Error(`Gemini API error: ${geminiResponse.status}`);
+      }
+
+      const geminiData = await geminiResponse.json();
+      const script = geminiData.choices?.[0]?.message?.content || "";
+
+      console.log("Script generated with Gemini, length:", script.length);
+
+      // If using webhook mode, we need to update the job directly since Gemini doesn't use webhooks
+      if (useWebhook && jobId) {
+        // Update the job with the generated script
+        const wordCount = script.split(/\s+/).length;
+        const estimatedDuration = Math.round(wordCount / 2.5);
+
+        await supabaseAdmin
+          .from('generation_jobs')
+          .update({
+            status: 'completed',
+            progress: 1,
+            completed_at: new Date().toISOString(),
+            metadata: {
+              script,
+              wordCount,
+              estimatedDuration,
+              model: 'gemini-3-pro-preview'
+            }
+          })
+          .eq('id', jobId);
+
+        // Also update the project with the script
+        const { data: jobData } = await supabaseAdmin
+          .from('generation_jobs')
+          .select('project_id')
+          .eq('id', jobId)
+          .single();
+
+        if (jobData?.project_id) {
+          await supabaseAdmin
+            .from('projects')
+            .update({ summary: script })
+            .eq('id', jobData.project_id);
+        }
+
+        console.log(`Job ${jobId} completed with Gemini script`);
+
+        return new Response(
+          JSON.stringify({ 
+            status: 'completed',
+            script,
+            wordCount,
+            estimatedDuration,
+            message: 'Script generation completed'
+          }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      return new Response(
+        JSON.stringify({ 
+          script,
+          wordCount: script.split(/\s+/).length,
+          estimatedDuration: Math.round(script.split(/\s+/).length / 2.5),
+          model: 'gemini-3-pro-preview'
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Claude via Replicate (default)
+    console.log("Using Claude via Replicate...");
 
     // Get user's Replicate API key from Vault
     const { data: apiKeyData, error: apiKeyError } = await supabaseAdmin.rpc(
@@ -66,13 +180,6 @@ serve(async (req) => {
 
     const replicate = new Replicate({ auth: apiKeyData });
 
-    // Use the custom prompt directly as the user prompt
-    const systemPrompt = `Tu es un assistant d'écriture professionnel. Tu génères exactement ce que l'utilisateur demande, sans commentaires ni explications supplémentaires. Réponds uniquement avec le contenu demandé.`;
-
-    const userPrompt = customPrompt;
-
-    console.log("Calling Claude via Replicate...");
-
     // If using webhook mode, create async prediction
     if (useWebhook && jobId) {
       const webhookUrl = `${supabaseUrl}/functions/v1/replicate-webhook`;
@@ -84,7 +191,7 @@ serve(async (req) => {
         input: {
           prompt: userPrompt,
           system_prompt: systemPrompt,
-          max_tokens: 16384,
+          max_tokens: 65536,
           temperature: 0.7,
         },
         webhook: webhookUrl,
@@ -104,6 +211,7 @@ serve(async (req) => {
           status: 'pending',
           metadata: {
             customPrompt,
+            model: 'claude-4.5-sonnet'
           }
         });
 
@@ -128,7 +236,7 @@ serve(async (req) => {
         input: {
           prompt: userPrompt,
           system_prompt: systemPrompt,
-          max_tokens: 16384,
+          max_tokens: 65536,
           temperature: 0.7,
         }
       }
@@ -150,7 +258,8 @@ serve(async (req) => {
       JSON.stringify({ 
         script,
         wordCount: script.split(/\s+/).length,
-        estimatedDuration: Math.round(script.split(/\s+/).length / 2.5) // ~150 words per minute
+        estimatedDuration: Math.round(script.split(/\s+/).length / 2.5),
+        model: 'claude-4.5-sonnet'
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );

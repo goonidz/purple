@@ -225,6 +225,7 @@ const CreateFromScratch = () => {
   const [generationMessage, setGenerationMessage] = useState("");
   const [wordCount, setWordCount] = useState(0);
   const [estimatedDuration, setEstimatedDuration] = useState(0);
+  const [scriptModel, setScriptModel] = useState<"claude" | "gemini">("claude");
   
   // Audio step
   const [ttsProvider] = useState<"minimax">("minimax");
@@ -686,7 +687,7 @@ const CreateFromScratch = () => {
     }
   };
 
-  const GENERATION_MESSAGES = [
+  const GENERATION_MESSAGES_CLAUDE = [
     "Analyse du prompt...",
     "Claude réfléchit à la structure...",
     "Rédaction de l'introduction...",
@@ -696,6 +697,19 @@ const CreateFromScratch = () => {
     "Optimisation du script...",
     "Finalisation en cours...",
   ];
+  
+  const GENERATION_MESSAGES_GEMINI = [
+    "Analyse du prompt...",
+    "Gemini 3 Pro analyse le sujet...",
+    "Structuration du contenu...",
+    "Rédaction de l'introduction...",
+    "Développement des arguments...",
+    "Création des transitions...",
+    "Rédaction de la conclusion...",
+    "Finalisation en cours...",
+  ];
+  
+  const GENERATION_MESSAGES = scriptModel === "gemini" ? GENERATION_MESSAGES_GEMINI : GENERATION_MESSAGES_CLAUDE;
 
   // Job polling for script generation
   const [scriptJobId, setScriptJobId] = useState<string | null>(null);
@@ -843,7 +857,8 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
           projectId: tempProject.id,
           jobType: 'script_generation',
           metadata: {
-            customPrompt: promptToUse
+            customPrompt: promptToUse,
+            scriptModel
           }
         }
       });
@@ -892,7 +907,8 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
           projectId,
           jobType: 'script_generation',
           metadata: {
-            customPrompt
+            customPrompt,
+            scriptModel
           }
         }
       });
@@ -1195,7 +1211,7 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                 <div className="text-center mb-8">
                   <h2 className="text-2xl font-bold mb-2">Définissez votre vidéo</h2>
                   <p className="text-muted-foreground">
-                    Claude IA va générer un script professionnel basé sur votre sujet
+                    {scriptModel === "gemini" ? "Gemini 3 Pro" : "Claude Sonnet 4.5"} va générer un script professionnel basé sur votre sujet
                   </p>
                 </div>
 
@@ -1326,13 +1342,37 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                         value={customPrompt}
                         onChange={(e) => setCustomPrompt(e.target.value)}
                         className="min-h-[200px] font-mono text-sm"
-                        placeholder="Instructions pour Claude IA..."
+                        placeholder="Instructions pour l'IA..."
                       />
                       <p className="text-xs text-muted-foreground">
-                        Ce prompt sera envoyé à Claude IA pour générer le script. Incluez tous les détails: sujet, durée, style, langue, etc.
+                        Ce prompt sera envoyé à {scriptModel === "gemini" ? "Gemini 3 Pro" : "Claude"} pour générer le script. Incluez tous les détails: sujet, durée, style, langue, etc.
                       </p>
                     </CollapsibleContent>
                   </Collapsible>
+                  
+                  {/* Model selector */}
+                  <div className="space-y-2">
+                    <Label>Modèle pour le script</Label>
+                    <Select value={scriptModel} onValueChange={(v) => setScriptModel(v as "claude" | "gemini")}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="claude">
+                          <div className="flex flex-col">
+                            <span className="font-medium">Claude Sonnet 4.5</span>
+                            <span className="text-xs text-muted-foreground">Via Replicate (nécessite clé API)</span>
+                          </div>
+                        </SelectItem>
+                        <SelectItem value="gemini">
+                          <div className="flex flex-col">
+                            <span className="font-medium">Gemini 3 Pro Preview</span>
+                            <span className="text-xs text-muted-foreground">Via Lovable AI (65k tokens max)</span>
+                          </div>
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
 
                 {isGeneratingAxes ? (
