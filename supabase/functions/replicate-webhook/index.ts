@@ -406,46 +406,27 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
 
   console.log(`Job ${jobId} marked as completed. Success: ${successfulPredictions.length}, Failed: ${failedCount}`);
 
-  // Auto-repair any missing images due to race conditions
-  let stillMissingAfterRepair = 0;
-  if (job.job_type === 'images') {
-    console.log(`Running repair-missing-images for project ${job.project_id}`);
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    
-    try {
-      const repairResponse = await fetch(`${supabaseUrl}/functions/v1/repair-missing-images`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${serviceRoleKey}`
-        },
-        body: JSON.stringify({ projectId: job.project_id })
-      });
-      
-      if (repairResponse.ok) {
-        const repairResult = await repairResponse.json();
-        console.log(`Repair result: ${repairResult.repaired} images repaired, ${repairResult.stillMissing} still missing`);
-        stillMissingAfterRepair = repairResult.stillMissing || 0;
-      }
-    } catch (repairError) {
-      console.error("Error calling repair-missing-images:", repairError);
-    }
-  }
-
-  // Handle semi-auto mode chaining
+  // Handle semi-auto mode chaining for images
   const metadata = job.metadata || {};
-  if (metadata.semiAutoMode === true) {
-    // Calculate total missing images (failed predictions + still missing after repair)
-    const totalMissing = (job.job_type === 'images') ? (failedCount + stillMissingAfterRepair) : failedCount;
+  if (metadata.semiAutoMode === true && job.job_type === 'images') {
+    // SIMPLE LOGIC: Check project for missing images and retry if needed
+    const { data: project } = await adminClient
+      .from('projects')
+      .select('prompts')
+      .eq('id', job.project_id)
+      .single();
     
-    // If there are missing images (failed or after repair), automatically retry them
-    if (totalMissing > 0 && job.job_type === 'images') {
+    const prompts = (project?.prompts as any[]) || [];
+    const missingCount = prompts.filter((p: any) => p?.prompt && !p?.imageUrl).length;
+    
+    console.log(`Job ${jobId}: Checking project - ${missingCount} images still missing out of ${prompts.length} total`);
+    
+    if (missingCount > 0) {
       const retryCount = metadata.retryCount || 0;
       const maxRetries = 3;
       
       if (retryCount < maxRetries) {
-        // CRITICAL: Check if a retry job already exists for this project to prevent duplicates
+        // Check for existing retry job to prevent duplicates
         const { data: existingRetryJob } = await adminClient
           .from('generation_jobs')
           .select('id')
@@ -455,13 +436,13 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
           .single();
 
         if (existingRetryJob) {
-          console.log(`Job ${jobId}: Retry job ${existingRetryJob.id} already exists, skipping duplicate creation`);
+          console.log(`Job ${jobId}: Retry job ${existingRetryJob.id} already exists, skipping`);
           return;
         }
 
-        console.log(`Job ${jobId}: ${totalMissing} missing images (${failedCount} failed, ${stillMissingAfterRepair} after repair) - auto-creating retry job (attempt ${retryCount + 1}/${maxRetries})`);
+        console.log(`Job ${jobId}: Creating retry job for ${missingCount} missing images (attempt ${retryCount + 1}/${maxRetries})`);
         
-        // Create a retry job for missing images
+        // Create retry job
         const { data: retryJob, error: retryError } = await adminClient
           .from('generation_jobs')
           .insert({
@@ -470,13 +451,12 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
             job_type: 'images',
             status: 'pending',
             progress: 0,
-            total: totalMissing,
+            total: missingCount,
             metadata: {
               ...metadata,
               skipExisting: true,
               isRetry: true,
-              retryCount: retryCount + 1,
-              originalJobId: jobId
+              retryCount: retryCount + 1
             }
           })
           .select()
@@ -484,79 +464,58 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
         
         if (retryError) {
           console.error("Error creating retry job:", retryError);
+          await chainNextJobFromWebhook(adminClient, job.project_id, job.user_id, job.job_type, metadata);
         } else {
-          console.log(`Created retry job ${retryJob.id} for ${totalMissing} missing images`);
+          console.log(`Created retry job ${retryJob.id}`);
           
-          // Use EdgeRuntime.waitUntil to ensure retry starts even after webhook response
-          const startRetryJob = async () => {
+          // Start retry job in background
+          EdgeRuntime.waitUntil((async () => {
             const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
             const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
             
-            const MAX_START_RETRIES = 5;
-            const START_RETRY_DELAYS = [5000, 10000, 20000, 30000, 60000];
+            // Small delay to ensure DB is consistent
+            await new Promise(resolve => setTimeout(resolve, 2000));
             
-            for (let attempt = 0; attempt < MAX_START_RETRIES; attempt++) {
-              if (attempt > 0) {
-                const delay = START_RETRY_DELAYS[attempt - 1] || 60000;
-                console.log(`Retry job start attempt ${attempt + 1}/${MAX_START_RETRIES}, waiting ${delay/1000}s...`);
-                await new Promise(resolve => setTimeout(resolve, delay));
-              }
+            try {
+              const response = await fetch(`${supabaseUrl}/functions/v1/start-generation-job`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${serviceRoleKey}`
+                },
+                body: JSON.stringify({
+                  jobId: retryJob.id,
+                  projectId: job.project_id,
+                  userId: job.user_id,
+                  jobType: 'images',
+                  skipExisting: true,
+                  semiAutoMode: true,
+                  useWebhook: true
+                })
+              });
               
-              try {
-                const response = await fetch(`${supabaseUrl}/functions/v1/start-generation-job`, {
-                  method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${serviceRoleKey}`
-                  },
-                  body: JSON.stringify({
-                    jobId: retryJob.id,
-                    projectId: job.project_id,
-                    userId: job.user_id,
-                    jobType: 'images',
-                    skipExisting: true,
-                    semiAutoMode: true,
-                    useWebhook: true
-                  })
-                });
-                
-                if (response.ok) {
-                  console.log(`Triggered retry job processing successfully on attempt ${attempt + 1}`);
-                  return; // Success, exit
-                } else {
-                  const errorText = await response.text();
-                  console.error(`Retry job trigger attempt ${attempt + 1} failed with status ${response.status}:`, errorText);
-                }
-              } catch (fetchError) {
-                console.error(`Retry job trigger attempt ${attempt + 1} network error:`, fetchError);
+              if (response.ok) {
+                console.log(`Retry job ${retryJob.id} started successfully`);
+              } else {
+                console.error(`Failed to start retry job: ${await response.text()}`);
               }
+            } catch (error) {
+              console.error("Error starting retry job:", error);
             }
-            
-            // All attempts failed
-            console.error(`Failed to start retry job after ${MAX_START_RETRIES} attempts`);
-            await adminClient
-              .from('generation_jobs')
-              .update({
-                status: 'failed',
-                error_message: `Failed to start after ${MAX_START_RETRIES} attempts - please retry manually`
-              })
-              .eq('id', retryJob.id);
-          };
-          
-          // Run in background so webhook can respond quickly
-          EdgeRuntime.waitUntil(startRetryJob());
+          })());
         }
       } else {
-        console.log(`Job ${jobId}: Max retries (${maxRetries}) reached. ${totalMissing} images still missing. Moving to next step.`);
+        console.log(`Job ${jobId}: Max retries reached. ${missingCount} images still missing. Proceeding to thumbnails.`);
         await chainNextJobFromWebhook(adminClient, job.project_id, job.user_id, job.job_type, metadata);
       }
-    } else if (failedCount > 0 && job.job_type === 'thumbnails') {
-      // For thumbnails, just log and don't retry (less critical)
-      console.log(`Job ${jobId}: ${failedCount} failed thumbnails - not retrying`);
     } else {
-      // No failures and no missing images, chain to next step
+      // All images generated, chain to next step
+      console.log(`Job ${jobId}: All images generated. Chaining to next step.`);
       await chainNextJobFromWebhook(adminClient, job.project_id, job.user_id, job.job_type, metadata);
     }
+  } else if (metadata.semiAutoMode === true) {
+    // For other job types in semi-auto, just chain
+    await chainNextJobFromWebhook(adminClient, job.project_id, job.user_id, job.job_type, metadata);
   }
 }
 
