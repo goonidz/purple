@@ -640,8 +640,15 @@ async function chainNextJobFromWebhook(
       console.log(`Job ${nextJobType} already exists (${activeJob.id}), skipping duplicate creation`);
       return;
     }
-    // If only recent completed jobs exist, also skip to avoid duplicates
-    console.log(`Recent ${nextJobType} job found, checking if we should skip...`);
+    // If recent completed/failed jobs exist (created in last 60s), also skip to avoid duplicates
+    const recentJob = existingJobs.find((j: any) => 
+      (j.status === 'completed' || j.status === 'failed') && 
+      new Date(j.created_at).getTime() > Date.now() - 60000
+    );
+    if (recentJob) {
+      console.log(`Recent ${nextJobType} job found (${recentJob.id}, status: ${recentJob.status}), skipping duplicate creation`);
+      return;
+    }
   }
 
   // Get project data
