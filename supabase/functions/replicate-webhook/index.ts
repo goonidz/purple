@@ -404,6 +404,7 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
   console.log(`Job ${jobId} marked as completed. Success: ${successfulPredictions.length}, Failed: ${failedCount}`);
 
   // Auto-repair any missing images due to race conditions
+  let stillMissingAfterRepair = 0;
   if (job.job_type === 'images') {
     console.log(`Running repair-missing-images for project ${job.project_id}`);
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
@@ -422,6 +423,7 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
       if (repairResponse.ok) {
         const repairResult = await repairResponse.json();
         console.log(`Repair result: ${repairResult.repaired} images repaired, ${repairResult.stillMissing} still missing`);
+        stillMissingAfterRepair = repairResult.stillMissing || 0;
       }
     } catch (repairError) {
       console.error("Error calling repair-missing-images:", repairError);
@@ -431,15 +433,18 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
   // Handle semi-auto mode chaining
   const metadata = job.metadata || {};
   if (metadata.semiAutoMode === true) {
-    // If there are failed predictions for images job, automatically retry them
-    if (failedCount > 0 && job.job_type === 'images') {
+    // Calculate total missing images (failed predictions + still missing after repair)
+    const totalMissing = (job.job_type === 'images') ? (failedCount + stillMissingAfterRepair) : failedCount;
+    
+    // If there are missing images (failed or after repair), automatically retry them
+    if (totalMissing > 0 && job.job_type === 'images') {
       const retryCount = metadata.retryCount || 0;
       const maxRetries = 3;
       
       if (retryCount < maxRetries) {
-        console.log(`Job ${jobId}: ${failedCount} failed images - auto-creating retry job (attempt ${retryCount + 1}/${maxRetries})`);
+        console.log(`Job ${jobId}: ${totalMissing} missing images (${failedCount} failed, ${stillMissingAfterRepair} after repair) - auto-creating retry job (attempt ${retryCount + 1}/${maxRetries})`);
         
-        // Create a retry job for failed images
+        // Create a retry job for missing images
         const { data: retryJob, error: retryError } = await adminClient
           .from('generation_jobs')
           .insert({
@@ -448,7 +453,7 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
             job_type: 'images',
             status: 'pending',
             progress: 0,
-            total: failedCount,
+            total: totalMissing,
             metadata: {
               ...metadata,
               skipExisting: true,
@@ -463,7 +468,7 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
         if (retryError) {
           console.error("Error creating retry job:", retryError);
         } else {
-          console.log(`Created retry job ${retryJob.id} for ${failedCount} failed images`);
+          console.log(`Created retry job ${retryJob.id} for ${totalMissing} missing images`);
           
           // Use EdgeRuntime.waitUntil to ensure retry starts even after webhook response
           const startRetryJob = async () => {
@@ -525,14 +530,14 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
           EdgeRuntime.waitUntil(startRetryJob());
         }
       } else {
-        console.log(`Job ${jobId}: Max retries (${maxRetries}) reached. ${failedCount} images still failed. Moving to next step.`);
+        console.log(`Job ${jobId}: Max retries (${maxRetries}) reached. ${totalMissing} images still missing. Moving to next step.`);
         await chainNextJobFromWebhook(adminClient, job.project_id, job.user_id, job.job_type, metadata);
       }
     } else if (failedCount > 0 && job.job_type === 'thumbnails') {
       // For thumbnails, just log and don't retry (less critical)
       console.log(`Job ${jobId}: ${failedCount} failed thumbnails - not retrying`);
     } else {
-      // No failures, chain to next step
+      // No failures and no missing images, chain to next step
       await chainNextJobFromWebhook(adminClient, job.project_id, job.user_id, job.job_type, metadata);
     }
   }
