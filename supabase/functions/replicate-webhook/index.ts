@@ -693,7 +693,20 @@ async function chainNextJobFromWebhook(
 
   if (nextJobType === 'images') {
     const prompts = (project.prompts as any[]) || [];
-    total = prompts.filter((p: any) => p && !p.imageUrl).length;
+    
+    // Check for null/undefined prompts - these need to be regenerated first
+    const nullPromptIndices = prompts
+      .map((p: any, idx: number) => ({ prompt: p, index: idx }))
+      .filter((item: any) => !item.prompt || !item.prompt.prompt)
+      .map((item: any) => item.index + 1);
+    
+    if (nullPromptIndices.length > 0) {
+      console.error(`Cannot chain to images: ${nullPromptIndices.length} null prompts at indices: ${nullPromptIndices.join(', ')}`);
+      // Don't chain - leave the pipeline incomplete so user can fix manually
+      return;
+    }
+    
+    total = prompts.filter((p: any) => p && p.prompt && !p.imageUrl).length;
     
     if (total === 0) {
       console.log("No images to generate, skipping to thumbnails");
