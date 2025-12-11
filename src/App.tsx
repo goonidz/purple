@@ -7,7 +7,7 @@ import Home from "./pages/Home";
 import Index from "./pages/Index";
 import Projects from "./pages/Projects";
 import Auth from "./pages/Auth";
-import Workspace from "./pages/Workspace";
+
 import TestScenes from "./pages/TestScenes";
 import Profile from "./pages/Profile";
 import Calendar from "./pages/Calendar";
@@ -27,7 +27,7 @@ const App = () => (
           <Route path="/" element={<Home />} />
           <Route path="/project" element={<Index />} />
           <Route path="/projects" element={<Projects />} />
-          <Route path="/workspace" element={<Workspace />} />
+          
           <Route path="/calendar" element={<Calendar />} />
           <Route path="/create-from-scratch" element={<CreateFromScratch />} />
           <Route path="/thumbnails" element={<StandaloneThumbnails />} />
