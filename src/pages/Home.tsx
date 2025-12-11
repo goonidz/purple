@@ -66,7 +66,7 @@ const Home = () => {
 
         {/* Main Action Cards - Two creation options */}
         <div className="grid md:grid-cols-2 gap-8 w-full max-w-4xl mb-8">
-          <Link to="/workspace" className="group">
+          <Link to="/project" className="group">
             <Card className="p-8 hover:shadow-xl transition-all duration-300 hover:scale-105 border-2 hover:border-primary/50 bg-card/50 backdrop-blur h-full">
               <div className="flex flex-col items-center text-center space-y-4">
                 <div className="h-20 w-20 rounded-full bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">

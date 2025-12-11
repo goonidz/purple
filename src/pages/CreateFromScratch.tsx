@@ -1100,8 +1100,8 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
         .single();
       
       if (project?.transcript_json && Object.keys(project.transcript_json).length > 0) {
-        // Already transcribed, go directly to workspace
-        navigate(`/workspace?project=${projectId}`);
+        // Already transcribed, go directly to project
+        navigate(`/project?project=${projectId}`);
         return;
       }
       
@@ -1114,7 +1114,7 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
       navigate(`/projects?from_scratch=true&project=${projectId}&needs_transcription=true`);
     } catch (error) {
       console.error("Error checking project:", error);
-      navigate(`/workspace?project=${projectId}`);
+      navigate(`/project?project=${projectId}`);
     }
   };
 
