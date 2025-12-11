@@ -355,6 +355,9 @@ export async function downloadImagesAsZip(
   exportFilename: string,
   audioUrl?: string
 ): Promise<void> {
+  // Filter out null/undefined prompts
+  const validPrompts = prompts.filter((p): p is GeneratedPrompt => p !== null && p !== undefined);
+  
   // Dynamically import JSZip
   const JSZip = (await import('jszip')).default;
   const zip = new JSZip();
@@ -363,7 +366,7 @@ export async function downloadImagesAsZip(
   zip.file(exportFilename, exportContent);
   
   // Add SRT subtitle file
-  const srtContent = generateSRT(prompts);
+  const srtContent = generateSRT(validPrompts);
   const srtFilename = exportFilename.replace(/\.(xml|edl|csv)$/, '.srt');
   zip.file(srtFilename, srtContent);
   
@@ -382,8 +385,8 @@ export async function downloadImagesAsZip(
   }
   
   // Download and add each image into media/ subfolder, converting to JPEG
-  for (let i = 0; i < prompts.length; i++) {
-    const prompt = prompts[i];
+  for (let i = 0; i < validPrompts.length; i++) {
+    const prompt = validPrompts[i];
     if (prompt.imageUrl) {
       try {
         const response = await fetch(prompt.imageUrl);
