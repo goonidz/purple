@@ -94,153 +94,105 @@ RÈGLE CRITIQUE SUR LA LONGUEUR:
 
     const userPrompt = customPrompt;
 
-    // Handle Gemini 3 Pro Preview via Lovable AI
-    if (selectedModel === "gemini") {
-      console.log("Using Gemini 3 Pro Preview via Lovable AI...");
-      
-      const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
-      if (!lovableApiKey) {
-        throw new Error("LOVABLE_API_KEY is not configured");
+    // Handle GPT-5.1 via Replicate
+    if (selectedModel === "gpt5") {
+      console.log("Using GPT-5.1 via Replicate...");
+
+      // Get user's Replicate API key from Vault
+      const { data: apiKeyData, error: apiKeyError } = await supabaseAdmin.rpc(
+        'get_user_api_key_for_service',
+        { target_user_id: user.id, key_name: 'replicate' }
+      );
+
+      if (apiKeyError || !apiKeyData) {
+        console.error("Error fetching Replicate API key:", apiKeyError);
+        return new Response(
+          JSON.stringify({ error: "Replicate API key not configured. Please add it in your profile." }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
       }
 
-      // Build conversation history for potential continuation
-      const messages: Array<{role: string, content: string}> = [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt }
-      ];
+      const replicate = new Replicate({ auth: apiKeyData });
 
-      let fullScript = "";
-      let iterations = 0;
-      const maxIterations = 5; // Maximum continuation attempts
-      const minTargetRatio = 0.85; // Accept if we reach 85% of target
-
-      while (iterations < maxIterations) {
-        iterations++;
-        console.log(`Gemini iteration ${iterations}...`);
-
-        const geminiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${lovableApiKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: 'google/gemini-3-pro-preview',
-            messages,
-            max_tokens: 65536,
-            temperature: 0.7,
-          }),
-        });
-
-        if (!geminiResponse.ok) {
-          const errorText = await geminiResponse.text();
-          console.error("Gemini API error:", geminiResponse.status, errorText);
-          
-          if (geminiResponse.status === 429) {
-            throw new Error("Rate limit dépassé, veuillez réessayer dans quelques instants.");
-          }
-          if (geminiResponse.status === 402) {
-            throw new Error("Crédits insuffisants. Veuillez ajouter des crédits à votre workspace Lovable.");
-          }
-          throw new Error(`Gemini API error: ${geminiResponse.status}`);
-        }
-
-        const geminiData = await geminiResponse.json();
-        const newContent = geminiData.choices?.[0]?.message?.content || "";
-        
-        if (iterations === 1) {
-          fullScript = newContent;
-        } else {
-          // Append continuation, avoiding duplicate content
-          fullScript = fullScript.trim() + "\n\n" + newContent.trim();
-        }
-
-        const currentWordCount = fullScript.split(/\s+/).filter(w => w.length > 0).length;
-        console.log(`Iteration ${iterations}: ${currentWordCount} words generated`);
-
-        // Check if we've reached the target or if no target was specified
-        if (!targetWordCount) {
-          console.log("No target word count specified, using single generation");
-          break;
-        }
-
-        if (currentWordCount >= targetWordCount * minTargetRatio) {
-          console.log(`Target reached: ${currentWordCount}/${targetWordCount} words`);
-          break;
-        }
-
-        // Need more content - add continuation request
-        const remainingWords = targetWordCount - currentWordCount;
-        console.log(`Need ${remainingWords} more words, requesting continuation...`);
-
-        // Add the generated content and continuation request to messages
-        messages.push({ role: 'assistant', content: newContent });
-        messages.push({ 
-          role: 'user', 
-          content: `Le script actuel fait ${currentWordCount} mots mais j'en ai besoin de ${targetWordCount}. CONTINUE le script EXACTEMENT là où tu t'es arrêté. Ne répète PAS ce qui a déjà été écrit. Ajoute au moins ${remainingWords} mots supplémentaires pour développer et enrichir l'histoire. Continue directement la narration sans introduction.`
-        });
-      }
-
-      const script = fullScript;
-      const finalWordCount = script.split(/\s+/).filter(w => w.length > 0).length;
-      console.log(`Script generated with Gemini, final word count: ${finalWordCount}, length: ${script.length} chars`);
-
-      // If using webhook mode, we need to update the job directly since Gemini doesn't use webhooks
+      // If using webhook mode, create async prediction
       if (useWebhook && jobId) {
-        const estimatedDuration = Math.round(finalWordCount / 2.5);
+        const webhookUrl = `${supabaseUrl}/functions/v1/replicate-webhook`;
+        
+        console.log("Creating async GPT-5.1 prediction with webhook:", webhookUrl);
+        
+        const prediction = await replicate.predictions.create({
+          model: "openai/gpt-5.1",
+          input: {
+            prompt: userPrompt,
+            system_prompt: systemPrompt,
+            max_tokens: 64000,
+          },
+          webhook: webhookUrl,
+          webhook_events_filter: ["completed"],
+        });
 
-        await supabaseAdmin
-          .from('generation_jobs')
-          .update({
-            status: 'completed',
-            progress: 1,
-            completed_at: new Date().toISOString(),
+        console.log("GPT-5.1 prediction created:", prediction.id);
+
+        // Store prediction in pending_predictions
+        const { error: insertError } = await supabaseAdmin
+          .from('pending_predictions')
+          .insert({
+            prediction_id: prediction.id,
+            prediction_type: 'script',
+            user_id: user.id,
+            job_id: jobId,
+            status: 'pending',
             metadata: {
-              script,
-              wordCount: finalWordCount,
-              estimatedDuration,
-              model: 'gemini-3-pro-preview',
-              iterations
+              customPrompt,
+              model: 'gpt-5.1'
             }
-          })
-          .eq('id', jobId);
+          });
 
-        // Also update the project with the script
-        const { data: jobData } = await supabaseAdmin
-          .from('generation_jobs')
-          .select('project_id')
-          .eq('id', jobId)
-          .single();
-
-        if (jobData?.project_id) {
-          await supabaseAdmin
-            .from('projects')
-            .update({ summary: script })
-            .eq('id', jobData.project_id);
+        if (insertError) {
+          console.error("Error storing prediction:", insertError);
         }
-
-        console.log(`Job ${jobId} completed with Gemini script (${iterations} iterations)`);
 
         return new Response(
           JSON.stringify({ 
-            status: 'completed',
-            script,
-            wordCount: finalWordCount,
-            estimatedDuration: Math.round(finalWordCount / 2.5),
-            message: 'Script generation completed',
-            iterations
+            status: 'processing',
+            predictionId: prediction.id,
+            message: 'Script generation started'
           }),
           { headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
+
+      // Synchronous mode (fallback)
+      const output = await replicate.run(
+        "openai/gpt-5.1",
+        {
+          input: {
+            prompt: userPrompt,
+            system_prompt: systemPrompt,
+            max_tokens: 64000,
+          }
+        }
+      );
+
+      // Handle output - it might be an array or string
+      let script = "";
+      if (Array.isArray(output)) {
+        script = output.join("");
+      } else if (typeof output === "string") {
+        script = output;
+      } else {
+        script = String(output);
+      }
+
+      const finalWordCount = script.split(/\s+/).filter(w => w.length > 0).length;
+      console.log(`Script generated with GPT-5.1, word count: ${finalWordCount}`);
 
       return new Response(
         JSON.stringify({ 
           script,
           wordCount: finalWordCount,
           estimatedDuration: Math.round(finalWordCount / 2.5),
-          model: 'gemini-3-pro-preview',
-          iterations
+          model: 'gpt-5.1'
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
