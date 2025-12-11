@@ -143,8 +143,8 @@ serve(async (req) => {
           timedOut: timedOutPredictions
         });
 
-        // Chain next job if needed
-        if (finalStatus === 'completed' && job.metadata?.semiAutonomous) {
+        // Chain next job if needed - check both semiAutoMode and semiAutonomous for backwards compatibility
+        if (finalStatus === 'completed' && (job.metadata?.semiAutoMode || job.metadata?.semiAutonomous)) {
           console.log(`Job ${job.id} completed - attempting to chain next job`);
           // Call chain function via webhook
           await chainNextJobFromCheck(adminClient, job);

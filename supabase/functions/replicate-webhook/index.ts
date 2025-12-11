@@ -340,25 +340,28 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
 
   if (!job) return;
 
-  // IMPORTANT: Prevent duplicate processing if job is already completed
-  if (job.status === 'completed') {
-    console.log(`Job ${jobId} already marked as completed, skipping duplicate processing`);
+  // CRITICAL: Skip if job is already completed or failed
+  if (job.status === 'completed' || job.status === 'failed') {
+    console.log(`Job ${jobId} already marked as ${job.status}, skipping duplicate processing`);
     return;
   }
 
-  // Mark job as completed FIRST (atomically) to prevent race conditions
-  const { error: updateError, count } = await adminClient
+  // Mark job as completed atomically - ONLY if still processing
+  // This is the critical race condition prevention
+  const { error: updateError, data: updateData } = await adminClient
     .from('generation_jobs')
     .update({
       status: 'completed',
       completed_at: new Date().toISOString()
     })
     .eq('id', jobId)
-    .eq('status', 'processing'); // Only update if still processing
+    .eq('status', 'processing')
+    .select('id')
+    .single();
 
-  // If no rows were updated, another webhook already completed this job
-  if (updateError || count === 0) {
-    console.log(`Job ${jobId} was already completed by another webhook, skipping`);
+  // If no row was updated, another webhook already completed this job
+  if (updateError || !updateData) {
+    console.log(`Job ${jobId} was already completed by another webhook (update failed), skipping`);
     return;
   }
 
@@ -442,6 +445,20 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
       const maxRetries = 3;
       
       if (retryCount < maxRetries) {
+        // CRITICAL: Check if a retry job already exists for this project to prevent duplicates
+        const { data: existingRetryJob } = await adminClient
+          .from('generation_jobs')
+          .select('id')
+          .eq('project_id', job.project_id)
+          .eq('job_type', 'images')
+          .in('status', ['pending', 'processing'])
+          .single();
+
+        if (existingRetryJob) {
+          console.log(`Job ${jobId}: Retry job ${existingRetryJob.id} already exists, skipping duplicate creation`);
+          return;
+        }
+
         console.log(`Job ${jobId}: ${totalMissing} missing images (${failedCount} failed, ${stillMissingAfterRepair} after repair) - auto-creating retry job (attempt ${retryCount + 1}/${maxRetries})`);
         
         // Create a retry job for missing images
