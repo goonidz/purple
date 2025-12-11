@@ -225,7 +225,7 @@ const CreateFromScratch = () => {
   const [generationMessage, setGenerationMessage] = useState("");
   const [wordCount, setWordCount] = useState(0);
   const [estimatedDuration, setEstimatedDuration] = useState(0);
-  const [scriptModel, setScriptModel] = useState<"claude" | "gemini">("claude");
+  const [scriptModel, setScriptModel] = useState<"claude" | "gpt5">("claude");
   
   // Audio step
   const [ttsProvider] = useState<"minimax">("minimax");
@@ -709,7 +709,7 @@ const CreateFromScratch = () => {
     "Finalisation en cours...",
   ];
   
-  const GENERATION_MESSAGES = scriptModel === "gemini" ? GENERATION_MESSAGES_GEMINI : GENERATION_MESSAGES_CLAUDE;
+  const GENERATION_MESSAGES = scriptModel === "gpt5" ? GENERATION_MESSAGES_GEMINI : GENERATION_MESSAGES_CLAUDE;
 
   // Job polling for script generation
   const [scriptJobId, setScriptJobId] = useState<string | null>(null);
@@ -1211,7 +1211,7 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                 <div className="text-center mb-8">
                   <h2 className="text-2xl font-bold mb-2">Définissez votre vidéo</h2>
                   <p className="text-muted-foreground">
-                    {scriptModel === "gemini" ? "Gemini 3 Pro" : "Claude Sonnet 4.5"} va générer un script professionnel basé sur votre sujet
+                    {scriptModel === "gpt5" ? "GPT-5.1" : "Claude Sonnet 4.5"} va générer un script professionnel basé sur votre sujet
                   </p>
                 </div>
 
@@ -1345,7 +1345,7 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                         placeholder="Instructions pour l'IA..."
                       />
                       <p className="text-xs text-muted-foreground">
-                        Ce prompt sera envoyé à {scriptModel === "gemini" ? "Gemini 3 Pro" : "Claude"} pour générer le script. Incluez tous les détails: sujet, durée, style, langue, etc.
+                        Ce prompt sera envoyé à {scriptModel === "gpt5" ? "GPT-5.1" : "Claude"} pour générer le script. Incluez tous les détails: sujet, durée, style, langue, etc.
                       </p>
                     </CollapsibleContent>
                   </Collapsible>
@@ -1353,7 +1353,7 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                   {/* Model selector */}
                   <div className="space-y-2">
                     <Label>Modèle pour le script</Label>
-                    <Select value={scriptModel} onValueChange={(v) => setScriptModel(v as "claude" | "gemini")}>
+                    <Select value={scriptModel} onValueChange={(v) => setScriptModel(v as "claude" | "gpt5")}>
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
@@ -1364,10 +1364,10 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                             <span className="text-xs text-muted-foreground">Via Replicate (nécessite clé API)</span>
                           </div>
                         </SelectItem>
-                        <SelectItem value="gemini">
+                        <SelectItem value="gpt5">
                           <div className="flex flex-col">
-                            <span className="font-medium">Gemini 3 Pro Preview</span>
-                            <span className="text-xs text-muted-foreground">Via Lovable AI (65k tokens max)</span>
+                            <span className="font-medium">GPT-5.1</span>
+                            <span className="text-xs text-muted-foreground">Via Replicate (nécessite clé API)</span>
                           </div>
                         </SelectItem>
                       </SelectContent>
