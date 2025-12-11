@@ -701,8 +701,63 @@ async function chainNextJobFromWebhook(
       .map((item: any) => item.index + 1);
     
     if (nullPromptIndices.length > 0) {
-      console.error(`Cannot chain to images: ${nullPromptIndices.length} null prompts at indices: ${nullPromptIndices.join(', ')}`);
-      // Don't chain - leave the pipeline incomplete so user can fix manually
+      console.log(`Detected ${nullPromptIndices.length} null prompts at indices: ${nullPromptIndices.join(', ')}. Auto-regenerating...`);
+      
+      // Create a prompts job to regenerate missing prompts
+      const { data: promptsJob, error: promptsJobError } = await adminClient
+        .from('generation_jobs')
+        .insert({
+          project_id: projectId,
+          user_id: userId,
+          job_type: 'prompts',
+          status: 'pending',
+          progress: 0,
+          total: nullPromptIndices.length,
+          metadata: {
+            semiAutoMode: true,
+            skipExisting: true,
+            useWebhook: true,
+            autoRepairNullPrompts: true,
+            started_at: new Date().toISOString()
+          }
+        })
+        .select()
+        .single();
+      
+      if (promptsJobError) {
+        console.error(`Error creating auto-repair prompts job:`, promptsJobError);
+        return;
+      }
+      
+      console.log(`Created auto-repair prompts job ${promptsJob.id}`);
+      
+      // Trigger the prompts job
+      try {
+        const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+        const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+        
+        await fetch(`${supabaseUrl}/functions/v1/start-generation-job`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${serviceRoleKey}`
+          },
+          body: JSON.stringify({
+            jobId: promptsJob.id,
+            projectId,
+            userId,
+            jobType: 'prompts',
+            semiAutoMode: true,
+            skipExisting: true,
+            useWebhook: true
+          })
+        });
+        console.log(`Triggered auto-repair prompts job ${promptsJob.id}`);
+      } catch (fetchError) {
+        console.error(`Error triggering auto-repair prompts job:`, fetchError);
+      }
+      
+      // Don't chain to images yet - the prompts job will chain when complete
       return;
     }
     
