@@ -7,6 +7,33 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Extract target word count from prompt
+function extractTargetWordCount(prompt: string): number | null {
+  // Look for patterns like "5000 mots", "5000 words", "5k mots", etc.
+  const patterns = [
+    /(\d+)\s*000?\s*mots/i,
+    /(\d+)\s*k\s*mots/i,
+    /(\d+)\s*000?\s*words/i,
+    /(\d+)\s*k\s*words/i,
+    /(\d+)\s*mots/i,
+    /(\d+)\s*words/i,
+  ];
+  
+  for (const pattern of patterns) {
+    const match = prompt.match(pattern);
+    if (match) {
+      let count = parseInt(match[1]);
+      // Handle "5k" format
+      if (prompt.toLowerCase().includes('k mots') || prompt.toLowerCase().includes('k words')) {
+        count *= 1000;
+      }
+      // Handle "5 000" format (already captured as 5000)
+      return count;
+    }
+  }
+  return null;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -52,20 +79,20 @@ serve(async (req) => {
     const selectedModel = scriptModel || "claude";
     console.log(`Generating script with model: ${selectedModel}, useWebhook: ${useWebhook}`);
 
+    // Extract target word count from prompt
+    const targetWordCount = extractTargetWordCount(customPrompt);
+    console.log(`Target word count detected: ${targetWordCount}`);
+
     // Use the custom prompt directly as the user prompt
     const systemPrompt = `Tu es un assistant d'écriture professionnel. Tu génères exactement ce que l'utilisateur demande, sans commentaires ni explications supplémentaires. Réponds uniquement avec le contenu demandé.
 
 RÈGLE CRITIQUE SUR LA LONGUEUR:
 - Si l'utilisateur demande un certain nombre de mots, tu DOIS atteindre ce nombre MINIMUM
 - Ne t'arrête JAMAIS avant d'avoir atteint le nombre de mots demandé
-- Si l'utilisateur demande 5000 mots, ton script doit faire AU MOINS 5000 mots
 - Développe chaque section en profondeur pour atteindre la longueur requise
-- Ajoute des détails, des exemples, des transitions, des descriptions riches
-- Compte tes mots mentalement et continue jusqu'à atteindre l'objectif`;
+- Ajoute des détails, des exemples, des transitions, des descriptions riches`;
 
-    const userPrompt = `${customPrompt}
-
-RAPPEL IMPORTANT: Respecte STRICTEMENT le nombre de mots demandé. Si une longueur est spécifiée, atteins-la obligatoirement. Ne termine pas avant d'avoir atteint l'objectif de mots.`;
+    const userPrompt = customPrompt;
 
     // Handle Gemini 3 Pro Preview via Lovable AI
     if (selectedModel === "gemini") {
@@ -76,46 +103,91 @@ RAPPEL IMPORTANT: Respecte STRICTEMENT le nombre de mots demandé. Si une longue
         throw new Error("LOVABLE_API_KEY is not configured");
       }
 
-      const geminiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${lovableApiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'google/gemini-3-pro-preview',
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt }
-          ],
-          max_tokens: 65536,
-          temperature: 0.7,
-        }),
-      });
+      // Build conversation history for potential continuation
+      const messages: Array<{role: string, content: string}> = [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt }
+      ];
 
-      if (!geminiResponse.ok) {
-        const errorText = await geminiResponse.text();
-        console.error("Gemini API error:", geminiResponse.status, errorText);
+      let fullScript = "";
+      let iterations = 0;
+      const maxIterations = 5; // Maximum continuation attempts
+      const minTargetRatio = 0.85; // Accept if we reach 85% of target
+
+      while (iterations < maxIterations) {
+        iterations++;
+        console.log(`Gemini iteration ${iterations}...`);
+
+        const geminiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${lovableApiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'google/gemini-3-pro-preview',
+            messages,
+            max_tokens: 65536,
+            temperature: 0.7,
+          }),
+        });
+
+        if (!geminiResponse.ok) {
+          const errorText = await geminiResponse.text();
+          console.error("Gemini API error:", geminiResponse.status, errorText);
+          
+          if (geminiResponse.status === 429) {
+            throw new Error("Rate limit dépassé, veuillez réessayer dans quelques instants.");
+          }
+          if (geminiResponse.status === 402) {
+            throw new Error("Crédits insuffisants. Veuillez ajouter des crédits à votre workspace Lovable.");
+          }
+          throw new Error(`Gemini API error: ${geminiResponse.status}`);
+        }
+
+        const geminiData = await geminiResponse.json();
+        const newContent = geminiData.choices?.[0]?.message?.content || "";
         
-        if (geminiResponse.status === 429) {
-          throw new Error("Rate limit dépassé, veuillez réessayer dans quelques instants.");
+        if (iterations === 1) {
+          fullScript = newContent;
+        } else {
+          // Append continuation, avoiding duplicate content
+          fullScript = fullScript.trim() + "\n\n" + newContent.trim();
         }
-        if (geminiResponse.status === 402) {
-          throw new Error("Crédits insuffisants. Veuillez ajouter des crédits à votre workspace Lovable.");
+
+        const currentWordCount = fullScript.split(/\s+/).filter(w => w.length > 0).length;
+        console.log(`Iteration ${iterations}: ${currentWordCount} words generated`);
+
+        // Check if we've reached the target or if no target was specified
+        if (!targetWordCount) {
+          console.log("No target word count specified, using single generation");
+          break;
         }
-        throw new Error(`Gemini API error: ${geminiResponse.status}`);
+
+        if (currentWordCount >= targetWordCount * minTargetRatio) {
+          console.log(`Target reached: ${currentWordCount}/${targetWordCount} words`);
+          break;
+        }
+
+        // Need more content - add continuation request
+        const remainingWords = targetWordCount - currentWordCount;
+        console.log(`Need ${remainingWords} more words, requesting continuation...`);
+
+        // Add the generated content and continuation request to messages
+        messages.push({ role: 'assistant', content: newContent });
+        messages.push({ 
+          role: 'user', 
+          content: `Le script actuel fait ${currentWordCount} mots mais j'en ai besoin de ${targetWordCount}. CONTINUE le script EXACTEMENT là où tu t'es arrêté. Ne répète PAS ce qui a déjà été écrit. Ajoute au moins ${remainingWords} mots supplémentaires pour développer et enrichir l'histoire. Continue directement la narration sans introduction.`
+        });
       }
 
-      const geminiData = await geminiResponse.json();
-      const script = geminiData.choices?.[0]?.message?.content || "";
-
-      console.log("Script generated with Gemini, length:", script.length);
+      const script = fullScript;
+      const finalWordCount = script.split(/\s+/).filter(w => w.length > 0).length;
+      console.log(`Script generated with Gemini, final word count: ${finalWordCount}, length: ${script.length} chars`);
 
       // If using webhook mode, we need to update the job directly since Gemini doesn't use webhooks
       if (useWebhook && jobId) {
-        // Update the job with the generated script
-        const wordCount = script.split(/\s+/).length;
-        const estimatedDuration = Math.round(wordCount / 2.5);
+        const estimatedDuration = Math.round(finalWordCount / 2.5);
 
         await supabaseAdmin
           .from('generation_jobs')
@@ -125,9 +197,10 @@ RAPPEL IMPORTANT: Respecte STRICTEMENT le nombre de mots demandé. Si une longue
             completed_at: new Date().toISOString(),
             metadata: {
               script,
-              wordCount,
+              wordCount: finalWordCount,
               estimatedDuration,
-              model: 'gemini-3-pro-preview'
+              model: 'gemini-3-pro-preview',
+              iterations
             }
           })
           .eq('id', jobId);
@@ -146,15 +219,16 @@ RAPPEL IMPORTANT: Respecte STRICTEMENT le nombre de mots demandé. Si une longue
             .eq('id', jobData.project_id);
         }
 
-        console.log(`Job ${jobId} completed with Gemini script`);
+        console.log(`Job ${jobId} completed with Gemini script (${iterations} iterations)`);
 
         return new Response(
           JSON.stringify({ 
             status: 'completed',
             script,
-            wordCount,
-            estimatedDuration,
-            message: 'Script generation completed'
+            wordCount: finalWordCount,
+            estimatedDuration: Math.round(finalWordCount / 2.5),
+            message: 'Script generation completed',
+            iterations
           }),
           { headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
@@ -163,9 +237,10 @@ RAPPEL IMPORTANT: Respecte STRICTEMENT le nombre de mots demandé. Si une longue
       return new Response(
         JSON.stringify({ 
           script,
-          wordCount: script.split(/\s+/).length,
-          estimatedDuration: Math.round(script.split(/\s+/).length / 2.5),
-          model: 'gemini-3-pro-preview'
+          wordCount: finalWordCount,
+          estimatedDuration: Math.round(finalWordCount / 2.5),
+          model: 'gemini-3-pro-preview',
+          iterations
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
