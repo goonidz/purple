@@ -1037,6 +1037,37 @@ async function processImagesJob(
       .eq('id', jobId);
   }
 
+  // If no predictions were started, mark job as failed
+  if (startedCount === 0) {
+    await adminClient
+      .from('generation_jobs')
+      .update({ 
+        status: 'failed',
+        error_message: 'Aucune génération démarrée - vérifiez votre quota Replicate',
+        completed_at: new Date().toISOString()
+      })
+      .eq('id', jobId);
+    return; // Don't throw, job is already marked
+  }
+
+  // Schedule a check for stuck predictions after 10 minutes
+  EdgeRuntime.waitUntil((async () => {
+    await new Promise(resolve => setTimeout(resolve, 10 * 60 * 1000)); // 10 minutes
+    console.log(`Running scheduled stuck check for job ${jobId}`);
+    try {
+      await fetch(`${supabaseUrl}/functions/v1/check-stuck-jobs`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ jobId }),
+      });
+    } catch (e) {
+      console.error(`Failed to check stuck jobs:`, e);
+    }
+  })());
+
   // Job stays in 'processing' status - the webhook will mark it complete
   // Throw special marker to prevent the job from being marked complete by processJob
   throw new Error("WEBHOOK_MODE_ACTIVE");

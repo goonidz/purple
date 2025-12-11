@@ -47,3 +47,6 @@ verify_jwt = false
 
 [functions.repair-missing-images]
 verify_jwt = false
+
+[functions.check-stuck-jobs]
+verify_jwt = false
