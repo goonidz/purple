@@ -730,7 +730,8 @@ async function chainNextJobFromWebhook(
       exampleUrls: thumbnailPreset.example_urls || [],
       characterRefUrl: thumbnailPreset.character_ref_url,
       customPrompt: thumbnailPreset.custom_prompt,
-      imageModel: project.image_model || 'seedream-4.5'
+      imageModel: project.image_model || 'seedream-4.5',
+      presetName: thumbnailPreset.name
     };
   }
 
