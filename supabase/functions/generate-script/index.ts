@@ -53,9 +53,19 @@ serve(async (req) => {
     console.log(`Generating script with model: ${selectedModel}, useWebhook: ${useWebhook}`);
 
     // Use the custom prompt directly as the user prompt
-    const systemPrompt = `Tu es un assistant d'écriture professionnel. Tu génères exactement ce que l'utilisateur demande, sans commentaires ni explications supplémentaires. Réponds uniquement avec le contenu demandé.`;
+    const systemPrompt = `Tu es un assistant d'écriture professionnel. Tu génères exactement ce que l'utilisateur demande, sans commentaires ni explications supplémentaires. Réponds uniquement avec le contenu demandé.
 
-    const userPrompt = customPrompt;
+RÈGLE CRITIQUE SUR LA LONGUEUR:
+- Si l'utilisateur demande un certain nombre de mots, tu DOIS atteindre ce nombre MINIMUM
+- Ne t'arrête JAMAIS avant d'avoir atteint le nombre de mots demandé
+- Si l'utilisateur demande 5000 mots, ton script doit faire AU MOINS 5000 mots
+- Développe chaque section en profondeur pour atteindre la longueur requise
+- Ajoute des détails, des exemples, des transitions, des descriptions riches
+- Compte tes mots mentalement et continue jusqu'à atteindre l'objectif`;
+
+    const userPrompt = `${customPrompt}
+
+RAPPEL IMPORTANT: Respecte STRICTEMENT le nombre de mots demandé. Si une longueur est spécifiée, atteins-la obligatoirement. Ne termine pas avant d'avoir atteint l'objectif de mots.`;
 
     // Handle Gemini 3 Pro Preview via Lovable AI
     if (selectedModel === "gemini") {
