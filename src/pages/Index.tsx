@@ -1280,6 +1280,20 @@ const Index = () => {
       return;
     }
 
+    // Check for missing prompts (null entries)
+    const missingPromptIndices = generatedPrompts
+      .map((p, index) => ({ prompt: p, index }))
+      .filter(item => !item.prompt || !item.prompt.prompt)
+      .map(item => item.index + 1);
+    
+    if (missingPromptIndices.length > 0) {
+      toast.error(
+        `${missingPromptIndices.length} scène(s) sans prompt (${missingPromptIndices.slice(0, 5).join(", ")}${missingPromptIndices.length > 5 ? '...' : ''}). Régénérez les prompts d'abord.`,
+        { duration: 8000 }
+      );
+      return;
+    }
+
     if (!currentProjectId) {
       toast.error("Veuillez d'abord sélectionner ou créer un projet");
       return;
@@ -1306,8 +1320,15 @@ const Index = () => {
       return;
     }
 
-    // Check for missing images and show alert
-    const missingImages = generatedPrompts.filter(p => p && !p.imageUrl);
+    // Check for missing prompts and missing images
+    const missingPrompts = generatedPrompts.filter(p => !p || !p.prompt);
+    const missingImages = generatedPrompts.filter(p => p && p.prompt && !p.imageUrl);
+    
+    if (missingPrompts.length > 0) {
+      toast.error(`${missingPrompts.length} scène(s) n'ont pas de prompt. Régénérez les prompts d'abord.`);
+      return;
+    }
+    
     if (missingImages.length > 0) {
       if (exportMode === "with-images") {
         toast.error(`${missingImages.length} scène(s) n'ont pas d'images. Impossible d'exporter avec images. Changez le mode d'export ou générez les images manquantes.`);
@@ -1971,21 +1992,37 @@ const Index = () => {
                           {generatedPrompts.length > 0 && !isGeneratingImages && (
                             <Button
                               onClick={() => {
-                                const missingImages = generatedPrompts
+                                // Check for missing prompts (null entries)
+                                const missingPromptIndices = generatedPrompts
                                   .map((p, index) => ({ prompt: p, index }))
-                                  .filter(item => item.prompt && !item.prompt.imageUrl)
+                                  .filter(item => !item.prompt || !item.prompt.prompt)
                                   .map(item => item.index + 1);
                                 
-                                if (missingImages.length === 0) {
+                                // Check for missing images (prompt exists but no imageUrl)
+                                const missingImageIndices = generatedPrompts
+                                  .map((p, index) => ({ prompt: p, index }))
+                                  .filter(item => item.prompt && item.prompt.prompt && !item.prompt.imageUrl)
+                                  .map(item => item.index + 1);
+                                
+                                if (missingPromptIndices.length > 0) {
+                                  toast.error(
+                                    `⚠️ ${missingPromptIndices.length} scène(s) sans prompt : ${missingPromptIndices.join(", ")}. Régénérez les prompts d'abord.`,
+                                    { duration: 10000 }
+                                  );
+                                  setMissingImagesInfo({
+                                    count: missingPromptIndices.length + missingImageIndices.length,
+                                    indices: [...missingPromptIndices, ...missingImageIndices]
+                                  });
+                                } else if (missingImageIndices.length === 0) {
                                   setMissingImagesInfo(null);
                                   toast.success("✅ Toutes les images ont été générées !");
                                 } else {
                                   setMissingImagesInfo({
-                                    count: missingImages.length,
-                                    indices: missingImages
+                                    count: missingImageIndices.length,
+                                    indices: missingImageIndices
                                   });
                                   toast.warning(
-                                    `⚠️ ${missingImages.length} scène(s) sans image : ${missingImages.join(", ")}`,
+                                    `⚠️ ${missingImageIndices.length} scène(s) sans image : ${missingImageIndices.join(", ")}`,
                                     { duration: 8000 }
                                   );
                                 }
