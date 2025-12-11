@@ -1,7 +1,7 @@
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Loader2, X, CheckCircle2, AlertCircle, Clock } from "lucide-react";
+import { Loader2, X, CheckCircle2, AlertCircle, Clock, Square } from "lucide-react";
 import { GenerationJob, JobType } from "@/hooks/useGenerationJobs";
 import { cn } from "@/lib/utils";
 
@@ -51,13 +51,26 @@ export function JobProgressIndicator({ job, onCancel, className }: JobProgressIn
         <div className="flex items-center gap-2 flex-1 min-w-0">
           {getStatusIcon()}
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-sm font-medium truncate">
-                {getJobTypeLabel(job.job_type)}
-              </span>
-              <span className="text-xs text-muted-foreground">
-                {job.progress}/{job.total}
-              </span>
+            <div className="flex items-center justify-between gap-2 mb-1">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium truncate">
+                  {getJobTypeLabel(job.job_type)}
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  {job.progress}/{job.total}
+                </span>
+              </div>
+              {isActive && onCancel && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => onCancel(job.id)}
+                  className="h-6 px-2 text-xs text-muted-foreground hover:text-destructive"
+                >
+                  <Square className="h-3 w-3 mr-1" />
+                  Arrêter
+                </Button>
+              )}
             </div>
             {isActive && (
               <Progress value={progressPercent} className="h-1.5" />
