@@ -1899,6 +1899,8 @@ async function processScriptGenerationJob(
   
   console.log(`Starting script generation job ${jobId}`);
   
+  const scriptModel = metadata.scriptModel || "claude";
+  
   // Call the generate-script function with webhook mode
   const response = await fetch(`${supabaseUrl}/functions/v1/generate-script`, {
     method: 'POST',
@@ -1909,7 +1911,8 @@ async function processScriptGenerationJob(
     body: JSON.stringify({
       customPrompt,
       jobId,
-      useWebhook: true
+      useWebhook: true,
+      scriptModel
     }),
   });
   
