@@ -924,6 +924,7 @@ async function processImagesJob(
           model: imageModel,
           async: true,
           webhook_url: webhookUrl,
+          userId, // Required for internal service role calls
         };
 
         if (styleReferenceUrls.length > 0) {
@@ -1256,7 +1257,8 @@ async function processTestImagesJob(
         width: imageWidth,
         height: imageHeight,
         model: imageModel,
-        async: true
+        async: true,
+        userId, // Required for internal service role calls
       };
 
       if (styleReferenceUrls.length > 0) {
@@ -1299,7 +1301,7 @@ async function processTestImagesJob(
             'Authorization': authHeader,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ predictionId }),
+          body: JSON.stringify({ predictionId, userId }),
         });
 
         if (!statusResponse.ok) continue;
@@ -1579,7 +1581,8 @@ async function processSingleImageJob(
     width: imageWidth,
     height: imageHeight,
     model: imageModel,
-    async: true
+    async: true,
+    userId, // Required for internal service role calls
   };
 
   if (styleReferenceUrls.length > 0) {
@@ -1622,7 +1625,7 @@ async function processSingleImageJob(
         'Authorization': authHeader,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ predictionId }),
+      body: JSON.stringify({ predictionId, userId }),
     });
 
     if (!statusResponse.ok) continue;
