@@ -142,13 +142,15 @@ serve(async (req) => {
         }
       }
     } else if (status === 'failed' || status === 'canceled') {
-      console.log(`Prediction ${predictionId} ${status}`);
+      // Capture detailed error from Replicate payload
+      const errorDetail = payload.error || payload.logs || `Generation ${status}`;
+      console.log(`Prediction ${predictionId} ${status}:`, errorDetail);
       
       await adminClient
         .from('pending_predictions')
         .update({
           status: 'failed',
-          error_message: `Generation ${status}`,
+          error_message: typeof errorDetail === 'string' ? errorDetail.substring(0, 500) : `Generation ${status}`,
           completed_at: new Date().toISOString()
         })
         .eq('id', prediction.id);
