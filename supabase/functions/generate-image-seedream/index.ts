@@ -148,14 +148,12 @@ Deno.serve(async (req) => {
         console.log(`${modelVersion}: scaled from ${requestedWidth}x${requestedHeight} to ${width}x${height} (max 1440px)`);
       }
 
-      // Only the base z-image-turbo model strictly requires multiples of 16.
-      // For the LoRA variant, we keep the user-provided dimensions (like 1440x800)
-      // to match exactly what works in the Replicate playground.
-      if (modelVersion === 'z-image-turbo') {
-        width = Math.round(width / 16) * 16;
-        height = Math.round(height / 16) * 16;
-        console.log(`${modelVersion}: dimensions rounded to multiples of 16: ${width}x${height}`);
-      }
+      // All z-image turbo variants require width/height to be divisible by 16.
+      // We start from the project configuration dimensions and then snap to the
+      // nearest valid multiples of 16 to satisfy the API requirements.
+      width = Math.round(width / 16) * 16;
+      height = Math.round(height / 16) * 16;
+      console.log(`${modelVersion}: dimensions rounded to multiples of 16: ${width}x${height}`);
     }
     
     // SeedDream 4.5 requires minimum 3,686,400 pixels when using image_input (style references)
