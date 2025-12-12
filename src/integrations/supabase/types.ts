@@ -626,6 +626,14 @@ export type Database = {
         Args: { key_name: string; key_value: string }
         Returns: string
       }
+      update_scene_image_url: {
+        Args: {
+          p_image_url: string
+          p_project_id: string
+          p_scene_index: number
+        }
+        Returns: boolean
+      }
     }
     Enums: {
       job_status:

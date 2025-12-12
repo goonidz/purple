@@ -181,60 +181,20 @@ async function updateSceneImage(adminClient: any, prediction: any, imageUrl: str
     return;
   }
 
-  // Retry logic to handle race conditions when multiple webhooks update simultaneously
-  const MAX_RETRIES = 3;
-  let updateSuccess = false;
-  
-  for (let attempt = 0; attempt < MAX_RETRIES && !updateSuccess; attempt++) {
-    // Add random delay to reduce collision probability
-    if (attempt > 0) {
-      const delay = Math.random() * 1000 + 500; // 500-1500ms random delay
-      await new Promise(resolve => setTimeout(resolve, delay));
-    }
-    
-    const { data: project } = await adminClient
-      .from('projects')
-      .select('prompts')
-      .eq('id', prediction.project_id)
-      .single();
+  // Use atomic database function to prevent race conditions
+  // This uses FOR UPDATE row locking to ensure only one update at a time
+  const { data: result, error: rpcError } = await adminClient.rpc('update_scene_image_url', {
+    p_project_id: prediction.project_id,
+    p_scene_index: sceneIndex,
+    p_image_url: imageUrl
+  });
 
-    if (!project) {
-      console.error(`Project ${prediction.project_id} not found`);
-      break;
-    }
-
-    const prompts = (project.prompts as any[]) || [];
-    
-    if (!prompts[sceneIndex]) {
-      console.error(`Scene index ${sceneIndex} not found in prompts`);
-      break;
-    }
-
-    // Check if already updated by another webhook
-    if (prompts[sceneIndex].imageUrl === imageUrl) {
-      console.log(`Scene ${sceneIndex + 1} already has this image URL`);
-      updateSuccess = true;
-      break;
-    }
-
-    const updatedPrompts = [...prompts];
-    updatedPrompts[sceneIndex] = { ...updatedPrompts[sceneIndex], imageUrl };
-
-    const { error: updateError } = await adminClient
-      .from('projects')
-      .update({ prompts: updatedPrompts })
-      .eq('id', prediction.project_id);
-
-    if (!updateError) {
-      console.log(`Updated scene ${sceneIndex + 1} with image URL (attempt ${attempt + 1})`);
-      updateSuccess = true;
-    } else {
-      console.warn(`Update attempt ${attempt + 1} failed for scene ${sceneIndex + 1}:`, updateError);
-    }
-  }
-  
-  if (!updateSuccess) {
-    console.error(`Failed to update scene ${sceneIndex + 1} after ${MAX_RETRIES} attempts`);
+  if (rpcError) {
+    console.error(`Failed to update scene ${sceneIndex + 1} via RPC:`, rpcError);
+  } else if (result === true) {
+    console.log(`Updated scene ${sceneIndex + 1} with image URL (atomic)`);
+  } else {
+    console.error(`Scene ${sceneIndex + 1} not found or project missing`);
   }
   
   // Always update job progress
