@@ -1480,11 +1480,11 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
           {step === "script" && (
             <Card className="p-8">
               <div className="space-y-6">
-                <div className="flex items-center justify-between">
+                {projectName && (
+                  <p className="text-sm text-muted-foreground mb-2">{projectName}</p>
+                )}
+                <div className="flex items-start justify-between">
                   <div>
-                    {projectName && (
-                      <p className="text-sm text-muted-foreground mb-1">{projectName}</p>
-                    )}
                     <h2 className="text-2xl font-bold mb-2">Votre script</h2>
                     <p className="text-muted-foreground">
                       {wordCount} mots • ~{estimatedDuration}s de lecture
