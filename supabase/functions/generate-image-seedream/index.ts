@@ -125,7 +125,8 @@ Deno.serve(async (req) => {
     } else if (modelVersion === 'z-image-turbo') {
       modelName = 'prunaai/z-image-turbo';
     } else if (modelVersion === 'z-image-turbo-lora') {
-      modelName = 'prunaai/z-image-turbo-lora';
+      // Use version hash as this model requires it
+      modelName = 'prunaai/z-image-turbo-lora:dfa1caa268f9efbbe22541aea20d447a3941651674ffb39a406ea588e7187903';
     } else {
       modelName = 'bytedance/seedream-4.5';
     }
