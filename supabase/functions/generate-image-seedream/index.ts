@@ -218,10 +218,22 @@ Deno.serve(async (req) => {
       // Async mode: create prediction and return immediately
       console.log("Starting async generation", webhookUrl ? "with webhook" : "with polling mode");
       try {
+        // Replicate's predictions.create prefers explicit version instead of model path
+        const [baseModel, modelVersionHash] = modelName.split(":");
+
         const createOptions: any = {
-          model: modelName,
-          input
+          input,
         };
+
+        if (modelVersionHash) {
+          // When a specific version hash is provided (e.g. "prunaai/z-image-turbo-lora:dfa1...")
+          // use the hash in the `version` field and the repo name in `model`.
+          createOptions.model = baseModel;
+          createOptions.version = modelVersionHash;
+        } else {
+          // Fallback: let Replicate use the latest version for this model
+          createOptions.model = modelName;
+        }
         
         // Add webhook if provided
         if (webhookUrl) {
