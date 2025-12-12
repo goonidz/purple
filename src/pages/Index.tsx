@@ -2119,16 +2119,18 @@ const Index = () => {
                             onClick={async () => {
                               if (!currentProjectId || !user) return;
                               try {
-                                const clearedPrompts = generatedPrompts.map(p => ({
-                                  ...p,
-                                  imageUrl: undefined
-                                }));
+                                // Use null instead of undefined - undefined is omitted in JSON serialization
+                                // which can leave old imageUrl values in the database
+                                const clearedPrompts = generatedPrompts.map(p => {
+                                  const { imageUrl, ...rest } = p;
+                                  return { ...rest, imageUrl: null };
+                                });
                                 const { error } = await supabase
                                   .from('projects')
                                   .update({ prompts: clearedPrompts as any })
                                   .eq('id', currentProjectId);
                                 if (error) throw error;
-                                setGeneratedPrompts(clearedPrompts);
+                                setGeneratedPrompts(clearedPrompts.map(p => ({ ...p, imageUrl: undefined })));
                                 toast.success("Toutes les images ont été supprimées");
                               } catch (error) {
                                 console.error('Error deleting images:', error);
