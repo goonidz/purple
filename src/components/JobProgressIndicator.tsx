@@ -12,7 +12,13 @@ interface JobProgressIndicatorProps {
 }
 
 export function JobProgressIndicator({ job, onCancel, className }: JobProgressIndicatorProps) {
-  const progressPercent = job.total > 0 ? (job.progress / job.total) * 100 : 0;
+  // For chunked jobs, calculate global progress using metadata
+  const metadata = job.metadata || {};
+  const chunkStart = metadata.chunkStart || 0;
+  const totalItems = metadata.totalImages || metadata.totalPrompts || job.total;
+  const globalProgress = chunkStart + job.progress;
+  
+  const progressPercent = totalItems > 0 ? (globalProgress / totalItems) * 100 : 0;
   const isActive = job.status === 'pending' || job.status === 'processing';
 
   const getJobTypeLabel = (type: JobType): string => {
@@ -57,7 +63,7 @@ export function JobProgressIndicator({ job, onCancel, className }: JobProgressIn
                   {getJobTypeLabel(job.job_type)}
                 </span>
                 <span className="text-xs text-muted-foreground">
-                  {job.progress}/{job.total}
+                  {globalProgress}/{totalItems}
                 </span>
               </div>
               {isActive && onCancel && (
