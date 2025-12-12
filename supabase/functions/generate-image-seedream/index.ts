@@ -138,7 +138,7 @@ Deno.serve(async (req) => {
     const requestedWidth = width;
     const requestedHeight = height;
     
-    // Z-Image Turbo and LoRA: max dimension is 1440, dimensions must be divisible by 16
+    // Z-Image Turbo and LoRA: max dimension is 1440
     if (modelVersion === 'z-image-turbo' || modelVersion === 'z-image-turbo-lora') {
       const MAX_DIM = 1440;
       if (width > MAX_DIM || height > MAX_DIM) {
@@ -147,13 +147,14 @@ Deno.serve(async (req) => {
         height = Math.floor(height * scale);
         console.log(`${modelVersion}: scaled from ${requestedWidth}x${requestedHeight} to ${width}x${height} (max 1440px)`);
       }
-      // Round to nearest multiple of 16 (required by z-image models)
-      width = Math.round(width / 16) * 16;
-      height = Math.round(height / 16) * 16;
-      console.log(`${modelVersion}: dimensions rounded to multiples of 16: ${width}x${height}`);
-      
-      if (modelVersion === 'z-image-turbo' && body.image_urls && body.image_urls.length > 0) {
-        console.log(`Z-Image Turbo: ignoring ${body.image_urls.length} style reference(s) - not supported`);
+
+      // Only the base z-image-turbo model strictly requires multiples of 16.
+      // For the LoRA variant, we keep the user-provided dimensions (like 1440x800)
+      // to match exactly what works in the Replicate playground.
+      if (modelVersion === 'z-image-turbo') {
+        width = Math.round(width / 16) * 16;
+        height = Math.round(height / 16) * 16;
+        console.log(`${modelVersion}: dimensions rounded to multiples of 16: ${width}x${height}`);
       }
     }
     
@@ -185,6 +186,9 @@ Deno.serve(async (req) => {
       input.height = height;
       input.guidance_scale = 0; // Required for turbo models
       input.num_inference_steps = body.lora_steps || body.num_inference_steps || 10;
+      // Default output settings to match working manual JSON
+      input.output_format = body.output_format || 'jpg';
+      input.output_quality = body.output_quality || 80;
       // Add LoRA weights & scales if provided
       if (body.lora_url || body.lora_weights) {
         const weights = body.lora_weights || (Array.isArray(body.lora_url) ? body.lora_url : [body.lora_url]);
