@@ -335,7 +335,7 @@ async function processJob(
 
     // Handle prompts chunk continuation
     if (jobType === 'prompts' && promptsChunkResult && promptsChunkResult.remainingAfterChunk > 0) {
-      console.log(`Prompts chunk complete. Creating next chunk starting at index ${promptsChunkResult.nextChunkStart}`);
+      console.log(`Prompts chunk complete. ${promptsChunkResult.remainingAfterChunk} prompts remaining. Creating next chunk job.`);
       
       // Mark current job as completed
       await adminClient
@@ -346,7 +346,7 @@ async function processJob(
         })
         .eq('id', jobId);
 
-      // Create next chunk job
+      // Create next chunk job - no chunkStart needed, it will re-filter from DB
       const { data: nextChunkJob, error: chunkError } = await adminClient
         .from('generation_jobs')
         .insert({
@@ -358,7 +358,6 @@ async function processJob(
           total: Math.min(promptsChunkResult.remainingAfterChunk, 50),
           metadata: {
             ...metadata,
-            chunkStart: promptsChunkResult.nextChunkStart,
             isChunkContinuation: true
           }
         })
@@ -376,7 +375,7 @@ async function processJob(
           projectId,
           'prompts',
           userId,
-          { ...metadata, chunkStart: promptsChunkResult.nextChunkStart, isChunkContinuation: true },
+          { ...metadata, isChunkContinuation: true },
           authHeader
         ));
       }
@@ -814,7 +813,7 @@ async function processPromptsJob(
     }
   }
 
-  // Filter scenes that need prompts
+  // Filter scenes that need prompts - ALWAYS get fresh list based on current DB state
   const skipExisting = metadata.skipExisting !== false;
   const allScenesToProcess = scenes
     .map((scene: any, index: number) => ({ scene, index }))
@@ -824,16 +823,16 @@ async function processPromptsJob(
     });
 
   if (allScenesToProcess.length === 0) {
-    console.log("No prompts to generate");
+    console.log("No prompts to generate - all scenes have prompts");
     return { remainingAfterChunk: 0, nextChunkStart: 0 };
   }
 
-  // Determine which chunk to process
-  const chunkStart = metadata.chunkStart || 0;
-  const scenesToProcess = allScenesToProcess.slice(chunkStart, chunkStart + CHUNK_SIZE);
-  const remainingAfterThisChunk = allScenesToProcess.length - (chunkStart + scenesToProcess.length);
+  // Take next chunk from the filtered list (always start from index 0 since list is fresh)
+  // The list already only contains scenes that need prompts
+  const scenesToProcess = allScenesToProcess.slice(0, CHUNK_SIZE);
+  const remainingAfterThisChunk = allScenesToProcess.length - scenesToProcess.length;
   
-  console.log(`CHUNK MODE: Processing prompts ${chunkStart + 1}-${chunkStart + scenesToProcess.length} of ${allScenesToProcess.length} (${remainingAfterThisChunk} remaining after this chunk)`);
+  console.log(`CHUNK MODE: Processing ${scenesToProcess.length} prompts. ${remainingAfterThisChunk} remaining after this chunk. Total missing: ${allScenesToProcess.length}`);
 
   // Update job metadata with chunk info
   await adminClient
@@ -842,9 +841,8 @@ async function processPromptsJob(
       total: scenesToProcess.length,
       metadata: {
         ...metadata,
-        chunkStart,
         chunkSize: scenesToProcess.length,
-        totalPrompts: allScenesToProcess.length,
+        totalMissing: allScenesToProcess.length,
         remainingAfterChunk: remainingAfterThisChunk
       }
     })
@@ -924,7 +922,7 @@ async function processPromptsJob(
 
   return { 
     remainingAfterChunk: remainingAfterThisChunk, 
-    nextChunkStart: chunkStart + scenesToProcess.length 
+    nextChunkStart: 0 // Not used anymore - each chunk re-filters from DB
   };
 }
 
