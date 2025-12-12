@@ -311,8 +311,10 @@ async function processJob(
 
     console.log(`Job ${jobId} started processing`);
 
+    let promptsChunkResult: { remainingAfterChunk: number; nextChunkStart: number } | null = null;
+
     if (jobType === 'prompts') {
-      await processPromptsJob(jobId, projectId, userId, metadata, authHeader, adminClient);
+      promptsChunkResult = await processPromptsJob(jobId, projectId, userId, metadata, authHeader, adminClient);
     } else if (jobType === 'images') {
       await processImagesJob(jobId, projectId, userId, metadata, authHeader, adminClient);
     } else if (jobType === 'transcription') {
@@ -331,6 +333,57 @@ async function processJob(
       await processAudioGenerationJob(jobId, projectId, userId, metadata, authHeader, adminClient);
     }
 
+    // Handle prompts chunk continuation
+    if (jobType === 'prompts' && promptsChunkResult && promptsChunkResult.remainingAfterChunk > 0) {
+      console.log(`Prompts chunk complete. Creating next chunk starting at index ${promptsChunkResult.nextChunkStart}`);
+      
+      // Mark current job as completed
+      await adminClient
+        .from('generation_jobs')
+        .update({ 
+          status: 'completed',
+          completed_at: new Date().toISOString()
+        })
+        .eq('id', jobId);
+
+      // Create next chunk job
+      const { data: nextChunkJob, error: chunkError } = await adminClient
+        .from('generation_jobs')
+        .insert({
+          project_id: projectId,
+          user_id: userId,
+          job_type: 'prompts',
+          status: 'pending',
+          progress: 0,
+          total: Math.min(promptsChunkResult.remainingAfterChunk, 50),
+          metadata: {
+            ...metadata,
+            chunkStart: promptsChunkResult.nextChunkStart,
+            isChunkContinuation: true
+          }
+        })
+        .select()
+        .single();
+      
+      if (chunkError) {
+        console.error("Error creating next prompts chunk job:", chunkError);
+      } else {
+        console.log(`Created next prompts chunk job ${nextChunkJob.id}`);
+        
+        // Start next chunk job in background
+        EdgeRuntime.waitUntil(processJob(
+          nextChunkJob.id,
+          projectId,
+          'prompts',
+          userId,
+          { ...metadata, chunkStart: promptsChunkResult.nextChunkStart, isChunkContinuation: true },
+          authHeader
+        ));
+      }
+      
+      return; // Don't proceed to semi-auto chaining yet
+    }
+
     // Mark job as completed
     await adminClient
       .from('generation_jobs')
@@ -342,7 +395,7 @@ async function processJob(
 
     console.log(`Job ${jobId} completed successfully`);
 
-    // Semi-automatic mode: chain to next job
+    // Semi-automatic mode: chain to next job (only when all chunks are done)
     if (metadata.semiAutoMode === true) {
       await chainNextJob(projectId, userId, jobType, authHeader, adminClient);
     }
@@ -709,8 +762,11 @@ async function processPromptsJob(
   metadata: Record<string, any>,
   authHeader: string,
   adminClient: any
-) {
+): Promise<{ remainingAfterChunk: number; nextChunkStart: number }> {
   const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+  
+  // CHUNK SETTINGS - process max 50 prompts per job to avoid timeout
+  const CHUNK_SIZE = 50;
   
   // Get project data
   const { data: project } = await adminClient
@@ -732,9 +788,9 @@ async function processPromptsJob(
   const examplePrompts = (project.example_prompts as string[]) || [];
   const customSystemPrompt = project.prompt_system_message || undefined;
 
-  // Get or generate summary
+  // Get or generate summary (only on first chunk)
   let summary = project.summary;
-  if (!summary) {
+  if (!summary && (metadata.chunkStart || 0) === 0) {
     const transcriptData = project.transcript_json as any;
     const fullTranscript = transcriptData?.segments?.filter((seg: any) => seg).map((seg: any) => seg.text).join(' ') || '';
     
@@ -758,6 +814,42 @@ async function processPromptsJob(
     }
   }
 
+  // Filter scenes that need prompts
+  const skipExisting = metadata.skipExisting !== false;
+  const allScenesToProcess = scenes
+    .map((scene: any, index: number) => ({ scene, index }))
+    .filter(({ index }: any) => {
+      const existingPrompt = existingPrompts[index];
+      return !skipExisting || !existingPrompt?.prompt || metadata.regenerate;
+    });
+
+  if (allScenesToProcess.length === 0) {
+    console.log("No prompts to generate");
+    return { remainingAfterChunk: 0, nextChunkStart: 0 };
+  }
+
+  // Determine which chunk to process
+  const chunkStart = metadata.chunkStart || 0;
+  const scenesToProcess = allScenesToProcess.slice(chunkStart, chunkStart + CHUNK_SIZE);
+  const remainingAfterThisChunk = allScenesToProcess.length - (chunkStart + scenesToProcess.length);
+  
+  console.log(`CHUNK MODE: Processing prompts ${chunkStart + 1}-${chunkStart + scenesToProcess.length} of ${allScenesToProcess.length} (${remainingAfterThisChunk} remaining after this chunk)`);
+
+  // Update job metadata with chunk info
+  await adminClient
+    .from('generation_jobs')
+    .update({
+      total: scenesToProcess.length,
+      metadata: {
+        ...metadata,
+        chunkStart,
+        chunkSize: scenesToProcess.length,
+        totalPrompts: allScenesToProcess.length,
+        remainingAfterChunk: remainingAfterThisChunk
+      }
+    })
+    .eq('id', jobId);
+
   const filteredExamples = examplePrompts.filter((p: string) => p.trim() !== "");
   const newPrompts = [...existingPrompts];
   
@@ -766,80 +858,74 @@ async function processPromptsJob(
     newPrompts.push(null);
   }
 
-  // Process in batches of 50 (parallel) for faster generation
-  const batchSize = 50;
+  // Process chunk in parallel
   let progress = 0;
+  const batchPromises = scenesToProcess.map(async ({ scene, index }: any) => {
+    // Get previous prompts for context
+    const previousPrompts = newPrompts
+      .slice(Math.max(0, index - 3), index)
+      .filter((p: any) => p?.prompt && p.prompt !== "Erreur lors de la génération")
+      .map((p: any) => p.prompt);
 
-  for (let batchStart = 0; batchStart < scenes.length; batchStart += batchSize) {
-    const batch = scenes.slice(batchStart, batchStart + batchSize);
-    
-    const batchPromises = batch.map(async (scene: any, batchIndex: number) => {
-      const sceneIndex = batchStart + batchIndex;
-      
-      // Skip if prompt already exists
-      if (newPrompts[sceneIndex]?.prompt && !metadata.regenerate) {
-        return;
+    try {
+      const response = await fetch(`${supabaseUrl}/functions/v1/generate-prompts`, {
+        method: 'POST',
+        headers: {
+          'Authorization': authHeader,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          scene: scene.text,
+          summary,
+          examplePrompts: filteredExamples,
+          sceneIndex: index + 1,
+          totalScenes: scenes.length,
+          startTime: scene.startTime,
+          endTime: scene.endTime,
+          customSystemPrompt,
+          previousPrompts
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        newPrompts[index] = {
+          scene: `Scène ${index + 1}`,
+          prompt: data.prompt,
+          text: scene.text,
+          startTime: scene.startTime,
+          endTime: scene.endTime,
+          duration: scene.endTime - scene.startTime,
+          imageUrl: newPrompts[index]?.imageUrl // Preserve existing image
+        };
       }
+    } catch (error) {
+      console.error(`Error generating prompt for scene ${index + 1}:`, error);
+    }
+  });
 
-      // Get previous prompts for context
-      const previousPrompts = newPrompts
-        .slice(Math.max(0, sceneIndex - 3), sceneIndex)
-        .filter((p: any) => p?.prompt && p.prompt !== "Erreur lors de la génération")
-        .map((p: any) => p.prompt);
+  await Promise.all(batchPromises);
 
-      try {
-        const response = await fetch(`${supabaseUrl}/functions/v1/generate-prompts`, {
-          method: 'POST',
-          headers: {
-            'Authorization': authHeader,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            scene: scene.text,
-            summary,
-            examplePrompts: filteredExamples,
-            sceneIndex: sceneIndex + 1,
-            totalScenes: scenes.length,
-            startTime: scene.startTime,
-            endTime: scene.endTime,
-            customSystemPrompt,
-            previousPrompts
-          }),
-        });
+  // Update progress
+  progress = scenesToProcess.length;
+  
+  await adminClient
+    .from('generation_jobs')
+    .update({ progress })
+    .eq('id', jobId);
 
-        if (response.ok) {
-          const data = await response.json();
-          newPrompts[sceneIndex] = {
-            scene: `Scène ${sceneIndex + 1}`,
-            prompt: data.prompt,
-            text: scene.text,
-            startTime: scene.startTime,
-            endTime: scene.endTime,
-            duration: scene.endTime - scene.startTime,
-            imageUrl: newPrompts[sceneIndex]?.imageUrl // Preserve existing image
-          };
-        }
-      } catch (error) {
-        console.error(`Error generating prompt for scene ${sceneIndex + 1}:`, error);
-      }
-    });
+  // Save prompts
+  await adminClient
+    .from('projects')
+    .update({ prompts: newPrompts })
+    .eq('id', projectId);
 
-    await Promise.all(batchPromises);
+  console.log(`CHUNK COMPLETE: Generated ${progress} prompts. ${remainingAfterThisChunk} remaining for next chunks.`);
 
-    // Update progress
-    progress = Math.min(batchStart + batchSize, scenes.length);
-    
-    await adminClient
-      .from('generation_jobs')
-      .update({ progress })
-      .eq('id', jobId);
-
-    // Save prompts after each batch
-    await adminClient
-      .from('projects')
-      .update({ prompts: newPrompts })
-      .eq('id', projectId);
-  }
+  return { 
+    remainingAfterChunk: remainingAfterThisChunk, 
+    nextChunkStart: chunkStart + scenesToProcess.length 
+  };
 }
 
 async function processImagesJob(
