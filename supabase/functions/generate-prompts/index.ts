@@ -56,12 +56,19 @@ serve(async (req) => {
     // Use custom system prompt if provided, otherwise use default
     let systemPrompt: string;
     
+    // CRITICAL rule that must ALWAYS be enforced (even with custom prompts)
+    const noTextRule = `\n\nABSOLUTE REQUIREMENT - NO TEXT IN IMAGES:
+- NEVER include any text, words, letters, numbers, captions, titles, or typography in the image prompt
+- NEVER describe signs, labels, banners, headlines, or any written elements
+- If you need to convey information, use visual symbols, icons, or imagery instead
+- This rule is MANDATORY and cannot be overridden\n\n`;
+    
     if (customSystemPrompt && customSystemPrompt.trim()) {
-      systemPrompt = customSystemPrompt.trim();
+      systemPrompt = customSystemPrompt.trim() + noTextRule;
       
       // Add examples if provided
       if (examplePrompts && Array.isArray(examplePrompts) && examplePrompts.length > 0) {
-        systemPrompt += `\n\nEXAMPLES TO FOLLOW STRICTLY:\n\n`;
+        systemPrompt += `EXAMPLES TO FOLLOW STRICTLY:\n\n`;
         examplePrompts.forEach((example: string, i: number) => {
           systemPrompt += `Example ${i + 1}:\n"${example}"\n\n`;
         });
