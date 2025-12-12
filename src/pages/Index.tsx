@@ -2206,16 +2206,52 @@ const Index = () => {
                               Scènes concernées : {missingImagesInfo.indices.join(", ")}
                             </p>
                             <Button
-                              onClick={() => {
-                                setMissingImagesInfo(null);
-                                generateAllImages(true);
+                              onClick={async () => {
+                                if (!currentProjectId) return;
+                                
+                                // First try to repair from pending_predictions
+                                toast.info("Tentative de récupération des images déjà générées...");
+                                try {
+                                  const { data, error } = await supabase.functions.invoke('repair-missing-images', {
+                                    body: { projectId: currentProjectId }
+                                  });
+                                  
+                                  if (error) throw error;
+                                  
+                                  if (data.repaired > 0) {
+                                    toast.success(`${data.repaired} image(s) récupérée(s) depuis les générations précédentes`);
+                                    // Refresh project data
+                                    const { data: project } = await supabase
+                                      .from('projects')
+                                      .select('prompts')
+                                      .eq('id', currentProjectId)
+                                      .single();
+                                    if (project?.prompts) {
+                                      setGeneratedPrompts(project.prompts as any[]);
+                                    }
+                                  }
+                                  
+                                  // If still missing images, regenerate
+                                  if (data.stillMissing > 0) {
+                                    toast.info(`${data.stillMissing} image(s) à regénérer...`);
+                                    setMissingImagesInfo(null);
+                                    generateAllImages(true);
+                                  } else {
+                                    setMissingImagesInfo(null);
+                                  }
+                                } catch (err) {
+                                  console.error('Error repairing images:', err);
+                                  // Fallback to regeneration
+                                  setMissingImagesInfo(null);
+                                  generateAllImages(true);
+                                }
                               }}
                               className="w-full"
                               variant="destructive"
                               size="sm"
                             >
                               <RefreshCw className="mr-2 h-4 w-4" />
-                              Regénérer les images manquantes
+                              Récupérer / Regénérer les images manquantes
                             </Button>
                           </div>
                         </Card>
