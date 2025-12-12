@@ -930,6 +930,16 @@ async function processImagesJob(
         if (styleReferenceUrls.length > 0) {
           requestBody.image_urls = styleReferenceUrls;
         }
+        
+        // Add LoRA parameters for z-image-turbo-lora model
+        if (imageModel === 'z-image-turbo-lora') {
+          if (project.lora_url) {
+            requestBody.lora_url = project.lora_url;
+          }
+          if (project.lora_steps) {
+            requestBody.lora_steps = project.lora_steps;
+          }
+        }
 
         // Retry logic with exponential backoff
         let lastError = '';
@@ -1295,6 +1305,16 @@ async function processTestImagesJob(
       if (styleReferenceUrls.length > 0) {
         requestBody.image_urls = styleReferenceUrls;
       }
+      
+      // Add LoRA parameters for z-image-turbo-lora model
+      if (imageModel === 'z-image-turbo-lora') {
+        if (project.lora_url) {
+          requestBody.lora_url = project.lora_url;
+        }
+        if (project.lora_steps) {
+          requestBody.lora_steps = project.lora_steps;
+        }
+      }
 
       // Start async generation
       const startResponse = await fetch(`${supabaseUrl}/functions/v1/generate-image-seedream`, {
@@ -1618,6 +1638,16 @@ async function processSingleImageJob(
 
   if (styleReferenceUrls.length > 0) {
     requestBody.image_urls = styleReferenceUrls;
+  }
+  
+  // Add LoRA parameters for z-image-turbo-lora model
+  if (imageModel === 'z-image-turbo-lora') {
+    if (project.lora_url) {
+      requestBody.lora_url = project.lora_url;
+    }
+    if (project.lora_steps) {
+      requestBody.lora_steps = project.lora_steps;
+    }
   }
 
   // Start async generation

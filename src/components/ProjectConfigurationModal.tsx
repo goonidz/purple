@@ -23,6 +23,8 @@ interface Preset {
   style_reference_url: string | null;
   image_model: string;
   prompt_system_message: string | null;
+  lora_url: string | null;
+  lora_steps: number;
 }
 
 interface ProjectConfigurationModalProps {
@@ -51,6 +53,8 @@ export const ProjectConfigurationModal = ({
   const [aspectRatio, setAspectRatio] = useState("16:9");
   const [imageModel, setImageModel] = useState("seedream-4.5");
   const [styleReferenceUrls, setStyleReferenceUrls] = useState<string[]>([]);
+  const [loraUrl, setLoraUrl] = useState("");
+  const [loraSteps, setLoraSteps] = useState(10);
   const [isUploading, setIsUploading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [semiAutoMode, setSemiAutoMode] = useState(false);
@@ -109,6 +113,8 @@ export const ProjectConfigurationModal = ({
         style_reference_url: preset.style_reference_url,
         image_model: (preset as any).image_model || 'seedream-4.5',
         prompt_system_message: (preset as any).prompt_system_message || null,
+        lora_url: (preset as any).lora_url || null,
+        lora_steps: (preset as any).lora_steps || 10,
       }));
       
       setPresets(mappedPresets);
@@ -130,6 +136,8 @@ export const ProjectConfigurationModal = ({
       setImageHeight(preset.image_height);
       setAspectRatio(preset.aspect_ratio);
       setImageModel(preset.image_model);
+      setLoraUrl(preset.lora_url || "");
+      setLoraSteps(preset.lora_steps || 10);
       if (preset.style_reference_url) {
         setStyleReferenceUrls(parseStyleReferenceUrls(preset.style_reference_url));
       }
@@ -211,6 +219,8 @@ export const ProjectConfigurationModal = ({
           image_height: imageHeight,
           aspect_ratio: aspectRatio,
           image_model: imageModel,
+          lora_url: loraUrl || null,
+          lora_steps: loraSteps,
           style_reference_url: styleReferenceUrls.length > 0 ? JSON.stringify(styleReferenceUrls) : null,
           thumbnail_preset_id: selectedThumbnailPresetId || null,
         })
@@ -460,6 +470,7 @@ export const ProjectConfigurationModal = ({
                 <SelectItem value="seedream-4.0">SeedDream 4.0</SelectItem>
                 <SelectItem value="seedream-4.5">SeedDream 4.5</SelectItem>
                 <SelectItem value="z-image-turbo">Z-Image Turbo (rapide)</SelectItem>
+                <SelectItem value="z-image-turbo-lora">Z-Image Turbo LoRA</SelectItem>
               </SelectContent>
             </Select>
             {imageModel === "z-image-turbo" && styleReferenceUrls.length > 0 && (
@@ -468,6 +479,37 @@ export const ProjectConfigurationModal = ({
               </p>
             )}
           </div>
+          
+          {/* LoRA configuration for z-image-turbo-lora */}
+          {imageModel === "z-image-turbo-lora" && (
+            <div className="space-y-4 p-4 border rounded-lg bg-muted/30">
+              <h4 className="font-medium text-sm">Configuration LoRA</h4>
+              <div className="space-y-2">
+                <Label>URL du LoRA (HuggingFace .safetensors)</Label>
+                <Input
+                  value={loraUrl}
+                  onChange={(e) => setLoraUrl(e.target.value)}
+                  placeholder="https://huggingface.co/.../resolve/main/model.safetensors"
+                />
+                <p className="text-xs text-muted-foreground">
+                  URL publique vers votre fichier .safetensors sur HuggingFace
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label>Nombre de steps</Label>
+                <Input
+                  type="number"
+                  value={loraSteps}
+                  onChange={(e) => setLoraSteps(parseInt(e.target.value) || 10)}
+                  min={4}
+                  max={50}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Plus de steps = meilleure qualité mais plus lent (recommandé: 10)
+                </p>
+              </div>
+            </div>
+          )}
           <div className="space-y-2">
             <Label>Aspect Ratio</Label>
             <Select value={aspectRatio} onValueChange={handleAspectRatioChange}>

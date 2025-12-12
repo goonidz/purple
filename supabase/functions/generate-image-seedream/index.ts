@@ -124,6 +124,8 @@ Deno.serve(async (req) => {
       modelName = 'bytedance/seedream-4';
     } else if (modelVersion === 'z-image-turbo') {
       modelName = 'prunaai/z-image-turbo';
+    } else if (modelVersion === 'z-image-turbo-lora') {
+      modelName = 'prunaai/z-image-turbo-lora';
     } else {
       modelName = 'bytedance/seedream-4.5';
     }
@@ -135,21 +137,21 @@ Deno.serve(async (req) => {
     const requestedWidth = width;
     const requestedHeight = height;
     
-    // Z-Image Turbo: max dimension is 1440, dimensions must be divisible by 16, no style references support
-    if (modelVersion === 'z-image-turbo') {
+    // Z-Image Turbo and LoRA: max dimension is 1440, dimensions must be divisible by 16
+    if (modelVersion === 'z-image-turbo' || modelVersion === 'z-image-turbo-lora') {
       const MAX_DIM = 1440;
       if (width > MAX_DIM || height > MAX_DIM) {
         const scale = Math.min(MAX_DIM / width, MAX_DIM / height);
         width = Math.floor(width * scale);
         height = Math.floor(height * scale);
-        console.log(`Z-Image Turbo: scaled from ${requestedWidth}x${requestedHeight} to ${width}x${height} (max 1440px)`);
+        console.log(`${modelVersion}: scaled from ${requestedWidth}x${requestedHeight} to ${width}x${height} (max 1440px)`);
       }
-      // Round to nearest multiple of 16 (required by z-image-turbo)
+      // Round to nearest multiple of 16 (required by z-image models)
       width = Math.round(width / 16) * 16;
       height = Math.round(height / 16) * 16;
-      console.log(`Z-Image Turbo: dimensions rounded to multiples of 16: ${width}x${height}`);
+      console.log(`${modelVersion}: dimensions rounded to multiples of 16: ${width}x${height}`);
       
-      if (body.image_urls && body.image_urls.length > 0) {
+      if (modelVersion === 'z-image-turbo' && body.image_urls && body.image_urls.length > 0) {
         console.log(`Z-Image Turbo: ignoring ${body.image_urls.length} style reference(s) - not supported`);
       }
     }
@@ -177,6 +179,16 @@ Deno.serve(async (req) => {
       input.height = height;
       input.guidance_scale = 0; // Required for turbo models
       input.num_inference_steps = body.num_inference_steps || 8;
+    } else if (modelVersion === 'z-image-turbo-lora') {
+      input.width = width;
+      input.height = height;
+      input.guidance_scale = 0; // Required for turbo models
+      input.num_inference_steps = body.lora_steps || body.num_inference_steps || 10;
+      // Add LoRA URL if provided
+      if (body.lora_url) {
+        input.lora_url = body.lora_url;
+        console.log(`Z-Image Turbo LoRA: using LoRA from ${body.lora_url}`);
+      }
     } else {
       // SeedDream models
       input.size = "custom";

@@ -294,6 +294,8 @@ export type Database = {
           image_height: number | null
           image_model: string | null
           image_width: number | null
+          lora_steps: number | null
+          lora_url: string | null
           name: string
           prompt_system_message: string | null
           scene_duration_0to1: number | null
@@ -311,6 +313,8 @@ export type Database = {
           image_height?: number | null
           image_model?: string | null
           image_width?: number | null
+          lora_steps?: number | null
+          lora_url?: string | null
           name: string
           prompt_system_message?: string | null
           scene_duration_0to1?: number | null
@@ -328,6 +332,8 @@ export type Database = {
           image_height?: number | null
           image_model?: string | null
           image_width?: number | null
+          lora_steps?: number | null
+          lora_url?: string | null
           name?: string
           prompt_system_message?: string | null
           scene_duration_0to1?: number | null
@@ -349,6 +355,8 @@ export type Database = {
           image_height: number | null
           image_model: string | null
           image_width: number | null
+          lora_steps: number | null
+          lora_url: string | null
           name: string
           prompt_system_message: string | null
           prompts: Json | null
@@ -372,6 +380,8 @@ export type Database = {
           image_height?: number | null
           image_model?: string | null
           image_width?: number | null
+          lora_steps?: number | null
+          lora_url?: string | null
           name: string
           prompt_system_message?: string | null
           prompts?: Json | null
@@ -395,6 +405,8 @@ export type Database = {
           image_height?: number | null
           image_model?: string | null
           image_width?: number | null
+          lora_steps?: number | null
+          lora_url?: string | null
           name?: string
           prompt_system_message?: string | null
           prompts?: Json | null
