@@ -792,8 +792,8 @@ const Index = () => {
 
   const handleAspectRatioChange = (ratio: string) => {
     setAspectRatio(ratio);
-    // Use lower resolutions for z-image-turbo (max 1440px)
-    const isZImageTurbo = imageModel === 'z-image-turbo';
+    // Use lower resolutions for z-image-turbo and z-image-turbo-lora (max 1440px)
+    const isZImageTurbo = imageModel === 'z-image-turbo' || imageModel === 'z-image-turbo-lora';
     switch (ratio) {
       case "16:9":
         setImageWidth(isZImageTurbo ? 1280 : 1920);
@@ -819,8 +819,8 @@ const Index = () => {
 
   const handleModelChange = (model: string) => {
     setImageModel(model);
-    // Adapt dimensions when switching to z-image-turbo
-    if (model === 'z-image-turbo') {
+    // Adapt dimensions when switching to z-image-turbo or z-image-turbo-lora
+    if (model === 'z-image-turbo' || model === 'z-image-turbo-lora') {
       const MAX_DIM = 1440;
       if (imageWidth > MAX_DIM || imageHeight > MAX_DIM) {
         const scale = Math.min(MAX_DIM / imageWidth, MAX_DIM / imageHeight);
