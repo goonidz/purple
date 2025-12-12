@@ -1001,21 +1001,35 @@ const Index = () => {
     }
   };
 
-  const handleSaveEditedPrompt = () => {
+  const handleSaveEditedPrompt = async () => {
     if (editingPromptIndex === null) return;
     
-    setGeneratedPrompts(prev => {
-      const updated = [...prev];
-      updated[editingPromptIndex] = {
-        ...updated[editingPromptIndex],
-        prompt: editingPromptText
-      };
-      return updated;
-    });
+    const updatedPrompts = [...generatedPrompts];
+    updatedPrompts[editingPromptIndex] = {
+      ...updatedPrompts[editingPromptIndex],
+      prompt: editingPromptText
+    };
+    
+    setGeneratedPrompts(updatedPrompts);
+    
+    // Persist to database
+    if (currentProjectId) {
+      try {
+        const { error } = await supabase
+          .from("projects")
+          .update({ prompts: updatedPrompts as any })
+          .eq("id", currentProjectId);
+        
+        if (error) throw error;
+        toast.success("Prompt modifié avec succès");
+      } catch (error) {
+        console.error("Error saving prompt:", error);
+        toast.error("Erreur lors de la sauvegarde du prompt");
+      }
+    }
     
     setEditingPromptIndex(null);
     setEditingPromptText("");
-    toast.success("Prompt modifié avec succès");
   };
 
   const handleEditScene = (index: number) => {
@@ -1026,21 +1040,35 @@ const Index = () => {
     }
   };
 
-  const handleSaveEditedScene = () => {
+  const handleSaveEditedScene = async () => {
     if (editingSceneIndex === null) return;
     
-    setGeneratedPrompts(prev => {
-      const updated = [...prev];
-      updated[editingSceneIndex] = {
-        ...updated[editingSceneIndex],
-        text: editingSceneText
-      };
-      return updated;
-    });
+    const updatedPrompts = [...generatedPrompts];
+    updatedPrompts[editingSceneIndex] = {
+      ...updatedPrompts[editingSceneIndex],
+      text: editingSceneText
+    };
+    
+    setGeneratedPrompts(updatedPrompts);
+    
+    // Persist to database
+    if (currentProjectId) {
+      try {
+        const { error } = await supabase
+          .from("projects")
+          .update({ prompts: updatedPrompts as any })
+          .eq("id", currentProjectId);
+        
+        if (error) throw error;
+        toast.success("Texte de la scène mis à jour");
+      } catch (error) {
+        console.error("Error saving scene text:", error);
+        toast.error("Erreur lors de la sauvegarde");
+      }
+    }
     
     setEditingSceneIndex(null);
     setEditingSceneText("");
-    toast.success("Texte de la scène mis à jour");
   };
 
   // Helper function to upload multiple images at once
