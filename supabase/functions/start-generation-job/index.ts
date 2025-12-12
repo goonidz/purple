@@ -852,6 +852,9 @@ async function processImagesJob(
 ) {
   const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
   
+  // CHUNK SETTINGS - process max 50 images per job to avoid timeout
+  const CHUNK_SIZE = 50;
+  
   // Get project data
   const { data: project } = await adminClient
     .from('projects')
@@ -880,32 +883,50 @@ async function processImagesJob(
 
   // Filter prompts that need images
   const skipExisting = metadata.skipExisting !== false;
-  const promptsToProcess = prompts
+  const allPromptsToProcess = prompts
     .map((prompt: any, index: number) => ({ prompt, index }))
     .filter(({ prompt }: any) => prompt && (!skipExisting || !prompt.imageUrl));
 
-  if (promptsToProcess.length === 0) {
+  if (allPromptsToProcess.length === 0) {
     console.log("No images to generate");
     return;
   }
 
-  console.log(`Starting webhook-based image generation for ${promptsToProcess.length} scenes`);
+  // Determine which chunk to process
+  const chunkStart = metadata.chunkStart || 0;
+  const promptsToProcess = allPromptsToProcess.slice(chunkStart, chunkStart + CHUNK_SIZE);
+  const remainingAfterThisChunk = allPromptsToProcess.length - (chunkStart + promptsToProcess.length);
+  
+  console.log(`CHUNK MODE: Processing images ${chunkStart + 1}-${chunkStart + promptsToProcess.length} of ${allPromptsToProcess.length} (${remainingAfterThisChunk} remaining after this chunk)`);
+
+  // Update job metadata with chunk info
+  await adminClient
+    .from('generation_jobs')
+    .update({
+      total: promptsToProcess.length,
+      metadata: {
+        ...metadata,
+        chunkStart,
+        chunkSize: promptsToProcess.length,
+        totalImages: allPromptsToProcess.length,
+        remainingAfterChunk: remainingAfterThisChunk
+      }
+    })
+    .eq('id', jobId);
 
   // Build webhook URL
   const webhookUrl = `${supabaseUrl}/functions/v1/replicate-webhook`;
 
-  // Batch settings - balanced for speed vs reliability
-  // When multiple projects run in parallel, this prevents overwhelming Replicate
-  const BATCH_SIZE = 4; // Send 4 images at a time (was 5)
-  const DELAY_BETWEEN_BATCHES_MS = 4000; // 4 seconds between batches (was 3)
-  const DELAY_BETWEEN_REQUESTS_MS = 300; // 300ms between individual requests (was 200)
-  const MAX_RETRIES = 3; // Maximum retries for queue full errors
-  const BASE_RETRY_DELAY_MS = 10000; // Base delay for exponential backoff (10 seconds)
+  // Batch settings for sending requests
+  const BATCH_SIZE = 4;
+  const DELAY_BETWEEN_BATCHES_MS = 4000;
+  const DELAY_BETWEEN_REQUESTS_MS = 300;
+  const MAX_RETRIES = 3;
+  const BASE_RETRY_DELAY_MS = 10000;
 
   let startedCount = 0;
   let failedCount = 0;
   
-  // Helper function to delay
   const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
   
   // Process in batches
@@ -924,14 +945,13 @@ async function processImagesJob(
           model: imageModel,
           async: true,
           webhook_url: webhookUrl,
-          userId, // Required for internal service role calls
+          userId,
         };
 
         if (styleReferenceUrls.length > 0) {
           requestBody.image_urls = styleReferenceUrls;
         }
         
-        // Add LoRA parameters for z-image-turbo-lora model
         if (imageModel === 'z-image-turbo-lora') {
           if (project.lora_url) {
             requestBody.lora_url = project.lora_url;
@@ -941,12 +961,10 @@ async function processImagesJob(
           }
         }
 
-        // Retry logic with exponential backoff
         let lastError = '';
         let success = false;
         
         for (let retry = 0; retry <= MAX_RETRIES; retry++) {
-          // Start async generation with webhook
           const startResponse = await fetch(`${supabaseUrl}/functions/v1/generate-image-seedream`, {
             method: 'POST',
             headers: {
@@ -961,7 +979,6 @@ async function processImagesJob(
             const predictionId = startData.predictionId;
 
             if (predictionId) {
-              // Save to pending_predictions table
               const { error: insertError } = await adminClient
                 .from('pending_predictions')
                 .insert({
@@ -987,13 +1004,11 @@ async function processImagesJob(
           const errorText = await startResponse.text().catch(() => 'Unknown error');
           lastError = errorText;
           
-          // Check if it's a queue full error - apply exponential backoff
           if (errorText.includes('Queue is full') && retry < MAX_RETRIES) {
-            const retryDelay = BASE_RETRY_DELAY_MS * Math.pow(2, retry); // 15s, 30s, 60s
+            const retryDelay = BASE_RETRY_DELAY_MS * Math.pow(2, retry);
             console.log(`Queue full for scene ${index + 1}, retry ${retry + 1}/${MAX_RETRIES} in ${retryDelay / 1000}s...`);
             await delay(retryDelay);
           } else if (retry < MAX_RETRIES) {
-            // For other errors, shorter delay
             console.log(`Error for scene ${index + 1}: ${errorText}, retry ${retry + 1}/${MAX_RETRIES} in 5s...`);
             await delay(5000);
           }
@@ -1003,7 +1018,6 @@ async function processImagesJob(
           console.error(`Failed to start generation for scene ${index + 1} after ${MAX_RETRIES} retries: ${lastError}`);
           failedCount++;
           
-          // Save as failed prediction so it can be retried later
           await adminClient
             .from('pending_predictions')
             .insert({
@@ -1019,7 +1033,6 @@ async function processImagesJob(
             });
         }
 
-        // Small delay between individual requests within a batch
         if (i < batch.length - 1) {
           await delay(DELAY_BETWEEN_REQUESTS_MS);
         }
@@ -1030,14 +1043,13 @@ async function processImagesJob(
       }
     }
     
-    // Delay between batches to avoid overwhelming Replicate
     if (batchStart + BATCH_SIZE < promptsToProcess.length) {
       console.log(`Batch complete. Waiting ${DELAY_BETWEEN_BATCHES_MS / 1000}s before next batch...`);
       await delay(DELAY_BETWEEN_BATCHES_MS);
     }
   }
 
-  console.log(`Started ${startedCount}/${promptsToProcess.length} image generations (${failedCount} failed to start). Waiting for webhooks...`);
+  console.log(`CHUNK COMPLETE: Started ${startedCount}/${promptsToProcess.length} image generations (${failedCount} failed to start). ${remainingAfterThisChunk} images remaining for next chunks.`);
 
   // Update job total to match actually started generations
   if (startedCount > 0) {
@@ -1057,12 +1069,12 @@ async function processImagesJob(
         completed_at: new Date().toISOString()
       })
       .eq('id', jobId);
-    return; // Don't throw, job is already marked
+    return;
   }
 
   // Schedule a check for stuck predictions after 10 minutes
   EdgeRuntime.waitUntil((async () => {
-    await new Promise(resolve => setTimeout(resolve, 10 * 60 * 1000)); // 10 minutes
+    await new Promise(resolve => setTimeout(resolve, 10 * 60 * 1000));
     console.log(`Running scheduled stuck check for job ${jobId}`);
     try {
       await fetch(`${supabaseUrl}/functions/v1/check-stuck-jobs`, {
@@ -1078,8 +1090,7 @@ async function processImagesJob(
     }
   })());
 
-  // Job stays in 'processing' status - the webhook will mark it complete
-  // Throw special marker to prevent the job from being marked complete by processJob
+  // Job stays in 'processing' status - the webhook will mark it complete and trigger next chunk
   throw new Error("WEBHOOK_MODE_ACTIVE");
 }
 
