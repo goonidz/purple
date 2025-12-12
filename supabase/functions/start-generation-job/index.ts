@@ -764,8 +764,8 @@ async function processPromptsJob(
 ): Promise<{ remainingAfterChunk: number; nextChunkStart: number }> {
   const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
   
-  // CHUNK SETTINGS - process max 50 prompts per job to avoid timeout
-  const CHUNK_SIZE = 50;
+  // CHUNK SETTINGS - process max 20 prompts per job to avoid timeout
+  const CHUNK_SIZE = 20;
   
   // Get project data
   const { data: project } = await adminClient
@@ -936,8 +936,8 @@ async function processImagesJob(
 ) {
   const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
   
-  // CHUNK SETTINGS - process max 50 images per job to avoid timeout
-  const CHUNK_SIZE = 50;
+  // CHUNK SETTINGS - process max 20 images per job to avoid timeout
+  const CHUNK_SIZE = 20;
   
   // Get project data
   const { data: project } = await adminClient
