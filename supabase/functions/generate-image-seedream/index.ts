@@ -185,11 +185,11 @@ Deno.serve(async (req) => {
       input.height = height;
       input.guidance_scale = 0; // Required for turbo models
       input.num_inference_steps = body.lora_steps || body.num_inference_steps || 10;
-      // Add LoRA URL(s) if provided
-      if (body.lora_url) {
-        // Replicate LoRA helper expects `lora_urls` (plural). Accept string or array from caller.
-        input.lora_urls = Array.isArray(body.lora_url) ? body.lora_url : [body.lora_url];
-        console.log('Z-Image Turbo LoRA: using LoRA from', input.lora_urls);
+      // Add LoRA weights if provided
+      if (body.lora_url || body.lora_weights) {
+        const weights = body.lora_weights || (Array.isArray(body.lora_url) ? body.lora_url : [body.lora_url]);
+        input.lora_weights = weights;
+        console.log('Z-Image Turbo LoRA: using lora_weights', weights);
       }
     } else {
       // SeedDream models
