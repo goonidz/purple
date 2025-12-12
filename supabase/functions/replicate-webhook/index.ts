@@ -312,6 +312,21 @@ async function updateThumbnail(adminClient: any, prediction: any, imageUrl: stri
 async function checkJobCompletion(adminClient: any, jobId: string) {
   if (!jobId) return;
 
+  // Get job info first to know the expected total
+  const { data: job } = await adminClient
+    .from('generation_jobs')
+    .select('job_type, project_id, user_id, metadata, status, total')
+    .eq('id', jobId)
+    .single();
+
+  if (!job) return;
+
+  // CRITICAL: Skip if job is already completed or failed
+  if (job.status === 'completed' || job.status === 'failed') {
+    console.log(`Job ${jobId} already marked as ${job.status}, skipping`);
+    return;
+  }
+
   // Get all predictions for this job
   const { data: predictions } = await adminClient
     .from('pending_predictions')
@@ -322,29 +337,23 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
     return;
   }
 
-  const allCompleted = predictions.every((p: any) => p.status === 'completed' || p.status === 'failed');
+  const completedCount = predictions.filter((p: any) => p.status === 'completed' || p.status === 'failed').length;
+  const pendingCount = predictions.filter((p: any) => p.status === 'pending' || p.status === 'starting').length;
   
-  if (!allCompleted) {
-    console.log(`Job ${jobId}: ${predictions.filter((p: any) => p.status === 'completed').length}/${predictions.length} completed`);
+  // Check if ALL predictions are done (no pending ones left)
+  if (pendingCount > 0) {
+    console.log(`Job ${jobId}: ${completedCount}/${predictions.length} completed, ${pendingCount} still pending`);
+    return;
+  }
+  
+  // Also verify we have received all expected predictions
+  const expectedTotal = job.total || 0;
+  if (predictions.length < expectedTotal) {
+    console.log(`Job ${jobId}: Only ${predictions.length}/${expectedTotal} predictions created, waiting for more`);
     return;
   }
 
   console.log(`All predictions for job ${jobId} are complete`);
-
-  // Get job info - check if already completed to prevent race conditions
-  const { data: job } = await adminClient
-    .from('generation_jobs')
-    .select('job_type, project_id, user_id, metadata, status')
-    .eq('id', jobId)
-    .single();
-
-  if (!job) return;
-
-  // CRITICAL: Skip if job is already completed or failed
-  if (job.status === 'completed' || job.status === 'failed') {
-    console.log(`Job ${jobId} already marked as ${job.status}, skipping duplicate processing`);
-    return;
-  }
 
   // Mark job as completed atomically - ONLY if still processing
   // This is the critical race condition prevention
