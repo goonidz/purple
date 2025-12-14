@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
-import { Loader2, Key, LogOut, Sparkles } from "lucide-react";
+import { Loader2, Key, LogOut, Sparkles, Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
 import type { User } from "@supabase/supabase-js";
 
@@ -23,6 +23,11 @@ const Profile = () => {
     replicate: "",
     eleven_labs: "",
     minimax: ""
+  });
+  const [showKeys, setShowKeys] = useState({
+    replicate: false,
+    eleven_labs: false,
+    minimax: false
   });
 
   useEffect(() => {
@@ -208,13 +213,25 @@ const Profile = () => {
                       Replicate API Key
                       <span className="text-destructive ml-1">*</span>
                     </Label>
-                    <Input
-                      id="replicate-key"
-                      type="password"
-                      value={replicateApiKey}
-                      onChange={(e) => setReplicateApiKey(e.target.value)}
-                      placeholder="r8_..."
-                    />
+                    <div className="relative">
+                      <Input
+                        id="replicate-key"
+                        type={showKeys.replicate ? "text" : "password"}
+                        value={replicateApiKey}
+                        onChange={(e) => setReplicateApiKey(e.target.value)}
+                        placeholder="r8_..."
+                        className="pr-10"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                        onClick={() => setShowKeys(prev => ({ ...prev, replicate: !prev.replicate }))}
+                      >
+                        {showKeys.replicate ? <EyeOff className="h-4 w-4 text-muted-foreground" /> : <Eye className="h-4 w-4 text-muted-foreground" />}
+                      </Button>
+                    </div>
                     <p className="text-xs text-muted-foreground">
                       Utilisée pour générer les images avec SeedDream 4.{" "}
                       <a
@@ -232,13 +249,25 @@ const Profile = () => {
                     <Label htmlFor="elevenlabs-key">
                       Eleven Labs API Key
                     </Label>
-                    <Input
-                      id="elevenlabs-key"
-                      type="password"
-                      value={elevenLabsApiKey}
-                      onChange={(e) => setElevenLabsApiKey(e.target.value)}
-                      placeholder="sk_..."
-                    />
+                    <div className="relative">
+                      <Input
+                        id="elevenlabs-key"
+                        type={showKeys.eleven_labs ? "text" : "password"}
+                        value={elevenLabsApiKey}
+                        onChange={(e) => setElevenLabsApiKey(e.target.value)}
+                        placeholder="sk_..."
+                        className="pr-10"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                        onClick={() => setShowKeys(prev => ({ ...prev, eleven_labs: !prev.eleven_labs }))}
+                      >
+                        {showKeys.eleven_labs ? <EyeOff className="h-4 w-4 text-muted-foreground" /> : <Eye className="h-4 w-4 text-muted-foreground" />}
+                      </Button>
+                    </div>
                     <p className="text-xs text-muted-foreground">
                       Utilisée pour la transcription audio et TTS.{" "}
                       <a
@@ -256,13 +285,25 @@ const Profile = () => {
                     <Label htmlFor="minimax-key">
                       MiniMax API Key
                     </Label>
-                    <Input
-                      id="minimax-key"
-                      type="password"
-                      value={minimaxApiKey}
-                      onChange={(e) => setMinimaxApiKey(e.target.value)}
-                      placeholder="eyJ..."
-                    />
+                    <div className="relative">
+                      <Input
+                        id="minimax-key"
+                        type={showKeys.minimax ? "text" : "password"}
+                        value={minimaxApiKey}
+                        onChange={(e) => setMinimaxApiKey(e.target.value)}
+                        placeholder="eyJ..."
+                        className="pr-10"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                        onClick={() => setShowKeys(prev => ({ ...prev, minimax: !prev.minimax }))}
+                      >
+                        {showKeys.minimax ? <EyeOff className="h-4 w-4 text-muted-foreground" /> : <Eye className="h-4 w-4 text-muted-foreground" />}
+                      </Button>
+                    </div>
                     <p className="text-xs text-muted-foreground">
                       Utilisée pour la génération vocale TTS.{" "}
                       <a
