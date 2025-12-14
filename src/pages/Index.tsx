@@ -22,14 +22,7 @@ import {
   DialogContent,
   DialogDescription,
 } from "@/components/ui/dialog";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { SceneGrid } from "@/components/SceneGrid";
 import {
   Select,
   SelectContent,
@@ -2275,230 +2268,26 @@ const Index = () => {
                       )}
 
                     </div>
-                    <div className="overflow-x-auto">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead className="w-12">#</TableHead>
-                            <TableHead>Timing</TableHead>
-                            <TableHead>Durée</TableHead>
-                            <TableHead>Texte de la scène</TableHead>
-                            <TableHead>Prompt</TableHead>
-                            <TableHead className="w-32">Image</TableHead>
-                            <TableHead className="w-24">Actions</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {/* Use generatedPrompts as source when scenes is empty (legacy projects) */}
-                          {(scenes.length > 0 ? scenes : generatedPrompts).map((item, index) => {
-                            // If iterating over scenes, get matching prompt. If iterating over generatedPrompts, item IS the prompt
-                            const scene = scenes.length > 0 ? item as Scene : null;
-                            const prompt = scenes.length > 0 
-                              ? generatedPrompts.find((p, i) => i === index)
-                              : item as GeneratedPrompt;
-                            
-                            // Get timing data from scene or prompt
-                            const startTime = scene?.startTime ?? prompt?.startTime ?? 0;
-                            const endTime = scene?.endTime ?? prompt?.endTime ?? 0;
-                            const text = scene?.text ?? prompt?.text ?? '';
-                            
-                            return (
-                              <TableRow key={index}>
-                                <TableCell className="font-semibold">{index + 1}</TableCell>
-                                <TableCell className="text-xs whitespace-nowrap">
-                                  {formatTimecode(startTime)} - {formatTimecode(endTime)}
-                                </TableCell>
-                                <TableCell className="text-xs whitespace-nowrap">
-                                  {(endTime - startTime).toFixed(1)}s
-                                </TableCell>
-                                <TableCell className="max-w-xs">
-                                  <div className="group relative">
-                                    <p className="text-sm line-clamp-3">{text}</p>
-                                    <div className={`absolute top-0 right-0 flex gap-1 transition-opacity rounded p-1 ${
-                                      editingSceneIndex === index
-                                        ? 'opacity-100 bg-background/80 backdrop-blur-sm'
-                                        : 'opacity-0 group-hover:opacity-100 group-hover:bg-background/80 group-hover:backdrop-blur-sm'
-                                    }`}>
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => handleEditScene(index)}
-                                        title="Modifier le texte"
-                                      >
-                                        <Pencil className="h-3 w-3" />
-                                      </Button>
-                                    </div>
-                                  </div>
-                                </TableCell>
-                                <TableCell className="max-w-md">
-                                  {prompt ? (
-                                    <div className="group relative">
-                                      <p className="text-sm">{prompt.prompt}</p>
-                                      <div className={`absolute top-0 right-0 flex gap-1 transition-opacity rounded p-1 ${
-                                        editingPromptIndex === index || regeneratingPromptIndex === index
-                                          ? 'opacity-100 bg-background/80 backdrop-blur-sm'
-                                          : 'opacity-0 group-hover:opacity-100 group-hover:bg-background/80 group-hover:backdrop-blur-sm'
-                                      }`}>
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          onClick={() => handleEditPrompt(index)}
-                                          disabled={regeneratingPromptIndex === index}
-                                          title="Modifier le prompt"
-                                        >
-                                          <Pencil className="h-3 w-3" />
-                                        </Button>
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          onClick={() => setConfirmRegeneratePrompt(index)}
-                                          disabled={regeneratingPromptIndex === index}
-                                          title="Régénérer le prompt"
-                                        >
-                                          {regeneratingPromptIndex === index ? (
-                                            <Loader2 className="h-3 w-3 animate-spin" />
-                                          ) : (
-                                            <RefreshCw className="h-3 w-3" />
-                                          )}
-                                        </Button>
-                                      </div>
-                                    </div>
-                                  ) : (
-                                    <Button
-                                      variant="outline"
-                                      size="sm"
-                                      onClick={() => generateSinglePrompt(index)}
-                                      disabled={generatingPromptIndex === index}
-                                      title="Générer le prompt de cette scène"
-                                    >
-                                      {generatingPromptIndex === index ? (
-                                        <>
-                                          <Loader2 className="h-4 w-4 animate-spin mr-1" />
-                                          <span className="text-xs">Génération...</span>
-                                        </>
-                                      ) : (
-                                        <>
-                                          <Sparkles className="h-4 w-4 mr-1" />
-                                          <span className="text-xs">Générer</span>
-                                        </>
-                                      )}
-                                    </Button>
-                                  )}
-                                </TableCell>
-                                <TableCell>
-                                  {prompt?.imageUrl ? (
-                                    <div className="group relative">
-                                      <img 
-                                        src={prompt.imageUrl} 
-                                        alt={`Scene ${index + 1}`}
-                                        className="w-24 h-24 object-cover rounded cursor-pointer hover:opacity-80 transition"
-                                        onClick={() => setImagePreviewUrl(prompt.imageUrl || null)}
-                                        title="Cliquer pour agrandir"
-                                      />
-                                      <div className="absolute top-1 right-1 flex gap-1">
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          className="bg-background/80 hover:bg-background opacity-0 group-hover:opacity-100 transition-all"
-                                          onClick={() => {
-                                            const input = document.createElement('input');
-                                            input.type = 'file';
-                                            input.accept = 'image/*';
-                                            input.onchange = (e) => {
-                                              const file = (e.target as HTMLInputElement).files?.[0];
-                                              if (file) uploadManualImage(file, index);
-                                            };
-                                            input.click();
-                                          }}
-                                          disabled={generatingImageIndex === index}
-                                          title="Importer une image"
-                                        >
-                                          <Upload className="h-3 w-3" />
-                                        </Button>
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          className={`bg-background/80 hover:bg-background transition-all ${
-                                            generatingImageIndex === index 
-                                              ? 'opacity-100' 
-                                              : 'opacity-0 group-hover:opacity-100'
-                                          }`}
-                                          onClick={() => setConfirmRegenerateImage(index)}
-                                          disabled={generatingImageIndex === index}
-                                          title="Régénérer l'image"
-                                        >
-                                          {generatingImageIndex === index ? (
-                                            <Loader2 className="h-3 w-3 animate-spin" />
-                                          ) : (
-                                            <RefreshCw className="h-3 w-3" />
-                                          )}
-                                        </Button>
-                                      </div>
-                                    </div>
-                                  ) : prompt ? (
-                                    <div className="flex gap-2">
-                                      <Button
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={() => {
-                                          const input = document.createElement('input');
-                                          input.type = 'file';
-                                          input.accept = 'image/*';
-                                          input.onchange = (e) => {
-                                            const file = (e.target as HTMLInputElement).files?.[0];
-                                            if (file) uploadManualImage(file, index);
-                                          };
-                                          input.click();
-                                        }}
-                                        disabled={generatingImageIndex === index}
-                                        title="Importer une image"
-                                      >
-                                        <Upload className="h-4 w-4 mr-1" />
-                                        <span className="text-xs">Importer</span>
-                                      </Button>
-                                      <Button
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={() => generateImage(index)}
-                                        disabled={generatingImageIndex === index}
-                                        title="Générer l'image de cette scène"
-                                      >
-                                        {generatingImageIndex === index ? (
-                                          <>
-                                            <Loader2 className="h-4 w-4 animate-spin mr-1" />
-                                            <span className="text-xs">Génération...</span>
-                                          </>
-                                        ) : (
-                                          <>
-                                            <ImageIcon className="h-4 w-4 mr-1" />
-                                            <span className="text-xs">Générer</span>
-                                          </>
-                                        )}
-                                      </Button>
-                                    </div>
-                                  ) : null}
-                                </TableCell>
-                                <TableCell>
-                                  {prompt && (
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      onClick={() => copyToClipboard(prompt.prompt, index)}
-                                    >
-                                      {copiedIndex === index ? (
-                                        <Check className="h-4 w-4 text-green-500" />
-                                      ) : (
-                                        <Copy className="h-4 w-4" />
-                                      )}
-                                    </Button>
-                                  )}
-                                </TableCell>
-                              </TableRow>
-                            );
-                          })}
-                        </TableBody>
-                      </Table>
-                    </div>
+                    <SceneGrid
+                      scenes={scenes}
+                      generatedPrompts={generatedPrompts}
+                      formatTimecode={formatTimecode}
+                      editingSceneIndex={editingSceneIndex}
+                      editingPromptIndex={editingPromptIndex}
+                      regeneratingPromptIndex={regeneratingPromptIndex}
+                      generatingPromptIndex={generatingPromptIndex}
+                      generatingImageIndex={generatingImageIndex}
+                      copiedIndex={copiedIndex}
+                      handleEditScene={handleEditScene}
+                      handleEditPrompt={handleEditPrompt}
+                      setConfirmRegeneratePrompt={setConfirmRegeneratePrompt}
+                      setConfirmRegenerateImage={setConfirmRegenerateImage}
+                      generateSinglePrompt={generateSinglePrompt}
+                      generateImage={generateImage}
+                      uploadManualImage={uploadManualImage}
+                      copyToClipboard={copyToClipboard}
+                      setImagePreviewUrl={setImagePreviewUrl}
+                    />
                   </Card>
                 )}
               </TabsContent>
