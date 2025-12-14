@@ -1534,26 +1534,26 @@ const Index = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-secondary/5">
       <div className="border-b bg-background/80 backdrop-blur-sm sticky top-0 z-10">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <Link to="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-primary/60">
-                  <Sparkles className="h-5 w-5 text-primary-foreground" />
+        <div className="container mx-auto px-2 sm:px-4 py-3 sm:py-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-4">
+            <div className="flex items-center gap-2 sm:gap-4 min-w-0">
+              <Link to="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity flex-shrink-0">
+                <div className="flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-primary/60">
+                  <Sparkles className="h-4 w-4 sm:h-5 sm:w-5 text-primary-foreground" />
                 </div>
-                <span className="text-xl font-bold bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
+                <span className="text-lg sm:text-xl font-bold bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent hidden xs:inline">
                   VidéoFlow
                 </span>
               </Link>
               {currentProjectId && projectName && (
                 <>
-                  <span className="text-muted-foreground">/</span>
+                  <span className="text-muted-foreground hidden sm:inline">/</span>
                   {isEditingProjectName ? (
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
                       <Input
                         value={editingProjectNameValue}
                         onChange={(e) => setEditingProjectNameValue(e.target.value)}
-                        className="h-8 w-64"
+                        className="h-8 w-full sm:w-64"
                         autoFocus
                         onKeyDown={(e) => {
                           if (e.key === "Enter") {
@@ -1565,19 +1565,19 @@ const Index = () => {
                           }
                         }}
                       />
-                      <Button size="sm" onClick={handleSaveProjectName}>Enregistrer</Button>
+                      <Button size="sm" onClick={handleSaveProjectName} className="flex-shrink-0">Enregistrer</Button>
                       <Button size="sm" variant="ghost" onClick={() => {
                         setIsEditingProjectName(false);
                         setEditingProjectNameValue("");
-                      }}>Annuler</Button>
+                      }} className="flex-shrink-0">Annuler</Button>
                     </div>
                   ) : (
-                    <div className="flex items-center gap-2 group">
-                      <h1 className="text-lg font-semibold">{projectName}</h1>
+                    <div className="flex items-center gap-2 group min-w-0">
+                      <h1 className="text-sm sm:text-lg font-semibold truncate">{projectName}</h1>
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
+                        className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
                         onClick={() => {
                           setEditingProjectNameValue(projectName);
                           setIsEditingProjectName(true);
@@ -1590,17 +1590,17 @@ const Index = () => {
                 </>
               )}
             </div>
-            <div className="flex items-center gap-4">
-              <Button variant="outline" size="sm" asChild>
+            <div className="flex items-center gap-2 sm:gap-4 flex-shrink-0">
+              <Button variant="outline" size="sm" asChild className="text-xs sm:text-sm">
                 <Link to="/projects">
-                  <FolderOpen className="h-4 w-4 mr-2" />
-                  Mes projets
+                  <FolderOpen className="h-4 w-4 sm:mr-2" />
+                  <span className="hidden sm:inline">Mes projets</span>
                 </Link>
               </Button>
-              <Button variant="outline" size="sm" asChild>
+              <Button variant="outline" size="sm" asChild className="text-xs sm:text-sm">
                 <Link to="/profile">
-                  <UserIcon className="h-4 w-4 mr-2" />
-                  Profil
+                  <UserIcon className="h-4 w-4 sm:mr-2" />
+                  <span className="hidden sm:inline">Profil</span>
                 </Link>
               </Button>
             </div>
@@ -1624,36 +1624,36 @@ const Index = () => {
             </Button>
           </Card>
         ) : (
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-            <div className="border-b">
-              <TabsList>
-                <TabsTrigger value="video" className="flex items-center gap-2">
-                  <Video className="h-4 w-4" />
-                  Vidéo
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4 sm:space-y-6">
+            <div className="border-b -mx-2 sm:mx-0 px-2 sm:px-0 overflow-x-auto">
+              <TabsList className="inline-flex w-auto min-w-full sm:min-w-0">
+                <TabsTrigger value="video" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm px-2 sm:px-3">
+                  <Video className="h-3 w-3 sm:h-4 sm:w-4" />
+                  <span className="hidden xs:inline">Vidéo</span>
                 </TabsTrigger>
-                <TabsTrigger value="thumbnails" className="flex items-center gap-2">
-                  <ImageIcon className="h-4 w-4" />
-                  Miniatures
+                <TabsTrigger value="thumbnails" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm px-2 sm:px-3">
+                  <ImageIcon className="h-3 w-3 sm:h-4 sm:w-4" />
+                  <span className="hidden xs:inline">Miniatures</span>
                 </TabsTrigger>
-                <TabsTrigger value="titles" className="flex items-center gap-2">
-                  <Type className="h-4 w-4" />
-                  Titres
+                <TabsTrigger value="titles" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm px-2 sm:px-3">
+                  <Type className="h-3 w-3 sm:h-4 sm:w-4" />
+                  <span className="hidden xs:inline">Titres</span>
                 </TabsTrigger>
-                <TabsTrigger value="descriptions" className="flex items-center gap-2">
-                  <FileText className="h-4 w-4" />
-                  Description
+                <TabsTrigger value="descriptions" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm px-2 sm:px-3">
+                  <FileText className="h-3 w-3 sm:h-4 sm:w-4" />
+                  <span className="hidden xs:inline">Desc.</span>
                 </TabsTrigger>
-                <TabsTrigger value="test" className="flex items-center gap-2">
-                  <MonitorPlay className="h-4 w-4" />
-                  Test
+                <TabsTrigger value="test" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm px-2 sm:px-3">
+                  <MonitorPlay className="h-3 w-3 sm:h-4 sm:w-4" />
+                  <span className="hidden xs:inline">Test</span>
                 </TabsTrigger>
-              <TabsTrigger value="tags" className="flex items-center gap-2">
-                  <Hash className="h-4 w-4" />
-                  Tags
+                <TabsTrigger value="tags" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm px-2 sm:px-3">
+                  <Hash className="h-3 w-3 sm:h-4 sm:w-4" />
+                  <span className="hidden xs:inline">Tags</span>
                 </TabsTrigger>
-                <TabsTrigger value="transcript" className="flex items-center gap-2">
-                  <Type className="h-4 w-4" />
-                  Transcription
+                <TabsTrigger value="transcript" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm px-2 sm:px-3">
+                  <Type className="h-3 w-3 sm:h-4 sm:w-4" />
+                  <span className="hidden xs:inline">Script</span>
                 </TabsTrigger>
               </TabsList>
             </div>
