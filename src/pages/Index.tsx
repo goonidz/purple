@@ -430,7 +430,7 @@ const Index = () => {
 
       return () => clearTimeout(timeoutId);
     }
-  }, [currentProjectId, transcriptData, examplePrompts, scenes, sceneDuration0to1, sceneDuration1to3, sceneDuration3plus, styleReferenceUrls, audioUrl, imageWidth, imageHeight, aspectRatio, imageModel, loraUrl, loraSteps, promptSystemMessage]);
+  }, [currentProjectId, transcriptData, examplePrompts, scenes, sceneDuration0to1, sceneDuration1to3, sceneDuration3plus, range1End, range2End, styleReferenceUrls, audioUrl, imageWidth, imageHeight, aspectRatio, imageModel, loraUrl, loraSteps, promptSystemMessage]);
 
   // Track if we've already shown the config modal for this session
   const hasShownConfigModalRef = useRef(false);
@@ -511,10 +511,15 @@ const Index = () => {
       const prompts = (data.example_prompts as string[]) || ["", "", ""];
       setExamplePrompts(Array.isArray(prompts) ? prompts : ["", "", ""]);
       
-      // Load scene durations
+      // Load scene durations and range boundaries
       setSceneDuration0to1(data.scene_duration_0to1 || 4);
       setSceneDuration1to3(data.scene_duration_1to3 || 6);
       setSceneDuration3plus(data.scene_duration_3plus || 8);
+      
+      // Load range boundaries
+      const projectData = data as any;
+      if (projectData.range_end_1) setRange1End(projectData.range_end_1);
+      if (projectData.range_end_2) setRange2End(projectData.range_end_2);
       
       // Load existing scenes - don't auto-generate, let user configure first
       const existingScenes = (data.scenes as unknown as Scene[]) || [];
@@ -531,7 +536,6 @@ const Index = () => {
       }
       
       // Load image dimensions and aspect ratio
-      const projectData = data as any;
       if (projectData.image_width) setImageWidth(projectData.image_width);
       if (projectData.image_height) setImageHeight(projectData.image_height);
       if (projectData.aspect_ratio) setAspectRatio(projectData.aspect_ratio);
@@ -579,6 +583,8 @@ const Index = () => {
           scene_duration_0to1: sceneDuration0to1,
           scene_duration_1to3: sceneDuration1to3,
           scene_duration_3plus: sceneDuration3plus,
+          range_end_1: range1End,
+          range_end_2: range2End,
           image_width: imageWidth,
           image_height: imageHeight,
           aspect_ratio: aspectRatio,
@@ -1462,6 +1468,8 @@ const Index = () => {
     scene_duration_0to1: number;
     scene_duration_1to3: number;
     scene_duration_3plus: number;
+    range_end_1: number;
+    range_end_2: number;
     example_prompts: string[];
     image_width: number;
     image_height: number;
@@ -1475,6 +1483,8 @@ const Index = () => {
     setSceneDuration0to1(preset.scene_duration_0to1);
     setSceneDuration1to3(preset.scene_duration_1to3);
     setSceneDuration3plus(preset.scene_duration_3plus);
+    setRange1End(preset.range_end_1);
+    setRange2End(preset.range_end_2);
     setExamplePrompts(preset.example_prompts);
     setImageWidth(preset.image_width);
     setImageHeight(preset.image_height);
@@ -1823,6 +1833,8 @@ const Index = () => {
                     sceneDuration0to1,
                     sceneDuration1to3,
                     sceneDuration3plus,
+                    range1End,
+                    range2End,
                     examplePrompts,
                     imageWidth,
                     imageHeight,

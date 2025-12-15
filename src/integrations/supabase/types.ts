@@ -328,6 +328,8 @@ export type Database = {
           lora_url: string | null
           name: string
           prompt_system_message: string | null
+          range_end_1: number | null
+          range_end_2: number | null
           scene_duration_0to1: number | null
           scene_duration_1to3: number | null
           scene_duration_3plus: number | null
@@ -347,6 +349,8 @@ export type Database = {
           lora_url?: string | null
           name: string
           prompt_system_message?: string | null
+          range_end_1?: number | null
+          range_end_2?: number | null
           scene_duration_0to1?: number | null
           scene_duration_1to3?: number | null
           scene_duration_3plus?: number | null
@@ -366,6 +370,8 @@ export type Database = {
           lora_url?: string | null
           name?: string
           prompt_system_message?: string | null
+          range_end_1?: number | null
+          range_end_2?: number | null
           scene_duration_0to1?: number | null
           scene_duration_1to3?: number | null
           scene_duration_3plus?: number | null
@@ -390,6 +396,8 @@ export type Database = {
           name: string
           prompt_system_message: string | null
           prompts: Json | null
+          range_end_1: number | null
+          range_end_2: number | null
           scene_duration_0to1: number | null
           scene_duration_1to3: number | null
           scene_duration_3plus: number | null
@@ -415,6 +423,8 @@ export type Database = {
           name: string
           prompt_system_message?: string | null
           prompts?: Json | null
+          range_end_1?: number | null
+          range_end_2?: number | null
           scene_duration_0to1?: number | null
           scene_duration_1to3?: number | null
           scene_duration_3plus?: number | null
@@ -440,6 +450,8 @@ export type Database = {
           name?: string
           prompt_system_message?: string | null
           prompts?: Json | null
+          range_end_1?: number | null
+          range_end_2?: number | null
           scene_duration_0to1?: number | null
           scene_duration_1to3?: number | null
           scene_duration_3plus?: number | null

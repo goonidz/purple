@@ -794,6 +794,8 @@ const Projects = () => {
                           sceneDuration0to1,
                           sceneDuration1to3,
                           sceneDuration3plus,
+                          range1End,
+                          range2End,
                           examplePrompts,
                           imageWidth,
                           imageHeight,
@@ -808,6 +810,8 @@ const Projects = () => {
                           setSceneDuration0to1(preset.scene_duration_0to1);
                           setSceneDuration1to3(preset.scene_duration_1to3);
                           setSceneDuration3plus(preset.scene_duration_3plus);
+                          setRange1End(preset.range_end_1);
+                          setRange2End(preset.range_end_2);
                           setExamplePrompts(preset.example_prompts);
                           setImageWidth(preset.image_width);
                           setImageHeight(preset.image_height);

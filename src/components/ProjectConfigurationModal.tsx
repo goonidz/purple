@@ -23,6 +23,8 @@ interface Preset {
   scene_duration_0to1: number;
   scene_duration_1to3: number;
   scene_duration_3plus: number;
+  range_end_1: number;
+  range_end_2: number;
   example_prompts: string[];
   image_width: number;
   image_height: number;
@@ -132,6 +134,8 @@ export const ProjectConfigurationModal = ({
         scene_duration_0to1: preset.scene_duration_0to1 || 4,
         scene_duration_1to3: preset.scene_duration_1to3 || 6,
         scene_duration_3plus: preset.scene_duration_3plus || 8,
+        range_end_1: (preset as any).range_end_1 || 60,
+        range_end_2: (preset as any).range_end_2 || 180,
         example_prompts: Array.isArray(preset.example_prompts) 
           ? preset.example_prompts.filter((p): p is string => typeof p === 'string')
           : [],
@@ -159,6 +163,8 @@ export const ProjectConfigurationModal = ({
       setSceneDuration0to1(preset.scene_duration_0to1);
       setSceneDuration1to3(preset.scene_duration_1to3);
       setSceneDuration3plus(preset.scene_duration_3plus);
+      setRange1End(preset.range_end_1);
+      setRange2End(preset.range_end_2);
       setExamplePrompts(preset.example_prompts.length > 0 ? preset.example_prompts : ["", "", ""]);
       setImageWidth(preset.image_width);
       setImageHeight(preset.image_height);
@@ -309,6 +315,8 @@ export const ProjectConfigurationModal = ({
           scene_duration_0to1: sceneDuration0to1,
           scene_duration_1to3: sceneDuration1to3,
           scene_duration_3plus: sceneDuration3plus,
+          range_end_1: range1End,
+          range_end_2: range2End,
           example_prompts: examplePrompts,
           image_width: imageWidth,
           image_height: imageHeight,

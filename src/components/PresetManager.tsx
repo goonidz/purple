@@ -30,6 +30,8 @@ interface Preset {
   scene_duration_0to1: number;
   scene_duration_1to3: number;
   scene_duration_3plus: number;
+  range_end_1: number;
+  range_end_2: number;
   example_prompts: string[];
   image_width: number;
   image_height: number;
@@ -78,6 +80,8 @@ interface PresetManagerProps {
     sceneDuration0to1: number;
     sceneDuration1to3: number;
     sceneDuration3plus: number;
+    range1End: number;
+    range2End: number;
     examplePrompts: string[];
     imageWidth: number;
     imageHeight: number;
@@ -108,6 +112,8 @@ export const PresetManager = ({ currentConfig, onLoadPreset }: PresetManagerProp
     sceneDuration0to1: number;
     sceneDuration1to3: number;
     sceneDuration3plus: number;
+    range1End: number;
+    range2End: number;
     examplePrompts: string[];
     imageWidth: number;
     imageHeight: number;
@@ -137,6 +143,8 @@ export const PresetManager = ({ currentConfig, onLoadPreset }: PresetManagerProp
         scene_duration_0to1: preset.scene_duration_0to1,
         scene_duration_1to3: preset.scene_duration_1to3,
         scene_duration_3plus: preset.scene_duration_3plus,
+        range_end_1: (preset as any).range_end_1 || 60,
+        range_end_2: (preset as any).range_end_2 || 180,
         example_prompts: Array.isArray(preset.example_prompts) 
           ? preset.example_prompts.filter((p): p is string => typeof p === 'string')
           : [],
@@ -177,6 +185,8 @@ export const PresetManager = ({ currentConfig, onLoadPreset }: PresetManagerProp
           scene_duration_0to1: currentConfig.sceneDuration0to1,
           scene_duration_1to3: currentConfig.sceneDuration1to3,
           scene_duration_3plus: currentConfig.sceneDuration3plus,
+          range_end_1: currentConfig.range1End,
+          range_end_2: currentConfig.range2End,
           example_prompts: currentConfig.examplePrompts,
           image_width: currentConfig.imageWidth,
           image_height: currentConfig.imageHeight,
@@ -250,6 +260,8 @@ export const PresetManager = ({ currentConfig, onLoadPreset }: PresetManagerProp
           scene_duration_0to1: editFormData.sceneDuration0to1,
           scene_duration_1to3: editFormData.sceneDuration1to3,
           scene_duration_3plus: editFormData.sceneDuration3plus,
+          range_end_1: editFormData.range1End,
+          range_end_2: editFormData.range2End,
           example_prompts: editFormData.examplePrompts,
           image_width: editFormData.imageWidth,
           image_height: editFormData.imageHeight,
@@ -279,6 +291,8 @@ export const PresetManager = ({ currentConfig, onLoadPreset }: PresetManagerProp
       sceneDuration0to1: preset.scene_duration_0to1,
       sceneDuration1to3: preset.scene_duration_1to3,
       sceneDuration3plus: preset.scene_duration_3plus,
+      range1End: preset.range_end_1,
+      range2End: preset.range_end_2,
       examplePrompts: preset.example_prompts,
       imageWidth: preset.image_width,
       imageHeight: preset.image_height,
@@ -316,6 +330,8 @@ export const PresetManager = ({ currentConfig, onLoadPreset }: PresetManagerProp
           scene_duration_0to1: sourcePreset.scene_duration_0to1,
           scene_duration_1to3: sourcePreset.scene_duration_1to3,
           scene_duration_3plus: sourcePreset.scene_duration_3plus,
+          range_end_1: sourcePreset.range_end_1,
+          range_end_2: sourcePreset.range_end_2,
           example_prompts: sourcePreset.example_prompts,
           image_width: sourcePreset.image_width,
           image_height: sourcePreset.image_height,
