@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, Link, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import type { User } from "@supabase/supabase-js";
@@ -260,6 +260,53 @@ const CreateFromScratch = () => {
   const [isGeneratingAxes, setIsGeneratingAxes] = useState(false);
   const [selectedAxe, setSelectedAxe] = useState<VideoAxe | null>(null);
   const [projectId, setProjectId] = useState<string | null>(null);
+  
+  // Script saving
+  const [isSavingScript, setIsSavingScript] = useState(false);
+  const scriptSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Save script to database with debounce
+  const saveScriptToDatabase = useCallback(async (script: string, pid: string) => {
+    setIsSavingScript(true);
+    try {
+      const { error } = await supabase
+        .from("projects")
+        .update({ summary: script, updated_at: new Date().toISOString() })
+        .eq("id", pid);
+
+      if (error) throw error;
+    } catch (error) {
+      console.error("Error saving script:", error);
+      toast.error("Erreur lors de la sauvegarde du script");
+    } finally {
+      setIsSavingScript(false);
+    }
+  }, []);
+
+  const handleScriptChange = useCallback((newScript: string) => {
+    setGeneratedScript(newScript);
+    setWordCount(newScript.split(/\s+/).filter(w => w).length);
+    setEstimatedDuration(Math.round(newScript.split(/\s+/).filter(w => w).length / 2.5));
+
+    // Debounced save to database if we have a project ID
+    if (projectId) {
+      if (scriptSaveTimeoutRef.current) {
+        clearTimeout(scriptSaveTimeoutRef.current);
+      }
+      scriptSaveTimeoutRef.current = setTimeout(() => {
+        saveScriptToDatabase(newScript, projectId);
+      }, 1000);
+    }
+  }, [projectId, saveScriptToDatabase]);
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (scriptSaveTimeoutRef.current) {
+        clearTimeout(scriptSaveTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // Check authentication and load continued project if any
   useEffect(() => {
@@ -1540,15 +1587,20 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                     </p>
                   </div>
                 ) : (
-                  <Textarea
-                    value={generatedScript}
-                    onChange={(e) => {
-                      setGeneratedScript(e.target.value);
-                      setWordCount(e.target.value.split(/\s+/).filter(w => w).length);
-                    }}
-                    className="min-h-[300px] font-mono text-sm"
-                    placeholder="Le script apparaîtra ici..."
-                  />
+                  <div className="relative">
+                    <Textarea
+                      value={generatedScript}
+                      onChange={(e) => handleScriptChange(e.target.value)}
+                      className="min-h-[300px] font-mono text-sm"
+                      placeholder="Le script apparaîtra ici..."
+                    />
+                    {isSavingScript && (
+                      <div className="absolute top-2 right-2 flex items-center gap-1 text-xs text-muted-foreground bg-background/80 px-2 py-1 rounded">
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                        Sauvegarde...
+                      </div>
+                    )}
+                  </div>
                 )}
 
                 {/* Audio Section */}
