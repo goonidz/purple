@@ -59,13 +59,16 @@ serve(async (req) => {
     if (customSystemPrompt && customSystemPrompt.trim()) {
       systemPrompt = customSystemPrompt.trim();
       
-      // Add examples if provided
+      // Add examples if provided - emphasize STYLE ONLY
       if (examplePrompts && Array.isArray(examplePrompts) && examplePrompts.length > 0) {
-        systemPrompt += `\n\nEXAMPLES TO FOLLOW STRICTLY:\n\n`;
+        systemPrompt += `\n\nSTYLE REFERENCE EXAMPLES (use for FORMAT and STYLE only, NEVER copy subjects/content):\n\n`;
         examplePrompts.forEach((example: string, i: number) => {
-          systemPrompt += `Example ${i + 1}:\n"${example}"\n\n`;
+          systemPrompt += `Style Example ${i + 1}:\n"${example}"\n\n`;
         });
-        systemPrompt += `You MUST generate a prompt that follows EXACTLY this structure and style.\n\n`;
+        systemPrompt += `CRITICAL: These examples show the desired VISUAL STYLE, TONE, and FORMAT only.
+- Extract: lighting style, color palette, composition approach, aesthetic mood, sentence structure
+- NEVER COPY: subjects, objects, characters, locations, or specific content from examples
+- Your prompt MUST describe what is in THE SCENE TEXT, using the style/format from examples\n\n`;
       }
     } else {
       // Default system prompt
@@ -93,13 +96,16 @@ CONTENT SAFETY - STRICTLY FORBIDDEN (to avoid AI image generator blocks):
 
 `;
 
-      // Add examples if provided
+      // Add examples if provided - emphasize STYLE ONLY
       if (examplePrompts && Array.isArray(examplePrompts) && examplePrompts.length > 0) {
-        systemPrompt += `EXAMPLES TO FOLLOW STRICTLY:\n\n`;
+        systemPrompt += `STYLE REFERENCE EXAMPLES (use for FORMAT and STYLE only, NEVER copy subjects/content):\n\n`;
         examplePrompts.forEach((example: string, i: number) => {
-          systemPrompt += `Example ${i + 1}:\n"${example}"\n\n`;
+          systemPrompt += `Style Example ${i + 1}:\n"${example}"\n\n`;
         });
-        systemPrompt += `You MUST generate a prompt that follows EXACTLY this structure and style.\n\n`;
+        systemPrompt += `CRITICAL: These examples show the desired VISUAL STYLE, TONE, and FORMAT only.
+- Extract: lighting style, color palette, composition approach, aesthetic mood, sentence structure
+- NEVER COPY: subjects, objects, characters, locations, or specific content from examples (no vegetables, no vehicles, no moon, etc. unless the scene mentions them)
+- Your prompt MUST describe what is in THE SCENE TEXT, styled like the examples\n\n`;
       }
 
       systemPrompt += `Your role is to create ONE detailed visual prompt for a specific scene from a video/audio.
