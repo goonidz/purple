@@ -87,8 +87,8 @@ serve(async (req) => {
 
       console.log(`Job ${job.id}: ${completedCount} completed, ${failedCount} failed, ${pendingCount} pending out of ${predictions.length}`);
 
-      // Check if any pending predictions are stuck (no webhook received for > 10 minutes)
-      const PREDICTION_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
+      // Check if any pending predictions are stuck (no webhook received for > 5 minutes)
+      const PREDICTION_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
       let timedOutPredictions = 0;
 
       for (const pred of predictions) {

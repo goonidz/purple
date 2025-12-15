@@ -1171,12 +1171,12 @@ async function processImagesJob(
     return;
   }
 
-  // Schedule a check for stuck predictions after 10 minutes
+  // Schedule a check for stuck predictions after 5 minutes
   EdgeRuntime.waitUntil((async () => {
-    await new Promise(resolve => setTimeout(resolve, 10 * 60 * 1000));
+    await new Promise(resolve => setTimeout(resolve, 5 * 60 * 1000));
     console.log(`Running scheduled stuck check for job ${jobId}`);
     try {
-      await fetch(`${supabaseUrl}/functions/v1/check-stuck-jobs`, {
+      const res = await fetch(`${supabaseUrl}/functions/v1/check-stuck-jobs`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
@@ -1184,6 +1184,12 @@ async function processImagesJob(
         },
         body: JSON.stringify({ jobId }),
       });
+
+      if (!res.ok) {
+        console.error(`check-stuck-jobs failed (${res.status}):`, await res.text());
+      } else {
+        console.log(`check-stuck-jobs executed successfully for job ${jobId}`);
+      }
     } catch (e) {
       console.error(`Failed to check stuck jobs:`, e);
     }
