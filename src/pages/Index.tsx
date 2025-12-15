@@ -1664,24 +1664,24 @@ const Index = () => {
             <TabsContent value="video" className="space-y-6 m-0">
                 {transcriptData && (
                   <Card className="p-4 bg-muted/30 border-primary/20">
-                    <div className="flex items-center gap-2 text-sm">
-                      <Check className="h-4 w-4 text-primary" />
+                    <div className="flex flex-wrap items-center gap-2 text-sm">
+                      <Check className="h-4 w-4 text-primary flex-shrink-0" />
                       <span className="font-medium">Transcription chargée</span>
                       {audioUrl && (
                         <>
-                          <span className="text-muted-foreground">•</span>
+                          <span className="text-muted-foreground hidden sm:inline">•</span>
                           <span className="text-muted-foreground">Audio chargé</span>
                         </>
                       )}
                       {scenes.length > 0 && (
                         <>
-                          <span className="text-muted-foreground">•</span>
+                          <span className="text-muted-foreground hidden sm:inline">•</span>
                           <span className="text-muted-foreground">{scenes.length} scènes</span>
                         </>
                       )}
                       {examplePrompts.some(p => p.trim()) && (
                         <>
-                          <span className="text-muted-foreground">•</span>
+                          <span className="text-muted-foreground hidden sm:inline">•</span>
                           <span className="text-muted-foreground">Prompts configurés</span>
                         </>
                       )}
@@ -1854,7 +1854,7 @@ const Index = () => {
                   </Card>
                 )}
 
-                <div className="grid grid-cols-3 gap-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 md:gap-6">
                   {/* Configuration des scènes */}
                   <Card className="p-4 bg-muted/30 border-primary/20">
                     <div className="flex items-center justify-between mb-2">
