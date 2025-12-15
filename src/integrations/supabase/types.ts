@@ -319,6 +319,7 @@ export type Database = {
         Row: {
           aspect_ratio: string | null
           created_at: string
+          duration_ranges: Json | null
           example_prompts: Json | null
           id: string
           image_height: number | null
@@ -340,6 +341,7 @@ export type Database = {
         Insert: {
           aspect_ratio?: string | null
           created_at?: string
+          duration_ranges?: Json | null
           example_prompts?: Json | null
           id?: string
           image_height?: number | null
@@ -361,6 +363,7 @@ export type Database = {
         Update: {
           aspect_ratio?: string | null
           created_at?: string
+          duration_ranges?: Json | null
           example_prompts?: Json | null
           id?: string
           image_height?: number | null
@@ -386,6 +389,7 @@ export type Database = {
           aspect_ratio: string | null
           audio_url: string | null
           created_at: string
+          duration_ranges: Json | null
           example_prompts: Json | null
           id: string
           image_height: number | null
@@ -413,6 +417,7 @@ export type Database = {
           aspect_ratio?: string | null
           audio_url?: string | null
           created_at?: string
+          duration_ranges?: Json | null
           example_prompts?: Json | null
           id?: string
           image_height?: number | null
@@ -440,6 +445,7 @@ export type Database = {
           aspect_ratio?: string | null
           audio_url?: string | null
           created_at?: string
+          duration_ranges?: Json | null
           example_prompts?: Json | null
           id?: string
           image_height?: number | null
