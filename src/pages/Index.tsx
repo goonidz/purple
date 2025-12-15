@@ -1381,13 +1381,27 @@ const Index = () => {
         ? `${exportBasePath.replace(/\/$/, '')}/${sanitizedProjectName}_premiere_with_images`
         : undefined;
       
+      // Calculate effective dimensions for Z-Image Turbo models
+      let effectiveWidth = imageWidth;
+      let effectiveHeight = imageHeight;
+      const isZImageTurbo = imageModel === 'z-image-turbo' || imageModel === 'z-image-turbo-lora';
+      if (isZImageTurbo && (imageWidth > 1440 || imageHeight > 1440)) {
+        const MAX_DIM = 1440;
+        const scale = Math.min(MAX_DIM / imageWidth, MAX_DIM / imageHeight);
+        effectiveWidth = Math.floor(imageWidth * scale);
+        effectiveHeight = Math.floor(imageHeight * scale);
+        // Round to multiples of 16
+        effectiveWidth = Math.ceil(effectiveWidth / 16) * 16;
+        effectiveHeight = Math.ceil(effectiveHeight / 16) * 16;
+      }
+      
       const options = {
         format: exportFormat,
         mode: exportMode,
         projectName: projectName || "projet_sans_nom",
         framerate: exportFramerate,
-        width: imageWidth,
-        height: imageHeight,
+        width: effectiveWidth,
+        height: effectiveHeight,
         audioUrl: audioUrl || undefined,
         basePath: fullBasePath
       };
