@@ -349,6 +349,14 @@ async function convertToJpeg(blob: Blob): Promise<Blob> {
   });
 }
 
+// Sanitize filename: replace special characters
+function sanitizeFilename(name: string): string {
+  return name
+    .replace(/&/g, 'and')
+    .replace(/[<>:"/\\|?*]/g, '_')
+    .trim();
+}
+
 export async function downloadImagesAsZip(
   prompts: GeneratedPrompt[],
   exportContent: string,
@@ -358,16 +366,19 @@ export async function downloadImagesAsZip(
   // Filter out null/undefined prompts
   const validPrompts = prompts.filter((p): p is GeneratedPrompt => p !== null && p !== undefined);
   
+  // Sanitize the export filename
+  const sanitizedFilename = sanitizeFilename(exportFilename);
+  
   // Dynamically import JSZip
   const JSZip = (await import('jszip')).default;
   const zip = new JSZip();
   
-  // Add the export file
-  zip.file(exportFilename, exportContent);
+  // Add the export file at root level (not in a subfolder)
+  zip.file(sanitizedFilename, exportContent);
   
-  // Add SRT subtitle file
+  // Add SRT subtitle file at root level
   const srtContent = generateSRT(validPrompts);
-  const srtFilename = exportFilename.replace(/\.(xml|edl|csv)$/, '.srt');
+  const srtFilename = sanitizedFilename.replace(/\.(xml|edl|csv)$/, '.srt');
   zip.file(srtFilename, srtContent);
   
   // Create media folder for both images and audio
@@ -403,12 +414,12 @@ export async function downloadImagesAsZip(
     }
   }
   
-  // Generate and download ZIP
+  // Generate and download ZIP with sanitized name
   const zipBlob = await zip.generateAsync({ type: 'blob' });
   const url = URL.createObjectURL(zipBlob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = `${exportFilename.replace(/\.[^.]+$/, '')}_with_images.zip`;
+  link.download = `${sanitizedFilename.replace(/\.[^.]+$/, '')}_with_images.zip`;
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
