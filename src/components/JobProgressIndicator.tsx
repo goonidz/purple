@@ -64,40 +64,40 @@ export function JobProgressIndicator({ job, onCancel, className }: JobProgressIn
 
   return (
     <Card className={cn("p-3 border-primary/20 bg-primary/5", className)}>
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2 flex-1 min-w-0">
+      <div className="flex items-start gap-2">
+        <div className="flex-shrink-0 mt-0.5">
           {getStatusIcon()}
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center justify-between gap-2 mb-1">
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-medium truncate">
-                  {getJobTypeLabel(job.job_type)}
-                </span>
-                <span className="text-xs text-muted-foreground">
-                  {globalProgress}/{totalItems}
-                </span>
-              </div>
-              {isActive && onCancel && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => onCancel(job.id)}
-                  className="h-6 px-2 text-xs text-muted-foreground hover:text-destructive"
-                >
-                  <Square className="h-3 w-3 mr-1" />
-                  Arrêter
-                </Button>
-              )}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 mb-1">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="text-sm font-medium">
+                {getJobTypeLabel(job.job_type)}
+              </span>
+              <span className="text-xs text-muted-foreground whitespace-nowrap">
+                {globalProgress}/{totalItems}
+              </span>
             </div>
-            {isActive && (
-              <Progress value={progressPercent} className="h-1.5" />
-            )}
-            {job.status === 'failed' && job.error_message && (
-              <p className="text-xs text-destructive mt-1 truncate">
-                {job.error_message}
-              </p>
+            {isActive && onCancel && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => onCancel(job.id)}
+                className="h-6 px-2 text-xs text-muted-foreground hover:text-destructive flex-shrink-0"
+              >
+                <Square className="h-3 w-3 mr-1" />
+                Arrêter
+              </Button>
             )}
           </div>
+          {isActive && (
+            <Progress value={progressPercent} className="h-1.5" />
+          )}
+          {job.status === 'failed' && job.error_message && (
+            <p className="text-xs text-destructive mt-1 line-clamp-2">
+              {job.error_message}
+            </p>
+          )}
         </div>
       </div>
       {isActive && (
