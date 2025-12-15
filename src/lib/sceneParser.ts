@@ -1,6 +1,8 @@
 // Scene segmentation algorithm
 // Parses transcript segments into scenes based on duration configuration
 
+import { DurationRange, getSceneDurationForTimestamp, DEFAULT_DURATION_RANGES } from "./durationRanges";
+
 export interface TranscriptSegment {
   text: string;
   start_time: number;
@@ -19,22 +21,34 @@ export interface Scene {
   endTime: number;
 }
 
+// New signature using DurationRange[]
 export const parseTranscriptToScenes = (
   transcriptData: TranscriptData, 
-  duration0to1: number,
-  duration1to3: number, 
-  duration3plus: number,
-  rangeEnd1: number = 60,
-  rangeEnd2: number = 180,
+  durationRangesOrDuration0to1: DurationRange[] | number,
+  duration1to3?: number, 
+  duration3plus?: number,
+  rangeEnd1?: number,
+  rangeEnd2?: number,
   preferSentenceBoundaries: boolean = true
 ): Scene[] => {
   const scenes: Scene[] = [];
   let currentScene: Scene = { text: "", startTime: 0, endTime: 0 };
   
+  // Support both new and legacy signatures
+  let durationRanges: DurationRange[];
+  if (Array.isArray(durationRangesOrDuration0to1)) {
+    durationRanges = durationRangesOrDuration0to1;
+  } else {
+    // Legacy format
+    durationRanges = [
+      { endSeconds: rangeEnd1 || 60, sceneDuration: durationRangesOrDuration0to1 },
+      { endSeconds: rangeEnd2 || 180, sceneDuration: duration1to3 || 6 },
+      { endSeconds: null, sceneDuration: duration3plus || 8 },
+    ];
+  }
+  
   const getMaxDuration = (timestamp: number): number => {
-    if (timestamp < rangeEnd1) return duration0to1;
-    if (timestamp < rangeEnd2) return duration1to3;
-    return duration3plus;
+    return getSceneDurationForTimestamp(timestamp, durationRanges);
   };
   
   // Check if text ends with sentence-ending punctuation

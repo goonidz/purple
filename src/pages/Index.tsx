@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { parseStyleReferenceUrls, serializeStyleReferenceUrls } from "@/lib/styleReferenceHelpers";
 import { parseTranscriptToScenes, TranscriptData, TranscriptSegment, Scene } from "@/lib/sceneParser";
+import { DurationRange, DEFAULT_DURATION_RANGES, convertLegacyToRanges } from "@/lib/durationRanges";
 import { useNavigate, useSearchParams, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -49,6 +50,8 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { VideoPreview } from "@/components/VideoPreview";
 import { PresetManager } from "@/components/PresetManager";
 import { ThumbnailGenerator } from "@/components/ThumbnailGenerator";
+import { DurationRangesEditor } from "@/components/DurationRangesEditor";
+import { SHORT_FORM_DURATION_RANGES } from "@/lib/durationRanges";
 import { TitleGenerator } from "@/components/TitleGenerator";
 import { DescriptionGenerator } from "@/components/DescriptionGenerator";
 import { TagGenerator } from "@/components/TagGenerator";
@@ -91,15 +94,15 @@ const Index = () => {
   const [isGeneratingScenes, setIsGeneratingScenes] = useState(false);
   const [isGeneratingPrompts, setIsGeneratingPrompts] = useState(false);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
-  const [sceneDuration0to1, setSceneDuration0to1] = useState(4);
-  const [sceneDuration1to3, setSceneDuration1to3] = useState(6);
-  const [sceneDuration3plus, setSceneDuration3plus] = useState(8);
+  const [durationRanges, setDurationRanges] = useState<DurationRange[]>(DEFAULT_DURATION_RANGES);
   const [sceneFormat, setSceneFormat] = useState<"long" | "short">("long");
   
-  // Scene range boundaries (in seconds)
-  const [range1End, setRange1End] = useState(60);      // Default: 0-60s (0-1 min)
-  const [range2End, setRange2End] = useState(180);     // Default: 60-180s (1-3 min)
-  // range3 is 180+ (3+ min)
+  // Legacy states for backward compatibility (derived from durationRanges)
+  const sceneDuration0to1 = durationRanges[0]?.sceneDuration || 4;
+  const sceneDuration1to3 = durationRanges[1]?.sceneDuration || 6;
+  const sceneDuration3plus = durationRanges[durationRanges.length - 1]?.sceneDuration || 8;
+  const range1End = durationRanges[0]?.endSeconds || 60;
+  const range2End = durationRanges[1]?.endSeconds || 180;
   const [preferSentenceBoundaries, setPreferSentenceBoundaries] = useState(true);
   const [promptSystemMessage, setPromptSystemMessage] = useState<string>("");
   const cancelGenerationRef = useRef(false);
@@ -430,7 +433,7 @@ const Index = () => {
 
       return () => clearTimeout(timeoutId);
     }
-  }, [currentProjectId, transcriptData, examplePrompts, scenes, sceneDuration0to1, sceneDuration1to3, sceneDuration3plus, range1End, range2End, styleReferenceUrls, audioUrl, imageWidth, imageHeight, aspectRatio, imageModel, loraUrl, loraSteps, promptSystemMessage]);
+  }, [currentProjectId, transcriptData, examplePrompts, scenes, durationRanges, styleReferenceUrls, audioUrl, imageWidth, imageHeight, aspectRatio, imageModel, loraUrl, loraSteps, promptSystemMessage]);
 
   // Track if we've already shown the config modal for this session
   const hasShownConfigModalRef = useRef(false);
@@ -511,15 +514,21 @@ const Index = () => {
       const prompts = (data.example_prompts as string[]) || ["", "", ""];
       setExamplePrompts(Array.isArray(prompts) ? prompts : ["", "", ""]);
       
-      // Load scene durations and range boundaries
-      setSceneDuration0to1(data.scene_duration_0to1 || 4);
-      setSceneDuration1to3(data.scene_duration_1to3 || 6);
-      setSceneDuration3plus(data.scene_duration_3plus || 8);
-      
-      // Load range boundaries
+      // Load duration ranges - prefer new format, fallback to legacy
       const projectData = data as any;
-      if (projectData.range_end_1) setRange1End(projectData.range_end_1);
-      if (projectData.range_end_2) setRange2End(projectData.range_end_2);
+      if (projectData.duration_ranges && Array.isArray(projectData.duration_ranges) && projectData.duration_ranges.length > 0) {
+        setDurationRanges(projectData.duration_ranges);
+      } else {
+        // Convert legacy format to new format
+        const legacyRanges = convertLegacyToRanges(
+          data.scene_duration_0to1 || 4,
+          data.scene_duration_1to3 || 6,
+          data.scene_duration_3plus || 8,
+          projectData.range_end_1 || 60,
+          projectData.range_end_2 || 180
+        );
+        setDurationRanges(legacyRanges);
+      }
       
       // Load existing scenes - don't auto-generate, let user configure first
       const existingScenes = (data.scenes as unknown as Scene[]) || [];
@@ -580,6 +589,8 @@ const Index = () => {
           transcript_json: transcriptData as any,
           example_prompts: examplePrompts as any,
           scenes: scenes as any,
+          duration_ranges: durationRanges as any,
+          // Legacy columns for backward compatibility
           scene_duration_0to1: sceneDuration0to1,
           scene_duration_1to3: sceneDuration1to3,
           scene_duration_3plus: sceneDuration3plus,
@@ -1470,6 +1481,7 @@ const Index = () => {
     scene_duration_3plus: number;
     range_end_1: number;
     range_end_2: number;
+    duration_ranges?: DurationRange[];
     example_prompts: string[];
     image_width: number;
     image_height: number;
@@ -1480,11 +1492,18 @@ const Index = () => {
     lora_url?: string | null;
     lora_steps?: number;
   }) => {
-    setSceneDuration0to1(preset.scene_duration_0to1);
-    setSceneDuration1to3(preset.scene_duration_1to3);
-    setSceneDuration3plus(preset.scene_duration_3plus);
-    setRange1End(preset.range_end_1);
-    setRange2End(preset.range_end_2);
+    // Use duration_ranges if available, otherwise build from legacy format
+    if (preset.duration_ranges && preset.duration_ranges.length > 0) {
+      setDurationRanges(preset.duration_ranges);
+    } else {
+      setDurationRanges(convertLegacyToRanges(
+        preset.scene_duration_0to1,
+        preset.scene_duration_1to3,
+        preset.scene_duration_3plus,
+        preset.range_end_1,
+        preset.range_end_2
+      ));
+    }
     setExamplePrompts(preset.example_prompts);
     setImageWidth(preset.image_width);
     setImageHeight(preset.image_height);
@@ -2457,19 +2476,11 @@ const Index = () => {
                   <RadioGroup value={sceneFormat} onValueChange={(value) => {
                     const newFormat = value as "long" | "short";
                     setSceneFormat(newFormat);
-                    // Update range boundaries based on format
+                    // Update duration ranges based on format
                     if (newFormat === "short") {
-                      setRange1End(5);
-                      setRange2End(15);
-                      setSceneDuration0to1(2);
-                      setSceneDuration1to3(4);
-                      setSceneDuration3plus(6);
+                      setDurationRanges(SHORT_FORM_DURATION_RANGES);
                     } else {
-                      setRange1End(60);
-                      setRange2End(180);
-                      setSceneDuration0to1(4);
-                      setSceneDuration1to3(6);
-                      setSceneDuration3plus(8);
+                      setDurationRanges(DEFAULT_DURATION_RANGES);
                     }
                   }}>
                     <div className="flex gap-4">
@@ -2485,80 +2496,12 @@ const Index = () => {
                   </RadioGroup>
                 </div>
 
-                <div className="space-y-4 p-4 border rounded-lg bg-muted/30">
-                  <div className="space-y-3">
-                    <div>
-                      <Label className="text-sm font-medium mb-2 block">Plage 1 : 0 à {range1End}s</Label>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <Label className="text-xs text-muted-foreground">Fin de plage (secondes)</Label>
-                          <Input
-                            type="number"
-                            min="1"
-                            max={sceneFormat === "long" ? "120" : "30"}
-                            value={range1End}
-                            onChange={(e) => setRange1End(parseInt(e.target.value) || 1)}
-                          />
-                        </div>
-                        <div>
-                          <Label className="text-xs text-muted-foreground">Durée de scène (sec)</Label>
-                          <Input
-                            type="number"
-                            min="1"
-                            max="60"
-                            value={sceneDuration0to1}
-                            onChange={(e) => setSceneDuration0to1(parseInt(e.target.value))}
-                          />
-                        </div>
-                      </div>
-                    </div>
-
-                    <div>
-                      <Label className="text-sm font-medium mb-2 block">Plage 2 : {range1End}s à {range2End}s</Label>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <Label className="text-xs text-muted-foreground">Fin de plage (secondes)</Label>
-                          <Input
-                            type="number"
-                            min={range1End + 1}
-                            max={sceneFormat === "long" ? "600" : "60"}
-                            value={range2End}
-                            onChange={(e) => setRange2End(parseInt(e.target.value) || range1End + 1)}
-                          />
-                        </div>
-                        <div>
-                          <Label className="text-xs text-muted-foreground">Durée de scène (sec)</Label>
-                          <Input
-                            type="number"
-                            min="1"
-                            max="180"
-                            value={sceneDuration1to3}
-                            onChange={(e) => setSceneDuration1to3(parseInt(e.target.value))}
-                          />
-                        </div>
-                      </div>
-                    </div>
-
-                    <div>
-                      <Label className="text-sm font-medium mb-2 block">Plage 3 : {range2End}s et plus</Label>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="opacity-50">
-                          <Label className="text-xs text-muted-foreground">Sans limite</Label>
-                          <Input disabled value="∞" className="bg-muted" />
-                        </div>
-                        <div>
-                          <Label className="text-xs text-muted-foreground">Durée de scène (sec)</Label>
-                          <Input
-                            type="number"
-                            min="1"
-                            max="600"
-                            value={sceneDuration3plus}
-                            onChange={(e) => setSceneDuration3plus(parseInt(e.target.value))}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+                <div className="p-4 border rounded-lg bg-muted/30">
+                  <DurationRangesEditor
+                    ranges={durationRanges}
+                    onChange={setDurationRanges}
+                    maxEndValue={sceneFormat === "long" ? 600 : 60}
+                  />
                 </div>
               </div>
 
@@ -3284,14 +3227,19 @@ Return ONLY the prompt text, no JSON, no title, just the optimized prompt in ENG
                     return;
                   }
                   
-                  // Update local state with fresh data
-                  const freshSceneDuration0to1 = data.scene_duration_0to1 || 4;
-                  const freshSceneDuration1to3 = data.scene_duration_1to3 || 6;
-                  const freshSceneDuration3plus = data.scene_duration_3plus || 8;
-                  
-                  setSceneDuration0to1(freshSceneDuration0to1);
-                  setSceneDuration1to3(freshSceneDuration1to3);
-                  setSceneDuration3plus(freshSceneDuration3plus);
+                  // Update local state with fresh data from duration_ranges or legacy format
+                  const projectData = data as any;
+                  if (projectData.duration_ranges && Array.isArray(projectData.duration_ranges) && projectData.duration_ranges.length > 0) {
+                    setDurationRanges(projectData.duration_ranges);
+                  } else {
+                    setDurationRanges(convertLegacyToRanges(
+                      data.scene_duration_0to1 || 4,
+                      data.scene_duration_1to3 || 6,
+                      data.scene_duration_3plus || 8,
+                      projectData.range_end_1 || 60,
+                      projectData.range_end_2 || 180
+                    ));
+                  }
                   
                   if (data.example_prompts) {
                     setExamplePrompts(data.example_prompts as string[]);
@@ -3315,11 +3263,11 @@ Return ONLY the prompt text, no JSON, no title, just the optimized prompt in ENG
                   if (transcriptData) {
                     const generatedScenes = parseTranscriptToScenes(
                       transcriptData,
-                      freshSceneDuration0to1,
-                      freshSceneDuration1to3,
-                      freshSceneDuration3plus,
-                      range1End,
-                      range2End,
+                      durationRanges,
+                      undefined,
+                      undefined,
+                      undefined,
+                      undefined,
                       preferSentenceBoundaries
                     );
                     setScenes(generatedScenes);

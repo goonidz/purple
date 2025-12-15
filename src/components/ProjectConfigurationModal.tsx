@@ -9,6 +9,8 @@ import { Loader2, Plus, Upload, Download, Save, Trash2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { parseStyleReferenceUrls } from "@/lib/styleReferenceHelpers";
+import { DurationRange, DEFAULT_DURATION_RANGES, SHORT_FORM_DURATION_RANGES } from "@/lib/durationRanges";
+import { DurationRangesEditor } from "@/components/DurationRangesEditor";
 
 interface LoraPreset {
   id: string;
@@ -25,6 +27,7 @@ interface Preset {
   scene_duration_3plus: number;
   range_end_1: number;
   range_end_2: number;
+  duration_ranges?: DurationRange[];
   example_prompts: string[];
   image_width: number;
   image_height: number;
@@ -50,12 +53,8 @@ export const ProjectConfigurationModal = ({
   onCancel,
 }: ProjectConfigurationModalProps) => {
   const [step, setStep] = useState<"review" | "scene-config" | "prompt-config" | "image-config">("review");
-  const [sceneDuration0to1, setSceneDuration0to1] = useState(4);
-  const [sceneDuration1to3, setSceneDuration1to3] = useState(6);
-  const [sceneDuration3plus, setSceneDuration3plus] = useState(8);
+  const [durationRanges, setDurationRanges] = useState<DurationRange[]>(DEFAULT_DURATION_RANGES);
   const [sceneFormat, setSceneFormat] = useState<"long" | "short">("long");
-  const [range1End, setRange1End] = useState(60);
-  const [range2End, setRange2End] = useState(180);
   const [examplePrompts, setExamplePrompts] = useState<string[]>(["", "", ""]);
   const [imageWidth, setImageWidth] = useState(1920);
   const [imageHeight, setImageHeight] = useState(1080);
@@ -128,26 +127,36 @@ export const ProjectConfigurationModal = ({
 
       if (error) throw error;
       
-      const mappedPresets: Preset[] = (data || []).map(preset => ({
-        id: preset.id,
-        name: preset.name,
-        scene_duration_0to1: preset.scene_duration_0to1 || 4,
-        scene_duration_1to3: preset.scene_duration_1to3 || 6,
-        scene_duration_3plus: preset.scene_duration_3plus || 8,
-        range_end_1: (preset as any).range_end_1 || 60,
-        range_end_2: (preset as any).range_end_2 || 180,
-        example_prompts: Array.isArray(preset.example_prompts) 
-          ? preset.example_prompts.filter((p): p is string => typeof p === 'string')
-          : [],
-        image_width: preset.image_width || 1920,
-        image_height: preset.image_height || 1080,
-        aspect_ratio: preset.aspect_ratio || "16:9",
-        style_reference_url: preset.style_reference_url,
-        image_model: (preset as any).image_model || 'seedream-4.5',
-        prompt_system_message: (preset as any).prompt_system_message || null,
-        lora_url: (preset as any).lora_url || null,
-        lora_steps: (preset as any).lora_steps || 10,
-      }));
+      const mappedPresets: Preset[] = (data || []).map(preset => {
+        // Parse duration_ranges from database or create from legacy format
+        let parsedRanges: DurationRange[] | undefined;
+        const presetData = preset as any;
+        if (presetData.duration_ranges) {
+          parsedRanges = presetData.duration_ranges as DurationRange[];
+        }
+        
+        return {
+          id: preset.id,
+          name: preset.name,
+          scene_duration_0to1: preset.scene_duration_0to1 || 4,
+          scene_duration_1to3: preset.scene_duration_1to3 || 6,
+          scene_duration_3plus: preset.scene_duration_3plus || 8,
+          range_end_1: presetData.range_end_1 || 60,
+          range_end_2: presetData.range_end_2 || 180,
+          duration_ranges: parsedRanges,
+          example_prompts: Array.isArray(preset.example_prompts) 
+            ? preset.example_prompts.filter((p): p is string => typeof p === 'string')
+            : [],
+          image_width: preset.image_width || 1920,
+          image_height: preset.image_height || 1080,
+          aspect_ratio: preset.aspect_ratio || "16:9",
+          style_reference_url: preset.style_reference_url,
+          image_model: presetData.image_model || 'seedream-4.5',
+          prompt_system_message: presetData.prompt_system_message || null,
+          lora_url: presetData.lora_url || null,
+          lora_steps: presetData.lora_steps || 10,
+        };
+      });
       
       setPresets(mappedPresets);
     } catch (error: any) {
@@ -160,11 +169,16 @@ export const ProjectConfigurationModal = ({
   const handleLoadPreset = (presetId: string) => {
     const preset = presets.find(p => p.id === presetId);
     if (preset) {
-      setSceneDuration0to1(preset.scene_duration_0to1);
-      setSceneDuration1to3(preset.scene_duration_1to3);
-      setSceneDuration3plus(preset.scene_duration_3plus);
-      setRange1End(preset.range_end_1);
-      setRange2End(preset.range_end_2);
+      // Use duration_ranges if available, otherwise build from legacy format
+      if (preset.duration_ranges && preset.duration_ranges.length > 0) {
+        setDurationRanges(preset.duration_ranges);
+      } else {
+        setDurationRanges([
+          { endSeconds: preset.range_end_1, sceneDuration: preset.scene_duration_0to1 },
+          { endSeconds: preset.range_end_2, sceneDuration: preset.scene_duration_1to3 },
+          { endSeconds: null, sceneDuration: preset.scene_duration_3plus },
+        ]);
+      }
       setExamplePrompts(preset.example_prompts.length > 0 ? preset.example_prompts : ["", "", ""]);
       setImageWidth(preset.image_width);
       setImageHeight(preset.image_height);
@@ -309,12 +323,19 @@ export const ProjectConfigurationModal = ({
   const handleFinalizeConfiguration = async () => {
     setIsSaving(true);
     try {
+      // Extract legacy format from durationRanges for backward compatibility
+      const legacyRanges = durationRanges.slice(0, 3);
+      const range1End = legacyRanges[0]?.endSeconds || 60;
+      const range2End = legacyRanges[1]?.endSeconds || 180;
+      
       const { error } = await supabase
         .from("projects")
         .update({
-          scene_duration_0to1: sceneDuration0to1,
-          scene_duration_1to3: sceneDuration1to3,
-          scene_duration_3plus: sceneDuration3plus,
+          duration_ranges: durationRanges as any,
+          // Legacy columns for backward compatibility
+          scene_duration_0to1: legacyRanges[0]?.sceneDuration || 4,
+          scene_duration_1to3: legacyRanges[1]?.sceneDuration || 6,
+          scene_duration_3plus: legacyRanges[2]?.sceneDuration || 8,
           range_end_1: range1End,
           range_end_2: range2End,
           example_prompts: examplePrompts,
@@ -437,17 +458,9 @@ export const ProjectConfigurationModal = ({
               const newFormat = value as "long" | "short";
               setSceneFormat(newFormat);
               if (newFormat === "short") {
-                setRange1End(5);
-                setRange2End(15);
-                setSceneDuration0to1(2);
-                setSceneDuration1to3(4);
-                setSceneDuration3plus(6);
+                setDurationRanges(SHORT_FORM_DURATION_RANGES);
               } else {
-                setRange1End(60);
-                setRange2End(180);
-                setSceneDuration0to1(4);
-                setSceneDuration1to3(6);
-                setSceneDuration3plus(8);
+                setDurationRanges(DEFAULT_DURATION_RANGES);
               }
             }}>
               <div className="flex gap-4">
@@ -463,80 +476,12 @@ export const ProjectConfigurationModal = ({
             </RadioGroup>
           </div>
 
-          <div className="space-y-4 p-4 border rounded-lg bg-muted/30">
-            <div className="space-y-3">
-              <div>
-                <Label className="text-sm font-medium mb-2 block">Plage 1 : 0 à {range1End}s</Label>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <Label className="text-xs text-muted-foreground">Fin de plage (sec)</Label>
-                    <Input
-                      type="number"
-                      min="1"
-                      max={sceneFormat === "long" ? "120" : "30"}
-                      value={range1End}
-                      onChange={(e) => setRange1End(parseInt(e.target.value) || 1)}
-                    />
-                  </div>
-                  <div>
-                    <Label className="text-xs text-muted-foreground">Durée de scène (sec)</Label>
-                    <Input
-                      type="number"
-                      min="1"
-                      max="60"
-                      value={sceneDuration0to1}
-                      onChange={(e) => setSceneDuration0to1(parseInt(e.target.value))}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <Label className="text-sm font-medium mb-2 block">Plage 2 : {range1End}s à {range2End}s</Label>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <Label className="text-xs text-muted-foreground">Fin de plage (sec)</Label>
-                    <Input
-                      type="number"
-                      min={range1End + 1}
-                      max={sceneFormat === "long" ? "600" : "60"}
-                      value={range2End}
-                      onChange={(e) => setRange2End(parseInt(e.target.value) || range1End + 1)}
-                    />
-                  </div>
-                  <div>
-                    <Label className="text-xs text-muted-foreground">Durée de scène (sec)</Label>
-                    <Input
-                      type="number"
-                      min="1"
-                      max="180"
-                      value={sceneDuration1to3}
-                      onChange={(e) => setSceneDuration1to3(parseInt(e.target.value))}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <Label className="text-sm font-medium mb-2 block">Plage 3 : {range2End}s et plus</Label>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="opacity-50">
-                    <Label className="text-xs text-muted-foreground">Sans limite</Label>
-                    <Input disabled value="∞" className="bg-muted" />
-                  </div>
-                  <div>
-                    <Label className="text-xs text-muted-foreground">Durée de scène (sec)</Label>
-                    <Input
-                      type="number"
-                      min="1"
-                      max="600"
-                      value={sceneDuration3plus}
-                      onChange={(e) => setSceneDuration3plus(parseInt(e.target.value))}
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
+          <div className="p-4 border rounded-lg bg-muted/30">
+            <DurationRangesEditor
+              ranges={durationRanges}
+              onChange={setDurationRanges}
+              maxEndValue={sceneFormat === "long" ? 600 : 60}
+            />
           </div>
         </div>
       )}
