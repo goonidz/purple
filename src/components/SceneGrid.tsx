@@ -83,6 +83,14 @@ export function SceneGrid({
 
   return (
     <div className="space-y-2">
+      {/* Desktop headers */}
+      <div className="hidden md:grid md:grid-cols-[auto_1fr_1fr_auto_auto] md:items-center gap-3 px-3 py-2 text-xs font-medium text-muted-foreground border-b">
+        <span className="w-16">Scène</span>
+        <span>Texte</span>
+        <span>Prompt</span>
+        <span className="w-24 text-center">Image</span>
+        <span className="w-8"></span>
+      </div>
       {items.map((item, index) => {
         const scene = scenes.length > 0 ? (item as Scene) : null;
         const prompt =
