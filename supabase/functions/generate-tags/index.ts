@@ -52,7 +52,7 @@ serve(async (req) => {
       throw new Error("LOVABLE_API_KEY is not configured");
     }
 
-    const systemPrompt = `You are a YouTube SEO expert. Generate exactly 10 keyword tags for this video.
+    const systemPrompt = `You are a YouTube SEO expert. Generate exactly 20 keyword tags for this video.
 
 CRITICAL LANGUAGE RULE:
 - First, detect the language of the video script provided
@@ -63,8 +63,8 @@ CRITICAL LANGUAGE RULE:
 - etc.
 
 TAG FORMAT RULES:
-1. Generate EXACTLY 10 tags
-2. Tags must be SHORT GENERAL KEYWORDS (1-3 words maximum)
+1. Generate EXACTLY 20 tags
+2. Tags must be SHORT GENERAL KEYWORDS (1-2 words maximum)
 3. NO complete search phrases or sentences
 4. Focus on broad, popular terms related to the topic
 5. Include the main subject and related popular terms
@@ -75,7 +75,7 @@ GOOD EXAMPLES (for English video):
 BAD EXAMPLES (too specific/too long):
 - "how to invest in ETF 2024", "best ETF for beginners to buy"
 
-Respond ONLY with a JSON array of 10 strings, no explanation.
+Respond ONLY with a JSON array of 20 strings, no explanation.
 Example: ["tag1", "tag2", "tag3", ...]`;
 
     const userContent = `VIDEO TITLE: ${videoTitle || "Untitled"}
@@ -144,10 +144,10 @@ ${videoScript.substring(0, 4000)}`;
         throw new Error("Response is not an array");
       }
       
-      // Ensure we have strings and limit to 10
+      // Ensure we have strings and limit to 20
       tags = tags
         .filter(tag => typeof tag === 'string')
-        .slice(0, 10);
+        .slice(0, 20);
         
     } catch (parseError) {
       console.error("Failed to parse AI response:", parseError);
