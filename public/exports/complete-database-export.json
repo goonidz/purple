@@ -1,0 +1,486 @@
+{
+  "export_date": "2025-12-16T14:30:00Z",
+  "export_version": "2.0",
+  "tables": {
+    "presets": [
+      {
+        "id": "17869ad4-d6db-400c-b61a-9d346b4fc188",
+        "name": "Tom Invest - Short form",
+        "aspect_ratio": "9:16",
+        "image_model": "seedream-4.5",
+        "image_width": 1080,
+        "image_height": 1920,
+        "lora_steps": 10,
+        "lora_url": null,
+        "scene_duration_0to1": 3,
+        "scene_duration_1to3": 3,
+        "scene_duration_3plus": 3,
+        "range_end_1": 60,
+        "range_end_2": 180,
+        "duration_ranges": [{"endSeconds": 60, "sceneDuration": 4}, {"endSeconds": 180, "sceneDuration": 6}, {"endSeconds": null, "sceneDuration": 8}],
+        "style_reference_url": ["https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/1763573442105-c0bmg8.png"],
+        "prompt_system_message": null,
+        "example_prompts": [
+          "simple 2D cartoon illustration by using the same style and character I sent you, showing it shrugging in confusion in front of a giant question mark made of receipts, clean white background, flat colors, thick black outlines, no text, no subtitles. avoid complicated scenes or texts.",
+          "simple 2D cartoon illustration by using the same style and character I sent you, showing it holding a big simplified checklist with only two or three boxes, clean white background, flat colors, thick black outlines, no text, no subtitles. avoid complicated scenes or texts.",
+          "simple 2D cartoon illustration by using the same style and character I sent you, showing it surrounded by random receipts and bills falling around him in confusion, clean white background, flat colors, thick black outlines, no text, no subtitles. avoid complicated scenes or texts."
+        ],
+        "user_id": "e622c54f-8a88-403a-bfea-1f29b71c40f9",
+        "created_at": "2025-11-20T05:53:13.342541+00:00",
+        "updated_at": "2025-11-22T10:25:27.493926+00:00"
+      },
+      {
+        "id": "60e1f4d7-d48b-4c1b-ba3f-26b736197691",
+        "name": "Girl - Longform",
+        "aspect_ratio": "16:9",
+        "image_model": "seedream-4.5",
+        "image_width": 1920,
+        "image_height": 1080,
+        "lora_steps": 10,
+        "lora_url": null,
+        "scene_duration_0to1": 2,
+        "scene_duration_1to3": 4,
+        "scene_duration_3plus": 8,
+        "range_end_1": 60,
+        "range_end_2": 180,
+        "duration_ranges": [{"endSeconds": 60, "sceneDuration": 4}, {"endSeconds": 180, "sceneDuration": 6}, {"endSeconds": null, "sceneDuration": 8}],
+        "style_reference_url": ["https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/1763788189312_Generated%20Image%20November%2022,%202025%20-%2012_02PM%20(1).png"],
+        "prompt_system_message": null,
+        "example_prompts": [
+          "Use the same character I gave you. Show her sitting at a table, looking down at a simplified, almost empty bar chart or graph on the table, with a somber or regretful expression. Her hands are resting on the table, perhaps slightly clenched. A subtle, faded coral (#FF6F61) line on the graph indicates a past decline, and a pale pink (#FCE7F3) glow emanates from the table surface, highlighting the empty space. Keep the scene minimal, 2D, flat, with thick black outlines. Pure white background, no text, no complex elements.",
+          "Use the same character I gave you. Show her anxiously opening her wallet, revealing that it is nearly empty, while a couple of small coral-accent slips or receipts peek out. Keep the scene minimal, 2D, flat, with thick black outlines. Add subtle branded accents: coral (#FF6F61) for small highlights inside the wallet or on a few edges, and pale pink (#FCE7F3) as a soft minimal halo or background shape behind her. Pure white background, no text, no complex elements.",
+          "Use the same character I gave you. Show her startled as she looks at her phone with a worried expression, holding it in one hand while her other hand slightly tenses in surprise. A few simplified floating icons like a downward arrow or exclamation marks use subtle coral (#FF6F61) accents. Add a soft pale pink (#FCE7F3) halo or minimal shape behind her to reinforce the brand identity. Keep the scene minimal, 2D, flat, thick outlines. Pure white background, no text, no complex elements."
+        ],
+        "user_id": "e622c54f-8a88-403a-bfea-1f29b71c40f9",
+        "created_at": "2025-11-22T05:10:18.295888+00:00",
+        "updated_at": "2025-11-22T06:32:22.723023+00:00"
+      },
+      {
+        "id": "7bcf1501-8447-40c4-9908-478acb1335c8",
+        "name": "Tom Invest - Long form",
+        "aspect_ratio": "16:9",
+        "image_model": "seedream-4.5",
+        "image_width": 1920,
+        "image_height": 1080,
+        "lora_steps": 10,
+        "lora_url": null,
+        "scene_duration_0to1": 4,
+        "scene_duration_1to3": 6,
+        "scene_duration_3plus": 8,
+        "range_end_1": 60,
+        "range_end_2": 180,
+        "duration_ranges": [{"endSeconds": 60, "sceneDuration": 4}, {"endSeconds": 180, "sceneDuration": 6}, {"endSeconds": null, "sceneDuration": 8}],
+        "style_reference_url": ["https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/1763573442105-c0bmg8.png"],
+        "prompt_system_message": "EVEN IF the script mentions on‑screen text, titles or numbers, you MUST IGNORE IT and NEVER describe or request any visible text, labels, captions, words or quotes in the image. Replace any textual idea with symbols or visuals only.\n\nYou are an expert at generating prompts for AI image creation (like Midjourney, Stable Diffusion, DALL-E).\n\nSTRICT RULES FOR GENERATING CONSISTENT PROMPTS:\n1. Follow EXACTLY the structure and style of the examples below\n2. Use the same tone, vocabulary, and format\n3. Respect the same approximate length (50-100 words)\n4. Include the same types of elements: main subject, visual style, composition, lighting, mood (NO TEXT)\n5. NEVER deviate from the format established by the examples\n6. Generate prompts in ENGLISH only\n7. NEVER use the word \"dead\" in the prompt (rephrase with other words instead)\n8. Don't ask to generate text, (for exemple : \"standing in front of massive glowing text reading \"14 TRILLION DOLLARS\" is FORBIDDEN).\n\nCONTENT SAFETY - STRICTLY FORBIDDEN:\n- No nudity, partial nudity, or suggestive/intimate content\n- No violence, gore, blood, weapons pointed at people, or graphic injuries\n- No sexual or romantic physical contact\n- No drug use or drug paraphernalia\n- No hate symbols, extremist imagery, or discriminatory content\n- No realistic depictions of real public figures or celebrities\n- Instead of violent scenes, describe tension through expressions, postures, and atmosphere\n- Instead of intimate scenes, describe emotional connection through eye contact and gestures\n\nYour role is to create ONE detailed visual prompt for a specific scene from a video/audio.\n\nFor this scene, you must:\n1. Identify key visual elements from the text\n2. Create a descriptive and detailed prompt\n3. Include style, mood, composition, lighting\n4. Optimize for high-quality image generation\n5. Think about visual coherence with the global story context\n6. NEVER ask a specific text to generate in your prompt.\n\nReturn ONLY the prompt text, no JSON, no title, just the optimized prompt in ENGLISH.",
+        "example_prompts": [
+          "simple 2D cartoon illustration by using the same style and character I sent you, showing it shrugging in confusion in front of a giant question mark made of receipts, clean white background, flat colors, thick black outlines, no text, no subtitles. avoid complicated scenes or texts.",
+          "simple 2D cartoon illustration by using the same style and character I sent you, showing it holding a big simplified checklist with only two or three boxes, clean white background, flat colors, thick black outlines, no text, no subtitles. avoid complicated scenes or texts.",
+          "simple 2D cartoon illustration by using the same style and character I sent you, showing it surrounded by random receipts and bills falling around him in confusion, clean white background, flat colors, thick black outlines, no text, no subtitles. avoid complicated scenes or texts."
+        ],
+        "user_id": "e622c54f-8a88-403a-bfea-1f29b71c40f9",
+        "created_at": "2025-11-20T04:31:09.691045+00:00",
+        "updated_at": "2025-12-12T23:53:31.71442+00:00"
+      },
+      {
+        "id": "2fdde5ee-a118-4b2c-8d96-fbb7cbbee812",
+        "name": "Tom Invest - Long form ZIMAGE",
+        "aspect_ratio": "16:9",
+        "image_model": "seedream-4.5",
+        "image_width": 1920,
+        "image_height": 1080,
+        "lora_steps": 10,
+        "lora_url": null,
+        "scene_duration_0to1": 4,
+        "scene_duration_1to3": 6,
+        "scene_duration_3plus": 8,
+        "range_end_1": 60,
+        "range_end_2": 180,
+        "duration_ranges": [{"endSeconds": 60, "sceneDuration": 4}, {"endSeconds": 180, "sceneDuration": 6}, {"endSeconds": null, "sceneDuration": 8}],
+        "style_reference_url": ["https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/1763573442105-c0bmg8.png"],
+        "prompt_system_message": "EVEN IF the script mentions on‑screen text, titles or numbers, you MUST IGNORE IT and NEVER describe or request any visible text, labels, captions, words or quotes in the image. Replace any textual idea with symbols or visuals only.\n\nYou are an expert at generating prompts for AI image creation (like Midjourney, Stable Diffusion, DALL-E).\n\nSTRICT RULES FOR GENERATING CONSISTENT PROMPTS:\n1. Follow EXACTLY the structure and style of the examples below\n2. Use the same tone, vocabulary, and format\n3. Respect the same approximate length (50-100 words)\n4. Include the same types of elements: main subject, visual style, composition, lighting, mood (NO TEXT)\n5. NEVER deviate from the format established by the examples\n6. Generate prompts in ENGLISH only\n7. NEVER use the word \"dead\" in the prompt (rephrase with other words instead)\n8. Don't ask to generate text, (for exemple : \"standing in front of massive glowing text reading \"14 TRILLION DOLLARS\" is FORBIDDEN).\n\nCONTENT SAFETY - STRICTLY FORBIDDEN:\n- No nudity, partial nudity, or suggestive/intimate content\n- No violence, gore, blood, weapons pointed at people, or graphic injuries\n- No sexual or romantic physical contact\n- No drug use or drug paraphernalia\n- No hate symbols, extremist imagery, or discriminatory content\n- No realistic depictions of real public figures or celebrities\n- Instead of violent scenes, describe tension through expressions, postures, and atmosphere\n- Instead of intimate scenes, describe emotional connection through eye contact and gestures\n\nYour role is to create ONE detailed visual prompt for a specific scene from a video/audio.\n\nFor this scene, you must:\n1. Identify key visual elements from the text\n2. Create a descriptive and detailed prompt\n3. Include style, mood, composition, lighting\n4. Optimize for high-quality image generation\n5. Think about visual coherence with the global story context\n6. NEVER ask a specific text to generate in your prompt.\n\nReturn ONLY the prompt text, no JSON, no title, just the optimized prompt in ENGLISH.",
+        "example_prompts": [
+          "tfl0w, cartoon character adult man, light skin, short dark brown hair combed to the side, large round expressive eyes, awed and slightly overwhelmed expression, wearing a green short-sleeve button shirt, standing in front of a massive glowing visual representing an enormous financial scale, with smaller stylized S&P 500 index fund icons floating around him, clean white background, flat colors, thick black outlines, no subtitles. avoid complicated scenes or elements outside these components.",
+          "tfl0w, cartoon character adult man, light skin, short dark brown hair combed to the side, large round expressive eyes, confused and puzzled expression, wearing a green short-sleeve button shirt, standing between two contrasting bar graphs, one clearly shorter and one clearly taller, visually representing different performance levels, with a thought bubble above his head containing a simple question mark symbol, clean white background, flat colors, thick black outlines, no subtitles. avoid complicated scenes or elements outside these components.",
+          "tfl0w, cartoon character adult man, light skin, short dark brown hair combed to the side, large round expressive eyes, distressed expression, wearing a green short-sleeve button shirt, surrounded by broken tech devices and a crumbling abstract financial building in the background, symbolizing systemic collapse, clean white background, flat colors, thick black outlines, no text, no subtitles. avoid complicated scenes or texts."
+        ],
+        "user_id": "e622c54f-8a88-403a-bfea-1f29b71c40f9",
+        "created_at": "2025-12-12T23:53:12.617031+00:00",
+        "updated_at": "2025-12-12T23:54:28.114213+00:00"
+      },
+      {
+        "id": "a6b41c30-0783-4675-b815-497bf1fe2d4e",
+        "name": "Allan Keller - Long form",
+        "aspect_ratio": "16:9",
+        "image_model": "seedream-4.5",
+        "image_width": 1920,
+        "image_height": 1080,
+        "lora_steps": 10,
+        "lora_url": null,
+        "scene_duration_0to1": 4,
+        "scene_duration_1to3": 7,
+        "scene_duration_3plus": 8,
+        "range_end_1": 60,
+        "range_end_2": 180,
+        "duration_ranges": [{"endSeconds": 60, "sceneDuration": 4}, {"endSeconds": 180, "sceneDuration": 6}, {"endSeconds": null, "sceneDuration": 8}],
+        "style_reference_url": ["https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/1764933727805_Gemini_Generated_Image_ftisuoftisuoftis%20(1).png"],
+        "prompt_system_message": null,
+        "example_prompts": [
+          "simple 2D cartoon illustration by using the same style and character I sent you, showing it shrugging in confusion in front of a giant question mark made of receipts, clean white background, flat colors, thick black outlines, no text, no subtitles. avoid complicated scenes or texts.",
+          "simple 2D cartoon illustration by using the same style and character I sent you, showing it holding a big simplified checklist with only two or three boxes, clean white background, flat colors, thick black outlines, no text, no subtitles. avoid complicated scenes or texts.",
+          "simple 2D cartoon illustration by using the same style and character I sent you, showing it surrounded by random receipts and bills falling around him in confusion, clean white background, flat colors, thick black outlines, no text, no subtitles. avoid complicated scenes or texts."
+        ],
+        "user_id": "e622c54f-8a88-403a-bfea-1f29b71c40f9",
+        "created_at": "2025-12-05T11:24:13.261051+00:00",
+        "updated_at": "2025-12-05T11:24:13.261051+00:00"
+      },
+      {
+        "id": "cb54a3a5-e712-42a7-8f7d-9a3b7630b48a",
+        "name": "Horror - Long form (z-image)",
+        "aspect_ratio": "16:9",
+        "image_model": "z-image-turbo",
+        "image_width": 1440,
+        "image_height": 810,
+        "lora_steps": 10,
+        "lora_url": null,
+        "scene_duration_0to1": 6,
+        "scene_duration_1to3": 8,
+        "scene_duration_3plus": 15,
+        "range_end_1": 60,
+        "range_end_2": 180,
+        "duration_ranges": [{"endSeconds": 60, "sceneDuration": 4}, {"endSeconds": 180, "sceneDuration": 6}, {"endSeconds": null, "sceneDuration": 8}],
+        "style_reference_url": [],
+        "prompt_system_message": null,
+        "example_prompts": [
+          "realistic archival photography showing a long abandoned hallway with a faint dark figure barely visible in the distance, grainy black-and-white film texture, soft flash lighting, slight vintage blur, no text, no subtitles, avoid complicated scenes.",
+          "realistic archival photography showing an old metal bed frame in an empty room with the outline of a person faintly indented on the mattress, grainy black-and-white film texture, soft flash lighting, slight vintage blur, no text, no subtitles, avoid complicated scenes.",
+          "realistic archival photography showing a tall blurry silhouette standing motionless at the end of an empty corridor, grainy black-and-white film texture, soft flash lighting, slight vintage blur, no text, no subtitles, avoid complicated scenes."
+        ],
+        "user_id": "e622c54f-8a88-403a-bfea-1f29b71c40f9",
+        "created_at": "2025-12-08T11:44:31.512233+00:00",
+        "updated_at": "2025-12-08T11:44:31.512233+00:00"
+      },
+      {
+        "id": "85eb3a0d-47b2-452d-9a9b-ba2c2c44bc31",
+        "name": "Simulation - Long form 5",
+        "aspect_ratio": "16:9",
+        "image_model": "z-image-turbo",
+        "image_width": 1440,
+        "image_height": 810,
+        "lora_steps": 10,
+        "lora_url": null,
+        "scene_duration_0to1": 5,
+        "scene_duration_1to3": 8,
+        "scene_duration_3plus": 8,
+        "range_end_1": 60,
+        "range_end_2": 180,
+        "duration_ranges": [{"endSeconds": 60, "sceneDuration": 4}, {"endSeconds": 180, "sceneDuration": 6}, {"endSeconds": null, "sceneDuration": 8}],
+        "style_reference_url": [],
+        "prompt_system_message": "You are an expert at generating prompts for AI image creation (like Midjourney, Stable Diffusion, DALL-E).\n\nSTRICT RULES FOR GENERATING CONSISTENT PROMPTS:\n1. Follow EXACTLY the structure and style of the examples below\n2. Use the same tone, colors, vocabulary, and format\n3. Respect the same approximate length (50-100 words)\n4. Include the same types of elements: main subject, visual style, composition, lighting, mood, action,\n5. NEVER deviate from the format established by the examples\n6. Generate prompts in ENGLISH only\n7. NEVER use the word \"dead\" in the prompt (rephrase with other words instead)\n8. Avoid passive character actions like 'looking' or 'standing' (like my exemples prompt, character(s) alway do something)\n\nCONTENT SAFETY - STRICTLY FORBIDDEN:\n- No nudity, partial nudity, or suggestive/intimate content\n- No violence, gore, blood, weapons pointed at people, or graphic injuries\n- No sexual or romantic physical contact\n- No drug use or drug paraphernalia\n- No hate symbols, extremist imagery, or discriminatory content\n- No realistic depictions of real public figures or celebrities\n- Instead of violent scenes, describe tension through expressions, postures, and atmosphere\n- Instead of intimate scenes, describe emotional connection through eye contact and gestures\n\nYour role is to create ONE detailed visual prompt for a specific scene from a video/audio.\n\nFor this scene, you must:\n1. Identify key visual and action elements from the text\n2. Create a descriptive and detailed prompt\n3. Include style, mood, composition, lighting, character action and position\n4. Optimize for high-quality image generation\n5. Think about visual coherence with the global story context\n\nReturn ONLY the prompt text, no JSON, no title, just the optimized prompt in ENGLISH.",
+        "example_prompts": [
+          "dark black detailed 3D scene in a wide outdoor field under deep blacks and muted grays. A matte black stylized 3D human character with low details kneels to gather vegetables from the soil, with a deep yellow-gold rim light outlining the figure. Rows of plants and terrain are modeled realistically but rendered in smooth matte materials with yellow highlights on the vegetables and nearby tools. The atmosphere is moody, with deep shadows and a faint warm glow at the ground level. Cinematic, serious, minimal, icon-like aesthetic. No text, no subtitles, minimal clutter.",
+          "dark black detailed 3D scene inside a modern vehicle interior with deep blacks and muted grays. A matte black stylized 3D human character with low details sits in the driver's seat, outlined by a yellow-gold glow. The dashboard, steering wheel, and controls are rendered in smooth matte materials with selective yellow highlights on key mechanical parts. The environment is shadow-heavy, with a focused warm light emphasizing the silhouette's form. Cinematic, serious, minimal, icon-like aesthetic. No text, no subtitles, minimal clutter.",
+          "dark black detailed 3D scene on the lunar surface under deep blacks and muted grays. A matte black stylized 3D human character with low details stands on the moon, its edges glowing with a high contrast yellow-gold rim light. The lunar ground is smooth and matte, with yellow reflections shaping the terrain. Earth hangs over the horizon as a softly illuminated form with warm highlights. The scene feels vast, minimal, cinematic, and iconic with golden accents. No text, no subtitles, minimal clutter."
+        ],
+        "user_id": "e622c54f-8a88-403a-bfea-1f29b71c40f9",
+        "created_at": "2025-12-08T20:15:18.916939+00:00",
+        "updated_at": "2025-12-08T20:15:18.916939+00:00"
+      },
+      {
+        "id": "0094476b-b672-484f-8321-7aafa1cd98bc",
+        "name": "Think Deeper FINANCE - Long Form (ZIMAGE)",
+        "aspect_ratio": "16:9",
+        "image_model": "z-image-turbo",
+        "image_width": 1440,
+        "image_height": 810,
+        "lora_steps": 10,
+        "lora_url": null,
+        "scene_duration_0to1": 3,
+        "scene_duration_1to3": 4,
+        "scene_duration_3plus": 8,
+        "range_end_1": 60,
+        "range_end_2": 180,
+        "duration_ranges": [{"endSeconds": 60, "sceneDuration": 4}, {"endSeconds": 180, "sceneDuration": 6}, {"endSeconds": null, "sceneDuration": 8}],
+        "style_reference_url": [],
+        "prompt_system_message": "You are an expert at generating prompts for AI image creation (like Midjourney, Stable Diffusion, DALL-E).\n\nSTRICT RULES FOR GENERATING CONSISTENT PROMPTS:\n1. Follow EXACTLY the structure and style of the examples below\n2. Use the same tone, colors, vocabulary, and format\n3. Respect the same approximate length (50-100 words)\n4. Include the same types of elements: main subject, visual style, composition, lighting, mood, action,\n5. NEVER deviate from the format established by the examples\n6. Generate prompts in ENGLISH only\n7. NEVER use the word \"dead\" in the prompt (rephrase with other words instead)\n8. Avoid passive character actions like 'looking' or 'standing' (like my exemples prompt, character(s) alway do something)\n\nCONTENT SAFETY - STRICTLY FORBIDDEN:\n- No nudity, partial nudity, or suggestive/intimate content\n- No violence, gore, blood, weapons pointed at people, or graphic injuries\n- No sexual or romantic physical contact\n- No drug use or drug paraphernalia\n- No hate symbols, extremist imagery, or discriminatory content\n- No realistic depictions of real public figures or celebrities\n- Instead of violent scenes, describe tension through expressions, postures, and atmosphere\n- Instead of intimate scenes, describe emotional connection through eye contact and gestures\n\nYour role is to create ONE detailed visual prompt for a specific scene from a video/audio.\n\nFor this scene, you must:\n1. Identify key visual and action elements from the text\n2. Create a descriptive and detailed prompt\n3. Include style, mood, composition, lighting, character action and position\n4. Optimize for high-quality image generation\n5. Think about visual coherence with the global story context\n\nReturn ONLY the prompt text, no JSON, no title, just the optimized prompt in ENGLISH.",
+        "example_prompts": [
+          "dark black detailed 3D scene in a wide outdoor field under deep blacks and muted grays. A matte black stylized 3D human character with low details kneels to gather vegetables from the soil, with a deep red rim light outlining the figure. Rows of plants and terrain are modeled realistically but rendered in smooth matte materials with red highlights on the vegetables and nearby tools. The atmosphere is moody, with deep shadows and a faint warm glow at the ground level. Cinematic, serious, minimal, icon-like aesthetic. No text, no subtitles, minimal clutter.",
+          "dark black detailed 3D scene inside a modern vehicle interior with deep blacks and muted grays. A matte black stylized 3D human character with low details sits in the driver's seat, outlined by a red glow. The dashboard, steering wheel, and controls are rendered in smooth matte materials with selective red highlights on key mechanical parts. The environment is shadow-heavy, with a focused warm light emphasizing the silhouette's form. Cinematic, serious, minimal, icon-like aesthetic. No text, no subtitles, minimal clutter.",
+          "dark black detailed 3D scene on the lunar surface under deep blacks and muted grays. A matte black stylized 3D human character with low details stands on the moon, its edges glowing with a high contrast red rim light. The lunar ground is smooth and matte, with re reflections shaping the terrain. Earth hangs over the horizon as a softly illuminated form with warm highlights. The scene feels vast, minimal, cinematic, and iconic with golden accents. No text, no subtitles, minimal clutter."
+        ],
+        "user_id": "e622c54f-8a88-403a-bfea-1f29b71c40f9",
+        "created_at": "2025-12-15T14:14:38.176253+00:00",
+        "updated_at": "2025-12-15T14:14:38.176253+00:00"
+      },
+      {
+        "id": "528cd18b-4d56-439a-a890-dafd10a28687",
+        "name": "Allan Keller - Long form (ZIMAGE)",
+        "aspect_ratio": "16:9",
+        "image_model": "z-image-turbo-lora",
+        "image_width": 1440,
+        "image_height": 810,
+        "lora_steps": 10,
+        "lora_url": "https://huggingface.co/GoOnIDz/ke11er/resolve/main/ke11er.safetensors",
+        "scene_duration_0to1": 3,
+        "scene_duration_1to3": 4,
+        "scene_duration_3plus": 9,
+        "range_end_1": 60,
+        "range_end_2": 180,
+        "duration_ranges": [{"endSeconds": 60, "sceneDuration": 4}, {"endSeconds": 180, "sceneDuration": 6}, {"endSeconds": null, "sceneDuration": 8}],
+        "style_reference_url": ["https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/1764933727805_Gemini_Generated_Image_ftisuoftisuoftis%20(1).png"],
+        "prompt_system_message": "You must ALWAYS start with : \"ke11er, simple 2D cartoon character adult man, light skin, short dark brown hair combed to the side, full dark brown beard, rectangular glasses\"\n\nYou are an expert at generating prompts for AI image creation (like Midjourney, Stable Diffusion, DALL-E).\n\nSTRICT RULES FOR GENERATING CONSISTENT PROMPTS:\n1. Follow EXACTLY the structure and style of the examples below\n2. Use the same tone, vocabulary, and format\n3. Respect the same approximate length (50-100 words)\n4. Include the same types of elements: main subject, visual style, composition, lighting, mood\n5. NEVER deviate from the format established by the examples\n6. Generate prompts in ENGLISH only\n7. NEVER use the word \"dead\" in the prompt (rephrase with other words instead)\n\nCONTENT SAFETY - STRICTLY FORBIDDEN:\n- No nudity, partial nudity, or suggestive/intimate content\n- No violence, gore, blood, weapons pointed at people, or graphic injuries\n- No sexual or romantic physical contact\n- No drug use or drug paraphernalia\n- No hate symbols, extremist imagery, or discriminatory content\n- No realistic depictions of real public figures or celebrities\n- Instead of violent scenes, describe tension through expressions, postures, and atmosphere\n- Instead of intimate scenes, describe emotional connection through eye contact and gestures\n\nYour role is to create ONE detailed visual prompt for a specific scene from a video/audio.\n\nFor this scene, you must:\n1. Identify key visual elements from the text\n2. Create a descriptive and detailed prompt\n3. Include style, mood, composition, lighting\n4. Optimize for high-quality image generation\n5. Think about visual coherence with the global story context\n\nReturn ONLY the prompt text, no JSON, no title, just the optimized prompt in ENGLISH.",
+        "example_prompts": [
+          "ke11er, simple 2D cartoon character adult man, light skin, short dark brown hair combed to the side, full dark brown beard, rectangular glasses, very large round eyes widened in clear confusion, eyebrows high and strongly arched, pupils slightly off-center, facial expression clearly exaggerated, mouth open in a small crooked \"uh?\" shape showing uncertainty and disbelief, wearing a white medical lab coat over dark blue medical scrubs, stethoscope around his neck, professional badge clipped to the coat, showing it shrugging in confusion in front of a giant question mark made of receipts, clean white background, flat colors, thick black outlines, no text, no subtitles. avoid complicated scenes or texts.",
+          "ke11er, simple 2D cartoon character adult man, light skin, short dark brown hair combed to the side, full dark brown beard, rectangular glasses, large round eyes slightly widened, eyebrows raised unevenly, focused yet mildly concerned facial expression, mouth gently pressed to one side suggesting thoughtfulness, wearing a white medical lab coat over dark blue medical scrubs, stethoscope around his neck, professional badge clipped to the coat, facial expression clearly conveying attention and evaluation, showing it holding a big simplified checklist with only two or three boxes, clean white background, flat colors, thick black outlines, no text, no subtitles. avoid complicated scenes or texts.",
+          "ke11er, simple 2D cartoon character adult man, light skin, short dark brown hair combed to the side, full dark brown beard, rectangular glasses, large round eyes widened in mild panic, eyebrows raised and slightly furrowed, confused and overwhelmed facial expression, mouth slightly open with a tense lower lip, wearing a white medical lab coat over dark blue medical scrubs, stethoscope around his neck, professional badge clipped to the coat, facial expression clearly conveying confusion and mental overload, showing it surrounded by random receipts and bills falling around him in confusion, clean white background, flat colors, thick black outlines, no text, no subtitles. avoid complicated scenes or texts."
+        ],
+        "user_id": "e622c54f-8a88-403a-bfea-1f29b71c40f9",
+        "created_at": "2025-12-14T22:42:27.713347+00:00",
+        "updated_at": "2025-12-15T22:21:19.604665+00:00"
+      }
+    ],
+    "thumbnail_presets": [
+      {
+        "id": "41589982-1794-4a0a-9c19-e5766da02fa1",
+        "name": "Tom Cashflow (better ?)",
+        "image_model": "seedream-4.5",
+        "character_ref_url": "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/character/1763643948683_4ec7870b-eb21-43e3-9ca5-97612afd44b1.png",
+        "custom_prompt": "Tu es un expert en création de miniatures YouTube accrocheuses et performantes.\n\nTon rôle est de créer 3 prompts de miniatures YouTube BASÉS SUR LE CONTENU DU SCRIPT/TITRE fourni, en utilisant le STYLE VISUEL des exemples comme référence.\n\nDISTINCTION CRUCIALE - STYLE vs CONTENU:\n- Les images d'exemples = RÉFÉRENCE DE STYLE UNIQUEMENT (couleurs, composition, typographie, effets visuels, mise en page)\n- Le script/titre de la vidéo = SOURCE DU CONTENU (sujet, personnages, éléments visuels pertinents)\n- NE COPIE JAMAIS les personnes, textes, ou sujets des exemples - ils sont là uniquement pour montrer le style visuel désiré\n- Le contenu de tes miniatures doit être 100% basé sur le script et le titre de la vidéo\n\nCONTEXTE:\n- Tu vas recevoir des images d'exemples montrant le STYLE VISUEL à reproduire (pas le contenu!)\n- Tu vas recevoir le TITRE et le SCRIPT de la vidéo - c'est ça qui détermine le CONTENU des miniatures\n\nRÈGLES STRICTES:\n1. ANALYSE les exemples pour: palette de couleurs, style d'illustration, composition, effets visuels, typographie\n2. IGNORE complètement: les personnes, le texte, le sujet des exemples - ce n'est PAS le contenu à reproduire\n3. CRÉE des miniatures dont le SUJET et le CONTENU viennent UNIQUEMENT du script/titre de la vidéo\n4. Décris des personnages ou éléments visuels pertinents au contenu du script\n5. Les prompts doivent être en ANGLAIS\n6. Chaque prompt: 60-100 mots, détaillé sur le style visuel ET pertinent au contenu du script\n7. N'utilise JAMAIS le mot \"dead\" (reformule autrement)\n8. Utilise la même composition que les exemples : notre personnage avec une emotion facial visible et en close up sur un coté qui porte un objet ou fait une actio ne nrapport avec le sujet, et un gros hook text en noir BOLD et CAPITAL.\n9. Avoid using arrow if it's not well placed.\n\nRÈGLES DE SIMPLICITÉ:\n- Compositions épurées et lisibles\n- 1-2 éléments visuels forts, pas beaucoup de petits détails\n- Arrière-plan simple\n- Personnage en close up",
+        "example_urls": [
+          "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/examples/1763643940843_maxresdefault%20(19).jpg",
+          "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/examples/1763643940844_maxresdefault%20(20).jpg",
+          "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/examples/1763643940844_maxresdefault%20(21).jpg",
+          "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/examples/1765272573563_thumbnail_1%20(49).jpg",
+          "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/examples/1765272856403_thumbnail_2%20(26).jpg",
+          "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/examples/1765272856944_thumbnail_1%20(51).jpg"
+        ],
+        "user_id": "e622c54f-8a88-403a-bfea-1f29b71c40f9",
+        "created_at": "2025-11-20T13:06:02.30603+00:00",
+        "updated_at": "2025-12-09T23:46:21.789951+00:00"
+      },
+      {
+        "id": "3f99681b-18f2-4edd-93f4-994ac165df0f",
+        "name": "Horror",
+        "image_model": "seedream-4.5",
+        "character_ref_url": null,
+        "custom_prompt": "Tu es un expert en création de miniatures YouTube accrocheuses et performantes.\n\nTon rôle est de créer 3 prompts de miniatures YouTube BASÉS SUR LE CONTENU DU SCRIPT/TITRE fourni, en utilisant le STYLE VISUEL des exemples comme référence.\n\nDISTINCTION CRUCIALE - STYLE vs CONTENU:\n- Les images d'exemples = RÉFÉRENCE DE STYLE UNIQUEMENT (couleurs, composition, typographie, effets visuels, mise en page)\n- Le script/titre de la vidéo = SOURCE DU CONTENU (sujet, personnages, éléments visuels pertinents)\n- NE COPIE JAMAIS les personnes, textes, ou sujets des exemples - ils sont là uniquement pour montrer le style visuel désiré\n- Le contenu de tes miniatures doit être 100% basé sur le script et le titre de la vidéo\n\nCONTEXTE:\n- Tu vas recevoir des images d'exemples montrant le STYLE VISUEL à reproduire (pas le contenu!)\n- Tu vas recevoir le TITRE et le SCRIPT de la vidéo - c'est ça qui détermine le CONTENU des miniatures\n\nRÈGLES STRICTES:\n1. ANALYSE les exemples pour: palette de couleurs, style d'illustration, composition, effets visuels, typographie\n2. IGNORE complètement: les personnes, le texte, le sujet des exemples - ce n'est PAS le contenu à reproduire\n3. CRÉE des miniatures dont le SUJET et le CONTENU viennent UNIQUEMENT du script/titre de la vidéo\n4. Décris des personnages ou éléments visuels pertinents au contenu du script\n5. Les prompts doivent être en ANGLAIS\n6. Chaque prompt: 60-100 mots, détaillé sur le style visuel ET pertinent au contenu du script\n7. N'utilise JAMAIS le mot \"dead\" (reformule autrement)\n8. Incorpore obligatoirement un visage face caméra avec le sujet qui regarde DROIT dans la caméra le spectateur comme sur les exemples (de notre personnage, pas ceux des exemples, donc décris le).\n9. Incorpore obligatoirement un GROS texte hook choquant bien visible comme sur les exemples, en rapport avec notre vidéo.\n10. Dans le prompt, détail physiquement le visage, l'ia pour l'image n'a pas accès à notre contenu.\n\nRÈGLES DE SIMPLICITÉ:\n- Maximum 3-4 éléments visuels par miniature\n- Compositions épurées et lisibles\n- 1-2 éléments visuels forts, pas beaucoup de petits détails\n- Arrière-plan simple\n- 2-3 éléments visuels clés tirés du script = design efficace",
+        "example_urls": [
+          "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/examples/1764765707418_3.jpg",
+          "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/examples/1764765708241_2.jpg",
+          "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/examples/1764765708587_1.jpg"
+        ],
+        "user_id": "e622c54f-8a88-403a-bfea-1f29b71c40f9",
+        "created_at": "2025-12-03T12:42:37.347308+00:00",
+        "updated_at": "2025-12-03T15:57:28.549726+00:00"
+      },
+      {
+        "id": "ce4c612b-c5a8-433b-916e-84ea7dcbcae0",
+        "name": "Tom CASHFLOW 2",
+        "image_model": "seedream-4.5",
+        "character_ref_url": "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/character/1763643948683_4ec7870b-eb21-43e3-9ca5-97612afd44b1.png",
+        "custom_prompt": "Tu es un expert en création de miniatures YouTube accrocheuses et performantes.\n\nTon rôle est de créer 3 prompts de miniatures YouTube BASÉS SUR LE CONTENU DU SCRIPT/TITRE fourni, en utilisant le STYLE VISUEL des exemples comme référence.\n\nDISTINCTION CRUCIALE - STYLE vs CONTENU:\n- Les images d'exemples = RÉFÉRENCE DE STYLE UNIQUEMENT (couleurs, composition, typographie, effets visuels, mise en page)\n- Le script/titre de la vidéo = SOURCE DU CONTENU (sujet, personnages, éléments visuels pertinents)\n- NE COPIE JAMAIS les personnes, textes, ou sujets des exemples - ils sont là uniquement pour montrer le style visuel désiré\n- Le contenu de tes miniatures doit être 100% basé sur le script et le titre de la vidéo\n\nCONTEXTE:\n- Tu vas recevoir des images d'exemples montrant le STYLE VISUEL à reproduire (pas le contenu!)\n- Tu vas recevoir le TITRE et le SCRIPT de la vidéo - c'est ça qui détermine le CONTENU des miniatures\n\nRÈGLES STRICTES:\n1. ANALYSE les exemples pour: palette de couleurs, style d'illustration, composition, effets visuels, typographie\n2. IGNORE complètement: les personnes, le texte, le sujet des exemples - ce n'est PAS le contenu à reproduire\n3. CRÉE des miniatures dont le SUJET et le CONTENU viennent UNIQUEMENT du script/titre de la vidéo\n4. Décris des personnages ou éléments visuels pertinents au contenu du script\n5. Les prompts doivent être en ANGLAIS\n6. Chaque prompt: 60-100 mots, détaillé sur le style visuel ET pertinent au contenu du script\n7. N'utilise JAMAIS le mot \"dead\" (reformule autrement)\n8. Utilise la même composition que les exemples : notre personnage avec une emotion facial visible sur un coté, 1 ou plusieurs éléments visuels en rapport bien agencés (pas mis en vrac) et un gros hook text en noir BOLD et CAPITAL.\n9. Avoid using arrow if it's not well placed.\n\nRÈGLES DE SIMPLICITÉ:\n- Compositions épurées et lisibles\n- 1-2 éléments visuels forts, pas beaucoup de petits détails\n- Arrière-plan simple\n- Personnage en close up",
+        "example_urls": [
+          "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/examples/1763643940843_maxresdefault%20(19).jpg",
+          "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/examples/1763643940844_maxresdefault%20(20).jpg",
+          "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/examples/1763643940844_maxresdefault%20(21).jpg",
+          "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/examples/1764954158609_thumbnail_2%20(16).jpg",
+          "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/examples/1764954160596_thumbnail_1%20(27).jpg",
+          "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/examples/1764954162943_thumbnail_1%20(28).jpg"
+        ],
+        "user_id": "e622c54f-8a88-403a-bfea-1f29b71c40f9",
+        "created_at": "2025-12-05T17:03:05.85325+00:00",
+        "updated_at": "2025-12-09T23:48:10.458595+00:00"
+      },
+      {
+        "id": "9ac3e8f3-f764-4326-9562-165a46c6bf50",
+        "name": "Allan Keller 2",
+        "image_model": "seedream-4.5",
+        "character_ref_url": "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/character/1764935218474_Gemini_Generated_Image_nq67c2nq67c2nq67.png",
+        "custom_prompt": "Tu es un expert en création de miniatures YouTube accrocheuses et performantes.\n\nTon rôle est de créer 3 prompts de miniatures YouTube BASÉS SUR LE CONTENU DU SCRIPT/TITRE fourni, en utilisant le STYLE VISUEL des exemples comme référence.\n\nDISTINCTION CRUCIALE - STYLE vs CONTENU:\n- Les images d'exemples = RÉFÉRENCE DE STYLE UNIQUEMENT (couleurs, composition, typographie, effets visuels, mise en page)\n- Le script/titre de la vidéo = SOURCE DU CONTENU (sujet, éléments visuels pertinents)\n- NE COPIE JAMAIS les textes, ou sujets des exemples - ils sont là uniquement pour montrer le style visuel désiré\n- Le contenu de tes miniatures doit être 100% basé sur le script et le titre de la vidéo\n\nCONTEXTE:\n- Tu vas recevoir des images d'exemples montrant le STYLE VISUEL à reproduire (pas le contenu!)\n- Tu vas recevoir le TITRE et le SCRIPT de la vidéo - c'est ça qui détermine le CONTENU des miniatures\n\nRÈGLES STRICTES:\n1. ANALYSE les exemples pour: palette de couleurs, style d'illustration, composition, effets visuels, typographie\n2. IGNORE complètement: le texte, le sujet des exemples - ce n'est PAS le contenu à reproduire\n3. CRÉE des miniatures dont le SUJET et le CONTENU viennent UNIQUEMENT du script/titre de la vidéo (principalement le titre pour avoir un bon combo titre / miniature)\n5. Les prompts doivent être en ANGLAIS\n6. Chaque prompt: 60-100 mots, détaillé sur le style visuel ET pertinent au contenu du script\n7. N'utilise JAMAIS le mot \"dead\" (reformule autrement)\n8. La composition doit être comme les exemples : le visage du docteur en référence sur un coté, un ou 2 éléments visuels dans le style des exemples, un texte hook qui fait cliquer (principalement en rapport avec le titre pour avoir un bon combo titre / miniature).\n\nRÈGLES DE SIMPLICITÉ:\n- Maximum 1-3 éléments visuels par miniature, minimaliste\n- Compositions épurées et lisibles\n- Arrière-plan simple\n\nYOU MUST USE THE SAME GUY AS IN REFERENCE.",
+        "example_urls": [
+          "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/examples/1765199360396_1.jpg",
+          "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/examples/1765199361046_7.jpg",
+          "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/examples/1765199361453_6.jpg",
+          "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/examples/1765199361848_5.jpg",
+          "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/examples/1765199362368_4.jpg",
+          "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/examples/1765199362802_3.jpg",
+          "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/examples/1765199363228_2.jpg"
+        ],
+        "user_id": "e622c54f-8a88-403a-bfea-1f29b71c40f9",
+        "created_at": "2025-12-08T13:09:33.094656+00:00",
+        "updated_at": "2025-12-08T13:09:33.094656+00:00"
+      },
+      {
+        "id": "8c5478c9-ceae-4f82-823c-0251831ba454",
+        "name": "Melvyn (copie)",
+        "image_model": "seedream-4.5",
+        "character_ref_url": null,
+        "custom_prompt": "Tu es un expert en création de miniatures YouTube accrocheuses et performantes.\n\nTon rôle est de créer 3 prompts de miniatures YouTube BASÉS SUR LE CONTENU DU SCRIPT/TITRE fourni, en utilisant le STYLE VISUEL des exemples comme référence.\n\nDISTINCTION CRUCIALE - STYLE vs CONTENU:\n- Les images d'exemples = RÉFÉRENCE DE STYLE UNIQUEMENT (couleurs, composition, typographie, effets visuels, mise en page)\n- Le script/titre de la vidéo = SOURCE DU CONTENU (sujet, personnages, éléments visuels pertinents)\n- NE COPIE JAMAIS les personnes, textes, ou sujets des exemples - ils sont là uniquement pour montrer le style visuel désiré\n- Le contenu de tes miniatures doit être 100% basé sur le script et le titre de la vidéo\n\nCONTEXTE:\n- Tu vas recevoir des images d'exemples montrant le STYLE VISUEL à reproduire (pas le contenu!)\n- Tu vas recevoir le TITRE et le SCRIPT de la vidéo - c'est ça qui détermine le CONTENU des miniatures\n\nRÈGLES STRICTES:\n1. ANALYSE les exemples pour: palette de couleurs, style d'illustration, composition, effets visuels, typographie\n2. IGNORE complètement: les personnes, le texte, le sujet des exemples - ce n'est PAS le contenu à reproduire\n3. CRÉE des miniatures dont le SUJET et le CONTENU viennent UNIQUEMENT du script/titre de la vidéo\n4. Décris des personnages ou éléments visuels pertinents au contenu du script\n5. Les prompts doivent être en ANGLAIS\n6. AUCUN TEXTE SUR l'image (comme les exemples)\n7. N'utilise JAMAIS le mot \"dead\" (reformule autrement)\n8. Obligatoirement un (ou plusieurs) visages bien visibles comme éléments principaux (comme les exemples)\n9. Le visage principal en close up doit fixer le spectateur\n\nRÈGLES DE SIMPLICITÉ:\n- Maximum 3-4 éléments visuels par miniature\n- Compositions épurées et lisibles\n- 1-2 éléments visuels forts, pas beaucoup de petits détails\n- Arrière-plan simple\n- 2-3 éléments visuels clés tirés du script = design efficace",
+        "example_urls": [
+          "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/examples/1764867856730_maxresdefault%20(35).jpg",
+          "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/examples/1764867857242_maxresdefault%20(27).jpg",
+          "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/examples/1764867857559_maxresdefault%20(28).jpg",
+          "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/examples/1764867857944_maxresdefault%20(29).jpg",
+          "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/examples/1764867859331_maxresdefault%20(33).jpg",
+          "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/examples/1765206440083_thumbnail_1%20(39).jpg",
+          "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/examples/1765206509572_thumbnail_2%20(23).jpg",
+          "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/examples/1765207005569_thumbnail_3%20(16).jpg",
+          "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/examples/1765208812435_thumbnail_1%20(40).jpg"
+        ],
+        "user_id": "e622c54f-8a88-403a-bfea-1f29b71c40f9",
+        "created_at": "2025-12-06T18:32:13.775136+00:00",
+        "updated_at": "2025-12-08T15:46:54.992948+00:00"
+      },
+      {
+        "id": "794c323c-d157-4158-8afd-c1346a0510b4",
+        "name": "Simulated 1",
+        "image_model": "seedream-4.5",
+        "character_ref_url": null,
+        "custom_prompt": "Tu es un expert en création de miniatures YouTube accrocheuses et performantes.\n\nTon rôle est de créer 3 prompts de miniatures YouTube BASÉS SUR LE CONTENU DU SCRIPT/TITRE fourni, en utilisant le STYLE VISUEL des exemples comme référence.\n\nDISTINCTION CRUCIALE - STYLE vs CONTENU:\n- Les images d'exemples = RÉFÉRENCE DE STYLE UNIQUEMENT (couleurs, composition, typographie, effets visuels, mise en page)\n- Le script/titre de la vidéo = SOURCE DU CONTENU (sujet, personnages, éléments visuels pertinents)\n- NE COPIE JAMAIS les personnes, textes, ou sujets des exemples - ils sont là uniquement pour montrer le style visuel désiré\n- Le contenu de tes miniatures doit être 100% basé sur le script et le titre de la vidéo (90% du titre, script juste pour comprendre l'axe de la vidéo)\n\nCONTEXTE:\n- Tu vas recevoir des images d'exemples montrant le STYLE VISUEL à reproduire (pas le contenu!)\n- Tu vas recevoir le TITRE et le SCRIPT de la vidéo - c'est ça qui détermine le CONTENU des miniatures (90% du titre, script juste pour comprendre l'axe de la vidéo)\n\nRÈGLES STRICTES:\n1. ANALYSE les exemples pour: palette de couleurs, style d'illustration, composition, effets visuels, typographie (dark background, yellow text)\n2. IGNORE complètement: les personnes, le texte, le sujet des exemples - ce n'est PAS le contenu à reproduire\n3. CRÉE des miniatures dont le SUJET et le CONTENU viennent UNIQUEMENT du script/titre de la vidéo (90% du titre, script juste pour comprendre l'axe de la vidéo)\n4. Décris des personnages ou éléments visuels pertinents au contenu du script\n5. Les prompts doivent être en ANGLAIS\n6. Chaque prompt: 60-100 mots, détaillé sur le style visuel ET pertinent au contenu du script\n7. N'utilise JAMAIS le mot \"dead\" (reformule autrement)\n8. Be creative on the center visual scene to illustrate the title (you can create action / environement, the goal is to trigger emotions visually by keeping reference images color palet and style), don't copy references, must be mainly dark as references.\n9. text must be BOLD CAPITAL BLACK on YELLOW BACKGROUND.\n10. Do not copy past visual elements.\n11. The text hook can complet the title, make assumption, be counter intuitive, be a question anything that it is a pattern interrupt.\n\nRÈGLES DE SIMPLICITÉ:\n- Maximum 2-3 éléments visuels par miniature en couleur vives pour créé un contraste avec le background\n- Compositions épurées et lisibles\n- Arrière-plan simple\n- 1 texte hook gros bien visible",
+        "example_urls": [
+          "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/examples/1765223891545_thumbnail_3%20(17).jpg",
+          "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/examples/1765223892124_thumbnail_1%20(43).jpg",
+          "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/examples/1765225292686_thumbnail_1%20(45).jpg",
+          "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/examples/1765225433708_thumbnail_2%20(24).jpg",
+          "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/examples/1765225708240_a48vhdbq3srma0ctzyh8mmdtgg.jpg",
+          "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/examples/1765226226407_thumbnail_1%20(46).jpg",
+          "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/examples/1765380979287_thumbnail_2%20(29).jpg",
+          "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/examples/1765381688024_thumbnail_3%20(20).jpg",
+          "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/examples/1765381688699_thumbnail_2%20(30).jpg",
+          "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/examples/1765381689058_thumbnail_1%20(63).jpg",
+          "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/examples/1765385187912_thumbnail_2%20(32).jpg",
+          "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/examples/1765385188626_thumbnail_1%20(66).jpg",
+          "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/examples/1765497470719_thumbnail_2%20(40).jpg",
+          "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/examples/1765497471302_thumbnail_1%20(77).jpg"
+        ],
+        "user_id": "e622c54f-8a88-403a-bfea-1f29b71c40f9",
+        "created_at": "2025-12-08T19:38:58.544107+00:00",
+        "updated_at": "2025-12-11T23:58:10.825818+00:00"
+      },
+      {
+        "id": "18e3cc82-3021-4e23-8e74-efeb237e1081",
+        "name": "Allan Keller 3",
+        "image_model": "seedream-4.5",
+        "character_ref_url": "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/character/1764935218474_Gemini_Generated_Image_nq67c2nq67c2nq67.png",
+        "custom_prompt": "Tu es un expert en création de miniatures YouTube accrocheuses et performantes.\n\nTon rôle est de créer 3 prompts de miniatures YouTube BASÉS SUR LE CONTENU DU SCRIPT/TITRE fourni, en utilisant le STYLE VISUEL des exemples comme référence.\n\nDISTINCTION CRUCIALE - STYLE vs CONTENU:\n- Les images d'exemples = RÉFÉRENCE DE STYLE UNIQUEMENT (couleurs, composition, typographie, effets visuels, mise en page)\n- Le script/titre de la vidéo = SOURCE DU CONTENU (sujet, éléments visuels pertinents)\n- NE COPIE JAMAIS les textes, ou sujets des exemples - ils sont là uniquement pour montrer le style visuel désiré\n- Le contenu de tes miniatures doit être 100% basé sur le script et le titre de la vidéo\n\nCONTEXTE:\n- Tu vas recevoir des images d'exemples montrant le STYLE VISUEL à reproduire (pas le contenu!)\n- Tu vas recevoir le TITRE et le SCRIPT de la vidéo - c'est ça qui détermine le CONTENU des miniatures\n\nRÈGLES STRICTES:\n1. ANALYSE les exemples pour: palette de couleurs, style d'illustration, composition, effets visuels, typographie\n2. IGNORE complètement: le texte, le sujet des exemples - ce n'est PAS le contenu à reproduire\n3. CRÉE des miniatures dont le SUJET et le CONTENU viennent UNIQUEMENT du script/titre de la vidéo (principalement le titre pour avoir un bon combo titre / miniature)\n5. Les prompts doivent être en ANGLAIS\n6. Chaque prompt: 60-100 mots, détaillé sur le style visuel ET pertinent au contenu du script\n7. N'utilise JAMAIS le mot \"dead\" (reformule autrement)\n8. La composition doit être comme les exemples : le visage du docteur en référence sur un coté en closeup (avec une emotion visible si applicable et qui fixe le spectateur), un ou 2 éléments visuels qui attirent l'oeil, un SHORT texte hook (question, statements) qui fait cliquer en noir et bleu, full capital letter et bold (principalement en rapport avec le titre pour avoir un bon combo titre / miniature), un fully white background.\n\nRÈGLES DE SIMPLICITÉ:\n- Maximum 1-3 éléments visuels par miniature, minimaliste\n- Compositions épurées et lisibles\n- Arrière-plan simple",
+        "example_urls": [
+          "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/examples/1765275507981_thumbnail_1%20(53).jpg",
+          "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/examples/1765275798138_thumbnail_1%20(55).jpg",
+          "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/examples/1765747869735_thumbnail_1%20(89).jpg",
+          "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/examples/1765748492549_thumbnail_3%20(36).jpg",
+          "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/examples/1765753263933_thumbnail_2%20(50).jpg",
+          "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/examples/1765753264731_thumbnail_3%20(37).jpg"
+        ],
+        "user_id": "e622c54f-8a88-403a-bfea-1f29b71c40f9",
+        "created_at": "2025-12-09T10:08:58.900666+00:00",
+        "updated_at": "2025-12-14T23:01:07.341099+00:00"
+      },
+      {
+        "id": "3e1a3844-0507-4c4b-8a28-63b6775cffe3",
+        "name": "Bravos Researchs v1",
+        "image_model": "seedream-4.5",
+        "character_ref_url": null,
+        "custom_prompt": "DO NOT USE SAME CHARTS AS IMAEGS REFERENCE, MAKE YOUR OWN.\n\nTu es un expert en création de miniatures YouTube accrocheuses et performantes.\n\nTon rôle est de créer 3 prompts de miniatures YouTube BASÉS SUR LE CONTENU DU SCRIPT/TITRE fourni, en utilisant le STYLE VISUEL des exemples comme référence.\n\nDISTINCTION CRUCIALE - STYLE vs CONTENU:\n- Les images d'exemples = RÉFÉRENCE DE STYLE UNIQUEMENT (couleurs, composition, typographie, effets visuels, mise en page)\n- Le script/titre de la vidéo = SOURCE DU CONTENU (sujet, personnages, éléments visuels pertinents)\n- NE COPIE JAMAIS les personnes, textes, ou sujets des exemples - ils sont là uniquement pour montrer le style visuel désiré\n- Le contenu de tes miniatures doit être 100% basé sur le script et le titre de la vidéo\n\nCONTEXTE:\n- Tu vas recevoir des images d'exemples montrant le STYLE VISUEL à reproduire (pas le contenu!)\n- Tu vas recevoir le TITRE et le SCRIPT de la vidéo - c'est ça qui détermine le CONTENU des miniatures\n\nRÈGLES STRICTES:\n1. ANALYSE les exemples pour: palette de couleurs, style d'illustration, composition, effets visuels, typographie\n2. IGNORE complètement: les personnes, le texte, le sujet des exemples - ce n'est PAS le contenu à reproduire\n3. CRÉE des miniatures dont le SUJET et le CONTENU viennent UNIQUEMENT du script/titre de la vidéo\n5. Les prompts doivent être en ANGLAIS\n6. Chaque prompt: 60-100 mots, détaillé sur le style visuel ET pertinent au contenu du script\n7. N'utilise JAMAIS le mot \"dead\" (reformule autrement)\n\nRÈGLES DE de COMPOSITION:\n1. Structure générale\n\nToutes les miniatures suivent la même architecture visuelle, avec de légères variations :\n\nFond blanc ou très clair\n\nUn seul graphique financier occupant 70–90 % de l'espace\n\nUn texte court, massif, en capitales, placé en haut\n\nUn élément directionnel (flèche, courbe, annotation)\n\nCouleurs limitées : noir, blanc, rouge (occasionnellement gris)\n\nC'est volontairement minimaliste, lisible en très petit, et agressif visuellement.\n\n2. Le graphique (élément central)\nType\n\nCourbe de marché (actions, bitcoin, macro)\n\nParfois histogramme (crises, pics historiques)\n\nToujours orienté vers la droite (projection future)\n\nTraitement visuel\n\nLigne principale noire ou grise\n\nZone rouge remplie pour signaler :\n\ndanger\n\nchute\n\nstress\n\ninversion\n\nPartie droite souvent mise en avant (zoom, accent, flèche)\n\nRôle\n\nLe graphique n'explique rien, il suggère une catastrophe imminente ou un point de rupture.\n\n3. Le texte (hook visuel)\nCaractéristiques\n\n2 à 5 mots maximum\n\nMajuscules\n\nPolice sans-serif, très épaisse\n\nNoir ou rouge\n\nPlacé :\n\nen haut à gauche\n\nou centré en haut\n\nExemples de formules\n\n\"IT'S HAPPENING.\"\n\n\"FINAL PHASE\"\n\n\"THIS IS A PROBLEM.\"\n\n\"IT'S STARTED.\"\n\n\"THEY ARE WRONG.\"\n\nFonction\n\nCréer urgence\n\nCréer conflit\n\nCréer certitude\nAucune nuance, aucune condition.\n\n4. Les flèches et annotations\nPrésence quasi systématique\n\nFlèche courbe noire pointant :\n\nun sommet\n\nune rupture\n\nla partie droite du graphique\n\nParfois :\n\nAnnées clés (\"2008\", \"2025\")\n\nÉtiquettes minimales (\"INVERSION\", \"DEC 2025\")\n\nRôle\n\nGuider l'œil sans demander d'effort cognitif.\n\n5. Palette et contraste\n\nBlanc dominant → pureté, clarté, sérieux\n\nRouge → danger, sang, alerte, perte\n\nNoir → autorité, factualité\n\nAucun décor, aucune texture, aucune photo humaine.\nZéro distraction.\n\n6. Absences notables (volontaires)\n\nIl n'y a jamais :\n\nde visage\n\nd'émotion humaine\n\nde logo visible\n\nde texte explicatif\n\nde chiffres complexes\n\nde titres longs\n\nTout ce qui ralentit le clic est supprimé.\n\n7. Effet psychologique global\n\nLa composition vise à déclencher :\n\nAnxiété anticipée\n\nFOMO inversé (peur de rester exposé)\n\nSentiment d'information interdite\n\nAutorité silencieuse (\"le graphique parle de lui-même\")\n\nVisuellement, ça dit :\n\n\"Tu ne comprends pas encore, mais quelque chose de grave arrive.\"\n\n8. Conclusion synthétique\n\nCes miniatures sont construites comme des alertes financières visuelles :\n\n1 graphique\n\n1 message\n\n1 direction\n\n1 émotion : l'urgence",
+        "example_urls": [
+          "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/examples/1765800125866_maxresdefault%20(55).jpg",
+          "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/examples/1765800126215_maxresdefault%20(54).jpg",
+          "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/examples/1765800126490_maxresdefault%20(53).jpg",
+          "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/examples/1765800126766_maxresdefault%20(52).jpg",
+          "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/examples/1765800823964_thumbnail_2%20(55).jpg",
+          "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/examples/1765800824541_thumbnail_3%20(43).jpg",
+          "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/examples/1765800824925_thumbnail_1%20(93).jpg",
+          "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/examples/1765800825250_thumbnail_1%20(92).jpg",
+          "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/examples/1765805992868_thumbnail_1%20(94).jpg"
+        ],
+        "user_id": "e622c54f-8a88-403a-bfea-1f29b71c40f9",
+        "created_at": "2025-12-15T12:04:19.452337+00:00",
+        "updated_at": "2025-12-15T15:02:35.632177+00:00"
+      },
+      {
+        "id": "eaef3999-096c-41c0-a15f-5947d85d24c1",
+        "name": "Bravos Researchs v1.1",
+        "image_model": "seedream-4.5",
+        "character_ref_url": null,
+        "custom_prompt": "THUMBNAIL CONTENT MUST BE RELATED TO MY VIDEO TITLE ONLY (THE ONE I SEND YOU).\n\nMake a thumbnail for my video. inspire by the references images using charts, don't copy, be original. Must use your own big charts cleverly. Minimalist, only red chart or data infography, black text. Text must make a short pattern interrupt statement related to the video topic / title topic.",
+        "example_urls": [
+          "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/examples/1765800125866_maxresdefault%20(55).jpg",
+          "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/examples/1765800126215_maxresdefault%20(54).jpg",
+          "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/examples/1765800126490_maxresdefault%20(53).jpg",
+          "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/examples/1765800126766_maxresdefault%20(52).jpg",
+          "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/examples/1765800823964_thumbnail_2%20(55).jpg",
+          "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/examples/1765800824541_thumbnail_3%20(43).jpg",
+          "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/examples/1765800824925_thumbnail_1%20(93).jpg",
+          "https://hroghyzosrcjueqjftex.supabase.co/storage/v1/object/public/style-references/e622c54f-8a88-403a-bfea-1f29b71c40f9/thumbnails/examples/1765800825250_thumbnail_1%20(92).jpg"
+        ],
+        "user_id": "e622c54f-8a88-403a-bfea-1f29b71c40f9",
+        "created_at": "2025-12-15T17:21:49.759623+00:00",
+        "updated_at": "2025-12-15T17:21:49.759623+00:00"
+      }
+    ],
+    "script_presets": [
+      {
+        "id": "330a0d8c-12a4-4e90-9eb7-7e2946dbfa63",
+        "name": "Allan Keller - Long form",
+        "duration": "medium",
+        "style": "educational",
+        "language": "fr",
+        "custom_prompt": "DO NOT COPY WORD FOR WORD, THIS IS A GENERAL STRUCTURE WITH EXAMPLE SENTENCES. BE CREATIVE TO MAKE YOUR OWN.\n\nWrite me a YouTube script by following (but not copying word for word) the following structure.\n\nScript must be Minimum 4000 words.\n\nVideo Topic:\nDo You Really Need Supplements? Find Out\n\nMore informations about topic : none\n\n\n\n\n\n\nAudience:\naudience is mostly health‑conscious adults (around 30–55) who are overweight, low on energy, or dealing with blood sugar/metabolic issues, and are frustrated that conventional \"eat less, move more\" advice hasn't worked for them and want clear, science-backed but practical strategies to burn fat, improve energy, and prevent long‑term diseases like diabetes and heart problems.\n\nACT 1: EMOTIONAL HOOK (must be around one hundred words)\n\nLayer one – Universal emotion\nWrite an opening line that captures a feeling everyone over forty has experienced.\n\nLayer two – Specific anchor\nGive a concrete, relatable example with a specific number related to food, weight, energy, or health.\n\nLayer three – Massive stakes reveal\nEscalate to long-term health consequences multiplied over years or decades.\n\n\nTransition phrase:\nTransition to next part\n\nACT 2: CURIOSITY GAP\n\nTease the mechanism (must not be boring or too long)\n\nState what is happening without explaining how yet.\n\n\n\nIntroduction:\n\"My name is Allan keller, and I spend way too much time thinking about nutrition, metabolism, and what really changes after forty. If you're someone who feels like their body stopped following the rules, subscribe and like this video — it will help more than you think.\"\n\nPromise the reveal\nUse one of these proven phrases or a variation you create.\n\nExamples:\n\"By the end of this video, you'll understand the metabolic shift that most diet plans completely ignore after forty.\"\n\"I'm going to show you the exact pattern that keeps people stuck in cycles of fatigue and weight regain.\"\n\n\nSet up the journey\n\"First, I need to tell you a story\"\n\n\nACT 3: HISTORICAL OR BIOLOGICAL PARALLEL\n\nChoose a story that contains the same pattern as your main topic, but in a different context.\n\nStory selection criteria:\n\nMust be at least twenty years old or based on well-established biological research\n\nMust involve adaptation failure (body, system, environment)\n\nMust include a clear misunderstanding of cause and effect\n\nMust end with a visible consequence\n\nExample parallels:\n\nMain topic: calorie restriction failure → historical famine studies\n\nMain topic: insulin resistance → rise of ultra-processed foods in the seventies\n\nMain topic: hormonal changes → menopause / andropause misunderstood for decades\n\nMain topic: metabolism slowdown → Biggest Loser follow-up studies\n\n\n\nStructure your narrative\n\nOpening\nSet the scene with two or three vivid details.\n\nRising action\nExplain the mechanism in three or four clear steps.\nUse cause and effect.\nInsert a pattern interrupt every ninety seconds.\n\n\nPattern interrupts:\n\nRhetorical question\n\n\"But here's the catch…\"\n\nSpecific data point\n\nCrisis point\nDescribe the moment the old model failed.\nUse strong language: exhaustion, resistance, breakdown, chronic.\n\nAftermath\nWho benefited? Who suffered?\nWhat belief survived even though it was wrong?\n\nBridge to main topic\nDraw the explicit parallel between the story and modern nutrition habits.\n\n\nACT 4: RELATABLE ANALOGY\n\nCreate an everyday equivalent.\n\nAnalogy rules:\n\nMust involve daily life\n\nMust use simple numbers\n\nMust have emotional stakes\n\n\nConnect analogy to nutrition\nTranslate each element clearly.\n\nACT 5: ANTAGONIST REVEAL\n\nIdentify the villain.\n\nWho benefits from outdated nutrition advice?\n\n\nExplain the motive\n\n\nReveal the method\n\n\nGive three tactics they use.\n\n\nShift from blame to understanding:\n\"You're not undisciplined — your physiology changed.\"\n\"This isn't willpower — it's biology.\"\n\"They're not educating you — they're recycling outdated rules.\"\n\n\nACT 6: EMPOWERMENT\n\nAction steps (not basic one they all know).\nGive one immediate, concrete action someone over forty can take today related to nutrition, recovery, or habits.\n\n\nVERY IMPORTANT\n\nStyle requirements:\n\nConversational, natural spoken language\n\nChallenge common nutrition myths early\n\nUse specific, realistic health statistics\n\nExplain both biology and psychology\n\nAddress objections\n\nBuild progressive revelations\n\nUse phrases like \"Here's what most people don't realize\" and \"This is where it gets interesting\"\n\nNumbers and dates:\n\nWrite numbers in full words\n\nYears written numerically\n\nNo shorthand\n\nOutput rules:\n\nText only\n\nNo titles, no subtitles\n\nScript must be Minimum 4000 words.\n\nPlain script only\n\nNo camera or scene instructions\n\nBefore answering, double-check coherence, age relevance, and respect of all directives.\n\n",
+        "user_id": "e622c54f-8a88-403a-bfea-1f29b71c40f9",
+        "created_at": "2025-12-10T11:07:10.244712+00:00",
+        "updated_at": "2025-12-10T11:07:10.244712+00:00"
+      },
+      {
+        "id": "1fbe65de-08e1-4c2e-827a-1c46eabb5d21",
+        "name": "THINK AGAIN - Long form",
+        "duration": "medium",
+        "style": "educational",
+        "language": "fr",
+        "custom_prompt": "THIS IS A GENERAL STRUCTURE WITH EXEMPLES SENTENCES. BE CREATIVE TO MAKE YOUR OWNS.\n\nANSWER WITH PLAIN TEXT SCRIPT ONLY WITHOUT TITLES OR SUBTITLES, MINIMUM 4000 words.\n\nWrite me a YouTube script by following (but not copying word for word) the following structure.\n\nVideo Topic: Buy, Borrow, Die: How the Rich Actually Avoid Taxes\n\n\nAudience : \n\n25+ american males\n\n---\n\nACT 1: EMOTIONAL HOOK (must be around one hundred words)\n\nOpen with an historical event that will trigger emotional and viewer intesrest.\n\nTransition phrase to next part.\n\n\n---\n\n## ACT 2: CURIOSITY GAP\n\n### Tease the Mechanism (must NOT be boring and too long)\n- State what's happening WITHOUT explaining how yet\n\nIntroduction: \"My name is David and I spend way too much time thinking about [relevant financial topic]. If you're someone who [describes target audience struggle], make sure to hit that subscribe button and give this video a thumbs up if this helps you out.\"\n\n### Promise the Reveal\nUse one of these proven phrases (or variation you make):\n- \"By the end of this video, you'll understand [specific mechanism] that [financial institutions] don't want you to know\"\n- \"I'm going to show you the exact [system/pattern/trick] that [group] uses to [profit/control/manipulate]\"\n\n### Set Up the Journey\n- \"As usual, I need to tell you a story\"\n\n---\n\n## ACT 3: HISTORICAL PARALLEL\n\n### Choose Your Historical Story\nPick an event that contains the SAME PATTERN as your main topic but in a different context:\n\n**Story Selection Criteria:**\n- Must be from a different time period (at least 20+ years ago)\n- Must involve similar financial mechanics (debt spirals, concentration risk, manipulation, etc.)\n- Must have clear villains and victims\n- Must have a dramatic outcome\n\n**Example Parallel Stories:**\n- Main topic: Index fund risk → Historical story: Nifty Fifty stocks crash (1970s)\n- Main topic: Crypto volatility → Historical story: Tulip mania (1630s) or South Sea Bubble (1720)\n- Main topic: Real estate speculation → Historical story: 2008 housing crisis or Japanese asset bubble (1980s)\n- Main topic: Corporate debt → Historical story: Enron collapse (2001) or Mexico debt crisis (1982)\n- Main topic: Bank manipulation → Historical story: LIBOR scandal (2012) or London Gold Pool (1960s)\netc….\n\n### Structure Your Historical Narrative\n\n**Opening\n- Set the scene with 2-3 specific details that make it vivid\n- Example: \"Let me tell you about Mexico in 1982. The government had borrowed billions in US dollars, oil prices were high, and everything seemed fine. Until it wasn't.\"\n\n**Rising Action \n- Explain the mechanism in 3-4 clear steps\n- Use simple cause-and-effect language\n- Insert a pattern interrupt every 90 seconds (rhetorical question, \"but here's the catch,\" data drop)\n- Step 1: [Action taken]. Step 2: [Consequence]. Step 3: [Escalation]. Step 4: [Crisis point].\n\nPattern Interrupts (every 90 seconds):\nRhetorical question: \"Why would they do this? [Brief answer]\"\n\"But here's the catch...\" reveal\nSpecific data point with emphasis\n\n**Crisis Point :**\n- Describe the moment everything collapsed\n- Use emotional language: \"panic,\" \"desperate,\" \"catastrophic\"\n- Give specific numbers: \"Lost $X billion in Y days\"\n- Example: \"In August 1982, Mexico announced it couldn't pay its debts. Within 48 hours, $87 billion in loans were at risk. Banks that had lent money were suddenly facing bankruptcy themselves.\"\n\n**Aftermath :**\n- Who won? Who lost?\n- What was the long-term consequence?\n- EXAMPLE Template: \"[Winners] walked away with [gains]. [Losers] were left with [losses]. And here's the kicker: [surprising twist about who really profited].\"\n\n**Bridge to Main Topic :**\n- \"So what does this have to do with [your main topic]? Everything.\"\n- Draw explicit parallel: \"Just like [historical villain] profited from [historical pattern], [modern villain] is profiting from [modern pattern].\"\n\n\n---\n\n## ACT 4: RELATABLE ANALOGY\n\n### Create Your Everyday Equivalent\n\n**Analogy Selection Rules:**\n- Must involve something viewers interact with regularly (home, car, restaurant, phone, grocery shopping)\n- Must use round numbers that are easy to calculate mentally ($100, $1,000, $10,000, not $1,247)\n- Must have clear emotional stakes (losing your house, wasting years of savings, missing opportunity)\n\n**Template Structure:**\n\"Imagine you [common situation]. You [action] worth [$X]. [Positive outcome happens]. You feel [emotion]. But then [negative event]. Now you [consequence]. The [item] is worth [$Y], you owe [$Z], and you've lost [$X-Y].\"\n\n**Example (Home Equity):**\n\"Imagine you own a house worth $300,000 with a $200,000 mortgage. You take out a $50,000 home equity loan to invest. Your investment doubles to $100,000. You feel rich. But then the market crashes 50%. Your investment is now worth $50,000, you still owe $250,000 on the house, and if you need to sell, you're underwater.\"\n\n**Example (Restaurant Concentration):**\n\"Imagine you own a restaurant with 30 menu items. Seven of them generate 80% of your revenue. You feel successful because revenue is high. But then food trends change and those 7 items go out of style. Suddenly 80% of your revenue disappears, but you still have rent, staff, and inventory costs for all 30 items. You're not just less profitable—you're bankrupt.\"\n\n\n\n### Connect Analogy to Main Topic\n\n---\n\n## ACT 5: ANTAGONIST REVEAL\n\n### Identify the Villain\n\n**Who benefits from this pattern?**\n- Banks, fund managers, brokers, institutions, regulators, corporations etc…\n- Be specific: Not \"the financial industry\" but \"index fund providers like [specific companies]\"\n\n### Explain the Motive\n\n**Why do they do it?**\n\n### Reveal the Method \n\n**How do they hide it?**\n- Give 3 specific tactics they use to obscure the truth\n\n### Emotional Reframe\n\n**Shift from victim to informed player:**\n\n---\n\n## ACT 6: EMPOWERMENT \n\n### Action Step 1 \n**Immediate defensive move:**\n- What should viewer do TODAY to protect themselves?\n- Must be specific and actionable (not \"be careful\" but \"check X metric in your account\", not BASIC things they've heard 1000 times)\n\n\n\n-----------\n\nVERY IMPORTANT : \n\n\nStyle Requirements:\n\nConversational tone with natural speech patterns (\"Here's the thing...\", \"Look,\", \"Um\")\nChallenge common financial assumptions early\nInclude specific, shocking statistics with realistic sources\nUse concrete mathematical examples with real dollar amounts\nExplain the psychological shifts behind financial decisions\nAddress viewer objections (\"Now you might be thinking...\")\nUse relatable analogies to explain complex concepts\nBuild to increasingly surprising revelations\nInclude phrases like \"Here's what most people don't realize...\" and \"This is where it gets really interesting...\"\n\nVery important for date and numbers : \n\nDo not write numbers like \"$900k\". Write \"nine hundred thousand dollars\".\nDo not write \"$3 billion\". Write \"three billion dollars\".\nDo not write \"$3.4 billion\". Write \"three point four billion dollars\".\nDo not write \"$3.42 billion\". Write \"three point forty two billion dollars\".\nDo not write \"Back in the 1990s\". Write \"Back in the nineties\".\nFor years, Do not write \"1994\". Write \"Nineteen ninety-four\".\nI want only text, no image, no titles or subtitles, just the text I have to read.\n\n\n\nContent Structure:\n\n4000 words minimum.\nFocus on both the math AND psychology of money\nTone: Authoritative but approachable, slightly frustrated with common financial mistakes, genuinely wanting to help people succeed.\nAvoid basic things people already heard 10000 times.\n\nDO NOT INSERT CAMERA OR SCENE INFO, I WANT ONLY THE SCRIPT. ANSWER WITH PLAIN TEXT SCRIPT.\n\nBefore answering, double check your text for any error, incohérence or not respecting my directive. When everyting is ok, send it.\n\n\n\n\n\n",
+        "user_id": "e622c54f-8a88-403a-bfea-1f29b71c40f9",
+        "created_at": "2025-12-10T14:02:37.907139+00:00",
+        "updated_at": "2025-12-10T14:02:37.907139+00:00"
+      },
+      {
+        "id": "90759348-bbcd-4b44-8ace-a5d1b81138a1",
+        "name": "Tom Cashflow - Long form",
+        "duration": "medium",
+        "style": "educational",
+        "language": "fr",
+        "custom_prompt": "Write a YouTube script in a distinctive financial education style for the video titled: \"Every Stock Market Terms Explained: Stock Market For Beginners\"\n\nFollow this proven format :\n\nOpening Hook: Start with a relatable financial scenario that makes viewers think \"that's exactly me\".\n\nThen, Introduction: \"My name is Tom and I spend way too much time thinking about [relevant financial topic]. If you're someone who [describes target audience struggle], make sure to hit that subscribe button and give this video a thumbs up if this helps you out.\"\n\nStyle Requirements:\n\nConversational tone with natural speech patterns (\"Here's the thing...\", \"Look,\", \"Um\")\nChallenge common financial assumptions early\nInclude specific, shocking statistics with realistic sources\nUse concrete mathematical examples with real dollar amounts\nExplain the psychological shifts behind financial decisions\nAddress viewer objections (\"Now you might be thinking...\")\nUse relatable analogies to explain complex concepts\nBuild to increasingly surprising revelations\nInclude phrases like \"Here's what most people don't realize...\" and \"This is where it gets really interesting...\"\n\nVery important for date and numbers : \n\nDo not write numbers like this : \"$900k\", instead, write like this : \"nine hundred thousand dollars\".\nDo not write $3 Billion, write \"three billion dollars\".\nDo not write $3.4 Billion, write \"three point four billion dollars\".\nDo not write \"Back in the 1990s\" for example, write \"Back in the nineties\".\nFor years, Do not write \"1994\". Write \"Nineteen ninety-four\".\nI want only text, no image, no titles or subtitles, just the text I have to read.\n\nContent Structure:\n\n4000 words minimum.\nFocus on both the math AND psychology of money\nProvide actionable steps\nUse storytelling to illustrate points\nEnd with motivation to take action\nTone: Authoritative but approachable, slightly frustrated with common financial mistakes, genuinely wanting to help people succeed.\nAvoid basic things people already heard 10000 times.\n\nDO NOT INSERT CAMERA OR SCENE INFO, I WANT ONLY WHAT I WILL HAVE TO READ.\n\nBefore answering, double check your text for any error, incohérence or not respecting my directive. When everyting is ok, send it.",
+        "user_id": "e622c54f-8a88-403a-bfea-1f29b71c40f9",
+        "created_at": "2025-12-09T20:50:32.760853+00:00",
+        "updated_at": "2025-12-09T20:50:32.760853+00:00"
+      }
+    ],
+    "tts_presets": [
+      {
+        "id": "3731aeb2-3f00-4436-9a14-0a85ce98ffa8",
+        "name": "Tom CashFlow",
+        "provider": "minimax",
+        "voice_id": "English_Insightful_Speaker",
+        "model": "speech-2.6-hd",
+        "speed": 1,
+        "pitch": 0,
+        "volume": 1,
+        "emotion": "happy",
+        "language_boost": "English",
+        "english_normalization": true,
+        "user_id": "e622c54f-8a88-403a-bfea-1f29b71c40f9",
+        "created_at": "2025-12-09T22:16:36.062292+00:00",
+        "updated_at": "2025-12-09T22:36:08.994249+00:00"
+      }
+    ],
+    "title_presets": [],
+    "lora_presets": []
+  },
+  "notes": {
+    "important": "Les URLs de fichiers (images, audio) pointent vers le bucket Supabase de Lovable Cloud. Pour une migration vers un Supabase self-hosted, vous devrez télécharger ces fichiers et les re-uploader dans votre nouveau bucket.",
+    "counts": {
+      "presets": 9,
+      "thumbnail_presets": 10,
+      "script_presets": 3,
+      "tts_presets": 1,
+      "title_presets": 0,
+      "lora_presets": 0
+    }
+  }
+}
