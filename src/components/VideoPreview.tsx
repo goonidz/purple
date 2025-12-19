@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { Card } from "@/components/ui/card";
-import { Play, Pause, SkipBack, SkipForward, Subtitles } from "lucide-react";
+import { Play, Pause, SkipBack, SkipForward, Subtitles, RefreshCw, Image as ImageIcon, ChevronLeft, ChevronRight } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
 interface GeneratedPrompt {
@@ -22,6 +23,11 @@ interface VideoPreviewProps {
   startFromScene?: number;
   subtitleSettings?: SubtitleSettings;
   onSubtitleSettingsChange?: (settings: SubtitleSettings) => void;
+  onRegeneratePrompt?: (sceneIndex: number) => void;
+  onRegenerateImage?: (sceneIndex: number) => void;
+  onUpdatePrompt?: (sceneIndex: number, newPrompt: string) => void;
+  regeneratingPromptIndex?: number | null;
+  regeneratingImageIndex?: number | null;
 }
 
 interface SubtitleSettings {
@@ -52,18 +58,53 @@ export const VideoPreview = ({
     x: 50,
     y: 85
   },
-  onSubtitleSettingsChange
+  onSubtitleSettingsChange,
+  onRegeneratePrompt,
+  onRegenerateImage,
+  onUpdatePrompt,
+  regeneratingPromptIndex = null,
+  regeneratingImageIndex = null
 }: VideoPreviewProps) => {
   const audioRef = useRef<HTMLAudioElement>(null);
   const animationFrameRef = useRef<number>();
   const subtitleRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [imageAspectRatio, setImageAspectRatio] = useState<number | null>(null);
+  const [subtitleEnabled, setSubtitleEnabled] = useState(() => subtitleSettings.enabled);
+  const [editedPrompt, setEditedPrompt] = useState<string>("");
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [imageLoaded, setImageLoaded] = useState(false);
+  const [previousImageUrl, setPreviousImageUrl] = useState<string | null>(null);
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(startFromScene > 0 ? prompts[startFromScene].startTime : 0);
   const [duration, setDuration] = useState(0);
   const [currentSceneIndex, setCurrentSceneIndex] = useState(startFromScene);
   const [playbackRate, setPlaybackRate] = useState(1);
+
+  // Preload next image and handle scene transitions
+  useEffect(() => {
+    const currentImageUrl = prompts[currentSceneIndex]?.imageUrl;
+    const prevIndex = currentSceneIndex - 1;
+    const prevImageUrl = prevIndex >= 0 ? prompts[prevIndex]?.imageUrl : null;
+    
+    // Save previous image URL before changing scene
+    if (prevImageUrl && prevImageUrl !== currentImageUrl) {
+      setPreviousImageUrl(prevImageUrl);
+    } else if (!prevImageUrl) {
+      // No previous image (first scene or no image in previous scene)
+      setPreviousImageUrl(null);
+    }
+    
+    // Preload next image
+    if (currentSceneIndex < prompts.length - 1 && prompts[currentSceneIndex + 1]?.imageUrl) {
+      const nextImg = new Image();
+      nextImg.src = prompts[currentSceneIndex + 1].imageUrl!;
+    }
+    
+    // Reset loaded state when scene changes
+    setImageLoaded(false);
+  }, [currentSceneIndex, prompts]);
 
   // Drag handlers for subtitle positioning
   const handleSubtitleMouseDown = (e: React.MouseEvent) => {
@@ -82,11 +123,12 @@ export const VideoPreview = ({
     const x = ((e.clientX - rect.left) / rect.width) * 100;
     const y = ((e.clientY - rect.top) / rect.height) * 100;
 
-    onSubtitleSettingsChange?.({
+    const newSettings = {
       ...subtitleSettings,
       x: Math.max(0, Math.min(100, x)),
       y: Math.max(0, Math.min(100, y))
-    });
+    };
+    onSubtitleSettingsChange?.(newSettings);
   };
 
   const handleMouseUp = () => {
@@ -197,7 +239,7 @@ export const VideoPreview = ({
   const changePlaybackRate = () => {
     if (!audioRef.current) return;
     
-    const rates = [0.5, 0.75, 1, 1.25, 1.5, 2];
+    const rates = [0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 3.5, 4];
     const currentIndex = rates.indexOf(playbackRate);
     const nextRate = rates[(currentIndex + 1) % rates.length];
     
@@ -249,6 +291,38 @@ export const VideoPreview = ({
 
   const currentPrompt = prompts[currentSceneIndex];
 
+  // Reset aspect ratio and edited prompt when scene changes
+  useEffect(() => {
+    setImageAspectRatio(null);
+    setEditedPrompt(prompts[currentSceneIndex]?.prompt || "");
+  }, [currentSceneIndex, prompts]);
+
+  // Auto-save prompt when edited (with debounce)
+  useEffect(() => {
+    // Don't save if prompt hasn't changed or is the same as current
+    if (editedPrompt === prompts[currentSceneIndex]?.prompt || !onUpdatePrompt) {
+      return;
+    }
+
+    // Clear previous timeout
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+
+    // Set new timeout to save after 1 second of no typing
+    saveTimeoutRef.current = setTimeout(() => {
+      if (editedPrompt.trim() && editedPrompt !== prompts[currentSceneIndex]?.prompt) {
+        onUpdatePrompt(currentSceneIndex, editedPrompt);
+      }
+    }, 1000);
+
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
+  }, [editedPrompt, currentSceneIndex, prompts, onUpdatePrompt]);
+
   // Format time as MM:SS
   const formatTime = (time: number) => {
     const minutes = Math.floor(time / 60);
@@ -257,22 +331,49 @@ export const VideoPreview = ({
   };
 
   return (
-    <Card className="p-6 space-y-4">
-      <h3 className="text-lg font-semibold">Preview Vidéo</h3>
+    <Card className="p-4 space-y-3">
+      <h3 className="text-base font-semibold">Preview Vidéo</h3>
 
       {/* Hidden audio element */}
       <audio ref={audioRef} src={audioUrl} preload="auto" />
 
       {/* Image preview */}
-      <div className="relative w-full max-h-[70vh] bg-black rounded-lg overflow-hidden group flex items-center justify-center">
+      <div className="relative w-full bg-black rounded-lg overflow-hidden group flex items-center justify-center" style={{ minHeight: '200px' }}>
         {currentPrompt?.imageUrl ? (
-          <img
-            src={currentPrompt.imageUrl}
-            alt={`Scene ${currentSceneIndex + 1}`}
-            className="max-w-full max-h-[70vh] w-auto h-auto object-contain"
-          />
+          <>
+            {/* Previous image (fade out) - only show during transition */}
+            {previousImageUrl && previousImageUrl !== currentPrompt.imageUrl && !imageLoaded && (
+              <img
+                src={previousImageUrl}
+                alt={`Previous scene`}
+                className="absolute max-w-full max-h-[50vh] w-auto h-auto object-contain opacity-100 transition-opacity duration-200"
+                style={{ zIndex: 1 }}
+              />
+            )}
+            {/* Current image - always show, fade in when loaded if transitioning */}
+            <img
+              src={currentPrompt.imageUrl}
+              alt={`Scene ${currentSceneIndex + 1}`}
+              className={`max-w-full max-h-[50vh] w-auto h-auto object-contain transition-opacity duration-200 ${
+                imageLoaded || !previousImageUrl || previousImageUrl === currentPrompt.imageUrl 
+                  ? 'opacity-100' 
+                  : 'opacity-0'
+              }`}
+              style={{ zIndex: 2 }}
+              onLoad={(e) => {
+                const img = e.currentTarget;
+                const aspectRatio = img.naturalWidth / img.naturalHeight;
+                setImageAspectRatio(aspectRatio);
+                setImageLoaded(true);
+              }}
+              onError={() => {
+                setImageLoaded(true); // Show placeholder even on error
+              }}
+              loading="eager"
+            />
+          </>
         ) : (
-          <div className="w-full h-full flex items-center justify-center text-muted-foreground text-sm">
+          <div className="w-full min-h-[200px] flex items-center justify-center text-muted-foreground text-sm">
             Aucune image pour cette scène
           </div>
         )}
@@ -297,13 +398,14 @@ export const VideoPreview = ({
           Scène {currentSceneIndex + 1} / {prompts.length}
         </div>
         
+        
         {/* Playback rate indicator */}
-        <div className="absolute top-4 right-4 bg-black/70 text-white px-3 py-1 rounded text-sm pointer-events-none">
+        <div className="absolute bottom-4 right-4 bg-black/70 text-white px-3 py-1 rounded text-sm pointer-events-none">
           {playbackRate}x
         </div>
         
         {/* Subtitles */}
-        {subtitleSettings.enabled && currentPrompt?.text && (
+        {subtitleEnabled && currentPrompt?.text && (
           <div 
             ref={subtitleRef}
             onMouseDown={handleSubtitleMouseDown}
@@ -338,26 +440,6 @@ export const VideoPreview = ({
           onValueChange={handleSeek}
           className="cursor-pointer"
         />
-        
-        {/* Timeline markers for scenes */}
-        <div className="relative h-2">
-          {prompts.map((prompt, index) => {
-            const left = (prompt.startTime / duration) * 100;
-            const width = ((prompt.endTime - prompt.startTime) / duration) * 100;
-            
-            return (
-              <div
-                key={index}
-                className="absolute h-full bg-primary/30 hover:bg-primary/50 transition-colors"
-                style={{
-                  left: `${left}%`,
-                  width: `${width}%`,
-                }}
-                title={`Scène ${index + 1}`}
-              />
-            );
-          })}
-        </div>
         
         <div className="flex justify-between text-sm text-muted-foreground">
           <span>{formatTime(currentTime)}</span>
@@ -408,19 +490,101 @@ export const VideoPreview = ({
         <Button
           variant="outline"
           size="icon"
-          onClick={() => onSubtitleSettingsChange?.({ ...subtitleSettings, enabled: !subtitleSettings.enabled })}
-          title={subtitleSettings.enabled ? "Masquer les sous-titres" : "Afficher les sous-titres"}
+          onClick={() => {
+            const newValue = !subtitleEnabled;
+            setSubtitleEnabled(newValue);
+            if (onSubtitleSettingsChange) {
+              onSubtitleSettingsChange({ ...subtitleSettings, enabled: newValue });
+            }
+          }}
+          title={subtitleEnabled ? "Masquer les sous-titres" : "Afficher les sous-titres"}
         >
-          <Subtitles className={subtitleSettings.enabled ? "h-4 w-4" : "h-4 w-4 opacity-50"} />
+          <Subtitles className={subtitleEnabled ? "h-4 w-4" : "h-4 w-4 opacity-50"} />
         </Button>
       </div>
 
       {/* Current scene info */}
       {currentPrompt && (
-        <div className="p-4 bg-muted rounded-lg space-y-2">
-          <div className="font-medium">Scène {currentSceneIndex + 1}</div>
-          <div className="text-sm text-muted-foreground line-clamp-2">
-            {currentPrompt.text}
+        <div className="p-4 bg-muted rounded-lg space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={skipToPreviousScene}
+                disabled={currentSceneIndex === 0}
+                className="h-8 w-8 p-0"
+                title="Scène précédente"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <div className="font-medium">Scène {currentSceneIndex + 1} / {prompts.length}</div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={skipToNextScene}
+                disabled={currentSceneIndex >= prompts.length - 1}
+                className="h-8 w-8 p-0"
+                title="Scène suivante"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+            {(onRegeneratePrompt || onRegenerateImage) && (
+              <div className="flex gap-2">
+                {onRegeneratePrompt && (
+                  <Button
+                    size="sm"
+                    variant="default"
+                    onClick={() => onRegeneratePrompt(currentSceneIndex)}
+                    disabled={regeneratingPromptIndex === currentSceneIndex || regeneratingImageIndex === currentSceneIndex}
+                    className="h-8"
+                  >
+                    <RefreshCw className={`h-4 w-4 mr-2 ${regeneratingPromptIndex === currentSceneIndex ? 'animate-spin' : ''}`} />
+                    Régénérer prompt scène {currentSceneIndex + 1}
+                  </Button>
+                )}
+                {onRegenerateImage && (
+                  <Button
+                    size="sm"
+                    variant="default"
+                    onClick={() => onRegenerateImage(currentSceneIndex)}
+                    disabled={regeneratingPromptIndex === currentSceneIndex || regeneratingImageIndex === currentSceneIndex}
+                    className="h-8"
+                  >
+                    <ImageIcon className={`h-4 w-4 mr-2 ${regeneratingImageIndex === currentSceneIndex ? 'animate-spin' : ''}`} />
+                    Régénérer image scène {currentSceneIndex + 1}
+                  </Button>
+                )}
+              </div>
+            )}
+          </div>
+          <div className="space-y-3">
+            <div>
+              <div className="text-xs font-medium text-muted-foreground mb-1">Texte :</div>
+              <div className="text-sm line-clamp-2">
+                {currentPrompt.text}
+              </div>
+            </div>
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <div className="text-xs font-medium text-muted-foreground">Prompt :</div>
+                {editedPrompt !== currentPrompt.prompt && (
+                  <span className="text-xs text-orange-500">• Modifié</span>
+                )}
+              </div>
+              <Textarea
+                value={editedPrompt}
+                onChange={(e) => setEditedPrompt(e.target.value)}
+                className="text-sm min-h-[80px] resize-y"
+                placeholder="Prompt pour la génération d'image..."
+              />
+              {editedPrompt !== currentPrompt.prompt && (
+                <div className="text-xs text-muted-foreground mt-1">
+                  Sauvegarde automatique...
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}

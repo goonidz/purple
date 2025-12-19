@@ -1,0 +1,24 @@
+{
+  "name": "video-render-service",
+  "version": "1.0.0",
+  "description": "FFmpeg video rendering service for VideoFlow",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "pm2:start": "pm2 start server.js --name video-render",
+    "pm2:stop": "pm2 stop video-render",
+    "pm2:restart": "pm2 restart video-render",
+    "pm2:logs": "pm2 logs video-render"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "fluent-ffmpeg": "^2.1.2",
+    "axios": "^1.6.0",
+    "@supabase/supabase-js": "^2.38.4",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

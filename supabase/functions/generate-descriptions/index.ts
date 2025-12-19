@@ -42,18 +42,20 @@ serve(async (req) => {
       throw new Error("Le script vidéo est requis");
     }
 
-    const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
-    if (!lovableApiKey) {
-      throw new Error('LOVABLE_API_KEY not configured');
+    const GOOGLE_AI_API_KEY = Deno.env.get('GOOGLE_AI_API_KEY');
+    if (!GOOGLE_AI_API_KEY) {
+      throw new Error('GOOGLE_AI_API_KEY not configured');
     }
 
     const systemPrompt = `You generate ultra-short YouTube descriptions.
 
-CRITICAL LANGUAGE RULE: You MUST write in the EXACT SAME language as the script. 
-- If the script is in English → write in English
-- If the script is in French → write in French
-- If the script is in Spanish → write in Spanish
-- etc.
+ABSOLUTE LANGUAGE RULE - THIS IS MANDATORY:
+1. First, detect the language of the video script provided
+2. Your description MUST be written in that EXACT language - no exceptions
+3. If script is English → respond in English
+4. If script is French → respond in French  
+5. If script is German → respond in German
+6. NEVER default to French or any other language - MATCH the script's language exactly
 
 Your task: write ONE SINGLE SENTENCE in first person (I/we) that summarizes the video.
 
@@ -62,34 +64,47 @@ Rules:
 - First person (I explain, I show you, I discovered...)
 - Conversational and authentic tone
 - No emojis
-- No marketing phrases`;
+- No marketing phrases
+- MUST be in the same language as the script`;
 
-    const userPrompt = `STEP 1: Detect the language of this script.
-STEP 2: Write ONE SINGLE SENTENCE in first person, in that EXACT language.
+    const userPrompt = `MANDATORY: Your response MUST be in the SAME language as this script.
 
-Script: ${videoScript}
+Script language detection: Read the script below and identify its language.
 
-Return ONLY this JSON (description must be in the script's language):
+Script:
+${videoScript}
+
+Now write ONE SINGLE SENTENCE description in first person, in the EXACT SAME language as the script above.
+
+Return ONLY this JSON:
 {
-  "description": "your sentence here in the script's language"
+  "description": "your sentence here - MUST BE IN THE SCRIPT'S LANGUAGE"
 }`;
 
-    console.log('Calling Lovable AI Gateway for description generation...');
+    console.log('Calling Google Gemini API for description generation...');
 
-    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${lovableApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt }
-        ],
-      }),
-    });
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GOOGLE_AI_API_KEY}`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          system_instruction: {
+            parts: [{ text: systemPrompt }]
+          },
+          contents: [
+            {
+              parts: [{ text: userPrompt }]
+            }
+          ],
+          generationConfig: {
+            temperature: 0.7,
+          }
+        }),
+      }
+    );
 
     if (!response.ok) {
       if (response.status === 429) {
@@ -98,19 +113,13 @@ Return ONLY this JSON (description must be in the script's language):
           { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
-      if (response.status === 402) {
-        return new Response(
-          JSON.stringify({ error: "Crédits insuffisants. Veuillez recharger votre compte Lovable AI." }),
-          { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
       const errorText = await response.text();
-      console.error('Lovable AI Gateway error:', response.status, errorText);
+      console.error('Google AI API error:', response.status, errorText);
       throw new Error(`Erreur API: ${response.status}`);
     }
 
     const data = await response.json();
-    const aiContent = data.choices[0].message.content;
+    const aiContent = data.candidates?.[0]?.content?.parts?.[0]?.text;
     
     console.log('AI Response:', aiContent);
 

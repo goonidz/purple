@@ -3,12 +3,20 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import type { User } from "@supabase/supabase-js";
 import { Button } from "@/components/ui/button";
-import { Calendar as CalendarIcon, Plus, ChevronLeft, ChevronRight, Home, FolderOpen, User as UserIcon } from "lucide-react";
+import { ChevronLeft, ChevronRight, Filter } from "lucide-react";
+import AppHeader from "@/components/AppHeader";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths } from "date-fns";
 import { fr } from "date-fns/locale";
 import { toast } from "sonner";
 import CalendarVideoModal from "@/components/CalendarVideoModal";
 import CalendarDayCell from "@/components/CalendarDayCell";
+
+interface Channel {
+  id: string;
+  name: string;
+  color: string;
+}
 
 interface ContentCalendarEntry {
   id: string;
@@ -20,6 +28,9 @@ interface ContentCalendarEntry {
   audio_url: string | null;
   notes: string | null;
   project_id: string | null;
+  youtube_url: string | null;
+  channel_id: string | null;
+  channel?: Channel | null;
   created_at: string;
   updated_at: string;
 }
@@ -29,10 +40,16 @@ export default function Calendar() {
   const [user, setUser] = useState<User | null>(null);
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [entries, setEntries] = useState<ContentCalendarEntry[]>([]);
+  const [channels, setChannels] = useState<Channel[]>([]);
+  const [selectedChannelId, setSelectedChannelId] = useState<string>("all");
   const [isLoading, setIsLoading] = useState(true);
   const [selectedEntry, setSelectedEntry] = useState<ContentCalendarEntry | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+
+  useEffect(() => {
+    document.title = "Calendrier | VideoFlow";
+  }, []);
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -49,8 +66,23 @@ export default function Calendar() {
   useEffect(() => {
     if (user) {
       fetchEntries();
+      fetchChannels();
     }
   }, [user, currentMonth]);
+
+  const fetchChannels = async () => {
+    if (!user) return;
+    
+    const { data, error } = await supabase
+      .from("channels")
+      .select("*")
+      .eq("user_id", user.id)
+      .order("name", { ascending: true });
+
+    if (!error && data) {
+      setChannels(data);
+    }
+  };
 
   const fetchEntries = async () => {
     if (!user) return;
@@ -61,7 +93,10 @@ export default function Calendar() {
 
     const { data, error } = await supabase
       .from("content_calendar")
-      .select("*")
+      .select(`
+        *,
+        channel:channels(id, name, color)
+      `)
       .eq("user_id", user.id)
       .gte("scheduled_date", format(start, "yyyy-MM-dd"))
       .lte("scheduled_date", format(end, "yyyy-MM-dd"))
@@ -103,6 +138,31 @@ export default function Calendar() {
     handleModalClose();
   };
 
+  const handleEntryDrop = async (entryId: string, newDate: Date) => {
+    const newDateStr = format(newDate, "yyyy-MM-dd");
+    
+    // Optimistically update the UI
+    setEntries(prev => prev.map(entry => 
+      entry.id === entryId 
+        ? { ...entry, scheduled_date: newDateStr }
+        : entry
+    ));
+
+    // Update in database
+    const { error } = await supabase
+      .from("content_calendar")
+      .update({ scheduled_date: newDateStr })
+      .eq("id", entryId);
+
+    if (error) {
+      console.error("Error moving entry:", error);
+      toast.error("Erreur lors du déplacement");
+      fetchEntries(); // Revert on error
+    } else {
+      toast.success("Vidéo déplacée");
+    }
+  };
+
   const daysInMonth = eachDayOfInterval({
     start: startOfMonth(currentMonth),
     end: endOfMonth(currentMonth),
@@ -112,9 +172,13 @@ export default function Calendar() {
   const adjustedStartDay = startDay === 0 ? 6 : startDay - 1;
 
   const getEntriesForDay = (date: Date) => {
-    return entries.filter(entry => 
-      isSameDay(new Date(entry.scheduled_date), date)
-    );
+    return entries.filter(entry => {
+      const matchesDate = isSameDay(new Date(entry.scheduled_date), date);
+      const matchesChannel = selectedChannelId === "all" 
+        || (selectedChannelId === "none" && !entry.channel_id)
+        || entry.channel_id === selectedChannelId;
+      return matchesDate && matchesChannel;
+    });
   };
 
   if (!user) {
@@ -127,38 +191,7 @@ export default function Calendar() {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="border-b bg-card/50 backdrop-blur-sm sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <button 
-                onClick={() => navigate("/")} 
-                className="flex items-center gap-2 hover:opacity-80 transition-opacity"
-              >
-                <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center">
-                  <CalendarIcon className="h-5 w-5 text-primary-foreground" />
-                </div>
-                <span className="font-semibold text-lg">Calendrier</span>
-              </button>
-            </div>
-            <nav className="flex items-center gap-2">
-              <Button variant="ghost" size="sm" onClick={() => navigate("/")}>
-                <Home className="h-4 w-4 mr-2" />
-                Accueil
-              </Button>
-              <Button variant="ghost" size="sm" onClick={() => navigate("/projects")}>
-                <FolderOpen className="h-4 w-4 mr-2" />
-                Projets
-              </Button>
-              <Button variant="ghost" size="sm" onClick={() => navigate("/profile")}>
-                <UserIcon className="h-4 w-4 mr-2" />
-                Profil
-              </Button>
-            </nav>
-          </div>
-        </div>
-      </header>
+      <AppHeader title="Calendrier" />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Calendar Controls */}
@@ -178,6 +211,31 @@ export default function Calendar() {
                 <ChevronRight className="h-4 w-4" />
               </Button>
             </div>
+          </div>
+          
+          {/* Channel Filter */}
+          <div className="flex items-center gap-2">
+            <Filter className="h-4 w-4 text-muted-foreground" />
+            <Select value={selectedChannelId} onValueChange={setSelectedChannelId}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder="Filtrer par chaîne" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Toutes les chaînes</SelectItem>
+                <SelectItem value="none">Sans chaîne</SelectItem>
+                {channels.map((channel) => (
+                  <SelectItem key={channel.id} value={channel.id}>
+                    <div className="flex items-center gap-2">
+                      <div 
+                        className="h-3 w-3 rounded-full flex-shrink-0" 
+                        style={{ backgroundColor: channel.color }}
+                      />
+                      <span>{channel.name}</span>
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         </div>
 
@@ -208,6 +266,7 @@ export default function Calendar() {
                 isToday={isSameDay(day, new Date())}
                 onDayClick={handleDayClick}
                 onEntryClick={handleEntryClick}
+                onEntryDrop={handleEntryDrop}
               />
             ))}
 

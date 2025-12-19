@@ -1,7 +1,14 @@
+import { useState } from "react";
 import { format } from "date-fns";
-import { Plus } from "lucide-react";
+import { Plus, Link2, Link2Off, Youtube, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Badge } from "@/components/ui/badge";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+
+interface Channel {
+  id: string;
+  name: string;
+  color: string;
+}
 
 interface ContentCalendarEntry {
   id: string;
@@ -13,6 +20,9 @@ interface ContentCalendarEntry {
   audio_url: string | null;
   notes: string | null;
   project_id: string | null;
+  youtube_url: string | null;
+  channel_id: string | null;
+  channel?: Channel | null;
   created_at: string;
   updated_at: string;
 }
@@ -23,23 +33,31 @@ interface CalendarDayCellProps {
   isToday: boolean;
   onDayClick: (date: Date) => void;
   onEntryClick: (entry: ContentCalendarEntry) => void;
+  onEntryDrop: (entryId: string, newDate: Date) => void;
 }
 
-const statusColors: Record<string, string> = {
-  planned: "bg-muted text-muted-foreground",
-  scripted: "bg-blue-500/20 text-blue-600 dark:text-blue-400",
-  audio_ready: "bg-yellow-500/20 text-yellow-600 dark:text-yellow-400",
-  generating: "bg-purple-500/20 text-purple-600 dark:text-purple-400",
-  completed: "bg-green-500/20 text-green-600 dark:text-green-400",
+// Default colors when no channel is set (based on completion status)
+const defaultColors: Record<string, string> = {
+  incomplete: "bg-orange-500/20 text-orange-600 dark:text-orange-400 border-l-[3px] border-orange-500",
+  completed: "bg-green-500/20 text-green-600 dark:text-green-400 border-l-[3px] border-green-500",
 };
 
-const statusLabels: Record<string, string> = {
-  planned: "Planifié",
-  scripted: "Script",
-  audio_ready: "Audio",
-  generating: "En cours",
-  completed: "Terminé",
-};
+// Helper function to get inline style for channel color
+function getEntryStyle(entry: ContentCalendarEntry): React.CSSProperties {
+  const isCompleted = entry.status === 'completed';
+  const channelColor = entry.channel?.color;
+  
+  if (channelColor) {
+    // Has channel: use channel color for background, green border if completed
+    return {
+      backgroundColor: `${channelColor}20`,
+      color: channelColor,
+      borderLeft: isCompleted ? '3px solid rgb(34 197 94)' : `3px solid ${channelColor}`,
+    };
+  }
+  
+  return {};
+}
 
 export default function CalendarDayCell({
   date,
@@ -47,14 +65,44 @@ export default function CalendarDayCell({
   isToday,
   onDayClick,
   onEntryClick,
+  onEntryDrop,
 }: CalendarDayCellProps) {
+  const [isDragOver, setIsDragOver] = useState(false);
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(true);
+  };
+
+  const handleDragLeave = () => {
+    setIsDragOver(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    const entryId = e.dataTransfer.getData("entryId");
+    if (entryId) {
+      onEntryDrop(entryId, date);
+    }
+  };
+
+  const handleDragStart = (e: React.DragEvent, entryId: string) => {
+    e.dataTransfer.setData("entryId", entryId);
+    e.dataTransfer.effectAllowed = "move";
+  };
+
   return (
     <div 
       className={cn(
         "min-h-[120px] border-b border-r p-2 group cursor-pointer hover:bg-muted/50 transition-colors",
-        isToday && "bg-primary/5"
+        isToday && "bg-primary/5",
+        isDragOver && "bg-primary/10 ring-2 ring-primary ring-inset"
       )}
       onClick={() => onDayClick(date)}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
     >
       <div className="flex items-center justify-between mb-2">
         <span
@@ -77,22 +125,100 @@ export default function CalendarDayCell({
       </div>
 
       <div className="space-y-1">
-        {entries.slice(0, 3).map((entry) => (
-          <div
-            key={entry.id}
-            className={cn(
-              "text-xs p-1.5 rounded truncate cursor-pointer hover:ring-1 hover:ring-primary transition-all",
-              statusColors[entry.status]
-            )}
-            onClick={(e) => {
-              e.stopPropagation();
-              onEntryClick(entry);
-            }}
-            title={entry.title}
-          >
-            {entry.title}
-          </div>
-        ))}
+        {[...entries]
+          .sort((a, b) => {
+            const aCompleted = a.status === 'completed';
+            const bCompleted = b.status === 'completed';
+            
+            // If completion status differs, completed first
+            if (aCompleted !== bCompleted) {
+              return aCompleted ? -1 : 1;
+            }
+            
+            // Same completion status: sort by channel color
+            const aColor = a.channel?.color || '#ffffff';
+            const bColor = b.channel?.color || '#ffffff';
+            return aColor.localeCompare(bColor);
+          })
+          .slice(0, 3)
+          .map((entry) => {
+          const hasChannel = !!entry.channel?.name;
+          const isCompleted = entry.status === 'completed';
+          const entryStyle = getEntryStyle(entry);
+          
+          return (
+            <div
+              key={entry.id}
+              draggable
+              onDragStart={(e) => handleDragStart(e, entry.id)}
+              className={cn(
+                "text-xs p-1.5 rounded cursor-grab active:cursor-grabbing hover:ring-1 hover:ring-primary transition-all flex items-center gap-1",
+                !hasChannel && (isCompleted ? defaultColors.completed : defaultColors.incomplete)
+              )}
+              style={hasChannel ? entryStyle : undefined}
+              onClick={(e) => {
+                e.stopPropagation();
+                onEntryClick(entry);
+              }}
+              title={entry.title}
+            >
+              {/* Completed indicator */}
+              {isCompleted && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Check className="h-3 w-3 flex-shrink-0 text-green-600" />
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Terminée</p>
+                  </TooltipContent>
+                </Tooltip>
+              )}
+              {entry.youtube_url && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Youtube className="h-3 w-3 flex-shrink-0 text-red-500" />
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Publiée sur YouTube</p>
+                  </TooltipContent>
+                </Tooltip>
+              )}
+              {entry.project_id ? (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Link2 className="h-3 w-3 flex-shrink-0 text-blue-500" />
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Lié à un projet</p>
+                  </TooltipContent>
+                </Tooltip>
+              ) : (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Link2Off className="h-3 w-3 flex-shrink-0 text-muted-foreground/50" />
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Pas de projet lié</p>
+                  </TooltipContent>
+                </Tooltip>
+              )}
+              {hasChannel && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div 
+                      className="h-2 w-2 rounded-full flex-shrink-0" 
+                      style={{ backgroundColor: entry.channel!.color }}
+                    />
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>{entry.channel!.name}</p>
+                  </TooltipContent>
+                </Tooltip>
+              )}
+              <span className="truncate">{entry.title}</span>
+            </div>
+          );
+        })}
         {entries.length > 3 && (
           <div className="text-xs text-muted-foreground pl-1">
             +{entries.length - 3} autres

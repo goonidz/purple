@@ -1,0 +1,2 @@
+id;user_id;name;provider;voice_id;model;speed;pitch;volume;language_boost;english_normalization;emotion;created_at;updated_at
+3731aeb2-3f00-4436-9a14-0a85ce98ffa8;e622c54f-8a88-403a-bfea-1f29b71c40f9;Tom CashFlow;minimax;English_Insightful_Speaker;speech-2.6-hd;1;0;1;English;true;happy;2025-12-09 22:16:36.062292+00;2025-12-09 22:36:08.994249+00

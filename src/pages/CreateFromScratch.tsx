@@ -12,7 +12,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Progress } from "@/components/ui/progress";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Loader2, Sparkles, FileText, Mic, ArrowRight, Check, RefreshCw, ChevronDown, Save, Trash2, FolderOpen, Pencil, Copy, User as UserIcon, Upload, X, ClipboardCopy, ExternalLink } from "lucide-react";
+import { Loader2, Sparkles, FileText, Mic, ArrowRight, Check, RefreshCw, ChevronDown, Save, Trash2, FolderOpen, Pencil, Copy, Upload, X, ClipboardCopy, ExternalLink } from "lucide-react";
+import AppHeader from "@/components/AppHeader";
 import { toast } from "sonner";
 
 type WorkflowStep = "topic" | "axes" | "script" | "audio" | "complete";
@@ -260,6 +261,7 @@ const CreateFromScratch = () => {
   const [isGeneratingAxes, setIsGeneratingAxes] = useState(false);
   const [selectedAxe, setSelectedAxe] = useState<VideoAxe | null>(null);
   const [projectId, setProjectId] = useState<string | null>(null);
+  const [calendarEntryId, setCalendarEntryId] = useState<string | null>(null);
   
   // Script saving
   const [isSavingScript, setIsSavingScript] = useState(false);
@@ -299,6 +301,11 @@ const CreateFromScratch = () => {
     }
   }, [projectId, saveScriptToDatabase]);
 
+  // Set page title based on project name
+  useEffect(() => {
+    document.title = projectName ? `${projectName} | VideoFlow` : "Nouveau projet | VideoFlow";
+  }, [projectName]);
+
   // Cleanup timeout on unmount
   useEffect(() => {
     return () => {
@@ -322,6 +329,35 @@ const CreateFromScratch = () => {
         const continueProjectId = searchParams.get("continue");
         if (continueProjectId) {
           loadExistingProject(continueProjectId);
+        }
+        
+        // Check if coming from calendar
+        const fromCalendar = searchParams.get("from_calendar");
+        if (fromCalendar === "true") {
+          const calendarTitle = sessionStorage.getItem("calendar_title");
+          const calendarScript = sessionStorage.getItem("calendar_script");
+          const calendarEntryIdValue = sessionStorage.getItem("calendar_entry_id");
+          
+          if (calendarTitle) {
+            setProjectName(calendarTitle);
+            setVideoTopic(calendarTitle);
+          }
+          if (calendarScript) {
+            setGeneratedScript(calendarScript);
+            setWordCount(calendarScript.split(/\s+/).filter((w: string) => w).length);
+            setEstimatedDuration(Math.round(calendarScript.split(/\s+/).filter((w: string) => w).length / 2.5));
+            if (calendarScript.length > 50) {
+              setStep("script"); // Go directly to script step if there's already a script
+            }
+          }
+          if (calendarEntryIdValue) {
+            setCalendarEntryId(calendarEntryIdValue);
+          }
+          
+          // Clean up sessionStorage
+          sessionStorage.removeItem("calendar_title");
+          sessionStorage.removeItem("calendar_script");
+          sessionStorage.removeItem("calendar_entry_id");
         }
       }
     });
@@ -898,6 +934,23 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
       
       setProjectId(tempProject.id);
 
+      // Link calendar entry to project if coming from calendar
+      const entryIdToLink = calendarEntryId || sessionStorage.getItem("calendar_entry_id");
+      if (entryIdToLink) {
+        const { error: linkError } = await supabase
+          .from("content_calendar")
+          .update({ project_id: tempProject.id, status: 'generating' })
+          .eq("id", entryIdToLink);
+        
+        if (linkError) {
+          console.error("Failed to link calendar entry:", linkError);
+        } else {
+          console.log("Calendar entry linked successfully:", entryIdToLink);
+          // Clear the sessionStorage after successful link
+          sessionStorage.removeItem("calendar_entry_id");
+        }
+      }
+
       // Start the script generation job via backend
       const { data, error } = await supabase.functions.invoke('start-generation-job', {
         body: {
@@ -1032,9 +1085,43 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
       return;
     }
 
-    if (!projectId) {
-      toast.error("Erreur: projet non trouvé");
-      return;
+    let currentProjectId = projectId;
+    
+    // Create project if it doesn't exist yet (e.g., manual script without AI generation)
+    if (!currentProjectId) {
+      const { data: newProject, error: createError } = await supabase
+        .from("projects")
+        .insert([{
+          user_id: user!.id,
+          name: projectName.trim(),
+          summary: generatedScript,
+        }])
+        .select()
+        .single();
+      
+      if (createError) {
+        toast.error("Erreur lors de la création du projet");
+        return;
+      }
+      
+      currentProjectId = newProject.id;
+      setProjectId(currentProjectId);
+      
+      // Link calendar entry to project if coming from calendar
+      const entryIdToLink = calendarEntryId || sessionStorage.getItem("calendar_entry_id");
+      if (entryIdToLink) {
+        const { error: linkError } = await supabase
+          .from("content_calendar")
+          .update({ project_id: currentProjectId, status: 'generating' })
+          .eq("id", entryIdToLink);
+        
+        if (linkError) {
+          console.error("Failed to link calendar entry:", linkError);
+        } else {
+          console.log("Calendar entry linked successfully:", entryIdToLink);
+          sessionStorage.removeItem("calendar_entry_id");
+        }
+      }
     }
 
     setIsGeneratingAudio(true);
@@ -1043,12 +1130,12 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
       await supabase
         .from("projects")
         .update({ name: projectName.trim() })
-        .eq("id", projectId);
+        .eq("id", currentProjectId);
 
       // Start audio generation job via backend
       const { data, error } = await supabase.functions.invoke('start-generation-job', {
         body: {
-          projectId,
+          projectId: currentProjectId,
           jobType: 'audio_generation',
           metadata: {
             script: generatedScript,
@@ -1196,27 +1283,7 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
-      {/* Header */}
-      <header className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="container flex h-16 items-center justify-between">
-          <Link to="/" className="flex items-center gap-2">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-primary/60">
-              <Sparkles className="h-5 w-5 text-primary-foreground" />
-            </div>
-            <span className="text-xl font-bold bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
-              VidéoFlow
-            </span>
-          </Link>
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">Créer de zéro</span>
-            <Link to="/profile">
-              <Button variant="ghost" size="icon">
-                <UserIcon className="h-4 w-4" />
-              </Button>
-            </Link>
-          </div>
-        </div>
-      </header>
+      <AppHeader title="Créer de zéro" />
 
       {/* Progress Steps */}
       <div className="container py-6">
@@ -1422,28 +1489,50 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                   </div>
                 </div>
 
-                {isGeneratingAxes ? (
+                {isGeneratingAxes || isGeneratingScript ? (
                   <div className="w-full space-y-4 p-6 rounded-lg border bg-card">
                     <div className="flex items-center gap-3">
                       <Loader2 className="h-5 w-5 animate-spin text-primary" />
                       <div className="flex-1">
-                        <p className="font-medium">Gemini analyse votre sujet...</p>
+                        <p className="font-medium">
+                          {isGeneratingAxes ? "Gemini analyse votre sujet..." : generationMessage}
+                        </p>
                         <p className="text-sm text-muted-foreground">
-                          Génération des axes en cours
+                          {isGeneratingAxes ? "Génération des axes en cours" : "Génération du script en cours"}
                         </p>
                       </div>
                     </div>
+                    {isGeneratingScript && (
+                      <>
+                        <Progress value={generationProgress} className="h-2" />
+                        <p className="text-xs text-center text-muted-foreground">
+                          {Math.round(generationProgress)}% complété
+                        </p>
+                      </>
+                    )}
                   </div>
                 ) : (
-                  <Button 
-                    onClick={handleGenerateAxes} 
-                    disabled={!customPrompt.trim() || !projectName.trim()}
-                    className="w-full"
-                    size="lg"
-                  >
-                    <Sparkles className="mr-2 h-4 w-4" />
-                    Proposer des thèses avec Gemini
-                  </Button>
+                  <div className="flex gap-3">
+                    <Button 
+                      onClick={handleGenerateAxes} 
+                      disabled={!customPrompt.trim() || !projectName.trim()}
+                      className="flex-1"
+                      size="lg"
+                    >
+                      <Sparkles className="mr-2 h-4 w-4" />
+                      Proposer des thèses (Gemini)
+                    </Button>
+                    <Button 
+                      onClick={handleGenerateScript} 
+                      disabled={!customPrompt.trim() || !projectName.trim()}
+                      variant="secondary"
+                      className="flex-1"
+                      size="lg"
+                    >
+                      <FileText className="mr-2 h-4 w-4" />
+                      Écrire directement
+                    </Button>
+                  </div>
                 )}
               </div>
             </Card>

@@ -1,13 +1,18 @@
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Video, History, Sparkles, Calendar, Mic, FileText, User, ImageIcon } from "lucide-react";
+import { History, Sparkles, Calendar, Mic, FileText, ImageIcon } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import AppHeader from "@/components/AppHeader";
 
 const Home = () => {
   const navigate = useNavigate();
+
+  useEffect(() => {
+    document.title = "Accueil | VideoFlow";
+  }, []);
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -21,37 +26,7 @@ const Home = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
-      {/* Header */}
-      <header className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="container flex h-16 items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-primary/60">
-              <Sparkles className="h-5 w-5 text-primary-foreground" />
-            </div>
-            <span className="text-xl font-bold bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
-              VidéoFlow
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <Link to="/calendar">
-              <Button variant="ghost" size="sm">
-                <Calendar className="h-4 w-4 mr-2" />
-                Calendrier
-              </Button>
-            </Link>
-            <Link to="/projects">
-              <Button variant="ghost" size="sm">
-                Mes projets
-              </Button>
-            </Link>
-            <Link to="/profile">
-              <Button variant="ghost" size="icon">
-                <User className="h-4 w-4" />
-              </Button>
-            </Link>
-          </div>
-        </div>
-      </header>
+      <AppHeader />
 
       {/* Hero Section */}
       <div className="container flex flex-col items-center justify-center py-20 px-4">

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,7 +15,16 @@ import { toast } from "sonner";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
 import { cn } from "@/lib/utils";
-import { CalendarIcon, Upload, Trash2, Loader2, Play, Pause, Rocket, ExternalLink } from "lucide-react";
+import { CalendarIcon, Upload, Trash2, Loader2, Play, Pause, Rocket, ExternalLink, FolderOpen, Link2, Mic, PenTool, Plus } from "lucide-react";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import ChannelManager from "@/components/ChannelManager";
+
+interface Channel {
+  id: string;
+  name: string;
+  color: string;
+  icon: string | null;
+}
 
 interface ContentCalendarEntry {
   id: string;
@@ -26,8 +36,19 @@ interface ContentCalendarEntry {
   audio_url: string | null;
   notes: string | null;
   project_id: string | null;
+  youtube_url: string | null;
+  channel_id: string | null;
+  source_url: string | null;
+  source_thumbnail_url: string | null;
   created_at: string;
   updated_at: string;
+}
+
+interface Project {
+  id: string;
+  name: string;
+  summary: string | null;
+  created_at: string;
 }
 
 interface CalendarVideoModalProps {
@@ -55,17 +76,80 @@ export default function CalendarVideoModal({
   userId,
   onSaved,
 }: CalendarVideoModalProps) {
+  const navigate = useNavigate();
   const [title, setTitle] = useState("");
   const [scheduledDate, setScheduledDate] = useState<Date | undefined>();
   const [status, setStatus] = useState<string>("planned");
   const [script, setScript] = useState("");
   const [notes, setNotes] = useState("");
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [youtubeUrl, setYoutubeUrl] = useState("");
+  const [sourceUrl, setSourceUrl] = useState("");
+  const [sourceThumbnailUrl, setSourceThumbnailUrl] = useState<string | null>(null);
+  const [isScrapingSource, setIsScrapingSource] = useState(false);
+  const [projectId, setProjectId] = useState<string | null>(null);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [isLoadingProjects, setIsLoadingProjects] = useState(false);
+  const [channels, setChannels] = useState<Channel[]>([]);
+  const [isLoadingChannels, setIsLoadingChannels] = useState(false);
+  const [channelId, setChannelId] = useState<string | null>(null);
+  const [showChannelManager, setShowChannelManager] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [showLaunchDialog, setShowLaunchDialog] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  // Load user's projects
+  useEffect(() => {
+    const loadProjects = async () => {
+      setIsLoadingProjects(true);
+      try {
+        const { data, error } = await supabase
+          .from("projects")
+          .select("id, name, summary, created_at")
+          .eq("user_id", userId)
+          .order("created_at", { ascending: false });
+        
+        if (error) throw error;
+        setProjects(data || []);
+      } catch (error) {
+        console.error("Error loading projects:", error);
+      } finally {
+        setIsLoadingProjects(false);
+      }
+    };
+    
+    if (isOpen && userId) {
+      loadProjects();
+    }
+  }, [isOpen, userId]);
+
+  // Load user's channels
+  useEffect(() => {
+    const loadChannels = async () => {
+      setIsLoadingChannels(true);
+      try {
+        const { data, error } = await supabase
+          .from("channels")
+          .select("*")
+          .eq("user_id", userId)
+          .order("name", { ascending: true });
+        
+        if (error) throw error;
+        setChannels(data || []);
+      } catch (error) {
+        console.error("Error loading channels:", error);
+      } finally {
+        setIsLoadingChannels(false);
+      }
+    };
+    
+    if (isOpen && userId) {
+      loadChannels();
+    }
+  }, [isOpen, userId]);
 
   useEffect(() => {
     if (entry) {
@@ -75,6 +159,11 @@ export default function CalendarVideoModal({
       setScript(entry.script || "");
       setNotes(entry.notes || "");
       setAudioUrl(entry.audio_url);
+      setYoutubeUrl(entry.youtube_url || "");
+      setSourceUrl(entry.source_url || "");
+      setSourceThumbnailUrl(entry.source_thumbnail_url || null);
+      setProjectId(entry.project_id);
+      setChannelId(entry.channel_id);
     } else if (selectedDate) {
       setTitle("");
       setScheduledDate(selectedDate);
@@ -82,8 +171,35 @@ export default function CalendarVideoModal({
       setScript("");
       setNotes("");
       setAudioUrl(null);
+      setYoutubeUrl("");
+      setSourceUrl("");
+      setSourceThumbnailUrl(null);
+      setProjectId(null);
+      setChannelId(null);
     }
   }, [entry, selectedDate]);
+
+  const handleProjectSelect = (selectedProjectId: string) => {
+    if (selectedProjectId === "none") {
+      setProjectId(null);
+      return;
+    }
+    
+    const project = projects.find(p => p.id === selectedProjectId);
+    if (project) {
+      setProjectId(project.id);
+      setTitle(project.name);
+      if (project.summary) {
+        setScript(project.summary);
+      }
+    }
+  };
+
+  const goToProject = () => {
+    if (projectId) {
+      window.open(`/project?project=${projectId}`, '_blank');
+    }
+  };
 
   const handleAudioUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -129,7 +245,7 @@ export default function CalendarVideoModal({
 
     setIsLoading(true);
     try {
-      const data = {
+      const dataWithThumbnail = {
         user_id: userId,
         title: title.trim(),
         scheduled_date: format(scheduledDate, "yyyy-MM-dd"),
@@ -137,27 +253,61 @@ export default function CalendarVideoModal({
         script: script.trim() || null,
         notes: notes.trim() || null,
         audio_url: audioUrl,
+        youtube_url: youtubeUrl.trim() || null,
+        source_url: sourceUrl.trim() || null,
+        source_thumbnail_url: sourceThumbnailUrl || null,
+        project_id: projectId,
+        channel_id: channelId,
       };
 
+      // Try saving with thumbnail first
+      let error: any = null;
       if (entry) {
-        const { error } = await supabase
+        const result = await supabase
           .from("content_calendar")
-          .update(data)
+          .update(dataWithThumbnail)
           .eq("id", entry.id);
-        if (error) throw error;
-        toast.success("Vidéo mise à jour");
+        error = result.error;
       } else {
-        const { error } = await supabase
+        const result = await supabase
           .from("content_calendar")
-          .insert(data);
-        if (error) throw error;
-        toast.success("Vidéo planifiée");
+          .insert(dataWithThumbnail);
+        error = result.error;
+      }
+
+      // If error is about source_thumbnail_url, retry without it
+      if (error && (error.message?.includes("source_thumbnail_url") || error.message?.includes("schema cache"))) {
+        console.warn("source_thumbnail_url column not available, saving without it");
+        const dataWithoutThumbnail = { ...dataWithThumbnail };
+        delete (dataWithoutThumbnail as any).source_thumbnail_url;
+        
+        if (entry) {
+          const retryResult = await supabase
+            .from("content_calendar")
+            .update(dataWithoutThumbnail)
+            .eq("id", entry.id);
+          if (retryResult.error) throw retryResult.error;
+        } else {
+          const retryResult = await supabase
+            .from("content_calendar")
+            .insert(dataWithoutThumbnail);
+          if (retryResult.error) throw retryResult.error;
+        }
+        
+        toast.success(entry ? "Vidéo mise à jour (miniature non sauvegardée - cache en cours de mise à jour)" : "Vidéo planifiée (miniature non sauvegardée - cache en cours de mise à jour)", {
+          duration: 4000
+        });
+      } else if (error) {
+        throw error;
+      } else {
+        toast.success(entry ? "Vidéo mise à jour" : "Vidéo planifiée");
       }
 
       onSaved();
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error saving entry:", error);
-      toast.error("Erreur lors de la sauvegarde");
+      const errorMessage = error?.message || "Erreur lors de la sauvegarde";
+      toast.error(`Erreur lors de la sauvegarde: ${errorMessage}`);
     } finally {
       setIsLoading(false);
     }
@@ -193,8 +343,62 @@ export default function CalendarVideoModal({
     setIsPlaying(!isPlaying);
   };
 
+  const handleSourceUrlChange = async (url: string) => {
+    setSourceUrl(url);
+    
+    // Clear thumbnail if URL is empty
+    if (!url.trim()) {
+      setSourceThumbnailUrl(null);
+      return;
+    }
+    
+    // Check if it's a YouTube URL
+    const youtubePattern = /(?:youtube\.com\/(?:watch\?v=|embed\/|v\/|shorts\/)|youtu\.be\/|^)([a-zA-Z0-9_-]{11})/;
+    if (youtubePattern.test(url)) {
+      setIsScrapingSource(true);
+      try {
+        const { data, error } = await supabase.functions.invoke("scrape-youtube", {
+          body: { url }
+        });
+
+        if (error) throw error;
+
+        if (data.success) {
+          // Auto-fill title if empty
+          if (!title.trim()) {
+            setTitle(data.title);
+          }
+          // Store thumbnail URL
+          if (data.thumbnailUrl) {
+            setSourceThumbnailUrl(data.thumbnailUrl);
+          }
+          toast.success(`Informations récupérées : ${data.title}`);
+        }
+      } catch (error: any) {
+        console.error("Error scraping YouTube:", error);
+        toast.error(error.message || "Erreur lors de la récupération des informations");
+      } finally {
+        setIsScrapingSource(false);
+      }
+    }
+  };
+
   const handleLaunchProject = () => {
-    // Navigate to projects with the calendar data to open creation modal
+    setShowLaunchDialog(true);
+  };
+
+  const handleLaunchFromScratch = () => {
+    // Store calendar entry info to link after project creation
+    sessionStorage.setItem("calendar_title", title);
+    sessionStorage.setItem("calendar_entry_id", entry?.id || "");
+    if (script) {
+      sessionStorage.setItem("calendar_script", script);
+    }
+    onClose();
+    window.location.href = "/create-from-scratch?from_calendar=true";
+  };
+
+  const handleLaunchWithAudio = () => {
     if (audioUrl) {
       // Store data in sessionStorage to pass to projects page
       sessionStorage.setItem("calendar_script", script || "");
@@ -204,13 +408,17 @@ export default function CalendarVideoModal({
       onClose();
       window.location.href = "/projects?from_calendar=true";
     } else {
-      toast.error("Ajoutez un fichier audio avant de lancer la génération");
+      setShowLaunchDialog(false);
+      // Switch to Audio tab to prompt user to add audio
+      toast.info("Ajoutez d'abord un fichier audio dans l'onglet Audio");
     }
   };
 
   return (
+    <>
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col p-0">
+        <div className="overflow-y-auto flex-1 px-6 pt-6 pb-4">
         <DialogHeader>
           <DialogTitle>
             {entry ? "Modifier la vidéo" : "Planifier une vidéo"}
@@ -231,6 +439,88 @@ export default function CalendarVideoModal({
           </TabsList>
 
           <TabsContent value="info" className="space-y-4 mt-4">
+            {/* Channel selector */}
+            <div className="space-y-2">
+              <Label className="flex items-center gap-2">
+                <span className="text-base">📺</span>
+                Chaîne
+              </Label>
+              <div className="flex gap-2">
+                <Select 
+                  value={channelId || "none"} 
+                  onValueChange={(value) => setChannelId(value === "none" ? null : value)}
+                  disabled={isLoadingChannels}
+                >
+                  <SelectTrigger className="flex-1">
+                    <SelectValue placeholder={isLoadingChannels ? "Chargement..." : "Sélectionner une chaîne"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">
+                      <span className="text-muted-foreground">Aucune chaîne</span>
+                    </SelectItem>
+                    {channels.map((channel) => (
+                      <SelectItem key={channel.id} value={channel.id}>
+                        <div className="flex items-center gap-2">
+                          <div 
+                            className="h-3 w-3 rounded-full flex-shrink-0" 
+                            style={{ backgroundColor: channel.color }}
+                          />
+                          <span>{channel.name}</span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  onClick={() => setShowChannelManager(true)}
+                  title="Gérer les chaînes"
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+
+            {/* Project selector */}
+            <div className="space-y-2">
+              <Label className="flex items-center gap-2">
+                <FolderOpen className="h-4 w-4" />
+                Lier à un projet existant
+              </Label>
+              <Select 
+                value={projectId || "none"} 
+                onValueChange={handleProjectSelect}
+                disabled={isLoadingProjects}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={isLoadingProjects ? "Chargement..." : "Sélectionner un projet"} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">
+                    <span className="text-muted-foreground">Aucun projet</span>
+                  </SelectItem>
+                  {projects.map((project) => (
+                    <SelectItem key={project.id} value={project.id}>
+                      {project.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {projectId && (
+                <Button
+                  variant="link"
+                  size="sm"
+                  className="h-auto p-0 text-xs"
+                  onClick={goToProject}
+                >
+                  <ExternalLink className="h-3 w-3 mr-1" />
+                  Ouvrir le projet
+                </Button>
+              )}
+            </div>
+
             <div className="space-y-2">
               <Label htmlFor="title">Titre de la vidéo</Label>
               <Input
@@ -301,6 +591,70 @@ export default function CalendarVideoModal({
                 placeholder="Idées, références, liens..."
                 rows={3}
               />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="youtube-url">URL YouTube</Label>
+              <div className="flex gap-2">
+                <Input
+                  id="youtube-url"
+                  value={youtubeUrl}
+                  onChange={(e) => setYoutubeUrl(e.target.value)}
+                  placeholder="https://youtube.com/watch?v=..."
+                  className="flex-1"
+                />
+                {youtubeUrl && (
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    asChild
+                  >
+                    <a href={youtubeUrl} target="_blank" rel="noopener noreferrer">
+                      <ExternalLink className="h-4 w-4" />
+                    </a>
+                  </Button>
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="source-url">Source URL (pour récupérer le titre)</Label>
+              <div className="flex gap-2">
+                <Input
+                  id="source-url"
+                  value={sourceUrl}
+                  onChange={(e) => handleSourceUrlChange(e.target.value)}
+                  placeholder="https://youtube.com/watch?v=... (récupère automatiquement le titre)"
+                  className="flex-1"
+                  disabled={isScrapingSource}
+                />
+                {isScrapingSource && (
+                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                )}
+                {sourceUrl && !isScrapingSource && (
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    asChild
+                  >
+                    <a href={sourceUrl} target="_blank" rel="noopener noreferrer">
+                      <ExternalLink className="h-4 w-4" />
+                    </a>
+                  </Button>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Collez une URL YouTube pour récupérer automatiquement le titre et la miniature
+              </p>
+              {sourceThumbnailUrl && (
+                <div className="mt-2">
+                  <img
+                    src={sourceThumbnailUrl}
+                    alt="Miniature de la source"
+                    className="w-full max-w-md h-auto rounded-lg border"
+                  />
+                </div>
+              )}
             </div>
           </TabsContent>
 
@@ -390,7 +744,8 @@ export default function CalendarVideoModal({
           </TabsContent>
         </Tabs>
 
-        <div className="flex items-center justify-between mt-6 pt-4 border-t">
+        </div>
+        <div className="flex items-center justify-between p-4 border-t bg-background flex-shrink-0">
           <div>
             {entry && (
               <Button
@@ -408,7 +763,7 @@ export default function CalendarVideoModal({
             )}
           </div>
           <div className="flex items-center gap-2">
-            {entry && (script || audioUrl) && (
+            {entry && !projectId && (
               <Button
                 variant="outline"
                 onClick={handleLaunchProject}
@@ -434,5 +789,71 @@ export default function CalendarVideoModal({
         </div>
       </DialogContent>
     </Dialog>
+
+    {/* Launch Options Dialog */}
+    <AlertDialog open={showLaunchDialog} onOpenChange={setShowLaunchDialog}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Comment voulez-vous créer le projet ?</AlertDialogTitle>
+          <AlertDialogDescription>
+            Choisissez le mode de création pour votre vidéo "{title}"
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <div className="flex flex-col gap-3 py-4">
+          <Button
+            variant="outline"
+            className="h-auto py-4 justify-start gap-4"
+            onClick={handleLaunchFromScratch}
+          >
+            <PenTool className="h-6 w-6 text-primary" />
+            <div className="text-left">
+              <div className="font-semibold">Créer de zéro</div>
+              <div className="text-sm text-muted-foreground">
+                Écrire le script manuellement ou avec l'IA
+              </div>
+            </div>
+          </Button>
+          <Button
+            variant="outline"
+            className={cn(
+              "h-auto py-4 justify-start gap-4",
+              !audioUrl && "opacity-50"
+            )}
+            onClick={handleLaunchWithAudio}
+          >
+            <Mic className="h-6 w-6 text-primary" />
+            <div className="text-left">
+              <div className="font-semibold">À partir d'un audio</div>
+              <div className="text-sm text-muted-foreground">
+                {audioUrl 
+                  ? "Transcrire l'audio et générer les scènes"
+                  : "Ajoutez d'abord un audio dans l'onglet Audio"
+                }
+              </div>
+            </div>
+          </Button>
+        </div>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Annuler</AlertDialogCancel>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+
+    {/* Channel Manager Dialog */}
+    <ChannelManager
+      isOpen={showChannelManager}
+      onClose={() => setShowChannelManager(false)}
+      userId={userId}
+      onChannelsUpdated={async () => {
+        // Reload channels
+        const { data } = await supabase
+          .from("channels")
+          .select("*")
+          .eq("user_id", userId)
+          .order("name", { ascending: true });
+        setChannels(data || []);
+      }}
+    />
+    </>
   );
 }

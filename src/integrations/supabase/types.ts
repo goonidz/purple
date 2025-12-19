@@ -14,9 +14,40 @@ export type Database = {
   }
   public: {
     Tables: {
+      channels: {
+        Row: {
+          id: string
+          user_id: string
+          name: string
+          color: string
+          icon: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          name: string
+          color?: string
+          icon?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          name?: string
+          color?: string
+          icon?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       content_calendar: {
         Row: {
           audio_url: string | null
+          channel_id: string | null
           created_at: string
           id: string
           notes: string | null
@@ -27,9 +58,13 @@ export type Database = {
           title: string
           updated_at: string
           user_id: string
+          youtube_url: string | null
+          source_url: string | null
+          source_thumbnail_url: string | null
         }
         Insert: {
           audio_url?: string | null
+          channel_id?: string | null
           created_at?: string
           id?: string
           notes?: string | null
@@ -40,11 +75,18 @@ export type Database = {
           title: string
           updated_at?: string
           user_id: string
+          youtube_url?: string | null
+          source_url?: string | null
+          source_thumbnail_url?: string | null
         }
         Update: {
           audio_url?: string | null
+          channel_id?: string | null
           created_at?: string
           id?: string
+          youtube_url?: string | null
+          source_url?: string | null
+          source_thumbnail_url?: string | null
           notes?: string | null
           project_id?: string | null
           scheduled_date?: string
@@ -56,6 +98,13 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "content_calendar_channel_id_fkey"
+            columns: ["channel_id"]
+            isOneToOne: false
+            referencedRelation: "channels"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "content_calendar_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
@@ -63,6 +112,33 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      export_path_presets: {
+        Row: {
+          id: string
+          user_id: string
+          name: string
+          path: string
+          is_default: boolean
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          name: string
+          path: string
+          is_default?: boolean
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          name?: string
+          path?: string
+          is_default?: boolean
+          created_at?: string
+        }
+        Relationships: []
       }
       generated_descriptions: {
         Row: {
@@ -118,6 +194,7 @@ export type Database = {
           id: string
           preset_name: string | null
           project_id: string | null
+          thumbnail_project_id: string | null
           prompts: Json
           thumbnail_urls: Json
           user_id: string
@@ -127,6 +204,7 @@ export type Database = {
           id?: string
           preset_name?: string | null
           project_id?: string | null
+          thumbnail_project_id?: string | null
           prompts?: Json
           thumbnail_urls?: Json
           user_id: string
@@ -136,6 +214,7 @@ export type Database = {
           id?: string
           preset_name?: string | null
           project_id?: string | null
+          thumbnail_project_id?: string | null
           prompts?: Json
           thumbnail_urls?: Json
           user_id?: string
@@ -512,6 +591,36 @@ export type Database = {
           style?: string | null
           updated_at?: string
           user_id?: string
+        }
+        Relationships: []
+      }
+      thumbnail_projects: {
+        Row: {
+          id: string
+          user_id: string
+          title: string
+          script: string
+          preset_id: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          title: string
+          script: string
+          preset_id?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          title?: string
+          script?: string
+          preset_id?: string | null
+          created_at?: string
+          updated_at?: string
         }
         Relationships: []
       }

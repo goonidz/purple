@@ -1885,7 +1885,8 @@ async function processThumbnailsJob(
     previousPrompts,
     customPrompt,
     userIdea,
-    imageModel
+    imageModel,
+    textModel
   } = metadata;
 
   if (!videoScript || !videoTitle || !exampleUrls || exampleUrls.length === 0) {
@@ -1912,7 +1913,9 @@ async function processThumbnailsJob(
       characterRefUrl,
       previousPrompts,
       customPrompt,
-      userIdea
+      userIdea,
+      textModel,
+      userId  // Pass userId for internal calls to fetch Replicate API key
     }),
   });
 

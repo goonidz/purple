@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { parseStyleReferenceUrls, serializeStyleReferenceUrls } from "@/lib/styleReferenceHelpers";
 import { parseTranscriptToScenes } from "@/lib/sceneParser";
+import { DurationRange, DEFAULT_DURATION_RANGES, SHORT_FORM_DURATION_RANGES, convertLegacyToRanges } from "@/lib/durationRanges";
 import { useNavigate, Link, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -14,7 +15,8 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Loader2, Plus, Trash2, Sparkles, User as UserIcon, Pencil, Check, X, Cloud } from "lucide-react";
+import { Loader2, Plus, Trash2, Pencil, Check, X, Cloud } from "lucide-react";
+import AppHeader from "@/components/AppHeader";
 import { toast } from "sonner";
 import type { User } from "@supabase/supabase-js";
 import { Label } from "@/components/ui/label";
@@ -25,6 +27,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import OnboardingDialog from "@/components/OnboardingDialog";
 import { useGenerationJobs, GenerationJob } from "@/hooks/useGenerationJobs";
 import { ActiveJobsBanner } from "@/components/JobProgressIndicator";
+import { DurationRangesEditor } from "@/components/DurationRangesEditor";
 
 interface Project {
   id: string;
@@ -47,12 +50,8 @@ const Projects = () => {
   const [workflowStep, setWorkflowStep] = useState<"upload" | "transcription" | "review" | "scene-config" | "prompt-config" | "image-config" | "final">("upload");
   const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
   const [transcriptData, setTranscriptData] = useState<any>(null);
-  const [sceneDuration0to1, setSceneDuration0to1] = useState(4);
-  const [sceneDuration1to3, setSceneDuration1to3] = useState(6);
-  const [sceneDuration3plus, setSceneDuration3plus] = useState(8);
+  const [durationRanges, setDurationRanges] = useState<DurationRange[]>(DEFAULT_DURATION_RANGES);
   const [sceneFormat, setSceneFormat] = useState<"long" | "short">("long");
-  const [range1End, setRange1End] = useState(60);
-  const [range2End, setRange2End] = useState(180);
   const [examplePrompts, setExamplePrompts] = useState<string[]>(["", "", ""]);
   const [imageWidth, setImageWidth] = useState(1920);
   const [imageHeight, setImageHeight] = useState(1080);
@@ -72,6 +71,10 @@ const Projects = () => {
   const [semiAutoMode, setSemiAutoMode] = useState(false);
   const [thumbnailPresets, setThumbnailPresets] = useState<any[]>([]);
   const [selectedThumbnailPresetId, setSelectedThumbnailPresetId] = useState<string>("");
+
+  useEffect(() => {
+    document.title = "Projets | VideoFlow";
+  }, []);
 
   // Job management for background transcription
   const handleTranscriptionComplete = useCallback(async (job: GenerationJob) => {
@@ -160,9 +163,10 @@ const Projects = () => {
         setIsDialogOpen(true);
         
         // Start transcription with the audio URL from calendar
-        startCalendarTranscription(calendarAudioUrl, calendarTitle);
+        // Pass the calendarEntryId directly since state might not be updated yet
+        startCalendarTranscription(calendarAudioUrl, calendarTitle, calendarEntryIdStored);
         
-        // Clear sessionStorage
+        // Clear sessionStorage after passing data to function
         sessionStorage.removeItem("calendar_script");
         sessionStorage.removeItem("calendar_audio_url");
         sessionStorage.removeItem("calendar_title");
@@ -235,7 +239,7 @@ const Projects = () => {
     }
   };
 
-  const startCalendarTranscription = async (audioUrl: string, projectName: string) => {
+  const startCalendarTranscription = async (audioUrl: string, projectName: string, entryId?: string | null) => {
     setIsCreating(true);
     setWorkflowStep("transcription");
     
@@ -259,6 +263,22 @@ const Projects = () => {
       if (projectError) throw projectError;
 
       setCurrentProjectId(projectData.id);
+      
+      // Link calendar entry to project immediately if coming from calendar
+      const entryIdToLink = entryId || calendarEntryId;
+      if (entryIdToLink) {
+        const { error: linkError } = await supabase
+          .from("content_calendar")
+          .update({ project_id: projectData.id, status: 'generating' })
+          .eq("id", entryIdToLink);
+        
+        if (linkError) {
+          console.error("Failed to link calendar entry:", linkError);
+        } else {
+          console.log("Calendar entry linked successfully:", entryIdToLink);
+          setCalendarEntryId(null); // Clear since it's been used
+        }
+      }
       
       // Start background transcription job with explicit projectId
       const result = await startJob('transcription', { audioUrl }, projectData.id);
@@ -441,24 +461,29 @@ const Projects = () => {
     
     setIsCreating(true);
     try {
-      // Generate scenes from transcript BEFORE saving
+      // Generate scenes from transcript BEFORE saving using dynamic ranges
       const generatedScenes = parseTranscriptToScenes(
         transcript,
-        sceneDuration0to1,
-        sceneDuration1to3,
-        sceneDuration3plus,
-        range1End,
-        range2End,
+        durationRanges,
+        undefined, undefined, undefined, undefined,
         true // preferSentenceBoundaries
       );
+
+      // Convert ranges to legacy format for database storage
+      const legacyRanges = {
+        scene_duration_0to1: durationRanges[0]?.sceneDuration || 4,
+        scene_duration_1to3: durationRanges[1]?.sceneDuration || 6,
+        scene_duration_3plus: durationRanges[durationRanges.length - 1]?.sceneDuration || 8,
+        range_end_1: durationRanges[0]?.endSeconds || 60,
+        range_end_2: durationRanges[1]?.endSeconds || 180,
+      };
 
       // Save all configuration + generated scenes + thumbnail preset to database
       const { error } = await supabase
         .from("projects")
         .update({
-          scene_duration_0to1: sceneDuration0to1,
-          scene_duration_1to3: sceneDuration1to3,
-          scene_duration_3plus: sceneDuration3plus,
+          ...legacyRanges,
+          duration_ranges: durationRanges as any, // Store full ranges as JSON
           example_prompts: examplePrompts,
           image_width: imageWidth,
           image_height: imageHeight,
@@ -597,26 +622,7 @@ const Projects = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
-      <header className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="container flex h-16 items-center justify-between">
-          <Link to="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-primary/60">
-              <Sparkles className="h-5 w-5 text-primary-foreground" />
-            </div>
-            <span className="text-xl font-bold bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
-              VidéoFlow
-            </span>
-          </Link>
-          <div className="flex items-center gap-4">
-            <Link to="/profile">
-              <Button variant="ghost" size="sm">
-                <UserIcon className="h-4 w-4 mr-2" />
-                Profil
-              </Button>
-            </Link>
-          </div>
-        </div>
-      </header>
+      <AppHeader title="Projets" />
 
       <div className="container py-12 px-4">
         <div className="mb-12 text-center max-w-2xl mx-auto">
@@ -791,11 +797,7 @@ const Projects = () => {
                     <div className="mb-4">
                       <PresetManager
                         currentConfig={{
-                          sceneDuration0to1,
-                          sceneDuration1to3,
-                          sceneDuration3plus,
-                          range1End,
-                          range2End,
+                          durationRanges,
                           examplePrompts,
                           imageWidth,
                           imageHeight,
@@ -807,11 +809,18 @@ const Projects = () => {
                           loraSteps,
                         }}
                         onLoadPreset={(preset) => {
-                          setSceneDuration0to1(preset.scene_duration_0to1);
-                          setSceneDuration1to3(preset.scene_duration_1to3);
-                          setSceneDuration3plus(preset.scene_duration_3plus);
-                          setRange1End(preset.range_end_1);
-                          setRange2End(preset.range_end_2);
+                          // Convert legacy format to durationRanges if needed
+                          if (preset.duration_ranges && Array.isArray(preset.duration_ranges)) {
+                            setDurationRanges(preset.duration_ranges);
+                          } else {
+                            setDurationRanges(convertLegacyToRanges(
+                              preset.scene_duration_0to1,
+                              preset.scene_duration_1to3,
+                              preset.scene_duration_3plus,
+                              preset.range_end_1,
+                              preset.range_end_2
+                            ));
+                          }
                           setExamplePrompts(preset.example_prompts);
                           setImageWidth(preset.image_width);
                           setImageHeight(preset.image_height);
@@ -843,17 +852,9 @@ const Projects = () => {
                             const newFormat = value as "long" | "short";
                             setSceneFormat(newFormat);
                             if (newFormat === "short") {
-                              setRange1End(5);
-                              setRange2End(15);
-                              setSceneDuration0to1(2);
-                              setSceneDuration1to3(4);
-                              setSceneDuration3plus(6);
+                              setDurationRanges(SHORT_FORM_DURATION_RANGES);
                             } else {
-                              setRange1End(60);
-                              setRange2End(180);
-                              setSceneDuration0to1(4);
-                              setSceneDuration1to3(6);
-                              setSceneDuration3plus(8);
+                              setDurationRanges(DEFAULT_DURATION_RANGES);
                             }
                           }}
                         >
@@ -874,86 +875,12 @@ const Projects = () => {
                         </RadioGroup>
                       </div>
 
-                      <div className="space-y-4 p-4 border rounded-lg bg-muted/30">
-                        <div className="space-y-3">
-                          <div>
-                            <Label className="text-sm font-medium mb-2 block">
-                              Plage 1 : 0 à {range1End}s
-                            </Label>
-                            <div className="grid grid-cols-2 gap-3">
-                              <div>
-                                <Label className="text-xs text-muted-foreground">Fin de plage (sec)</Label>
-                                <Input
-                                  type="number"
-                                  min="1"
-                                  max={sceneFormat === "long" ? "120" : "30"}
-                                  value={range1End}
-                                  onChange={(e) => setRange1End(parseInt(e.target.value) || 1)}
-                                />
-                              </div>
-                              <div>
-                                <Label className="text-xs text-muted-foreground">Durée de scène (sec)</Label>
-                                <Input
-                                  type="number"
-                                  min="1"
-                                  max="60"
-                                  value={sceneDuration0to1}
-                                  onChange={(e) => setSceneDuration0to1(parseInt(e.target.value))}
-                                />
-                              </div>
-                            </div>
-                          </div>
-
-                          <div>
-                            <Label className="text-sm font-medium mb-2 block">
-                              Plage 2 : {range1End}s à {range2End}s
-                            </Label>
-                            <div className="grid grid-cols-2 gap-3">
-                              <div>
-                                <Label className="text-xs text-muted-foreground">Fin de plage (sec)</Label>
-                                <Input
-                                  type="number"
-                                  min={range1End + 1}
-                                  max={sceneFormat === "long" ? "600" : "60"}
-                                  value={range2End}
-                                  onChange={(e) => setRange2End(parseInt(e.target.value) || range1End + 1)}
-                                />
-                              </div>
-                              <div>
-                                <Label className="text-xs text-muted-foreground">Durée de scène (sec)</Label>
-                                <Input
-                                  type="number"
-                                  min="1"
-                                  max="180"
-                                  value={sceneDuration1to3}
-                                  onChange={(e) => setSceneDuration1to3(parseInt(e.target.value))}
-                                />
-                              </div>
-                            </div>
-                          </div>
-
-                          <div>
-                            <Label className="text-sm font-medium mb-2 block">
-                              Plage 3 : {range2End}s et plus
-                            </Label>
-                            <div className="grid grid-cols-2 gap-3">
-                              <div className="opacity-50">
-                                <Label className="text-xs text-muted-foreground">Sans limite</Label>
-                                <Input disabled value="∞" className="bg-muted" />
-                              </div>
-                              <div>
-                                <Label className="text-xs text-muted-foreground">Durée de scène (sec)</Label>
-                                <Input
-                                  type="number"
-                                  min="1"
-                                  max="600"
-                                  value={sceneDuration3plus}
-                                  onChange={(e) => setSceneDuration3plus(parseInt(e.target.value))}
-                                />
-                              </div>
-                            </div>
-                          </div>
-                        </div>
+                      <div className="p-4 border rounded-lg bg-muted/30">
+                        <DurationRangesEditor
+                          ranges={durationRanges}
+                          onChange={setDurationRanges}
+                          maxEndValue={sceneFormat === "long" ? 600 : 60}
+                        />
                       </div>
                     </div>
                     <div className="flex justify-between pt-4">

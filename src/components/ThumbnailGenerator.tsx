@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Upload, X, Loader2, Image as ImageIcon, Save, Download, Trash2, Edit, Copy } from "lucide-react";
+import { Upload, X, Loader2, Image as ImageIcon, Save, Download, Trash2, Edit, Copy, GripVertical } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useGenerationJobs, GenerationJob } from "@/hooks/useGenerationJobs";
@@ -19,6 +19,7 @@ interface ThumbnailGeneratorProps {
   videoScript: string;
   videoTitle: string;
   standalone?: boolean; // If true, no real project exists - standalone mode
+  thumbnailProjectId?: string; // For standalone thumbnail projects
 }
 
 interface ThumbnailPreset {
@@ -68,7 +69,7 @@ interface GeneratedThumbnailHistory {
   preset_name: string | null;
 }
 
-export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standalone = false }: ThumbnailGeneratorProps) => {
+export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standalone = false, thumbnailProjectId }: ThumbnailGeneratorProps) => {
   const [exampleUrls, setExampleUrls] = useState<string[]>([]);
   const [characterRefUrl, setCharacterRefUrl] = useState<string>("");
   const [generatedThumbnails, setGeneratedThumbnails] = useState<string[]>([]);
@@ -95,7 +96,9 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
   const [customPrompt, setCustomPrompt] = useState(DEFAULT_THUMBNAIL_PROMPT);
   const [generatedPrompts, setGeneratedPrompts] = useState<string[]>([]);
   const [imageModel, setImageModel] = useState<string>("seedream-4.5");
+  const [textModel, setTextModel] = useState<string>("claude-sonnet-4");
   const [userIdea, setUserIdea] = useState<string>("");
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [avoidPreviousPrompts, setAvoidPreviousPrompts] = useState<boolean>(false);
 
   // Background job management for thumbnails
@@ -107,12 +110,19 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
       // Load the latest thumbnails from history and display them
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
-        const { data: latestThumbnails } = await supabase
+        let query = supabase
           .from("generated_thumbnails")
           .select("*")
-          .eq("project_id", projectId)
           .order("created_at", { ascending: false })
           .limit(1);
+        
+        if (thumbnailProjectId) {
+          query = query.eq("thumbnail_project_id", thumbnailProjectId);
+        } else {
+          query = query.eq("project_id", projectId);
+        }
+        
+        const { data: latestThumbnails } = await query;
         
         if (latestThumbnails && latestThumbnails.length > 0) {
           const latest = latestThumbnails[0];
@@ -131,11 +141,21 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
       
       loadThumbnailHistory();
     }
-  }, [projectId]);
+  }, [projectId, thumbnailProjectId]);
 
   const handleJobFailed = useCallback((job: GenerationJob) => {
     if (job.job_type === 'thumbnails') {
-      toast.error(`Erreur: ${job.error_message || 'Génération échouée'}`);
+      const errorMessage = job.error_message || 'Génération échouée';
+      
+      // Check for WORKER_LIMIT error and provide helpful guidance
+      if (errorMessage.includes('WORKER_LIMIT') || errorMessage.includes('worker') || errorMessage.includes('memory')) {
+        toast.error(
+          "⚠️ Limite de ressources atteinte. Vos images sont trop lourdes. Réduisez la taille des images d'exemple (max 500KB chacune) ou utilisez moins d'images.",
+          { duration: 8000 }
+        );
+      } else {
+        toast.error(`Erreur: ${errorMessage}`);
+      }
       setIsGenerating(false);
     }
   }, []);
@@ -203,21 +223,27 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
   };
 
   const loadThumbnailHistory = async () => {
-    // Skip history loading in standalone mode (no real project)
-    if (standalone) {
-      setThumbnailHistory([]);
-      return;
-    }
-    
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      const { data, error } = await supabase
+      // Use thumbnail_project_id for standalone projects, otherwise use project_id
+      let query = supabase
         .from("generated_thumbnails")
         .select("*")
-        .eq("project_id", projectId)
         .order("created_at", { ascending: false });
+      
+      if (thumbnailProjectId) {
+        query = query.eq("thumbnail_project_id", thumbnailProjectId);
+      } else if (!standalone) {
+        query = query.eq("project_id", projectId);
+      } else {
+        // Pure standalone without project - no history
+        setThumbnailHistory([]);
+        return;
+      }
+
+      const { data, error } = await query;
 
       if (error) throw error;
 
@@ -290,6 +316,64 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
     }
   };
 
+  // Compress image to reduce file size while maintaining quality
+  const compressImage = (file: File, maxWidth = 1920, maxHeight = 1080, quality = 0.85): Promise<File> => {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      
+      img.onload = () => {
+        let { width, height } = img;
+        
+        // Calculate new dimensions while maintaining aspect ratio
+        if (width > maxWidth || height > maxHeight) {
+          const ratio = Math.min(maxWidth / width, maxHeight / height);
+          width = Math.round(width * ratio);
+          height = Math.round(height * ratio);
+        }
+        
+        canvas.width = width;
+        canvas.height = height;
+        
+        if (!ctx) {
+          reject(new Error('Could not get canvas context'));
+          return;
+        }
+        
+        // Draw image with smoothing for better quality
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(img, 0, 0, width, height);
+        
+        // Convert to blob
+        canvas.toBlob(
+          (blob) => {
+            if (!blob) {
+              reject(new Error('Could not compress image'));
+              return;
+            }
+            
+            // Create new file with compressed data
+            const compressedFile = new File(
+              [blob], 
+              file.name.replace(/\.[^.]+$/, '.jpg'), 
+              { type: 'image/jpeg' }
+            );
+            
+            console.log(`Image compressed: ${(file.size / 1024).toFixed(1)}KB -> ${(compressedFile.size / 1024).toFixed(1)}KB`);
+            resolve(compressedFile);
+          },
+          'image/jpeg',
+          quality
+        );
+      };
+      
+      img.onerror = () => reject(new Error('Could not load image'));
+      img.src = URL.createObjectURL(file);
+    });
+  };
+
   const handleExampleUpload = async (files: FileList) => {
     if (files.length === 0) return;
     
@@ -302,11 +386,15 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
 
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
-        const fileName = `${user.id}/thumbnails/examples/${Date.now()}_${file.name}`;
+        
+        // Compress image before upload
+        const compressedFile = await compressImage(file);
+        
+        const fileName = `${user.id}/thumbnails/examples/${Date.now()}_${compressedFile.name}`;
         
         const { error: uploadError } = await supabase.storage
           .from("style-references")
-          .upload(fileName, file);
+          .upload(fileName, compressedFile);
 
         if (uploadError) throw uploadError;
 
@@ -318,7 +406,7 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
       }
 
       setExampleUrls(prev => [...prev, ...uploadedUrls]);
-      toast.success(`${uploadedUrls.length} exemple(s) ajouté(s) !`);
+      toast.success(`${uploadedUrls.length} exemple(s) ajouté(s) et compressé(s) !`);
     } catch (error: any) {
       console.error("Error uploading examples:", error);
       toast.error("Erreur lors de l'upload");
@@ -333,11 +421,14 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("User not authenticated");
 
-      const fileName = `${user.id}/thumbnails/character/${Date.now()}_${file.name}`;
+      // Compress image before upload
+      const compressedFile = await compressImage(file);
+      
+      const fileName = `${user.id}/thumbnails/character/${Date.now()}_${compressedFile.name}`;
       
       const { error: uploadError } = await supabase.storage
         .from("style-references")
-        .upload(fileName, file);
+        .upload(fileName, compressedFile);
 
       if (uploadError) throw uploadError;
 
@@ -346,7 +437,7 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
         .getPublicUrl(fileName);
 
       setCharacterRefUrl(publicUrl);
-      toast.success("Personnage ajouté !");
+      toast.success("Personnage ajouté et compressé !");
     } catch (error: any) {
       console.error("Error uploading character:", error);
       toast.error("Erreur lors de l'upload");
@@ -397,6 +488,29 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
     setExampleUrls(prev => prev.filter((_, i) => i !== index));
   };
 
+  const handleDragStart = (index: number) => {
+    setDraggedIndex(index);
+  };
+
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    if (draggedIndex === null || draggedIndex === index) return;
+    
+    // Reorder the array
+    setExampleUrls(prev => {
+      const newUrls = [...prev];
+      const draggedItem = newUrls[draggedIndex];
+      newUrls.splice(draggedIndex, 1);
+      newUrls.splice(index, 0, draggedItem);
+      setDraggedIndex(index);
+      return newUrls;
+    });
+  };
+
+  const handleDragEnd = () => {
+    setDraggedIndex(null);
+  };
+
   const generateThumbnails = async () => {
     if (exampleUrls.length === 0) {
       toast.error("Ajoute au moins un exemple de miniature");
@@ -434,14 +548,26 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
         customPrompt: customPrompt !== DEFAULT_THUMBNAIL_PROMPT ? customPrompt : undefined,
         userIdea: userIdea.trim() || undefined,
         imageModel,
+        textModel,
         presetName,
-        standalone // Pass standalone flag to skip project lookup
+        standalone, // Pass standalone flag to skip project lookup
+        thumbnailProjectId // Pass for saving to thumbnail_projects
       });
       
       toast.success("Génération démarrée ! Vous pouvez quitter cette page.");
     } catch (error: any) {
       console.error("Error starting thumbnails job:", error);
-      toast.error(error?.message || "Erreur lors du lancement");
+      const errorMessage = error?.message || "Erreur lors du lancement";
+      
+      // Check for WORKER_LIMIT error and provide helpful guidance
+      if (errorMessage.includes('WORKER_LIMIT') || errorMessage.includes('worker') || errorMessage.includes('memory')) {
+        toast.error(
+          "⚠️ Limite de ressources atteinte. Vos images sont trop lourdes. Réduisez la taille des images d'exemple (max 500KB chacune) ou utilisez moins d'images.",
+          { duration: 8000 }
+        );
+      } else {
+        toast.error(errorMessage);
+      }
       setIsGenerating(false);
     }
   };
@@ -621,37 +747,25 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
 
       toast.info("Modification de la miniature en cours...");
 
+      // Use the existing generate-image-seedream function with uploadToStorage
       const { data, error } = await supabase.functions.invoke("generate-image-seedream", {
         body: {
           prompt: editingImagePrompt,
           width: 1920,
           height: 1080,
-          image_urls: [editingImageUrl]
+          image_urls: [editingImageUrl],
+          uploadToStorage: true,
+          storageFolder: 'thumbnails',
+          filePrefix: 'edited_thumbnail'
         }
       });
 
       if (error) throw error;
       if (!data?.output) throw new Error("No image generated");
 
-      const imageUrl = Array.isArray(data.output) ? data.output[0] : data.output;
+      const publicUrl = Array.isArray(data.output) ? data.output[0] : data.output;
 
-      // Download and upload to Supabase Storage
-      const imageResponse = await fetch(imageUrl);
-      const imageBlob = await imageResponse.blob();
-      const fileName = `${Date.now()}_edited_thumbnail.jpg`;
-      const filePath = `${user.id}/thumbnails/${fileName}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from('generated-images')
-        .upload(filePath, imageBlob, { contentType: 'image/jpeg' });
-
-      if (uploadError) throw uploadError;
-
-      const { data: { publicUrl } } = supabase.storage
-        .from('generated-images')
-        .getPublicUrl(filePath);
-
-      // Add to history
+      // Add to local history
       const newHistory: GeneratedThumbnailHistory[] = [
         {
           id: crypto.randomUUID(),
@@ -666,7 +780,8 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
 
       // Save to database
       await supabase.from('generated_thumbnails').insert({
-        project_id: projectId,
+        project_id: standalone ? null : projectId,
+        thumbnail_project_id: thumbnailProjectId || null,
         user_id: user.id,
         prompts: [editingImagePrompt],
         thumbnail_urls: [publicUrl]
@@ -677,7 +792,7 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
       setEditingImagePrompt("");
     } catch (error: any) {
       console.error('Error editing thumbnail:', error);
-      toast.error("Erreur lors de la modification de la miniature");
+      toast.error(error?.message || "Erreur lors de la modification de la miniature");
     } finally {
       setIsEditingImage(false);
     }
@@ -792,7 +907,17 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
             {exampleUrls.length > 0 && (
               <div className="grid grid-cols-3 gap-4 mt-4">
                 {exampleUrls.map((url, index) => (
-                  <div key={index} className="relative group">
+                  <div 
+                    key={url} 
+                    className={`relative group cursor-grab active:cursor-grabbing ${draggedIndex === index ? 'opacity-50' : ''}`}
+                    draggable
+                    onDragStart={() => handleDragStart(index)}
+                    onDragOver={(e) => handleDragOver(e, index)}
+                    onDragEnd={handleDragEnd}
+                  >
+                    <div className="absolute top-2 left-2 z-10 bg-black/50 rounded p-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <GripVertical className="w-4 h-4 text-white" />
+                    </div>
                     <img
                       src={url}
                       alt={`Example ${index + 1}`}
@@ -896,6 +1021,25 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
             >
               Réinitialiser au prompt par défaut
             </Button>
+          </div>
+
+          {/* Sélection du modèle de texte (LLM) */}
+          <div className="space-y-2">
+            <Label>Modèle de génération de prompts</Label>
+            <Select value={textModel} onValueChange={setTextModel}>
+              <SelectTrigger>
+                <SelectValue placeholder="Choisir un modèle" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="gemini-2.0-flash">Gemini 2.0 Flash (Rapide)</SelectItem>
+                <SelectItem value="claude-sonnet-4">Claude Sonnet 4 (Qualité)</SelectItem>
+              </SelectContent>
+            </Select>
+            {textModel === "claude-sonnet-4" && (
+              <p className="text-xs text-muted-foreground mt-2 italic px-1">
+                ⚠️ Avec Claude, seule la première image sera envoyée en exemple pour générer les prompts des miniatures. La qualité est par contre bien supérieure.
+              </p>
+            )}
           </div>
 
           {/* Sélection du modèle d'image */}
@@ -1101,11 +1245,21 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
             </div>
             
             <div>
-              <Label>Exemples actuels ({exampleUrls.length})</Label>
+              <Label>Exemples actuels ({exampleUrls.length}) - <span className="text-muted-foreground font-normal">glisser pour réorganiser</span></Label>
               {exampleUrls.length > 0 && (
                 <div className="grid grid-cols-3 gap-2 mt-2">
                   {exampleUrls.map((url, index) => (
-                    <div key={index} className="relative group">
+                    <div 
+                      key={url} 
+                      className={`relative group cursor-grab active:cursor-grabbing ${draggedIndex === index ? 'opacity-50' : ''}`}
+                      draggable
+                      onDragStart={() => handleDragStart(index)}
+                      onDragOver={(e) => handleDragOver(e, index)}
+                      onDragEnd={handleDragEnd}
+                    >
+                      <div className="absolute top-1 left-1 z-10 bg-black/50 rounded p-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <GripVertical className="w-4 h-4 text-white" />
+                      </div>
                       <img
                         src={url}
                         alt={`Example ${index + 1}`}
@@ -1240,7 +1394,12 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
               Annuler
             </Button>
             <Button onClick={editThumbnailImage} disabled={isEditingImage || !editingImagePrompt.trim()}>
-              {isEditingImage ? "Modification..." : "Modifier"}
+              {isEditingImage ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Modification en cours...
+                </>
+              ) : "Modifier"}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -5,7 +5,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Loader2, Plus, Upload, Download, Save, Trash2 } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Loader2, Plus, Upload, Download, Save, Trash2, Pencil, Copy, FolderOpen, ChevronDown } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { parseStyleReferenceUrls } from "@/lib/styleReferenceHelpers";
@@ -81,6 +83,17 @@ export const ProjectConfigurationModal = ({
   const [selectedLoraPresetId, setSelectedLoraPresetId] = useState<string>("");
   const [newLoraPresetName, setNewLoraPresetName] = useState("");
   const [isSavingLoraPreset, setIsSavingLoraPreset] = useState(false);
+  const [loraPresetPopoverOpen, setLoraPresetPopoverOpen] = useState(false);
+  const [saveLoraPresetDialogOpen, setSaveLoraPresetDialogOpen] = useState(false);
+  const [editLoraPresetDialogOpen, setEditLoraPresetDialogOpen] = useState(false);
+  const [editingLoraPresetId, setEditingLoraPresetId] = useState<string | null>(null);
+  const [editLoraPresetName, setEditLoraPresetName] = useState("");
+  const [editLoraPresetUrl, setEditLoraPresetUrl] = useState("");
+  const [editLoraPresetSteps, setEditLoraPresetSteps] = useState(10);
+  const [isUpdatingLoraPreset, setIsUpdatingLoraPreset] = useState(false);
+  const [duplicateLoraPresetDialogOpen, setDuplicateLoraPresetDialogOpen] = useState(false);
+  const [duplicateLoraPresetName, setDuplicateLoraPresetName] = useState("");
+  const [isDuplicatingLoraPreset, setIsDuplicatingLoraPreset] = useState(false);
 
   // Load presets on mount
   useEffect(() => {
@@ -200,7 +213,105 @@ export const ProjectConfigurationModal = ({
       setLoraUrl(preset.lora_url);
       setLoraSteps(preset.lora_steps);
       setSelectedLoraPresetId(presetId);
+      setLoraPresetPopoverOpen(false);
       toast.success(`Preset LoRA "${preset.name}" chargé !`);
+    }
+  };
+
+  const handleOpenEditLoraPreset = (presetId: string) => {
+    const preset = loraPresets.find(p => p.id === presetId);
+    if (preset) {
+      setEditingLoraPresetId(presetId);
+      setEditLoraPresetName(preset.name);
+      setEditLoraPresetUrl(preset.lora_url);
+      setEditLoraPresetSteps(preset.lora_steps);
+      setEditLoraPresetDialogOpen(true);
+      setLoraPresetPopoverOpen(false);
+    }
+  };
+
+  const handleUpdateLoraPreset = async () => {
+    if (!editingLoraPresetId || !editLoraPresetName.trim() || !editLoraPresetUrl.trim()) {
+      toast.error("Veuillez remplir tous les champs");
+      return;
+    }
+
+    setIsUpdatingLoraPreset(true);
+    try {
+      const { error } = await supabase
+        .from("lora_presets")
+        .update({
+          name: editLoraPresetName.trim(),
+          lora_url: editLoraPresetUrl.trim(),
+          lora_steps: editLoraPresetSteps,
+        })
+        .eq("id", editingLoraPresetId);
+
+      if (error) throw error;
+
+      toast.success("Preset LoRA mis à jour !");
+      setEditLoraPresetDialogOpen(false);
+      setEditingLoraPresetId(null);
+      await loadLoraPresets();
+      
+      // Reload current values if this preset is selected
+      if (selectedLoraPresetId === editingLoraPresetId) {
+        setLoraUrl(editLoraPresetUrl);
+        setLoraSteps(editLoraPresetSteps);
+      }
+    } catch (error: any) {
+      console.error("Error updating LoRA preset:", error);
+      toast.error("Erreur lors de la mise à jour");
+    } finally {
+      setIsUpdatingLoraPreset(false);
+    }
+  };
+
+  const handleOpenDuplicateLoraPreset = (presetId: string) => {
+    const preset = loraPresets.find(p => p.id === presetId);
+    if (preset) {
+      setEditingLoraPresetId(presetId);
+      setDuplicateLoraPresetName(`${preset.name} (copie)`);
+      setDuplicateLoraPresetDialogOpen(true);
+      setLoraPresetPopoverOpen(false);
+    }
+  };
+
+  const handleDuplicateLoraPreset = async () => {
+    if (!editingLoraPresetId || !duplicateLoraPresetName.trim()) {
+      toast.error("Veuillez entrer un nom pour le preset");
+      return;
+    }
+
+    const preset = loraPresets.find(p => p.id === editingLoraPresetId);
+    if (!preset) return;
+
+    setIsDuplicatingLoraPreset(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Non authentifié");
+
+      const { error } = await supabase
+        .from("lora_presets")
+        .insert({
+          user_id: user.id,
+          name: duplicateLoraPresetName.trim(),
+          lora_url: preset.lora_url,
+          lora_steps: preset.lora_steps,
+        });
+
+      if (error) throw error;
+
+      toast.success("Preset LoRA dupliqué !");
+      setDuplicateLoraPresetDialogOpen(false);
+      setEditingLoraPresetId(null);
+      setDuplicateLoraPresetName("");
+      await loadLoraPresets();
+    } catch (error: any) {
+      console.error("Error duplicating LoRA preset:", error);
+      toast.error("Erreur lors de la duplication");
+    } finally {
+      setIsDuplicatingLoraPreset(false);
     }
   };
 
@@ -232,7 +343,8 @@ export const ProjectConfigurationModal = ({
 
       toast.success("Preset LoRA sauvegardé !");
       setNewLoraPresetName("");
-      loadLoraPresets();
+      setSaveLoraPresetDialogOpen(false);
+      await loadLoraPresets();
     } catch (error: any) {
       console.error("Error saving LoRA preset:", error);
       toast.error("Erreur lors de la sauvegarde");
@@ -242,6 +354,13 @@ export const ProjectConfigurationModal = ({
   };
 
   const handleDeleteLoraPreset = async (presetId: string) => {
+    const preset = loraPresets.find(p => p.id === presetId);
+    if (!preset) return;
+
+    if (!confirm(`Voulez-vous vraiment supprimer le preset LoRA "${preset.name}" ?`)) {
+      return;
+    }
+
     try {
       const { error } = await supabase
         .from("lora_presets")
@@ -253,8 +372,10 @@ export const ProjectConfigurationModal = ({
       toast.success("Preset LoRA supprimé !");
       if (selectedLoraPresetId === presetId) {
         setSelectedLoraPresetId("");
+        setLoraUrl("");
+        setLoraSteps(10);
       }
-      loadLoraPresets();
+      await loadLoraPresets();
     } catch (error: any) {
       console.error("Error deleting LoRA preset:", error);
       toast.error("Erreur lors de la suppression");
@@ -307,16 +428,66 @@ export const ProjectConfigurationModal = ({
 
   const handleAspectRatioChange = (value: string) => {
     setAspectRatio(value);
+    // Use lower resolutions for z-image-turbo and z-image-turbo-lora (max 1440px)
+    const isZImageTurbo = imageModel === 'z-image-turbo' || imageModel === 'z-image-turbo-lora';
     const ratios: Record<string, [number, number]> = {
-      "16:9": [1920, 1080],
-      "9:16": [1080, 1920],
-      "1:1": [1080, 1080],
-      "4:3": [1440, 1080],
+      "16:9": isZImageTurbo ? [1280, 720] : [1920, 1080],
+      "9:16": isZImageTurbo ? [720, 1280] : [1080, 1920],
+      "1:1": [1024, 1024],
+      "4:3": isZImageTurbo ? [1280, 960] : [1440, 1080],
     };
     if (ratios[value]) {
       const [w, h] = ratios[value];
       setImageWidth(w);
       setImageHeight(h);
+    }
+  };
+
+  const handleModelChange = (model: string) => {
+    setImageModel(model);
+    // Adapt dimensions when switching to z-image-turbo or z-image-turbo-lora
+    // Z-Image Turbo cannot generate in 1080p, so use lower resolutions
+    if (model === 'z-image-turbo' || model === 'z-image-turbo-lora') {
+      // Always use standard z-image-turbo resolutions based on aspect ratio
+      switch (aspectRatio) {
+        case "16:9":
+          setImageWidth(1280);
+          setImageHeight(720);
+          break;
+        case "9:16":
+          setImageWidth(720);
+          setImageHeight(1280);
+          break;
+        case "1:1":
+          setImageWidth(1024);
+          setImageHeight(1024);
+          break;
+        case "4:3":
+          setImageWidth(1280);
+          setImageHeight(960);
+          break;
+      }
+      toast.info("Dimensions ajustées pour Z-Image Turbo (max 720p)");
+    } else if (model === 'seedream-4.0' || model === 'seedream-4.5') {
+      // SeedDream can handle HD, restore HD resolutions based on aspect ratio
+      switch (aspectRatio) {
+        case "16:9":
+          setImageWidth(1920);
+          setImageHeight(1080);
+          break;
+        case "9:16":
+          setImageWidth(1080);
+          setImageHeight(1920);
+          break;
+        case "1:1":
+          setImageWidth(1024);
+          setImageHeight(1024);
+          break;
+        case "4:3":
+          setImageWidth(1440);
+          setImageHeight(1080);
+          break;
+      }
     }
   };
 
@@ -510,7 +681,7 @@ export const ProjectConfigurationModal = ({
         <div className="space-y-4">
           <div className="space-y-2">
             <Label>Modèle de génération</Label>
-            <Select value={imageModel} onValueChange={setImageModel}>
+            <Select value={imageModel} onValueChange={handleModelChange}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
@@ -537,35 +708,110 @@ export const ProjectConfigurationModal = ({
               
               {/* Load LoRA preset */}
               <div className="space-y-2">
-                <Label className="text-xs">Charger un preset LoRA</Label>
+                <Label className="text-xs">Presets LoRA</Label>
                 <div className="flex gap-2">
-                  <Select value={selectedLoraPresetId} onValueChange={handleLoadLoraPreset}>
-                    <SelectTrigger className="flex-1">
-                      <SelectValue placeholder="Sélectionner un preset..." />
-                    </SelectTrigger>
-                    <SelectContent>
+                  <Popover open={loraPresetPopoverOpen} onOpenChange={setLoraPresetPopoverOpen}>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" className="flex-1 justify-between">
+                        <span className="flex items-center gap-2">
+                          <FolderOpen className="h-4 w-4" />
+                          {selectedLoraPresetId 
+                            ? loraPresets.find(p => p.id === selectedLoraPresetId)?.name || "Sélectionner..."
+                            : "Sélectionner un preset..."}
+                        </span>
+                        <ChevronDown className="h-4 w-4 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[--radix-popover-trigger-width] p-0 rounded-lg overflow-hidden" align="start">
                       {loraPresets.length === 0 ? (
-                        <SelectItem value="none" disabled>Aucun preset</SelectItem>
+                        <div className="p-4 text-center text-muted-foreground text-sm">
+                          Aucun preset LoRA sauvegardé
+                        </div>
                       ) : (
-                        loraPresets.map((preset) => (
-                          <SelectItem key={preset.id} value={preset.id}>
-                            {preset.name}
-                          </SelectItem>
-                        ))
+                        <div className="max-h-[300px] overflow-auto">
+                          {loraPresets.map((preset) => (
+                            <div 
+                              key={preset.id}
+                              className={`flex items-center justify-between px-3 py-2 hover:bg-accent cursor-pointer group ${
+                                selectedLoraPresetId === preset.id ? "bg-accent" : ""
+                              }`}
+                            >
+                              <span 
+                                className="flex-1 truncate"
+                                onClick={() => handleLoadLoraPreset(preset.id)}
+                              >
+                                {preset.name}
+                              </span>
+                              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <Button 
+                                  variant="ghost" 
+                                  size="icon"
+                                  className="h-7 w-7"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleOpenEditLoraPreset(preset.id);
+                                  }}
+                                  title="Modifier"
+                                >
+                                  <Pencil className="h-3.5 w-3.5" />
+                                </Button>
+                                <Button 
+                                  variant="ghost" 
+                                  size="icon"
+                                  className="h-7 w-7"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleOpenDuplicateLoraPreset(preset.id);
+                                  }}
+                                  title="Dupliquer"
+                                >
+                                  <Copy className="h-3.5 w-3.5" />
+                                </Button>
+                                <Button 
+                                  variant="ghost" 
+                                  size="icon"
+                                  className="h-7 w-7"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteLoraPreset(preset.id);
+                                  }}
+                                  title="Supprimer"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                                </Button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
                       )}
-                    </SelectContent>
-                  </Select>
-                  {selectedLoraPresetId && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => handleDeleteLoraPreset(selectedLoraPresetId)}
-                      className="text-destructive hover:text-destructive"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  )}
+                    </PopoverContent>
+                  </Popover>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      if (loraUrl.trim() && loraSteps > 0) {
+                        setNewLoraPresetName("");
+                        setSaveLoraPresetDialogOpen(true);
+                      } else {
+                        toast.error("Veuillez d'abord configurer l'URL et les steps");
+                      }
+                    }}
+                    disabled={!loraUrl.trim()}
+                  >
+                    <Save className="h-4 w-4 mr-2" />
+                    Sauvegarder
+                  </Button>
                 </div>
+                {selectedLoraPresetId && (
+                  <div className="mt-2 p-2 bg-primary/10 border border-primary/30 rounded-md">
+                    <div className="flex items-center gap-2 text-sm">
+                      <span className="text-muted-foreground">Preset actif :</span>
+                      <span className="font-medium text-primary">
+                        {loraPresets.find(p => p.id === selectedLoraPresetId)?.name}
+                      </span>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="space-y-2">
@@ -574,6 +820,7 @@ export const ProjectConfigurationModal = ({
                   value={loraUrl}
                   onChange={(e) => setLoraUrl(e.target.value)}
                   placeholder="https://huggingface.co/.../resolve/main/model.safetensors"
+                  className="break-all"
                 />
                 <p className="text-xs text-muted-foreground">
                   URL publique vers votre fichier .safetensors sur HuggingFace
@@ -593,33 +840,6 @@ export const ProjectConfigurationModal = ({
                 </p>
               </div>
               
-              {/* Save as new LoRA preset */}
-              <div className="pt-3 border-t space-y-2">
-                <Label className="text-xs">Sauvegarder comme preset</Label>
-                <div className="flex gap-2">
-                  <Input
-                    value={newLoraPresetName}
-                    onChange={(e) => setNewLoraPresetName(e.target.value)}
-                    placeholder="Nom du preset..."
-                    className="flex-1"
-                  />
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleSaveLoraPreset}
-                    disabled={isSavingLoraPreset || !loraUrl.trim()}
-                  >
-                    {isSavingLoraPreset ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <>
-                        <Save className="h-4 w-4 mr-1" />
-                        Sauver
-                      </>
-                    )}
-                  </Button>
-                </div>
-              </div>
             </div>
           )}
           <div className="space-y-2">
@@ -815,6 +1035,153 @@ export const ProjectConfigurationModal = ({
           )}
         </div>
       </div>
+
+      {/* Save LoRA Preset Dialog */}
+      <Dialog open={saveLoraPresetDialogOpen} onOpenChange={setSaveLoraPresetDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Sauvegarder le preset LoRA</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="lora-preset-name">Nom du preset</Label>
+              <Input
+                id="lora-preset-name"
+                placeholder="Ex: Mon LoRA personnalisé"
+                value={newLoraPresetName}
+                onChange={(e) => setNewLoraPresetName(e.target.value)}
+              />
+            </div>
+            <div className="p-4 bg-muted rounded-lg text-sm">
+              <p className="font-medium mb-2">Configuration actuelle :</p>
+              <ul className="space-y-1 text-muted-foreground">
+                <li className="break-words">
+                  <span className="font-medium">URL :</span>{" "}
+                  <span className="break-all">{loraUrl || "Non définie"}</span>
+                </li>
+                <li>
+                  <span className="font-medium">Steps :</span> {loraSteps}
+                </li>
+              </ul>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSaveLoraPresetDialogOpen(false)}>
+              Annuler
+            </Button>
+            <Button onClick={handleSaveLoraPreset} disabled={isSavingLoraPreset || !newLoraPresetName.trim() || !loraUrl.trim()}>
+              {isSavingLoraPreset ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Sauvegarde...
+                </>
+              ) : (
+                <>
+                  <Save className="mr-2 h-4 w-4" />
+                  Sauvegarder
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit LoRA Preset Dialog */}
+      <Dialog open={editLoraPresetDialogOpen} onOpenChange={setEditLoraPresetDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Modifier le preset LoRA</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="edit-lora-preset-name">Nom du preset</Label>
+              <Input
+                id="edit-lora-preset-name"
+                placeholder="Ex: Mon LoRA personnalisé"
+                value={editLoraPresetName}
+                onChange={(e) => setEditLoraPresetName(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-lora-preset-url">URL du LoRA</Label>
+              <Input
+                id="edit-lora-preset-url"
+                placeholder="https://huggingface.co/.../resolve/main/model.safetensors"
+                value={editLoraPresetUrl}
+                onChange={(e) => setEditLoraPresetUrl(e.target.value)}
+                className="break-all"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-lora-preset-steps">Nombre de steps</Label>
+              <Input
+                id="edit-lora-preset-steps"
+                type="number"
+                min={4}
+                max={50}
+                value={editLoraPresetSteps}
+                onChange={(e) => setEditLoraPresetSteps(parseInt(e.target.value) || 10)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditLoraPresetDialogOpen(false)}>
+              Annuler
+            </Button>
+            <Button onClick={handleUpdateLoraPreset} disabled={isUpdatingLoraPreset || !editLoraPresetName.trim() || !editLoraPresetUrl.trim()}>
+              {isUpdatingLoraPreset ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Mise à jour...
+                </>
+              ) : (
+                <>
+                  <Save className="mr-2 h-4 w-4" />
+                  Enregistrer
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Duplicate LoRA Preset Dialog */}
+      <Dialog open={duplicateLoraPresetDialogOpen} onOpenChange={setDuplicateLoraPresetDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Dupliquer le preset LoRA</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="duplicate-lora-preset-name">Nom du nouveau preset</Label>
+              <Input
+                id="duplicate-lora-preset-name"
+                placeholder="Ex: Mon LoRA personnalisé (copie)"
+                value={duplicateLoraPresetName}
+                onChange={(e) => setDuplicateLoraPresetName(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDuplicateLoraPresetDialogOpen(false)}>
+              Annuler
+            </Button>
+            <Button onClick={handleDuplicateLoraPreset} disabled={isDuplicatingLoraPreset || !duplicateLoraPresetName.trim()}>
+              {isDuplicatingLoraPreset ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Duplication...
+                </>
+              ) : (
+                <>
+                  <Copy className="mr-2 h-4 w-4" />
+                  Dupliquer
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

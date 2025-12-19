@@ -82,13 +82,13 @@ export function SceneGrid({
   };
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-4">
       {/* Desktop headers */}
-      <div className="hidden md:grid md:grid-cols-[auto_1fr_1fr_auto_auto] md:items-center gap-3 px-3 py-2 text-xs font-medium text-muted-foreground border-b">
+      <div className="hidden md:grid md:grid-cols-[auto_1fr_1fr_300px_auto] md:items-center gap-4 px-3 py-2 text-xs font-medium text-muted-foreground border-b">
         <span className="w-16">Scène</span>
         <span>Texte</span>
         <span>Prompt</span>
-        <span className="w-24 text-center">Image</span>
+        <span className="text-center">Image</span>
         <span className="w-8"></span>
       </div>
       {items.map((item, index) => {
@@ -105,7 +105,7 @@ export function SceneGrid({
         return (
           <Card
             key={index}
-            className="p-3 grid gap-3 grid-cols-1 md:grid-cols-[auto_1fr_1fr_auto_auto] md:items-start"
+            className="p-4 grid gap-4 grid-cols-1 md:grid-cols-[auto_1fr_1fr_300px_auto] md:items-start"
           >
             {/* Header: Number + Timing (always visible) */}
             <div className="flex items-center gap-3 md:flex-col md:items-start md:gap-1">
@@ -149,7 +149,7 @@ export function SceneGrid({
               </div>
               {prompt?.prompt ? (
                 <div className="group relative">
-                  <p className="text-sm text-muted-foreground line-clamp-3">
+                  <p className="text-sm text-muted-foreground whitespace-pre-wrap break-words">
                     {prompt.prompt}
                   </p>
                   <div
@@ -222,38 +222,38 @@ export function SceneGrid({
             </div>
 
             {/* Image */}
-            <div className="w-full md:w-24">
+            <div className="w-full md:w-[300px]">
               {prompt?.imageUrl ? (
-                <div className="group relative aspect-video md:aspect-square w-full overflow-hidden rounded-lg">
+                <div className="group relative aspect-video w-full overflow-hidden rounded-lg bg-muted">
                   <img
                     src={prompt.imageUrl}
                     alt={`Scene ${index + 1}`}
-                    className="w-full h-full object-cover cursor-pointer"
+                    className="w-full h-full object-contain cursor-pointer"
                     onClick={() => setImagePreviewUrl(prompt.imageUrl || null)}
                   />
-                  <div className="absolute top-1 right-1 flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     <Button
                       variant="secondary"
                       size="sm"
-                      className="h-6 w-6 p-0"
+                      className="h-7 w-7 p-0"
                       onClick={() => triggerFileUpload(index)}
                       disabled={generatingImageIndex === index}
                       title="Importer une image"
                     >
-                      <Upload className="h-3 w-3" />
+                      <Upload className="h-3.5 w-3.5" />
                     </Button>
                     <Button
                       variant="secondary"
                       size="sm"
-                      className="h-6 w-6 p-0"
+                      className="h-7 w-7 p-0"
                       onClick={() => setConfirmRegenerateImage(index)}
                       disabled={generatingImageIndex === index}
                       title="Régénérer l'image"
                     >
                       {generatingImageIndex === index ? (
-                        <Loader2 className="h-3 w-3 animate-spin" />
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
                       ) : (
-                        <RefreshCw className="h-3 w-3" />
+                        <RefreshCw className="h-3.5 w-3.5" />
                       )}
                     </Button>
                   </div>

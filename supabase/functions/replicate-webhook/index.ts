@@ -354,13 +354,16 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
       .sort((a: any, b: any) => (a.thumbnail_index || 0) - (b.thumbnail_index || 0));
 
     if (thumbnailPredictions.length > 0) {
-      // Get preset name from job metadata
+      // Get preset name and thumbnail project id from job metadata
       const presetName = job.metadata?.presetName || null;
+      const thumbnailProjectId = job.metadata?.thumbnailProjectId || null;
+      const isStandalone = job.metadata?.standalone === true;
       
       const { error: saveError } = await adminClient
         .from('generated_thumbnails')
         .insert({
-          project_id: job.project_id,
+          project_id: isStandalone ? null : job.project_id,
+          thumbnail_project_id: thumbnailProjectId,
           user_id: job.user_id,
           thumbnail_urls: thumbnailPredictions.map((p: any) => p.result_url),
           prompts: thumbnailPredictions.map((p: any) => p.metadata?.prompt || ''),
@@ -370,7 +373,7 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
       if (saveError) {
         console.error("Error saving thumbnails to history:", saveError);
       } else {
-        console.log(`Saved ${thumbnailPredictions.length} thumbnails to history (preset: ${presetName || 'none'})`);
+        console.log(`Saved ${thumbnailPredictions.length} thumbnails to history (preset: ${presetName || 'none'}, thumbnailProjectId: ${thumbnailProjectId || 'none'})`);
       }
     }
   }

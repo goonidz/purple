@@ -31,7 +31,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Upload, X, Loader2, Image as ImageIcon, RefreshCw, Settings, Download, User as UserIcon, Video, Type, Sparkles, Check, Copy, FolderOpen, Pencil, AlertCircle, FileText, ArrowUp, MonitorPlay, Cloud, Trash2, Hash } from "lucide-react";
+import { Upload, X, Loader2, Image as ImageIcon, RefreshCw, Settings, Download, Video, Type, Check, Copy, FolderOpen, Pencil, AlertCircle, FileText, ArrowUp, MonitorPlay, Cloud, Trash2, Hash, Play, Sparkles, User as UserIcon, CheckCircle2, Clock } from "lucide-react";
+import AppHeader from "@/components/AppHeader";
 import { ProjectConfigurationModal } from "@/components/ProjectConfigurationModal";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -65,7 +66,10 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useGenerationJobs, GenerationJob } from "@/hooks/useGenerationJobs";
-import { ActiveJobsBanner } from "@/components/JobProgressIndicator";
+import { useVideoRenderJobs, VideoRenderJob } from "@/hooks/useVideoRenderJobs";
+import { ActiveJobsBanner, ActiveVideoRenderJobsBanner } from "@/components/JobProgressIndicator";
+import { ExportPathPresetManager } from "@/components/ExportPathPresetManager";
+import { renderVideo, type SubtitleSettings as RenderSubtitleSettings } from "@/lib/videoRender";
 
 // TranscriptSegment, TranscriptData, and Scene are imported from @/lib/sceneParser
 
@@ -136,8 +140,10 @@ const Index = () => {
   const [exportFormat, setExportFormat] = useState<ExportFormat>("premiere-xml");
   const [exportMode, setExportMode] = useState<ExportMode>("with-images");
   const [exportFramerate, setExportFramerate] = useState<number>(25);
+  const [exportEffectType, setExportEffectType] = useState<'zoom' | 'pan'>('zoom');
   const [exportBasePath, setExportBasePath] = useState<string>("");
   const [isExporting, setIsExporting] = useState(false);
+  const [isRendering, setIsRendering] = useState(false);
   const [audioUrl, setAudioUrl] = useState<string>("");
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [isUploadingAudio, setIsUploadingAudio] = useState(false);
@@ -162,6 +168,11 @@ const Index = () => {
   // Ref to store thumbnail preset ID for semi-auto mode
   const thumbnailPresetIdRef = useRef<string | null>(null);
 
+  // Set page title based on project name
+  useEffect(() => {
+    document.title = projectName ? `${projectName} | VideoFlow` : "Projet | VideoFlow";
+  }, [projectName]);
+
   // Use ref for currentProjectId to avoid stale closures in callbacks
   const currentProjectIdRef = useRef(currentProjectId);
   useEffect(() => {
@@ -173,39 +184,63 @@ const Index = () => {
 
   // Background job management
   const handleJobComplete = useCallback((job: GenerationJob) => {
-    const messages: Record<string, string> = {
-      'transcription': 'Transcription terminée !',
-      'prompts': 'Prompts générés en arrière-plan !',
-      'images': 'Images générées en arrière-plan !',
-      'thumbnails': 'Miniatures générées en arrière-plan !',
-      'test_images': 'Test des 2 premières scènes terminé !',
-      'single_prompt': 'Prompt généré !',
-      'single_image': 'Image générée !'
-    };
-    toast.success(messages[job.job_type] || 'Génération terminée !');
-    
     // Check if semi-auto mode is enabled and chain next job
-    const metadata = job.metadata as { semiAutoMode?: boolean; thumbnailPresetId?: string } | null;
+    const metadata = job.metadata as { semiAutoMode?: boolean; thumbnailPresetId?: string; remainingAfterChunk?: number } | null;
     const isSemiAuto = metadata?.semiAutoMode === true;
     const thumbnailPresetId = metadata?.thumbnailPresetId || thumbnailPresetIdRef.current;
+    const remainingAfterChunk = metadata?.remainingAfterChunk ?? 0;
+    
+    // For chunked jobs (prompts/images), only show completion notification on last chunk
+    const isLastChunk = remainingAfterChunk === 0;
+    
+    // Show progress for intermediate chunks, full notification only for last chunk
+    if (job.job_type === 'prompts' || job.job_type === 'images') {
+      if (!isLastChunk) {
+        // Intermediate chunk - don't show final notification yet
+        console.log(`${job.job_type} chunk complete, ${remainingAfterChunk} remaining`);
+      } else {
+        // Last chunk - show notification
+        const messages: Record<string, string> = {
+          'prompts': 'Prompts générés en arrière-plan !',
+          'images': 'Images générées en arrière-plan !'
+        };
+        toast.success(messages[job.job_type]);
+      }
+    } else {
+      // Non-chunked jobs - always show notification
+      const messages: Record<string, string> = {
+        'transcription': 'Transcription terminée !',
+        'thumbnails': 'Miniatures générées en arrière-plan !',
+        'test_images': 'Test des 2 premières scènes terminé !',
+        'single_prompt': 'Prompt généré !',
+        'single_image': 'Image générée !'
+      };
+      toast.success(messages[job.job_type] || 'Génération terminée !');
+    }
     
     // Reset generating states
     if (job.job_type === 'prompts') {
-      setIsGeneratingPrompts(false);
+      // Only reset if last chunk
+      if (isLastChunk) {
+        setIsGeneratingPrompts(false);
+      }
       
-      // Semi-auto: backend already chains to images job, just update UI state
-      if (isSemiAuto) {
+      // Semi-auto: backend already chains to images job, just update UI state (only on last chunk)
+      if (isSemiAuto && isLastChunk) {
         toast.info("Génération des images en cours...");
         setIsGeneratingImages(true);
       }
     } else if (job.job_type === 'images') {
-      setIsGeneratingImages(false);
-      
-      // Semi-auto: backend already chains to thumbnails job if preset is set
-      if (isSemiAuto && thumbnailPresetId) {
-        toast.info("Génération des miniatures en cours...");
-      } else if (isSemiAuto && !thumbnailPresetId) {
-        toast.success("🎉 Génération semi-automatique terminée (sans miniatures - aucun preset sélectionné) !");
+      // Only reset and show semi-auto notification if last chunk
+      if (isLastChunk) {
+        setIsGeneratingImages(false);
+        
+        // Semi-auto: backend already chains to thumbnails job if preset is set
+        if (isSemiAuto && thumbnailPresetId) {
+          toast.info("Génération des miniatures en cours...");
+        } else if (isSemiAuto && !thumbnailPresetId) {
+          toast.success("🎉 Génération semi-automatique terminée (sans miniatures - aucun preset sélectionné) !");
+        }
       }
     } else if (job.job_type === 'thumbnails') {
       // Semi-auto complete!
@@ -293,6 +328,20 @@ const Index = () => {
     onJobComplete: handleJobComplete,
     onJobFailed: handleJobFailed
   });
+
+  const {
+    activeJobs: activeVideoRenderJobs,
+    allJobs: allVideoRenderJobs,
+    refreshJobs: refreshVideoRenderJobs,
+  } = useVideoRenderJobs({
+    projectId: currentProjectId,
+  });
+
+  // Debug logs
+  useEffect(() => {
+    console.log('Active video render jobs:', activeVideoRenderJobs.length, activeVideoRenderJobs);
+    console.log('All video render jobs:', allVideoRenderJobs.length, allVideoRenderJobs);
+  }, [activeVideoRenderJobs, allVideoRenderJobs]);
 
   // Keep startJobRef updated so handleJobComplete can use it
   useEffect(() => {
@@ -386,7 +435,11 @@ const Index = () => {
   // Load project data when project is selected
   useEffect(() => {
     if (currentProjectId) {
+      console.log("Loading project data for:", currentProjectId);
       loadProjectData(currentProjectId);
+    } else {
+      // Reset loaded flag when no project is selected
+      projectDataLoadedRef.current = false;
     }
   }, [currentProjectId]);
 
@@ -508,7 +561,11 @@ const Index = () => {
       
       // Load transcript data
       if (data.transcript_json) {
+        console.log("Loading transcript data, scenes count:", (data.scenes as any[])?.length || 0);
         setTranscriptData(data.transcript_json as unknown as TranscriptData);
+      } else {
+        console.log("No transcript data found in project");
+        setTranscriptData(null);
       }
       
       const prompts = (data.example_prompts as string[]) || ["", "", ""];
@@ -575,6 +632,8 @@ const Index = () => {
     } catch (error: any) {
       console.error("Error loading project:", error);
       toast.error("Erreur lors du chargement du projet");
+      // Mark as loaded even on error so UI can render
+      projectDataLoadedRef.current = true;
     }
   };
 
@@ -726,11 +785,8 @@ const Index = () => {
       
       const generatedScenes = parseTranscriptToScenes(
         data,
-        sceneDuration0to1,
-        sceneDuration1to3,
-        sceneDuration3plus,
-        range1End,
-        range2End,
+        durationRanges,
+        undefined, undefined, undefined, undefined,
         preferSentenceBoundaries
       );
       
@@ -836,13 +892,47 @@ const Index = () => {
   const handleModelChange = (model: string) => {
     setImageModel(model);
     // Adapt dimensions when switching to z-image-turbo or z-image-turbo-lora
+    // Z-Image Turbo cannot generate in 1080p, so use lower resolutions
     if (model === 'z-image-turbo' || model === 'z-image-turbo-lora') {
-      const MAX_DIM = 1440;
-      if (imageWidth > MAX_DIM || imageHeight > MAX_DIM) {
-        const scale = Math.min(MAX_DIM / imageWidth, MAX_DIM / imageHeight);
-        setImageWidth(Math.floor(imageWidth * scale));
-        setImageHeight(Math.floor(imageHeight * scale));
-        toast.info("Dimensions ajustées pour Z-Image Turbo (max 1440px)");
+      // Always use standard z-image-turbo resolutions based on aspect ratio
+      switch (aspectRatio) {
+        case "16:9":
+          setImageWidth(1280);
+          setImageHeight(720);
+          break;
+        case "9:16":
+          setImageWidth(720);
+          setImageHeight(1280);
+          break;
+        case "1:1":
+          setImageWidth(1024);
+          setImageHeight(1024);
+          break;
+        case "4:3":
+          setImageWidth(1280);
+          setImageHeight(960);
+          break;
+      }
+      toast.info("Dimensions ajustées pour Z-Image Turbo (max 720p)");
+    } else if (model === 'seedream-4.0' || model === 'seedream-4.5') {
+      // SeedDream can handle HD, restore HD resolutions based on aspect ratio
+      switch (aspectRatio) {
+        case "16:9":
+          setImageWidth(1920);
+          setImageHeight(1080);
+          break;
+        case "9:16":
+          setImageWidth(1080);
+          setImageHeight(1920);
+          break;
+        case "1:1":
+          setImageWidth(1024);
+          setImageHeight(1024);
+          break;
+        case "4:3":
+          setImageWidth(1440);
+          setImageHeight(1080);
+          break;
       }
     }
   };
@@ -1046,6 +1136,33 @@ const Index = () => {
     
     setEditingPromptIndex(null);
     setEditingPromptText("");
+  };
+
+  // Update prompt from VideoPreview component
+  const updatePromptFromPreview = async (sceneIndex: number, newPrompt: string) => {
+    const updatedPrompts = [...generatedPrompts];
+    updatedPrompts[sceneIndex] = {
+      ...updatedPrompts[sceneIndex],
+      prompt: newPrompt
+    };
+    
+    setGeneratedPrompts(updatedPrompts);
+    
+    // Persist to database
+    if (currentProjectId) {
+      try {
+        const { error } = await supabase
+          .from("projects")
+          .update({ prompts: updatedPrompts as any })
+          .eq("id", currentProjectId);
+        
+        if (error) throw error;
+        toast.success("Prompt sauvegardé");
+      } catch (error) {
+        console.error("Error saving prompt:", error);
+        toast.error("Erreur lors de la sauvegarde du prompt");
+      }
+    }
   };
 
   const handleEditScene = (index: number) => {
@@ -1474,6 +1591,123 @@ const Index = () => {
     }
   };
 
+  const handleRenderVideo = async () => {
+    if (!currentProjectId) {
+      toast.error("Aucun projet sélectionné");
+      return;
+    }
+
+    // Verify user is authenticated
+    const { data: { user: currentUser }, error: authError } = await supabase.auth.getUser();
+    if (authError || !currentUser) {
+      toast.error("Vous devez être connecté pour rendre une vidéo");
+      return;
+    }
+
+    if (generatedPrompts.length === 0) {
+      toast.error("Aucune scène à rendre");
+      return;
+    }
+
+    // Check for missing images
+    const missingImages = generatedPrompts.filter(p => p && p.prompt && !p.imageUrl);
+    if (missingImages.length > 0) {
+      toast.error(`${missingImages.length} scène(s) n'ont pas d'images. Générez les images manquantes d'abord.`);
+      return;
+    }
+
+    if (!audioUrl) {
+      toast.error("Aucun fichier audio disponible. Uploadez un fichier audio d'abord.");
+      return;
+    }
+
+    setIsRendering(true);
+
+    try {
+      // Subtitles disabled - Ken Burns effect enabled
+      const result = await renderVideo({
+        projectId: currentProjectId!,
+        framerate: exportFramerate,
+        width: imageWidth,
+        height: imageHeight,
+        effectType: exportEffectType,
+        subtitleSettings: {
+          enabled: false,
+          fontSize: 18,
+          fontFamily: 'Arial, sans-serif',
+          color: '#ffffff',
+          backgroundColor: '#000000',
+          opacity: 0.8,
+          textShadow: '2px 2px 4px rgba(0,0,0,0.8)',
+          x: 50,
+          y: 85
+        },
+      });
+
+      if (result.success && result.jobId && result.statusUrl) {
+        // Fallback: Create job in database if Edge Function didn't create it
+        // (This can happen if there was an error during insertion)
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user && currentProjectId) {
+          const { data: existingJob } = await supabase
+            .from('video_render_jobs')
+            .select('id')
+            .eq('job_id', result.jobId)
+            .eq('project_id', currentProjectId)
+            .single();
+
+          if (!existingJob) {
+            console.log('Creating video render job in database (fallback)...');
+            const { data: newJob, error: insertError } = await supabase
+              .from('video_render_jobs')
+              .insert({
+                project_id: currentProjectId,
+                user_id: user.id,
+                status: 'pending',
+                progress: 0,
+                job_id: result.jobId,
+                status_url: result.statusUrl,
+                steps: [],
+                current_step: null,
+                metadata: {
+                  framerate: exportFramerate,
+                  width: imageWidth,
+                  height: imageHeight,
+                },
+              })
+              .select()
+              .single();
+
+            if (insertError) {
+              console.error('❌ Failed to create job in database (fallback):', insertError);
+              console.error('Error code:', insertError.code);
+              console.error('Error message:', insertError.message);
+              console.error('Error details:', JSON.stringify(insertError, null, 2));
+              toast.error(`Erreur lors de la création du job: ${insertError.message}`);
+            } else {
+              console.log('✅ Job created successfully (fallback):', newJob?.id);
+              // Force a refresh of jobs to ensure it's picked up immediately
+              setTimeout(() => {
+                refreshVideoRenderJobs();
+              }, 500);
+            }
+          } else {
+            console.log('Job already exists in database:', existingJob.id);
+          }
+        }
+
+        toast.success("Rendu vidéo démarré. Vous pouvez quitter cette page.");
+      } else {
+        toast.error(result.error || "Erreur lors du démarrage du rendu vidéo");
+      }
+    } catch (error: any) {
+      console.error("Error rendering video:", error);
+      toast.error(error.message || "Erreur lors du rendu vidéo");
+    } finally {
+      setIsRendering(false);
+    }
+  };
+
   const handleLoadPreset = async (preset: {
     name: string;
     scene_duration_0to1: number;
@@ -1541,11 +1775,8 @@ const Index = () => {
     try {
       const generatedScenes = parseTranscriptToScenes(
         transcriptData,
-        sceneDuration0to1,
-        sceneDuration1to3,
-        sceneDuration3plus,
-        range1End,
-        range2End,
+        durationRanges,
+        undefined, undefined, undefined, undefined,
         preferSentenceBoundaries
       );
       
@@ -1567,82 +1798,71 @@ const Index = () => {
     );
   }
 
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-secondary/5">
-      <div className="border-b bg-background/80 backdrop-blur-sm sticky top-0 z-10">
-        <div className="container mx-auto px-2 sm:px-4 py-3 sm:py-4">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-4">
-            <div className="flex items-center gap-2 sm:gap-4 min-w-0">
-              <Link to="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity flex-shrink-0">
-                <div className="flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-primary/60">
-                  <Sparkles className="h-4 w-4 sm:h-5 sm:w-5 text-primary-foreground" />
-                </div>
-                <span className="text-lg sm:text-xl font-bold bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent hidden xs:inline">
-                  VidéoFlow
-                </span>
-              </Link>
-              {currentProjectId && projectName && (
-                <>
-                  <span className="text-muted-foreground hidden sm:inline">/</span>
-                  {isEditingProjectName ? (
-                    <div className="flex items-center gap-2 flex-1 min-w-0">
-                      <Input
-                        value={editingProjectNameValue}
-                        onChange={(e) => setEditingProjectNameValue(e.target.value)}
-                        className="h-8 w-full sm:w-64"
-                        autoFocus
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            handleSaveProjectName();
-                          }
-                          if (e.key === "Escape") {
-                            setIsEditingProjectName(false);
-                            setEditingProjectNameValue("");
-                          }
-                        }}
-                      />
-                      <Button size="sm" onClick={handleSaveProjectName} className="flex-shrink-0">Enregistrer</Button>
-                      <Button size="sm" variant="ghost" onClick={() => {
-                        setIsEditingProjectName(false);
-                        setEditingProjectNameValue("");
-                      }} className="flex-shrink-0">Annuler</Button>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-2 group min-w-0">
-                      <h1 className="text-sm sm:text-lg font-semibold truncate">{projectName}</h1>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
-                        onClick={() => {
-                          setEditingProjectNameValue(projectName);
-                          setIsEditingProjectName(true);
-                        }}
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-            <div className="flex items-center gap-2 sm:gap-4 flex-shrink-0">
-              <Button variant="outline" size="sm" asChild className="text-xs sm:text-sm">
-                <Link to="/projects">
-                  <FolderOpen className="h-4 w-4 sm:mr-2" />
-                  <span className="hidden sm:inline">Mes projets</span>
-                </Link>
-              </Button>
-              <Button variant="outline" size="sm" asChild className="text-xs sm:text-sm">
-                <Link to="/profile">
-                  <UserIcon className="h-4 w-4 sm:mr-2" />
-                  <span className="hidden sm:inline">Profil</span>
-                </Link>
-              </Button>
+  // Show loading state while project is being loaded
+  if (currentProjectId && !projectDataLoadedRef.current) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-secondary/5">
+        <AppHeader />
+        <div className="container mx-auto px-4 py-8 max-w-7xl">
+          <div className="flex items-center justify-center min-h-[60vh]">
+            <div className="text-center">
+              <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto mb-4" />
+              <p className="text-muted-foreground">Chargement du projet...</p>
             </div>
           </div>
         </div>
       </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-secondary/5">
+      <AppHeader>
+        {currentProjectId && projectName && (
+          <>
+            <span className="text-muted-foreground hidden sm:inline">/</span>
+            {isEditingProjectName ? (
+              <div className="flex items-center gap-2 flex-1 min-w-0">
+                <Input
+                  value={editingProjectNameValue}
+                  onChange={(e) => setEditingProjectNameValue(e.target.value)}
+                  className="h-8 w-full sm:w-64"
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      handleSaveProjectName();
+                    }
+                    if (e.key === "Escape") {
+                      setIsEditingProjectName(false);
+                      setEditingProjectNameValue("");
+                    }
+                  }}
+                />
+                <Button size="sm" onClick={handleSaveProjectName} className="flex-shrink-0">Enregistrer</Button>
+                <Button size="sm" variant="ghost" onClick={() => {
+                  setIsEditingProjectName(false);
+                  setEditingProjectNameValue("");
+                }} className="flex-shrink-0">Annuler</Button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 group min-w-0">
+                <h1 className="text-sm sm:text-lg font-semibold truncate">{projectName}</h1>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+                  onClick={() => {
+                    setEditingProjectNameValue(projectName);
+                    setIsEditingProjectName(true);
+                  }}
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            )}
+          </>
+        )}
+      </AppHeader>
 
       <div className="container mx-auto px-4 py-8 max-w-7xl">
         {!currentProjectId ? (
@@ -1691,21 +1911,71 @@ const Index = () => {
                   <Type className="h-3 w-3 sm:h-4 sm:w-4" />
                   <span className="hidden md:inline">Script</span>
                 </TabsTrigger>
+                <TabsTrigger value="preview" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm px-2 sm:px-3">
+                  <Play className="h-3 w-3 sm:h-4 sm:w-4" />
+                  <span className="hidden md:inline">Aperçu</span>
+                </TabsTrigger>
+                <TabsTrigger value="renders" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm px-2 sm:px-3">
+                  <Video className="h-3 w-3 sm:h-4 sm:w-4" />
+                  <span className="hidden md:inline">Rendu final</span>
+                </TabsTrigger>
               </TabsList>
             </div>
 
             {/* Banner fixe pour les jobs actifs - sticky sous le header */}
-            {activeJobs.length > 0 && (
-              <div className="sticky top-20 z-30 bg-background border rounded-lg p-3 mb-4 shadow-md">
-                <ActiveJobsBanner 
-                  jobs={activeJobs} 
-                  onCancel={cancelJob}
-                />
-              </div>
-            )}
+            {(() => {
+              // Check if there are any non-dismissed completed jobs
+              const hasNonDismissedCompleted = allVideoRenderJobs.some(j => {
+                if (j.status === 'completed') {
+                  if (typeof window !== 'undefined') {
+                    const dismissedKey = `video-render-dismissed-${j.id}`;
+                    return localStorage.getItem(dismissedKey) !== 'true';
+                  }
+                  return true;
+                }
+                return false;
+              });
+              
+              const shouldShowBanner = activeJobs.length > 0 || activeVideoRenderJobs.length > 0 || hasNonDismissedCompleted;
+              
+              if (!shouldShowBanner) return null;
+              
+              return (
+                <div className="sticky top-20 z-30 bg-background border rounded-lg p-3 mb-4 shadow-md space-y-2">
+                  {activeJobs.length > 0 && (
+                    <ActiveJobsBanner 
+                      jobs={activeJobs} 
+                      onCancel={cancelJob}
+                    />
+                  )}
+                  {(activeVideoRenderJobs.length > 0 || hasNonDismissedCompleted) && (
+                    <ActiveVideoRenderJobsBanner 
+                      jobs={allVideoRenderJobs}
+                      onCancel={async (jobId) => {
+                        const { error } = await supabase
+                          .from('video_render_jobs')
+                          .update({ status: 'cancelled' })
+                          .eq('id', jobId);
+                        
+                        if (error) {
+                          console.error('Error cancelling video render job:', error);
+                          toast.error('Erreur lors de l\'annulation du rendu');
+                        } else {
+                          toast.info('Rendu annulé');
+                          // Force immediate refresh to remove cancelled job from UI
+                          setTimeout(() => {
+                            refreshVideoRenderJobs();
+                          }, 100);
+                        }
+                      }}
+                    />
+                  )}
+                </div>
+              );
+            })()}
 
             <TabsContent value="video" className="space-y-6 m-0">
-                {transcriptData && (
+                {transcriptData ? (
                   <Card className="p-4 bg-muted/30 border-primary/20">
                     <div className="flex flex-wrap items-center gap-2 text-sm">
                       <Check className="h-4 w-4 text-primary flex-shrink-0" />
@@ -1716,21 +1986,40 @@ const Index = () => {
                           <span className="text-muted-foreground">Audio chargé</span>
                         </>
                       )}
-                      {scenes.length > 0 && (
-                        <>
-                          <span className="text-muted-foreground hidden sm:inline">•</span>
-                          <span className="text-muted-foreground">{scenes.length} scènes</span>
-                        </>
-                      )}
                       {examplePrompts.some(p => p.trim()) && (
                         <>
                           <span className="text-muted-foreground hidden sm:inline">•</span>
                           <span className="text-muted-foreground">Prompts configurés</span>
                         </>
                       )}
+                      {scenes.length > 0 && (
+                        <>
+                          <span className="text-muted-foreground hidden sm:inline">•</span>
+                          <span className="text-muted-foreground">{scenes.length} scènes</span>
+                        </>
+                      )}
+                      {transcriptData.segments && transcriptData.segments.length > 0 && (
+                        <>
+                          <span className="text-muted-foreground hidden sm:inline">•</span>
+                          <span className="text-muted-foreground">
+                            {transcriptData.segments.map(s => s.text).join(' ').split(/\s+/).filter(w => w).length} mots
+                          </span>
+                          <span className="text-muted-foreground hidden sm:inline">•</span>
+                          <span className="text-muted-foreground">
+                            {Math.floor(transcriptData.segments[transcriptData.segments.length - 1].end_time / 60)}:{String(Math.floor(transcriptData.segments[transcriptData.segments.length - 1].end_time % 60)).padStart(2, '0')}
+                          </span>
+                        </>
+                      )}
                     </div>
                   </Card>
-                )}
+                ) : currentProjectId ? (
+                  <Card className="p-4 bg-muted/30 border-primary/20">
+                    <div className="flex flex-wrap items-center gap-2 text-sm">
+                      <Loader2 className="h-4 w-4 text-primary flex-shrink-0 animate-spin" />
+                      <span className="text-muted-foreground">Chargement de la transcription...</span>
+                    </div>
+                  </Card>
+                ) : null}
 
                 {/* Transcription en cours en arrière-plan */}
                 {!transcriptData && hasActiveJob('transcription') && (
@@ -1916,9 +2205,17 @@ const Index = () => {
                       </Button>
                     </div>
                     <div className="space-y-1 text-xs text-muted-foreground">
-                      <div>0-{range1End}s: {sceneDuration0to1}s par scène</div>
-                      <div>{range1End}-{range2End}s: {sceneDuration1to3}s par scène</div>
-                      <div>{range2End}s+: {sceneDuration3plus}s par scène</div>
+                      {durationRanges.map((range, index) => {
+                        const prevEnd = index > 0 ? durationRanges[index - 1].endSeconds : 0;
+                        const label = range.endSeconds === null 
+                          ? `${prevEnd}s+` 
+                          : index === 0 
+                            ? `0-${range.endSeconds}s`
+                            : `${prevEnd}-${range.endSeconds}s`;
+                        return (
+                          <div key={index}>{label}: {range.sceneDuration}s par scène</div>
+                        );
+                      })}
                     </div>
                     {!scenes.length && generatedPrompts.length === 0 && (
                       <Button
@@ -2010,16 +2307,72 @@ const Index = () => {
                             Scènes générées ({scenes.length > 0 ? scenes.length : generatedPrompts.length})
                             {generatedPrompts.length > 0 && ` - ${generatedPrompts.length} prompts`}
                           </h2>
-                          {generatedPrompts.filter(p => p && p.imageUrl).length > 0 && (
-                            <Button
-                              onClick={() => setExportDialogOpen(true)}
-                              variant="outline"
-                              size="sm"
-                            >
-                              <Download className="mr-2 h-4 w-4" />
-                              Exporter pour montage
-                            </Button>
-                          )}
+                          <div className="flex gap-2">
+                            {generatedPrompts.filter(p => p && p.imageUrl).length > 0 && (
+                              <>
+                                <Button
+                                  onClick={() => setExportDialogOpen(true)}
+                                  variant="outline"
+                                  size="sm"
+                                >
+                                  <Download className="mr-2 h-4 w-4" />
+                                  Exporter pour montage
+                                </Button>
+                                {audioUrl && (
+                                  <>
+                                    <Select 
+                                      value={exportFramerate.toString()} 
+                                      onValueChange={(value) => setExportFramerate(Number(value))}
+                                    >
+                                      <SelectTrigger className="w-[140px] h-9">
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="1">1 fps</SelectItem>
+                                        <SelectItem value="5">5 fps</SelectItem>
+                                        <SelectItem value="10">10 fps</SelectItem>
+                                        <SelectItem value="15">15 fps</SelectItem>
+                                        <SelectItem value="23.976">23.976 fps</SelectItem>
+                                        <SelectItem value="24">24 fps</SelectItem>
+                                        <SelectItem value="25">25 fps</SelectItem>
+                                        <SelectItem value="29.97">29.97 fps</SelectItem>
+                                        <SelectItem value="30">30 fps</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                    <Select 
+                                      value={exportEffectType} 
+                                      onValueChange={(value) => setExportEffectType(value as 'zoom' | 'pan')}
+                                    >
+                                      <SelectTrigger className="w-[140px] h-9">
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="zoom">Zoom (Ken Burns)</SelectItem>
+                                        <SelectItem value="pan">Pan</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                    <Button
+                                      onClick={handleRenderVideo}
+                                      disabled={isRendering}
+                                      size="sm"
+                                    >
+                                      {isRendering ? (
+                                        <>
+                                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                          Rendu en cours...
+                                        </>
+                                      ) : (
+                                        <>
+                                          <Video className="mr-2 h-4 w-4" />
+                                          Rendu vidéo
+                                        </>
+                                      )}
+                                    </Button>
+                                  </>
+                                )}
+                              </>
+                            )}
+                          </div>
                         </div>
                         
                         {/* Boutons d'action - sur une ligne séparée */}
@@ -2398,6 +2751,122 @@ const Index = () => {
                   )}
                 </div>
               </TabsContent>
+
+              <TabsContent value="preview" className="m-0">
+                <div className="max-w-6xl mx-auto">
+                  {audioUrl && generatedPrompts.length > 0 ? (
+                    <VideoPreview
+                      audioUrl={audioUrl}
+                      prompts={generatedPrompts}
+                      autoPlay={false}
+                      onRegeneratePrompt={generateSinglePrompt}
+                      onRegenerateImage={generateImage}
+                      onUpdatePrompt={updatePromptFromPreview}
+                      regeneratingPromptIndex={generatingPromptIndex}
+                      regeneratingImageIndex={generatingImageIndex}
+                    />
+                  ) : (
+                    <Card className="p-12 text-center">
+                      <p className="text-muted-foreground mb-4">
+                        {!audioUrl && "Aucun fichier audio disponible"}
+                        {audioUrl && generatedPrompts.length === 0 && "Aucun prompt généré. Veuillez générer les prompts dans l'onglet Vidéo."}
+                      </p>
+                    </Card>
+                  )}
+                </div>
+              </TabsContent>
+
+              <TabsContent value="renders" className="m-0">
+                <div className="max-w-6xl mx-auto space-y-4">
+                  <Card className="p-6">
+                    <h2 className="text-lg font-semibold mb-4">Historique des rendus</h2>
+                    {allVideoRenderJobs.length === 0 ? (
+                      <p className="text-muted-foreground text-center py-8">
+                        Aucun rendu vidéo pour ce projet.
+                      </p>
+                    ) : (
+                      <div className="space-y-4">
+                        {allVideoRenderJobs.map((job) => (
+                          <Card key={job.id} className="p-4">
+                            <div className="flex items-start justify-between gap-4">
+                              <div className="flex-1 space-y-2">
+                                <div className="flex items-center gap-2">
+                                  {job.status === 'completed' && (
+                                    <CheckCircle2 className="h-5 w-5 text-green-500" />
+                                  )}
+                                  {job.status === 'processing' && (
+                                    <Loader2 className="h-5 w-5 text-primary animate-spin" />
+                                  )}
+                                  {job.status === 'failed' && (
+                                    <AlertCircle className="h-5 w-5 text-destructive" />
+                                  )}
+                                  {job.status === 'pending' && (
+                                    <Clock className="h-5 w-5 text-muted-foreground" />
+                                  )}
+                                  <span className="font-medium">
+                                    Rendu du {new Date(job.created_at).toLocaleString('fr-FR')}
+                                  </span>
+                                </div>
+                                
+                                {job.status === 'processing' && (
+                                  <>
+                                    <Progress value={job.progress || 0} className="h-2" />
+                                    {job.current_step && (
+                                      <p className="text-sm text-muted-foreground">
+                                        {job.current_step}
+                                      </p>
+                                    )}
+                                  </>
+                                )}
+                                
+                                {job.status === 'completed' && job.video_url && (
+                                  <div className="space-y-2">
+                                    <div className="flex gap-2">
+                                      <Button
+                                        onClick={() => window.open(job.video_url!, '_blank')}
+                                        size="sm"
+                                        variant="outline"
+                                      >
+                                        <MonitorPlay className="mr-2 h-4 w-4" />
+                                        Voir la vidéo
+                                      </Button>
+                                      <Button
+                                        onClick={() => {
+                                          const link = document.createElement('a');
+                                          link.href = job.video_url!;
+                                          link.download = `video-${job.id}.mp4`;
+                                          link.click();
+                                        }}
+                                        size="sm"
+                                        variant="outline"
+                                      >
+                                        <Download className="mr-2 h-4 w-4" />
+                                        Télécharger
+                                      </Button>
+                                    </div>
+                                    {job.file_size_mb && (
+                                      <p className="text-xs text-muted-foreground">
+                                        Taille: {job.file_size_mb.toFixed(2)} MB
+                                        {job.duration_seconds && ` • Durée: ${Math.round(job.duration_seconds)}s`}
+                                      </p>
+                                    )}
+                                  </div>
+                                )}
+                                
+                                {job.status === 'failed' && job.error_message && (
+                                  <p className="text-sm text-destructive">
+                                    {job.error_message}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          </Card>
+                        ))}
+                      </div>
+                    )}
+                  </Card>
+                </div>
+              </TabsContent>
             </Tabs>
           )}
 
@@ -2458,6 +2927,7 @@ const Index = () => {
             )}
           </DialogContent>
         </Dialog>
+
 
         {/* Scene settings dialog */}
         <Dialog open={sceneSettingsOpen} onOpenChange={setSceneSettingsOpen}>
@@ -2542,11 +3012,8 @@ const Index = () => {
                     
                     const newScenes = parseTranscriptToScenes(
                       transcriptData,
-                      sceneDuration0to1,
-                      sceneDuration1to3,
-                      sceneDuration3plus,
-                      range1End,
-                      range2End,
+                      durationRanges,
+                      undefined, undefined, undefined, undefined,
                       preferSentenceBoundaries
                     );
                     
@@ -3026,13 +3493,11 @@ Return ONLY the prompt text, no JSON, no title, just the optimized prompt in ENG
                   <div className="space-y-3 pt-2 border-t">
                     <Label className="text-base font-semibold">Chemin du dossier de destination</Label>
                     <p className="text-xs text-muted-foreground mb-2">
-                      Entrez le chemin absolu où vous allez extraire le ZIP. DaVinci/Premiere trouvera automatiquement les médias.
+                      Sélectionnez un preset ou entrez le chemin absolu où vous allez extraire le ZIP.
                     </p>
-                    <Input
-                      value={exportBasePath}
-                      onChange={(e) => setExportBasePath(e.target.value)}
-                      placeholder="/Users/VotreNom/Downloads"
-                      className="font-mono text-sm"
+                    <ExportPathPresetManager
+                      currentPath={exportBasePath}
+                      onPathChange={setExportBasePath}
                     />
                     {exportBasePath && (
                       <p className="text-xs text-muted-foreground">
@@ -3229,16 +3694,19 @@ Return ONLY the prompt text, no JSON, no title, just the optimized prompt in ENG
                   
                   // Update local state with fresh data from duration_ranges or legacy format
                   const projectData = data as any;
+                  let rangesToUse: DurationRange[];
                   if (projectData.duration_ranges && Array.isArray(projectData.duration_ranges) && projectData.duration_ranges.length > 0) {
+                    rangesToUse = projectData.duration_ranges;
                     setDurationRanges(projectData.duration_ranges);
                   } else {
-                    setDurationRanges(convertLegacyToRanges(
+                    rangesToUse = convertLegacyToRanges(
                       data.scene_duration_0to1 || 4,
                       data.scene_duration_1to3 || 6,
                       data.scene_duration_3plus || 8,
                       projectData.range_end_1 || 60,
                       projectData.range_end_2 || 180
-                    ));
+                    );
+                    setDurationRanges(rangesToUse);
                   }
                   
                   if (data.example_prompts) {
@@ -3263,7 +3731,7 @@ Return ONLY the prompt text, no JSON, no title, just the optimized prompt in ENG
                   if (transcriptData) {
                     const generatedScenes = parseTranscriptToScenes(
                       transcriptData,
-                      durationRanges,
+                      rangesToUse, // Use the ranges we just computed, not the stale state
                       undefined,
                       undefined,
                       undefined,
@@ -3273,26 +3741,59 @@ Return ONLY the prompt text, no JSON, no title, just the optimized prompt in ENG
                     setScenes(generatedScenes);
                     
                     // Save scenes to database first
-                    await supabase
+                    const { error: scenesError } = await supabase
                       .from("projects")
                       .update({ scenes: generatedScenes as any })
                       .eq("id", currentProjectId);
+                    
+                    if (scenesError) {
+                      console.error("Error saving scenes:", scenesError);
+                      toast.error("Erreur lors de la sauvegarde des scènes");
+                      return;
+                    }
+                    
+                    // Verify scenes were saved by fetching the project again
+                    const { data: verifyProject, error: verifyError } = await supabase
+                      .from("projects")
+                      .select("scenes")
+                      .eq("id", currentProjectId)
+                      .single();
+                    
+                    if (verifyError || !verifyProject || !verifyProject.scenes || (verifyProject.scenes as any[]).length === 0) {
+                      console.error("Scenes not found after save:", verifyError);
+                      toast.error("Erreur: les scènes n'ont pas été sauvegardées correctement");
+                      return;
+                    }
                     
                     toast.success(`${generatedScenes.length} scènes générées !`);
                     
                     // If semi-auto mode, start automatic generation pipeline
                     if (semiAutoMode) {
+                      console.log("Semi-auto mode: Starting prompts generation...");
+                      console.log("Scenes count:", generatedScenes.length);
+                      console.log("Verified scenes in DB:", (verifyProject.scenes as any[]).length);
+                      console.log("Current project ID:", currentProjectId);
+                      
                       toast.info("Mode semi-automatique activé. Génération des prompts en cours...");
                       
                       // Start prompts job - images will be triggered after prompts complete
-                      const result = await startJob('prompts', { 
-                        regenerate: false,
-                        semiAutoMode: true,
-                        thumbnailPresetId: thumbnailPresetIdRef.current
-                      });
-                      
-                      if (result) {
-                        setIsGeneratingPrompts(true);
+                      try {
+                        const result = await startJob('prompts', { 
+                          regenerate: false,
+                          semiAutoMode: true,
+                          thumbnailPresetId: thumbnailPresetIdRef.current
+                        });
+                        
+                        if (result) {
+                          console.log("Prompts job started successfully:", result.jobId);
+                          setIsGeneratingPrompts(true);
+                        } else {
+                          console.error("Failed to start prompts job - no result returned");
+                          toast.error("Erreur lors du démarrage de la génération des prompts");
+                        }
+                      } catch (error) {
+                        console.error("Error starting prompts job:", error);
+                        toast.error(`Erreur: ${error instanceof Error ? error.message : 'Erreur inconnue'}`);
                       }
                     }
                   }
