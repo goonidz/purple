@@ -62,6 +62,14 @@ if [ -f fix-nginx-docker.sh ]; then
     ./fix-nginx-docker.sh || echo -e "${YELLOW}⚠️  Configuration automatique échouée, vérifiez manuellement${NC}"
 fi
 
+# Configuration SSL automatique (si pas déjà configuré)
+if [ -f setup-ssl.sh ] && [ ! -f /etc/letsencrypt/live/purpleai.duckdns.org/fullchain.pem ]; then
+    echo ""
+    echo -e "${YELLOW}🔒 Configuration SSL automatique...${NC}"
+    chmod +x setup-ssl.sh
+    ./setup-ssl.sh || echo -e "${YELLOW}⚠️  Configuration SSL échouée, exécutez manuellement: ./setup-ssl.sh${NC}"
+fi
+
 echo -e "${GREEN}✅ Deployment complete!${NC}"
 echo ""
 echo "Your application should be available at: http://$(hostname -I | awk '{print $1}')"
