@@ -2974,18 +2974,18 @@ const Index = () => {
             await saveProjectData();
           }
         }}>
-          <DialogContent className="max-w-2xl">
-            <div className="space-y-6">
+          <DialogContent className="max-w-2xl flex flex-col max-h-[95vh]">
+            <div className="overflow-y-auto flex-1 min-h-0 space-y-4 pr-2">
               <div>
-                <h3 className="text-lg font-semibold mb-4">Configuration des scènes</h3>
+                <h3 className="text-lg font-semibold mb-2">Configuration des scènes</h3>
                 <p className="text-sm text-muted-foreground">
                   Définissez les durées de scènes selon le contenu
                 </p>
               </div>
 
               {/* Preset selector */}
-              <div className="rounded-lg border p-4 bg-primary/5 border-primary/20">
-                <div className="flex items-center gap-2 mb-3">
+              <div className="rounded-lg border p-3 bg-primary/5 border-primary/20">
+                <div className="flex items-center gap-2 mb-2">
                   <Download className="h-4 w-4 text-primary" />
                   <h3 className="font-semibold text-sm">Charger un preset (optionnel)</h3>
                 </div>
@@ -3006,9 +3006,9 @@ const Index = () => {
                 />
               </div>
 
-              <div className="space-y-4">
+              <div className="space-y-3">
                 <div>
-                  <label className="text-sm font-medium mb-2 block">Format de contenu</label>
+                  <label className="text-sm font-medium mb-1.5 block">Format de contenu</label>
                   <RadioGroup value={sceneFormat} onValueChange={async (value) => {
                     const newFormat = value as "long" | "short";
                     setSceneFormat(newFormat);
@@ -3036,7 +3036,7 @@ const Index = () => {
                   </RadioGroup>
                 </div>
 
-                <div className="p-4 border rounded-lg bg-muted/30">
+                <div className="p-3 border rounded-lg bg-muted/30">
                   <DurationRangesEditor
                     ranges={durationRanges}
                     onChange={setDurationRanges}
@@ -3046,7 +3046,7 @@ const Index = () => {
               </div>
 
               {/* Sentence boundary option */}
-              <div className="flex items-start space-x-3 p-4 border rounded-lg bg-muted/30">
+              <div className="flex items-start space-x-2 p-3 border rounded-lg bg-muted/30">
                 <input
                   type="checkbox"
                   id="strict-cutting"
@@ -3064,8 +3064,8 @@ const Index = () => {
                   </p>
                 </div>
               </div>
-
-              <div className="flex justify-between">
+            </div>
+            <div className="flex justify-between pt-2 border-t mt-2 flex-shrink-0">
                 <Button
                   variant="outline"
                   onClick={async () => {
@@ -3120,7 +3120,6 @@ const Index = () => {
                   Fermer
                 </Button>
               </div>
-            </div>
           </DialogContent>
         </Dialog>
 
