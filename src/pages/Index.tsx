@@ -1952,20 +1952,57 @@ const Index = () => {
                     <ActiveVideoRenderJobsBanner 
                       jobs={allVideoRenderJobs}
                       onCancel={async (jobId) => {
-                        const { error } = await supabase
-                          .from('video_render_jobs')
-                          .update({ status: 'cancelled' })
-                          .eq('id', jobId);
-                        
-                        if (error) {
-                          console.error('Error cancelling video render job:', error);
+                        try {
+                          // Get job details to find status_url
+                          const job = allVideoRenderJobs.find(j => j.id === jobId);
+                          if (!job) {
+                            toast.error('Job introuvable');
+                            return;
+                          }
+
+                          // Cancel on VPS if status_url exists
+                          if (job.status_url && job.job_id) {
+                            try {
+                              // Extract base URL from status_url (e.g., http://51.91.158.233:3000/status/xxx -> http://51.91.158.233:3000)
+                              const statusUrlObj = new URL(job.status_url);
+                              const baseUrl = `${statusUrlObj.protocol}//${statusUrlObj.host}`;
+                              const cancelUrl = `${baseUrl}/cancel/${job.job_id}`;
+                              
+                              const response = await fetch(cancelUrl, {
+                                method: 'DELETE',
+                              });
+                              
+                              if (!response.ok) {
+                                console.error('Failed to cancel job on VPS:', response.statusText);
+                                // Continue anyway to update database
+                              } else {
+                                console.log('Job cancelled on VPS');
+                              }
+                            } catch (error) {
+                              console.error('Error calling VPS cancel endpoint:', error);
+                              // Continue anyway to update database
+                            }
+                          }
+
+                          // Update database status
+                          const { error } = await supabase
+                            .from('video_render_jobs')
+                            .update({ status: 'cancelled' })
+                            .eq('id', jobId);
+                          
+                          if (error) {
+                            console.error('Error cancelling video render job:', error);
+                            toast.error('Erreur lors de l\'annulation du rendu');
+                          } else {
+                            toast.success('Rendu arrêté sur le serveur');
+                            // Force immediate refresh to remove cancelled job from UI
+                            setTimeout(() => {
+                              refreshVideoRenderJobs();
+                            }, 100);
+                          }
+                        } catch (error) {
+                          console.error('Error cancelling job:', error);
                           toast.error('Erreur lors de l\'annulation du rendu');
-                        } else {
-                          toast.info('Rendu annulé');
-                          // Force immediate refresh to remove cancelled job from UI
-                          setTimeout(() => {
-                            refreshVideoRenderJobs();
-                          }, 100);
                         }
                       }}
                     />

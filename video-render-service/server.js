@@ -457,6 +457,13 @@ async function processRenderJob(jobId, renderData) {
         ])
         .output(outputPath);
 
+      // Store FFmpeg command reference in job for cancellation
+      const job = jobs.get(jobId);
+      if (job) {
+        job.ffmpegCommand = ffmpegCommand;
+        jobs.set(jobId, job);
+      }
+
       ffmpegCommand
         .on('start', (commandLine) => {
           console.log(`[${jobId}] FFmpeg command: ${commandLine}`);
@@ -529,8 +536,22 @@ async function processRenderJob(jobId, renderData) {
         })
         .on('error', async (err) => {
           console.error(`[${jobId}] FFmpeg error:`, err);
+          // Remove FFmpeg command reference
+          const job = jobs.get(jobId);
+          if (job) {
+            job.ffmpegCommand = null;
+            jobs.set(jobId, job);
+          }
           await cleanup(workDir);
           reject(err);
+        })
+        .on('end', () => {
+          // Remove FFmpeg command reference when done
+          const job = jobs.get(jobId);
+          if (job) {
+            job.ffmpegCommand = null;
+            jobs.set(jobId, job);
+          }
         })
         .run();
     });
@@ -590,11 +611,79 @@ app.get('/status/:jobId', (req, res) => {
     });
   }
   
+  // Don't expose internal FFmpeg command reference
+  const { ffmpegCommand, ...jobData } = job;
+  
   res.json({
     success: true,
     jobId,
-    ...job
+    ...jobData
   });
+});
+
+// Cancel endpoint - stops FFmpeg process and cleans up
+app.delete('/cancel/:jobId', async (req, res) => {
+  const { jobId } = req.params;
+  const job = jobs.get(jobId);
+  
+  if (!job) {
+    return res.status(404).json({
+      success: false,
+      error: 'Job not found'
+    });
+  }
+  
+  // Check if job is already completed or failed
+  if (job.status === 'completed' || job.status === 'failed' || job.status === 'cancelled') {
+    return res.json({
+      success: true,
+      message: 'Job already finished',
+      jobId
+    });
+  }
+  
+  try {
+    // Kill FFmpeg process if it exists
+    if (job.ffmpegCommand) {
+      console.log(`[${jobId}] Killing FFmpeg process...`);
+      job.ffmpegCommand.kill('SIGTERM');
+      // Wait a bit, then force kill if still running
+      setTimeout(() => {
+        if (job.ffmpegCommand) {
+          job.ffmpegCommand.kill('SIGKILL');
+        }
+      }, 2000);
+    }
+    
+    // Cleanup work directory
+    const workDir = path.join(TEMP_DIR, jobId);
+    await cleanup(workDir).catch(err => {
+      console.error(`[${jobId}] Cleanup error:`, err);
+    });
+    
+    // Update job status
+    jobs.set(jobId, {
+      ...job,
+      status: 'cancelled',
+      cancelledAt: new Date().toISOString(),
+      ffmpegCommand: null
+    });
+    
+    // Note: Supabase update is handled by the frontend
+    
+    console.log(`[${jobId}] Job cancelled successfully`);
+    res.json({
+      success: true,
+      message: 'Job cancelled',
+      jobId
+    });
+  } catch (error) {
+    console.error(`[${jobId}] Error cancelling job:`, error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
 });
 
 // Helper function to convert hex color to ASS format
