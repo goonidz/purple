@@ -162,10 +162,17 @@ function getPanEffect(sceneIndex, duration, width, height, framerate) {
     // Pan directions for variety (only horizontal and vertical, no diagonal)
     const panDirections = ['pan_left', 'pan_right', 'pan_up', 'pan_down'];
     
-    // Build expressions that change direction at segment boundaries
-    // Use simpler approach: calculate which segment we're in, then apply that segment's pan
+    // Build continuous pan: each segment starts where the previous one ended
+    // Segment 0: starts at center, pans to position A
+    // Segment 1: starts at position A, pans to position B
+    // Segment 2: starts at position B, pans to position C
+    // etc.
     let xSegments = [];
     let ySegments = [];
+    
+    // Track cumulative position for smooth transitions
+    let currentXOffset = 0;
+    let currentYOffset = 0;
     
     for (let i = 0; i < numSegments; i++) {
       const segmentStart = i * framesPerSegment;
@@ -176,28 +183,55 @@ function getPanEffect(sceneIndex, duration, width, height, framerate) {
       const directionIndex = (sceneIndex * numSegments + i) % panDirections.length;
       const direction = panDirections[directionIndex];
       
-      let segXExpr, segYExpr;
+      // Calculate start and end positions for this segment
+      let startX, startY, endX, endY;
+      
       switch (direction) {
         case 'pan_left':
-          segXExpr = `${centerXExpr}+${panDistXExpr}*(1-${clampedProgress})`;
-          segYExpr = centerYExpr;
+          // Start at current position, pan left (increase X)
+          startX = currentXOffset;
+          startY = currentYOffset;
+          endX = currentXOffset + panAmount; // Move left = increase X
+          endY = currentYOffset;
+          currentXOffset = endX; // Update for next segment
           break;
         case 'pan_right':
-          segXExpr = `${centerXExpr}-${panDistXExpr}*(1-${clampedProgress})`;
-          segYExpr = centerYExpr;
+          // Start at current position, pan right (decrease X)
+          startX = currentXOffset;
+          startY = currentYOffset;
+          endX = currentXOffset - panAmount; // Move right = decrease X
+          endY = currentYOffset;
+          currentXOffset = endX; // Update for next segment
           break;
         case 'pan_up':
-          segXExpr = centerXExpr;
-          segYExpr = `${centerYExpr}+${panDistYExpr}*(1-${clampedProgress})`;
+          // Start at current position, pan up (increase Y)
+          startX = currentXOffset;
+          startY = currentYOffset;
+          endX = currentXOffset;
+          endY = currentYOffset + panAmount; // Move up = increase Y
+          currentYOffset = endY; // Update for next segment
           break;
         case 'pan_down':
-          segXExpr = centerXExpr;
-          segYExpr = `${centerYExpr}-${panDistYExpr}*(1-${clampedProgress})`;
+          // Start at current position, pan down (decrease Y)
+          startX = currentXOffset;
+          startY = currentYOffset;
+          endX = currentXOffset;
+          endY = currentYOffset - panAmount; // Move down = decrease Y
+          currentYOffset = endY; // Update for next segment
           break;
         default:
-          segXExpr = centerXExpr;
-          segYExpr = centerYExpr;
+          startX = currentXOffset;
+          startY = currentYOffset;
+          endX = currentXOffset;
+          endY = currentYOffset;
       }
+      
+      // Build expression: linear interpolation from start to end
+      // center + offset_start + (offset_end - offset_start) * progress
+      const deltaX = endX - startX;
+      const deltaY = endY - startY;
+      const segXExpr = `${centerXExpr}+iw*${startX}+iw*${deltaX}*${clampedProgress}`;
+      const segYExpr = `${centerYExpr}+ih*${startY}+ih*${deltaY}*${clampedProgress}`;
       
       xSegments.push(segXExpr);
       ySegments.push(segYExpr);
@@ -222,29 +256,30 @@ function getPanEffect(sceneIndex, duration, width, height, framerate) {
     
   } else {
     // Short scene: single pan direction
+    // Start at center and pan immediately (no delay)
     const panDirections = ['pan_left', 'pan_right', 'pan_up', 'pan_down'];
     const direction = panDirections[sceneIndex % panDirections.length];
     
     switch (direction) {
       case 'pan_left':
-        // Pan left: start viewing right side, move to left
-        xExpr = `${centerXExpr}+${panDistXExpr}*(1-on/${totalFrames})`;
+        // Pan left: start at center, move left (increase X)
+        xExpr = `${centerXExpr}+${panDistXExpr}*(on/${totalFrames})`;
         yExpr = centerYExpr;
         break;
       case 'pan_right':
-        // Pan right: start viewing left side, move to right
-        xExpr = `${centerXExpr}-${panDistXExpr}*(1-on/${totalFrames})`;
+        // Pan right: start at center, move right (decrease X)
+        xExpr = `${centerXExpr}-${panDistXExpr}*(on/${totalFrames})`;
         yExpr = centerYExpr;
         break;
       case 'pan_up':
-        // Pan up: start viewing bottom, move to top
+        // Pan up: start at center, move up (increase Y)
         xExpr = centerXExpr;
-        yExpr = `${centerYExpr}+${panDistYExpr}*(1-on/${totalFrames})`;
+        yExpr = `${centerYExpr}+${panDistYExpr}*(on/${totalFrames})`;
         break;
       case 'pan_down':
-        // Pan down: start viewing top, move to bottom
+        // Pan down: start at center, move down (decrease Y)
         xExpr = centerXExpr;
-        yExpr = `${centerYExpr}-${panDistYExpr}*(1-on/${totalFrames})`;
+        yExpr = `${centerYExpr}-${panDistYExpr}*(on/${totalFrames})`;
         break;
       default:
         xExpr = centerXExpr;
