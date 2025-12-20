@@ -2974,7 +2974,7 @@ const Index = () => {
             await saveProjectData();
           }
         }}>
-          <DialogContent className="!max-w-2xl !max-h-[90vh] !w-[calc(100vw-2rem)] sm:!w-full !flex !flex-col p-6" style={{ width: 'calc(100vw - 2rem)', maxWidth: '42rem' }}>
+          <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col p-6">
             <div className="overflow-y-auto flex-1 min-h-0 space-y-6">
               <div>
                 <h3 className="text-lg font-semibold mb-4">Configuration des scènes</h3>
