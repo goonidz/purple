@@ -3732,7 +3732,8 @@ Return ONLY the prompt text, no JSON, no title, just the optimized prompt in ENG
 
         {/* Configuration Modal after transcription */}
         <Dialog open={showConfigurationModal} onOpenChange={setShowConfigurationModal}>
-          <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto w-[95vw] sm:w-full">
+          <DialogContent className="max-w-2xl max-h-[90vh] w-[95vw] sm:w-full flex flex-col p-6">
+            <div className="overflow-y-auto flex-1 min-h-0">
             {transcriptData && currentProjectId && (
               <ProjectConfigurationModal
                 transcriptData={transcriptData}
@@ -3861,6 +3862,7 @@ Return ONLY the prompt text, no JSON, no title, just the optimized prompt in ENG
                 onCancel={() => setShowConfigurationModal(false)}
               />
             )}
+            </div>
           </DialogContent>
         </Dialog>
 

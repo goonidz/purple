@@ -639,7 +639,8 @@ const Projects = () => {
                 Nouveau projet
               </Button>
             </DialogTrigger>
-              <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+              <DialogContent className="max-w-2xl max-h-[90vh] w-[95vw] sm:w-full flex flex-col p-6">
+                <div className="overflow-y-auto flex-1 min-h-0">
                 <DialogHeader>
                   <DialogTitle>
                     {workflowStep === "upload" && "Créer un nouveau projet"}
@@ -1169,6 +1170,7 @@ const Projects = () => {
                     </div>
                   </div>
                 )}
+                </div>
               </DialogContent>
             </Dialog>
           </div>

@@ -1230,7 +1230,8 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
 
       {/* Dialog pour modifier un preset */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-2xl max-h-[90vh] w-[95vw] sm:w-full flex flex-col p-6">
+          <div className="overflow-y-auto flex-1 min-h-0">
           <DialogHeader>
             <DialogTitle>Modifier le preset</DialogTitle>
           </DialogHeader>
@@ -1402,6 +1403,7 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
               ) : "Modifier"}
             </Button>
           </DialogFooter>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

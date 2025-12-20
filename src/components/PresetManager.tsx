@@ -778,7 +778,8 @@ export const PresetManager = ({ currentConfig, onLoadPreset }: PresetManagerProp
         )}
 
         <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-          <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto">
+          <DialogContent className="max-w-4xl max-h-[90vh] w-[95vw] sm:w-full flex flex-col p-6">
+            <div className="overflow-y-auto flex-1 min-h-0">
             <DialogHeader className="border-b pb-4">
               <DialogTitle className="text-xl">Modifier le preset</DialogTitle>
               <DialogDescription>
@@ -1242,6 +1243,7 @@ export const PresetManager = ({ currentConfig, onLoadPreset }: PresetManagerProp
                 </div>
               </div>
             )}
+            </div>
           </DialogContent>
         </Dialog>
 

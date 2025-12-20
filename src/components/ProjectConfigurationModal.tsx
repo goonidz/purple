@@ -552,7 +552,7 @@ export const ProjectConfigurationModal = ({
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 overflow-y-auto max-h-full">
       <div>
         <h2 className="text-lg font-semibold">{getStepTitle()}</h2>
         <p className="text-sm text-muted-foreground">{getStepDescription()}</p>
