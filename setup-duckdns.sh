@@ -3,7 +3,8 @@
 # Script de configuration rapide DuckDNS
 # Usage: ./setup-duckdns.sh
 
-set -e
+# Ne pas échouer sur les erreurs pour éviter de bloquer le déploiement
+set +e
 
 echo "🚀 Configuration DuckDNS pour VideoFlow..."
 
@@ -60,9 +61,13 @@ echo "✅ Cron job configuré (mise à jour toutes les 5 minutes)"
 echo ""
 if ! command -v nginx &> /dev/null; then
     echo "📦 Installation de nginx..."
-    sudo apt-get update
-    sudo apt-get install -y nginx
-    echo "✅ nginx installé"
+    sudo DEBIAN_FRONTEND=noninteractive apt-get update -qq
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq nginx
+    if [ $? -eq 0 ]; then
+        echo "✅ nginx installé"
+    else
+        echo "⚠️  Erreur lors de l'installation nginx (peut nécessiter sudo sans mot de passe)"
+    fi
 else
     echo "✅ nginx déjà installé"
 fi
@@ -72,24 +77,27 @@ echo ""
 echo "⚙️  Configuration nginx..."
 if [ -f ~/purple/nginx-videoflow.conf ]; then
     # Copier la configuration
-    sudo cp ~/purple/nginx-videoflow.conf /etc/nginx/sites-available/videoflow
+    sudo cp ~/purple/nginx-videoflow.conf /etc/nginx/sites-available/videoflow 2>/dev/null
     
-    # Remplacer le nom de domaine dans le fichier
-    sudo sed -i "s/videoflow.duckdns.org/$DUCKDNS_FULL_DOMAIN/g" /etc/nginx/sites-available/videoflow
-    
-    # Activer le site
-    sudo ln -sf /etc/nginx/sites-available/videoflow /etc/nginx/sites-enabled/
-    
-    # Supprimer la config par défaut si elle existe
-    sudo rm -f /etc/nginx/sites-enabled/default
-    
-    # Tester la configuration
-    if sudo nginx -t; then
-        sudo systemctl restart nginx
-        echo "✅ nginx configuré et redémarré"
+    if [ $? -eq 0 ]; then
+        # Remplacer le nom de domaine dans le fichier
+        sudo sed -i "s/videoflow.duckdns.org/$DUCKDNS_FULL_DOMAIN/g" /etc/nginx/sites-available/videoflow 2>/dev/null
+        
+        # Activer le site
+        sudo ln -sf /etc/nginx/sites-available/videoflow /etc/nginx/sites-enabled/ 2>/dev/null
+        
+        # Supprimer la config par défaut si elle existe
+        sudo rm -f /etc/nginx/sites-enabled/default 2>/dev/null
+        
+        # Tester la configuration
+        if sudo nginx -t 2>/dev/null; then
+            sudo systemctl restart nginx 2>/dev/null
+            echo "✅ nginx configuré et redémarré"
+        else
+            echo "⚠️  Erreur dans la configuration nginx (peut nécessiter configuration manuelle)"
+        fi
     else
-        echo "❌ Erreur dans la configuration nginx"
-        exit 1
+        echo "⚠️  Impossible de copier la config nginx (permissions sudo requises)"
     fi
 else
     echo "⚠️  Fichier nginx-videoflow.conf non trouvé"
