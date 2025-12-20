@@ -2967,7 +2967,13 @@ const Index = () => {
 
 
         {/* Scene settings dialog */}
-        <Dialog open={sceneSettingsOpen} onOpenChange={setSceneSettingsOpen}>
+        <Dialog open={sceneSettingsOpen} onOpenChange={async (open) => {
+          setSceneSettingsOpen(open);
+          // Save changes when modal is closed
+          if (!open && currentProjectId) {
+            await saveProjectData();
+          }
+        }}>
           <DialogContent className="max-w-2xl max-h-[90vh] w-[95vw] sm:w-full flex flex-col p-6">
             <div className="overflow-y-auto flex-1 min-h-0 space-y-6">
               <div>
@@ -3003,7 +3009,7 @@ const Index = () => {
               <div className="space-y-4">
                 <div>
                   <label className="text-sm font-medium mb-2 block">Format de contenu</label>
-                  <RadioGroup value={sceneFormat} onValueChange={(value) => {
+                  <RadioGroup value={sceneFormat} onValueChange={async (value) => {
                     const newFormat = value as "long" | "short";
                     setSceneFormat(newFormat);
                     // Update duration ranges based on format
@@ -3011,6 +3017,10 @@ const Index = () => {
                       setDurationRanges(SHORT_FORM_DURATION_RANGES);
                     } else {
                       setDurationRanges(DEFAULT_DURATION_RANGES);
+                    }
+                    // Save immediately when format changes
+                    if (currentProjectId) {
+                      await saveProjectData();
                     }
                   }}>
                     <div className="flex gap-4">
@@ -3100,7 +3110,13 @@ const Index = () => {
                   <RefreshCw className="mr-2 h-4 w-4" />
                   Regénérer les scènes
                 </Button>
-                <Button onClick={() => setSceneSettingsOpen(false)}>
+                <Button onClick={async () => {
+                  if (currentProjectId) {
+                    await saveProjectData();
+                    toast.success("Configuration sauvegardée");
+                  }
+                  setSceneSettingsOpen(false);
+                }}>
                   Fermer
                 </Button>
               </div>
