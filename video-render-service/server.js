@@ -16,7 +16,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Version identifier - update this when making pan/zoom changes
-const SERVICE_VERSION = 'v2.0-pan-fix-25-35percent';
+const SERVICE_VERSION = 'v2.1-pan-linear-only';
 
 // Create temp directory (must be defined before use)
 const TEMP_DIR = path.join(__dirname, 'temp');
@@ -175,23 +175,15 @@ function getPanEffect(sceneIndex, duration, width, height, framerate) {
     // At progress 1: 1 - |2 - 1| = 1 - 1 = 0
     const triangularWave = `(1-abs(2*${globalProgress}-1))`;
     
-    // Also add a small perpendicular drift for more natural motion
-    // Use a second triangular wave shifted by 0.25 for the perpendicular axis
-    // This creates a gentle diagonal drift that makes the motion more interesting
-    const shiftedProgress = `(${globalProgress}+0.25)`;
-    const perpWave = `(1-abs(2*if(gt(${shiftedProgress},1),${shiftedProgress}-1,${shiftedProgress})-1))`;
-    const perpAmount = panAmount * 0.3; // 30% of main movement
-    
+    // Pure linear motion - only horizontal OR vertical, never diagonal
     if (useHorizontal) {
-      // Main motion: horizontal (left then right)
-      // Secondary motion: slight vertical drift
+      // Horizontal pan only (left then right)
       xExpr = `${centerXExpr}+iw*${panAmount}*${triangularWave}`;
-      yExpr = `${centerYExpr}+ih*${perpAmount}*${perpWave}`;
+      yExpr = centerYExpr; // No vertical movement
       effect = 'continuous_pan_horizontal';
     } else {
-      // Main motion: vertical (up then down)
-      // Secondary motion: slight horizontal drift
-      xExpr = `${centerXExpr}+iw*${perpAmount}*${perpWave}`;
+      // Vertical pan only (up then down)
+      xExpr = centerXExpr; // No horizontal movement
       yExpr = `${centerYExpr}+ih*${panAmount}*${triangularWave}`;
       effect = 'continuous_pan_vertical';
     }
