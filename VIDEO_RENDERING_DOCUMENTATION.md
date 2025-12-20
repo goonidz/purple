@@ -115,16 +115,18 @@ Le service est **asynchrone** :
 - Serve les fichiers vidéo statiques depuis le dossier `temp/`
 - Accessible publiquement via `http://VPS_IP:3000/videos/...`
 
-## Effet Ken Burns
+## Effets vidéo
 
-### Problème du jiggle/jitter
+### Effet Ken Burns (Zoom)
+
+#### Problème du jiggle/jitter
 
 Le problème classique avec FFmpeg `zoompan` : les zooms sont saccadés à cause de :
 - Erreurs de précision en virgule flottante
 - Positionnement sub-pixel
 - Chroma subsampling
 
-### Solution implémentée
+#### Solution implémentée
 
 **Approche** : Scale up → Zoom → Scale down
 
@@ -144,6 +146,49 @@ Le problème classique avec FFmpeg `zoompan` : les zooms sont saccadés à cause
 - Positions x/y : `(iw-iw/zoom)/2` pour centré, `/4` pour décalé
 
 **Variations** : 6 types d'effets qui alternent selon le numéro de scène
+
+### Effet Pan
+
+#### Problème initial : Saccades sur scènes longues
+
+**Problème** : Sur les scènes longues (>= 10 secondes), le pan était trop lent, causant un mouvement pixel par pixel visible et des saccades.
+
+**Causes** :
+- Pan amount fixe (4%) trop petit pour les scènes longues
+- Zoom fixe (1.2x) ne fournissait pas assez de marge pour un pan rapide
+- Mouvement trop lent = visible pixel par pixel
+
+#### Solution implémentée (v2.0)
+
+**1. Zoom adaptatif selon la durée** :
+- Scènes < 10s : 1.2x zoom (20%)
+- Scènes 10-20s : 1.6x zoom (60%)
+- Scènes 20-30s : 1.9x zoom (90%)
+- Scènes > 30s : 2.2x zoom (120%)
+
+Plus de zoom = plus de marge = possibilité de pan plus rapide sans dépasser les bords.
+
+**2. Pan amount adaptatif** :
+- Scènes < 10s : 4% (pan simple)
+- Scènes 10-20s : 25% par segment (3x plus rapide)
+- Scènes 20-30s : 30% par segment
+- Scènes > 30s : 35% par segment
+
+**3. Multi-pans pour scènes longues** :
+- Scènes >= 10s : Division en plusieurs segments avec directions différentes
+  - 10-20s : 2 pans (changement de direction au milieu)
+  - 20-30s : 3 pans
+  - > 30s : 4 pans
+- Chaque segment panne sur une distance significative (25-35% de l'image)
+- Directions variées : pan_left, pan_right, pan_up, pan_down
+
+**Résultat** :
+- Mouvement 3-6x plus rapide sur les scènes longues
+- Plus de saccades pixel par pixel
+- Animation plus dynamique et fluide
+- Changement de direction pour maintenir l'intérêt visuel
+
+**Note** : Le preprocessing (scale/crop pour remplir le frame) est appliqué pour éviter les bandes noires, mais le zoom dans l'effet pan lui-même n'est pas un zoom croissant (contrairement à Ken Burns), c'est juste un zoom fixe pour créer de la marge.
 
 ## Infrastructure VPS
 
@@ -326,6 +371,36 @@ const token = authHeader.replace('Bearer ', '');
 const { data: { user } } = await supabaseAuth.auth.getUser(token);
 ```
 
+### 5. Pan effect trop lent sur scènes longues
+
+**Problème** : Sur les scènes longues (>= 10s), le pan était trop lent, causant un mouvement pixel par pixel visible et des saccades.
+
+**Solution** :
+- Zoom adaptatif : 1.6x à 2.2x selon la durée (au lieu de 1.2x fixe)
+- Pan amount augmenté : 25-35% au lieu de 4% pour les scènes longues
+- Multi-pans : Division en 2-4 segments avec directions différentes
+- Résultat : Mouvement 3-6x plus rapide, plus fluide, sans saccades
+
+### 6. Service de rendu vidéo pointant vers mauvais répertoire
+
+**Problème** : Le service PM2 pointait vers `/home/ubuntu/video-render-service/` au lieu de `~/purple/video-render-service/` (le repo git).
+
+**Solution** :
+- Supprimer l'ancien service PM2
+- Relancer depuis le bon répertoire (`~/purple/video-render-service/`)
+- Installer les dépendances npm si manquantes
+- Vérifier avec `pm2 info video-render` que le chemin est correct
+
+### 7. Modals non responsive
+
+**Problème** : Les modals dépassaient de l'écran et n'étaient pas scrollables.
+
+**Solution** :
+- Modification du composant de base `DialogContent` pour être responsive
+- Layout flex avec zone scrollable pour le contenu
+- Boutons d'action fixés en bas, toujours visibles
+- Positionnement adaptatif : `inset` sur mobile, centré sur desktop
+
 ## Commandes utiles
 
 ### VPS
@@ -397,10 +472,38 @@ scp video-render-service/cleanup.js ubuntu@51.91.158.233:~/video-render-service/
 4. **Multiple VPS** : Load balancing pour plusieurs serveurs
 5. **Notifications** : Notifier l'utilisateur quand le rendu est terminé
 
+## Version tracking
+
+Le service de rendu vidéo inclut un système de version pour faciliter le debugging et vérifier quelle version tourne.
+
+### Vérifier la version
+
+**Via l'endpoint health** :
+```bash
+curl http://localhost:3000/health
+# Retourne : {"status":"ok","version":"v2.0-pan-fix-25-35percent","timestamp":"..."}
+```
+
+**Via les logs PM2** :
+```bash
+pm2 logs video-render --lines 5
+# Affiche : Service Version: v2.0-pan-fix-25-35percent
+```
+
+**Dans le code** :
+Le service définit `SERVICE_VERSION` dans `server.js` et l'affiche au démarrage et dans l'endpoint `/health`.
+
+### Historique des versions
+
+- **v2.0-pan-fix-25-35percent** : Pan amount augmenté à 25-35%, zoom adaptatif, multi-pans
+- Versions précédentes : Pan fixe 4%, zoom fixe 1.2x
+
 ## Support
 
 En cas de problème :
-1. Vérifier les logs PM2 : `pm2 logs video-render`
-2. Vérifier les logs Edge Function dans le dashboard Supabase
-3. Vérifier l'espace disque : `df -h`
-4. Tester le service : `curl http://localhost:3000/health`
+1. Vérifier la version du service : `curl http://localhost:3000/health`
+2. Vérifier les logs PM2 : `pm2 logs video-render`
+3. Vérifier les logs Edge Function dans le dashboard Supabase
+4. Vérifier l'espace disque : `df -h`
+5. Vérifier que le service pointe vers le bon répertoire : `pm2 info video-render | grep "script path"`
+6. Vérifier que les dépendances sont installées : `ls -la ~/purple/video-render-service/node_modules`

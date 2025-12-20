@@ -135,6 +135,24 @@ docker logs videoflow
 docker logs -f videoflow
 ```
 
+### Vérifier le service de rendu vidéo
+
+```bash
+# Vérifier le statut PM2
+pm2 status
+
+# Vérifier que le service pointe vers le bon répertoire
+pm2 info video-render | grep -E "script path|cwd"
+# Doit afficher : ~/purple/video-render-service/server.js
+
+# Vérifier la version du service
+curl http://localhost:3000/health
+# Doit retourner : {"status":"ok","version":"v2.0-pan-fix-25-35percent",...}
+
+# Vérifier les logs
+pm2 logs video-render --lines 20
+```
+
 ### Tester l'application
 
 Ouvrez votre navigateur et allez sur :
@@ -487,6 +505,53 @@ sudo netstat -tulpn | grep :80
 - Vérifier que `nginx.conf` est correctement configuré
 - Vérifier que le fichier `index.html` est bien présent dans `/usr/share/nginx/html`
 
+### Service de rendu vidéo ne démarre pas
+
+**Symptômes** : `pm2 status` montre `errored` pour `video-render`
+
+**Solutions** :
+1. Vérifier que le service pointe vers le bon répertoire :
+   ```bash
+   pm2 info video-render | grep "script path"
+   # Doit être : /home/ubuntu/purple/video-render-service/server.js
+   ```
+
+2. Si ce n'est pas le bon répertoire :
+   ```bash
+   pm2 stop video-render
+   pm2 delete video-render
+   cd ~/purple/video-render-service
+   pm2 start server.js --name video-render
+   pm2 save
+   ```
+
+3. Vérifier que les dépendances sont installées :
+   ```bash
+   cd ~/purple/video-render-service
+   ls -la node_modules
+   # Si absent ou incomplet :
+   npm install
+   ```
+
+4. Vérifier les logs d'erreur :
+   ```bash
+   pm2 logs video-render --lines 50 --err
+   ```
+
+### Erreur "Edge Function returned a non-2xx status code"
+
+**Causes possibles** :
+1. Service de rendu vidéo non démarré (voir section précédente)
+2. Variable d'environnement `FFMPEG_SERVICE_URL` mal configurée dans Supabase
+
+**Solutions** :
+1. Vérifier que le service tourne : `curl http://localhost:3000/health`
+2. Vérifier/mettre à jour `FFMPEG_SERVICE_URL` dans Supabase :
+   ```bash
+   npx supabase secrets set FFMPEG_SERVICE_URL=http://51.91.158.233:3000 --project-ref laqgmqyjstisipsbljha
+   ```
+3. Vérifier les logs de l'Edge Function dans le dashboard Supabase
+
 ### Nettoyage
 
 Pour nettoyer les images Docker inutilisées :
@@ -547,6 +612,8 @@ VPS Linux (51.91.158.233)
   - Accessible via `http://51.91.158.233:3000` ou `http://purpleai.duckdns.org:3000`
   - Géré par PM2, démarre automatiquement au boot
   - Les vidéos sont servies depuis le VPS (pas d'upload Supabase)
+  - **Important** : Le service doit être lancé depuis `~/purple/video-render-service/` (le repo git)
+  - Vérifier avec : `pm2 info video-render | grep "script path"` (doit pointer vers `~/purple/video-render-service/server.js`)
 
 - **Webhook GitHub** : Service Node.js sur le port 9000
   - Écoute les événements push de GitHub
