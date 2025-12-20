@@ -164,20 +164,70 @@ export const SceneEditor = ({
         <div className="grid grid-cols-2 gap-4 mt-4">
           <div className="space-y-2">
             <Label>Début (secondes)</Label>
-            <Input
-              type="number"
-              step="0.1"
-              value={localScene.startTime}
-              onChange={(e) => handleTextChange('startTime', e.target.value)}
+            <Textarea
+              value={localScene.startTime.toString()}
+              onChange={(e) => {
+                const value = e.target.value.replace(/[^0-9.]/g, '');
+                const parts = value.split('.');
+                const cleanedValue = parts.length > 2 ? parts[0] + '.' + parts.slice(1).join('') : value;
+                if (cleanedValue !== '' && cleanedValue !== '.') {
+                  const numValue = parseFloat(cleanedValue);
+                  if (!isNaN(numValue)) {
+                    handleTextChange('startTime', numValue.toString());
+                  }
+                } else if (cleanedValue === '') {
+                  handleTextChange('startTime', '0');
+                }
+              }}
+              onKeyDown={(e) => {
+                if ([8, 9, 27, 13, 46, 110, 190].indexOf(e.keyCode) !== -1 ||
+                  (e.keyCode === 65 && e.ctrlKey === true) ||
+                  (e.keyCode === 67 && e.ctrlKey === true) ||
+                  (e.keyCode === 86 && e.ctrlKey === true) ||
+                  (e.keyCode === 88 && e.ctrlKey === true) ||
+                  (e.keyCode >= 35 && e.keyCode <= 39)) {
+                  return;
+                }
+                if ((e.shiftKey || (e.keyCode < 48 || e.keyCode > 57)) && (e.keyCode < 96 || e.keyCode > 105) && e.keyCode !== 190 && e.keyCode !== 110) {
+                  e.preventDefault();
+                }
+              }}
+              className="h-10 resize-none"
+              placeholder="0"
             />
           </div>
           <div className="space-y-2">
             <Label>Fin (secondes)</Label>
-            <Input
-              type="number"
-              step="0.1"
-              value={localScene.endTime}
-              onChange={(e) => handleTextChange('endTime', e.target.value)}
+            <Textarea
+              value={localScene.endTime.toString()}
+              onChange={(e) => {
+                const value = e.target.value.replace(/[^0-9.]/g, '');
+                const parts = value.split('.');
+                const cleanedValue = parts.length > 2 ? parts[0] + '.' + parts.slice(1).join('') : value;
+                if (cleanedValue !== '' && cleanedValue !== '.') {
+                  const numValue = parseFloat(cleanedValue);
+                  if (!isNaN(numValue)) {
+                    handleTextChange('endTime', numValue.toString());
+                  }
+                } else if (cleanedValue === '') {
+                  handleTextChange('endTime', '0');
+                }
+              }}
+              onKeyDown={(e) => {
+                if ([8, 9, 27, 13, 46, 110, 190].indexOf(e.keyCode) !== -1 ||
+                  (e.keyCode === 65 && e.ctrlKey === true) ||
+                  (e.keyCode === 67 && e.ctrlKey === true) ||
+                  (e.keyCode === 86 && e.ctrlKey === true) ||
+                  (e.keyCode === 88 && e.ctrlKey === true) ||
+                  (e.keyCode >= 35 && e.keyCode <= 39)) {
+                  return;
+                }
+                if ((e.shiftKey || (e.keyCode < 48 || e.keyCode > 57)) && (e.keyCode < 96 || e.keyCode > 105) && e.keyCode !== 190 && e.keyCode !== 110) {
+                  e.preventDefault();
+                }
+              }}
+              className="h-10 resize-none"
+              placeholder="0"
             />
           </div>
         </div>

@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Plus, Trash2 } from "lucide-react";
 import { DurationRange, normalizeRanges } from "@/lib/durationRanges";
@@ -46,6 +46,35 @@ export const DurationRangesEditor = ({
     onChange(normalizeRanges(newRanges));
   };
 
+  // Handle text input - only allow numbers
+  const handleTextChange = (index: number, field: "endSeconds" | "sceneDuration", value: string) => {
+    // Remove all non-numeric characters except decimal point
+    const numericValue = value.replace(/[^0-9.]/g, '');
+    
+    // Only allow one decimal point
+    const parts = numericValue.split('.');
+    const cleanedValue = parts.length > 2 
+      ? parts[0] + '.' + parts.slice(1).join('')
+      : numericValue;
+    
+    if (cleanedValue === '' || cleanedValue === '.') {
+      handleUpdateRange(index, field, null);
+      return;
+    }
+    
+    const numValue = parseFloat(cleanedValue);
+    if (!isNaN(numValue)) {
+      // For sceneDuration, round to integer
+      if (field === "sceneDuration") {
+        handleUpdateRange(index, field, Math.max(1, Math.round(numValue)));
+      } else {
+        // For endSeconds, allow decimals but ensure minimum
+        const prevEnd = index > 0 ? ranges[index - 1].endSeconds : 0;
+        handleUpdateRange(index, field, Math.max((prevEnd || 0) + 0.1, numValue));
+      }
+    }
+  };
+
   const getRangeLabel = (index: number): string => {
     if (index === 0) {
       return `0 à ${ranges[0].endSeconds}s`;
@@ -74,25 +103,57 @@ export const DurationRangesEditor = ({
                 <div>
                   <Label className="text-xs text-muted-foreground">Fin de plage (sec)</Label>
                   {isLast ? (
-                    <Input disabled value="∞" className="bg-muted" />
+                    <Textarea disabled value="∞" className="bg-muted h-10 resize-none" readOnly />
                   ) : (
-                    <Input
-                      type="number"
-                      min={(prevEnd || 0) + 1}
-                      max={maxEndValue}
-                      value={range.endSeconds || ""}
-                      onChange={(e) => handleUpdateRange(index, "endSeconds", parseInt(e.target.value) || 1)}
+                    <Textarea
+                      value={range.endSeconds?.toString() || ""}
+                      onChange={(e) => handleTextChange(index, "endSeconds", e.target.value)}
+                      onKeyDown={(e) => {
+                        // Allow: backspace, delete, tab, escape, enter, decimal point
+                        if ([8, 9, 27, 13, 46, 110, 190].indexOf(e.keyCode) !== -1 ||
+                          // Allow: Ctrl+A, Ctrl+C, Ctrl+V, Ctrl+X
+                          (e.keyCode === 65 && e.ctrlKey === true) ||
+                          (e.keyCode === 67 && e.ctrlKey === true) ||
+                          (e.keyCode === 86 && e.ctrlKey === true) ||
+                          (e.keyCode === 88 && e.ctrlKey === true) ||
+                          // Allow: home, end, left, right
+                          (e.keyCode >= 35 && e.keyCode <= 39)) {
+                          return;
+                        }
+                        // Ensure that it is a number or decimal point and stop the keypress
+                        if ((e.shiftKey || (e.keyCode < 48 || e.keyCode > 57)) && (e.keyCode < 96 || e.keyCode > 105) && e.keyCode !== 190 && e.keyCode !== 110) {
+                          e.preventDefault();
+                        }
+                      }}
+                      className="h-10 resize-none"
+                      placeholder="0"
                     />
                   )}
                 </div>
                 <div>
                   <Label className="text-xs text-muted-foreground">Durée de scène (sec)</Label>
-                  <Input
-                    type="number"
-                    min="1"
-                    max="60"
-                    value={range.sceneDuration}
-                    onChange={(e) => handleUpdateRange(index, "sceneDuration", parseInt(e.target.value) || 1)}
+                  <Textarea
+                    value={range.sceneDuration.toString()}
+                    onChange={(e) => handleTextChange(index, "sceneDuration", e.target.value)}
+                    onKeyDown={(e) => {
+                      // Allow: backspace, delete, tab, escape, enter
+                      if ([8, 9, 27, 13, 46].indexOf(e.keyCode) !== -1 ||
+                        // Allow: Ctrl+A, Ctrl+C, Ctrl+V, Ctrl+X
+                        (e.keyCode === 65 && e.ctrlKey === true) ||
+                        (e.keyCode === 67 && e.ctrlKey === true) ||
+                        (e.keyCode === 86 && e.ctrlKey === true) ||
+                        (e.keyCode === 88 && e.ctrlKey === true) ||
+                        // Allow: home, end, left, right
+                        (e.keyCode >= 35 && e.keyCode <= 39)) {
+                        return;
+                      }
+                      // Ensure that it is a number and stop the keypress
+                      if ((e.shiftKey || (e.keyCode < 48 || e.keyCode > 57)) && (e.keyCode < 96 || e.keyCode > 105)) {
+                        e.preventDefault();
+                      }
+                    }}
+                    className="h-10 resize-none"
+                    placeholder="1"
                   />
                 </div>
               </div>
