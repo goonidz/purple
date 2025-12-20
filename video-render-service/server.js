@@ -97,8 +97,19 @@ function createConcatFileForVideos(scenes, workDir) {
 function getPanEffect(sceneIndex, duration, width, height, framerate) {
   const totalFrames = Math.ceil(duration * framerate);
   
-  // For pan to work, we need a slight zoom (1.2 = 20% zoom) to create margin for panning
-  const zoomLevel = 1.2; // 20% zoom creates enough margin for visible pan
+  // For pan to work, we need zoom to create margin for panning
+  // Increase zoom for longer scenes to allow faster panning and avoid stuttering
+  // More zoom = more margin = can pan faster without pixel-by-pixel movement
+  let zoomLevel;
+  if (duration <= 8) {
+    zoomLevel = 1.2; // 20% zoom for short scenes
+  } else if (duration <= 15) {
+    zoomLevel = 1.5; // 50% zoom for medium scenes
+  } else if (duration <= 25) {
+    zoomLevel = 1.8; // 80% zoom for long scenes
+  } else {
+    zoomLevel = 2.0; // 100% zoom for very long scenes
+  }
   const zoomExpr = String(zoomLevel);
   
   // Center position (starting point) - when zoomed, center is (iw-iw/zoom)/2
@@ -106,7 +117,9 @@ function getPanEffect(sceneIndex, duration, width, height, framerate) {
   const centerYExpr = `(ih-ih/${zoomLevel})/2`;
   
   // Base pan amount per segment (4% of image)
-  const panAmount = 0.04;
+  // For longer scenes with more zoom, we can increase pan amount for faster movement
+  const basePanAmount = 0.04;
+  const panAmount = duration > 15 ? basePanAmount * 1.5 : basePanAmount; // 6% for long scenes
   const panDistXExpr = `iw*${panAmount}`;
   const panDistYExpr = `ih*${panAmount}`;
   
