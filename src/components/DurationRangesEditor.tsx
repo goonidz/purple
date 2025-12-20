@@ -3,7 +3,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Plus, Trash2 } from "lucide-react";
 import { DurationRange, normalizeRanges } from "@/lib/durationRanges";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 interface DurationRangesEditorProps {
   ranges: DurationRange[];
@@ -18,17 +18,29 @@ export const DurationRangesEditor = ({
 }: DurationRangesEditorProps) => {
   // Local state for input values to allow free typing
   const [inputValues, setInputValues] = useState<Record<string, string>>({});
+  const isTypingRef = useRef<Record<string, boolean>>({});
   
-  // Sync input values when ranges change externally
+  // Sync input values when ranges change externally (but not while user is typing)
   useEffect(() => {
     const newInputValues: Record<string, string> = {};
     ranges.forEach((range, index) => {
-      if (range.endSeconds !== null) {
-        newInputValues[`end-${index}`] = range.endSeconds.toString();
+      const endKey = `end-${index}`;
+      const durationKey = `duration-${index}`;
+      
+      // Only update if user is not currently typing in this field
+      if (!isTypingRef.current[endKey] && range.endSeconds !== null) {
+        newInputValues[endKey] = range.endSeconds.toString();
+      } else if (inputValues[endKey] !== undefined) {
+        newInputValues[endKey] = inputValues[endKey];
       }
-      newInputValues[`duration-${index}`] = range.sceneDuration.toString();
+      
+      if (!isTypingRef.current[durationKey]) {
+        newInputValues[durationKey] = range.sceneDuration.toString();
+      } else if (inputValues[durationKey] !== undefined) {
+        newInputValues[durationKey] = inputValues[durationKey];
+      }
     });
-    setInputValues(newInputValues);
+    setInputValues(prev => ({ ...prev, ...newInputValues }));
   }, [ranges]);
 
   const handleAddRange = () => {
@@ -94,8 +106,10 @@ export const DurationRangesEditor = ({
                     <Textarea disabled value="∞" className="bg-muted h-10 min-h-10 resize-none px-3 py-2 text-base md:text-sm" readOnly />
                   ) : (
                     <Textarea
-                      value={inputValues[`end-${index}`] || range.endSeconds?.toString() || ""}
+                      value={inputValues[`end-${index}`] ?? range.endSeconds?.toString() ?? ""}
                       onChange={(e) => {
+                        const key = `end-${index}`;
+                        isTypingRef.current[key] = true;
                         const value = e.target.value;
                         // Clean input: only allow numbers and one decimal point
                         const numericValue = value.replace(/[^0-9.]/g, '');
@@ -105,20 +119,23 @@ export const DurationRangesEditor = ({
                           : numericValue;
                         
                         // Update local state immediately for free typing
-                        setInputValues(prev => ({ ...prev, [`end-${index}`]: cleanedValue }));
+                        setInputValues(prev => ({ ...prev, [key]: cleanedValue }));
                         
-                        // Parse and update parent state if valid
-                        if (cleanedValue === '' || cleanedValue === '.') {
-                          return; // Allow typing, validate on blur
-                        }
-                        
-                        const numValue = parseFloat(cleanedValue);
-                        if (!isNaN(numValue) && numValue >= 0) {
-                          const prevEnd = index > 0 ? ranges[index - 1].endSeconds : 0;
-                          handleUpdateRange(index, "endSeconds", Math.max((prevEnd || 0) + 0.1, numValue));
+                        // Parse and update parent state if valid (but don't block typing)
+                        if (cleanedValue !== '' && cleanedValue !== '.') {
+                          const numValue = parseFloat(cleanedValue);
+                          if (!isNaN(numValue) && numValue >= 0) {
+                            const prevEnd = index > 0 ? ranges[index - 1].endSeconds : 0;
+                            handleUpdateRange(index, "endSeconds", Math.max((prevEnd || 0) + 0.1, numValue));
+                          }
                         }
                       }}
+                      onFocus={() => {
+                        isTypingRef.current[`end-${index}`] = true;
+                      }}
                       onBlur={(e) => {
+                        const key = `end-${index}`;
+                        isTypingRef.current[key] = false;
                         const value = e.target.value;
                         const numericValue = value.replace(/[^0-9.]/g, '');
                         const numValue = parseFloat(numericValue);
@@ -126,31 +143,27 @@ export const DurationRangesEditor = ({
                         if (isNaN(numValue) || numValue < 0) {
                           // Reset to previous value if invalid
                           const currentValue = ranges[index].endSeconds;
-                          setInputValues(prev => ({ ...prev, [`end-${index}`]: currentValue?.toString() || "" }));
+                          setInputValues(prev => ({ ...prev, [key]: currentValue?.toString() || "" }));
                           handleUpdateRange(index, "endSeconds", currentValue);
                         } else {
                           const prevEnd = index > 0 ? ranges[index - 1].endSeconds : 0;
                           const finalValue = Math.max((prevEnd || 0) + 0.1, numValue);
-                          setInputValues(prev => ({ ...prev, [`end-${index}`]: finalValue.toString() }));
+                          setInputValues(prev => ({ ...prev, [key]: finalValue.toString() }));
                           handleUpdateRange(index, "endSeconds", finalValue);
                         }
                       }}
                       onKeyDown={(e) => {
-                        // Allow: backspace, delete, tab, escape, enter, decimal point
-                        if ([8, 9, 27, 13, 46, 110, 190].indexOf(e.keyCode) !== -1 ||
-                          // Allow: Ctrl+A, Ctrl+C, Ctrl+V, Ctrl+X
-                          (e.keyCode === 65 && e.ctrlKey === true) ||
-                          (e.keyCode === 67 && e.ctrlKey === true) ||
-                          (e.keyCode === 86 && e.ctrlKey === true) ||
-                          (e.keyCode === 88 && e.ctrlKey === true) ||
-                          // Allow: home, end, left, right
-                          (e.keyCode >= 35 && e.keyCode <= 39)) {
-                          return;
+                        // Don't prevent default for most keys - let them through
+                        // Only block obviously invalid keys
+                        const key = e.key;
+                        // Allow numbers, decimal point, and control keys
+                        if (/[0-9.]/.test(key) || 
+                            ['Backspace', 'Delete', 'Tab', 'Escape', 'Enter', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(key) ||
+                            (e.ctrlKey && ['a', 'c', 'v', 'x'].includes(key.toLowerCase()))) {
+                          return; // Allow these keys
                         }
-                        // Ensure that it is a number or decimal point and stop the keypress
-                        if ((e.shiftKey || (e.keyCode < 48 || e.keyCode > 57)) && (e.keyCode < 96 || e.keyCode > 105) && e.keyCode !== 190 && e.keyCode !== 110) {
-                          e.preventDefault();
-                        }
+                        // Block everything else
+                        e.preventDefault();
                       }}
                       className="h-10 min-h-10 resize-none px-3 py-2 text-base md:text-sm"
                       placeholder="0"
@@ -160,26 +173,31 @@ export const DurationRangesEditor = ({
                 <div>
                   <Label className="text-xs text-muted-foreground">Durée de scène (sec)</Label>
                   <Textarea
-                    value={inputValues[`duration-${index}`] || range.sceneDuration.toString()}
+                    value={inputValues[`duration-${index}`] ?? range.sceneDuration.toString()}
                     onChange={(e) => {
+                      const key = `duration-${index}`;
+                      isTypingRef.current[key] = true;
                       const value = e.target.value;
                       // Clean input: only allow numbers
                       const numericValue = value.replace(/[^0-9]/g, '');
                       
                       // Update local state immediately for free typing
-                      setInputValues(prev => ({ ...prev, [`duration-${index}`]: numericValue }));
+                      setInputValues(prev => ({ ...prev, [key]: numericValue }));
                       
-                      // Parse and update parent state if valid
-                      if (numericValue === '') {
-                        return; // Allow typing, validate on blur
-                      }
-                      
-                      const numValue = parseInt(numericValue, 10);
-                      if (!isNaN(numValue) && numValue >= 1) {
-                        handleUpdateRange(index, "sceneDuration", numValue);
+                      // Parse and update parent state if valid (but don't block typing)
+                      if (numericValue !== '') {
+                        const numValue = parseInt(numericValue, 10);
+                        if (!isNaN(numValue) && numValue >= 1) {
+                          handleUpdateRange(index, "sceneDuration", numValue);
+                        }
                       }
                     }}
+                    onFocus={() => {
+                      isTypingRef.current[`duration-${index}`] = true;
+                    }}
                     onBlur={(e) => {
+                      const key = `duration-${index}`;
+                      isTypingRef.current[key] = false;
                       const value = e.target.value;
                       const numericValue = value.replace(/[^0-9]/g, '');
                       const numValue = parseInt(numericValue, 10);
@@ -187,29 +205,25 @@ export const DurationRangesEditor = ({
                       if (isNaN(numValue) || numValue < 1) {
                         // Reset to previous value if invalid
                         const currentValue = ranges[index].sceneDuration;
-                        setInputValues(prev => ({ ...prev, [`duration-${index}`]: currentValue.toString() }));
+                        setInputValues(prev => ({ ...prev, [key]: currentValue.toString() }));
                         handleUpdateRange(index, "sceneDuration", currentValue);
                       } else {
-                        setInputValues(prev => ({ ...prev, [`duration-${index}`]: numValue.toString() }));
+                        setInputValues(prev => ({ ...prev, [key]: numValue.toString() }));
                         handleUpdateRange(index, "sceneDuration", numValue);
                       }
                     }}
                     onKeyDown={(e) => {
-                      // Allow: backspace, delete, tab, escape, enter
-                      if ([8, 9, 27, 13, 46].indexOf(e.keyCode) !== -1 ||
-                        // Allow: Ctrl+A, Ctrl+C, Ctrl+V, Ctrl+X
-                        (e.keyCode === 65 && e.ctrlKey === true) ||
-                        (e.keyCode === 67 && e.ctrlKey === true) ||
-                        (e.keyCode === 86 && e.ctrlKey === true) ||
-                        (e.keyCode === 88 && e.ctrlKey === true) ||
-                        // Allow: home, end, left, right
-                        (e.keyCode >= 35 && e.keyCode <= 39)) {
-                        return;
+                      // Don't prevent default for most keys - let them through
+                      // Only block obviously invalid keys
+                      const key = e.key;
+                      // Allow numbers and control keys
+                      if (/[0-9]/.test(key) || 
+                          ['Backspace', 'Delete', 'Tab', 'Escape', 'Enter', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(key) ||
+                          (e.ctrlKey && ['a', 'c', 'v', 'x'].includes(key.toLowerCase()))) {
+                        return; // Allow these keys
                       }
-                      // Ensure that it is a number and stop the keypress
-                      if ((e.shiftKey || (e.keyCode < 48 || e.keyCode > 57)) && (e.keyCode < 96 || e.keyCode > 105)) {
-                        e.preventDefault();
-                      }
+                      // Block everything else
+                      e.preventDefault();
                     }}
                     className="h-10 min-h-10 resize-none px-3 py-2 text-base md:text-sm"
                     placeholder="1"

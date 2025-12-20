@@ -3732,7 +3732,7 @@ Return ONLY the prompt text, no JSON, no title, just the optimized prompt in ENG
 
         {/* Configuration Modal after transcription */}
         <Dialog open={showConfigurationModal} onOpenChange={setShowConfigurationModal}>
-          <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto w-[95vw] sm:w-full">
             {transcriptData && currentProjectId && (
               <ProjectConfigurationModal
                 transcriptData={transcriptData}
