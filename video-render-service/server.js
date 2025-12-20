@@ -16,7 +16,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Version identifier - update this when making pan/zoom changes
-const SERVICE_VERSION = 'v2.8-pan-9s-1.5cycles';
+const SERVICE_VERSION = 'v2.9-pan-full-margin';
 
 // Create temp directory (must be defined before use)
 const TEMP_DIR = path.join(__dirname, 'temp');
@@ -115,10 +115,12 @@ function getPanEffect(sceneIndex, duration, width, height, framerate) {
   const centerYExpr = `(ih-ih/${zoomLevel})/2`;
   
   // Calculate panAmount based on zoom level and scene duration
-  // Available margin = (zoom - 1) / (2 * zoom) of image size
+  // Available margin from center to edge = (iw - iw/zoom)/2 = iw*(1 - 1/zoom)/2
+  // As percentage of image width: (1 - 1/zoom)/2
   // For short scenes: use less pan to keep movement slow and smooth
   // For long scenes: use more pan to avoid pixel-by-pixel stuttering
-  const maxPanAmount = (zoomLevel - 1) / (2 * zoomLevel) * 0.95;
+  // Use 100% of available margin to go all the way to the edge
+  const maxPanAmount = (1 - 1 / zoomLevel) / 2;
   let panAmount;
   if (duration < 5) {
     panAmount = maxPanAmount * 0.4; // 40% of margin for very short scenes (< 5s) - slow movement
