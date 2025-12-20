@@ -2968,8 +2968,8 @@ const Index = () => {
 
         {/* Scene settings dialog */}
         <Dialog open={sceneSettingsOpen} onOpenChange={setSceneSettingsOpen}>
-          <DialogContent className="max-w-2xl">
-            <div className="space-y-6">
+          <DialogContent className="max-w-2xl max-h-[90vh] w-[95vw] sm:w-full flex flex-col p-6">
+            <div className="overflow-y-auto flex-1 min-h-0 space-y-6">
               <div>
                 <h3 className="text-lg font-semibold mb-4">Configuration des scènes</h3>
                 <p className="text-sm text-muted-foreground">
@@ -3105,12 +3105,14 @@ const Index = () => {
                 </Button>
               </div>
             </div>
+            </div>
           </DialogContent>
         </Dialog>
 
         {/* Prompt settings dialog */}
         <Dialog open={promptSettingsOpen} onOpenChange={setPromptSettingsOpen}>
-          <DialogContent className="max-w-2xl">
+          <DialogContent className="max-w-2xl max-h-[90vh] w-[95vw] sm:w-full flex flex-col p-6">
+            <div className="overflow-y-auto flex-1 min-h-0">
             <div className="space-y-6">
               <div>
                 <h3 className="text-lg font-semibold mb-4">Paramètres de prompts</h3>
@@ -3215,6 +3217,7 @@ Return ONLY the prompt text, no JSON, no title, just the optimized prompt in ENG
                   Fermer
                 </Button>
               </div>
+            </div>
             </div>
           </DialogContent>
         </Dialog>
