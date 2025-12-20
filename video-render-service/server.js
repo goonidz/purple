@@ -123,15 +123,15 @@ function getPanEffect(sceneIndex, duration, width, height, framerate) {
   const panDistXExpr = `iw*${panAmount}`;
   const panDistYExpr = `ih*${panAmount}`;
   
-  // For long scenes (> 8 seconds), use multiple pans in different directions
+  // For scenes >= 10 seconds, use multiple pans in different directions
   // This avoids slow pixel-by-pixel movement that causes stuttering
-  const longSceneThreshold = 8.0; // seconds
+  const longSceneThreshold = 10.0; // seconds
   let xExpr, yExpr, effect;
   
-  if (duration > longSceneThreshold) {
+  if (duration >= longSceneThreshold) {
     // Long scene: divide into multiple segments with different pan directions
-    // Number of segments: 2 for 8-15s, 3 for 15-25s, 4 for 25s+
-    const numSegments = duration <= 15 ? 2 : duration <= 25 ? 3 : 4;
+    // Number of segments: 2 for 10-20s, 3 for 20-30s, 4 for 30s+
+    const numSegments = duration <= 20 ? 2 : duration <= 30 ? 3 : 4;
     const framesPerSegment = Math.floor(totalFrames / numSegments);
     
     // Pan directions for variety (only horizontal and vertical, no diagonal)
