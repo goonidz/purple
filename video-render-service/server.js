@@ -142,6 +142,11 @@ function getPanEffect(sceneIndex, duration, width, height, framerate) {
   const panDistXExpr = `iw*${panAmount}`;
   const panDistYExpr = `ih*${panAmount}`;
   
+  // Log pan parameters for debugging (only for long scenes to avoid spam)
+  if (duration >= 10) {
+    console.log(`[PAN DEBUG] Scene ${sceneIndex}: duration=${duration}s, zoom=${zoomLevel}x, panAmount=${panAmount} (${(panAmount*100).toFixed(0)}%)`);
+  }
+  
   // For scenes >= 10 seconds, use multiple pans in different directions
   // This avoids slow pixel-by-pixel movement that causes stuttering
   // Each segment pans a significant distance, making movement fast and smooth
