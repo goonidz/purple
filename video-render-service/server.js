@@ -162,92 +162,74 @@ function getPanEffect(sceneIndex, duration, width, height, framerate) {
     // Pan directions for variety (only horizontal and vertical, no diagonal)
     const panDirections = ['pan_left', 'pan_right', 'pan_up', 'pan_down'];
     
-    // Build continuous pan: each segment starts where the previous one ended
-    // Segment 0: starts at center, pans to position A
-    // Segment 1: starts at position A, pans to position B
-    // Segment 2: starts at position B, pans to position C
-    // etc.
-    let xSegments = [];
-    let ySegments = [];
+    // Build continuous pan: calculate cumulative position directly
+    // Each segment adds to the total movement, ensuring no pause
+    // Calculate total offsets for each segment endpoint
+    let segmentOffsetsX = [0]; // Start at 0 (center)
+    let segmentOffsetsY = [0];
+    let cumulativeX = 0;
+    let cumulativeY = 0;
     
-    // Track cumulative position for smooth transitions
-    let currentXOffset = 0;
-    let currentYOffset = 0;
-    
+    // Pre-calculate all segment directions and cumulative positions
     for (let i = 0; i < numSegments; i++) {
-      const segmentStart = i * framesPerSegment;
-      const segmentProgress = `(on-${segmentStart})/${framesPerSegment}`;
-      const clampedProgress = `min(1,max(0,${segmentProgress}))`;
-      
-      // Choose direction for this segment (varied based on sceneIndex and segment)
       const directionIndex = (sceneIndex * numSegments + i) % panDirections.length;
       const direction = panDirections[directionIndex];
       
-      // Calculate start and end positions for this segment
-      let startX, startY, endX, endY;
-      
       switch (direction) {
         case 'pan_left':
-          // Start at current position, pan left (increase X)
-          startX = currentXOffset;
-          startY = currentYOffset;
-          endX = currentXOffset + panAmount; // Move left = increase X
-          endY = currentYOffset;
-          currentXOffset = endX; // Update for next segment
+          cumulativeX += panAmount;
           break;
         case 'pan_right':
-          // Start at current position, pan right (decrease X)
-          startX = currentXOffset;
-          startY = currentYOffset;
-          endX = currentXOffset - panAmount; // Move right = decrease X
-          endY = currentYOffset;
-          currentXOffset = endX; // Update for next segment
+          cumulativeX -= panAmount;
           break;
         case 'pan_up':
-          // Start at current position, pan up (increase Y)
-          startX = currentXOffset;
-          startY = currentYOffset;
-          endX = currentXOffset;
-          endY = currentYOffset + panAmount; // Move up = increase Y
-          currentYOffset = endY; // Update for next segment
+          cumulativeY += panAmount;
           break;
         case 'pan_down':
-          // Start at current position, pan down (decrease Y)
-          startX = currentXOffset;
-          startY = currentYOffset;
-          endX = currentXOffset;
-          endY = currentYOffset - panAmount; // Move down = decrease Y
-          currentYOffset = endY; // Update for next segment
+          cumulativeY -= panAmount;
           break;
-        default:
-          startX = currentXOffset;
-          startY = currentYOffset;
-          endX = currentXOffset;
-          endY = currentYOffset;
       }
       
-      // Build expression: linear interpolation from start to end
-      // center + offset_start + (offset_end - offset_start) * progress
-      const deltaX = endX - startX;
-      const deltaY = endY - startY;
-      const segXExpr = `${centerXExpr}+iw*${startX}+iw*${deltaX}*${clampedProgress}`;
-      const segYExpr = `${centerYExpr}+ih*${startY}+ih*${deltaY}*${clampedProgress}`;
-      
-      xSegments.push(segXExpr);
-      ySegments.push(segYExpr);
+      segmentOffsetsX.push(cumulativeX);
+      segmentOffsetsY.push(cumulativeY);
     }
     
-    // Build final expression using nested if statements for each segment
-    // Calculate segment index: floor(on / framesPerSegment)
+    // Build continuous expression: calculate position based on current frame
+    // For each segment, interpolate between its start and end offsets
+    let xExprParts = [];
+    let yExprParts = [];
+    
+    for (let i = 0; i < numSegments; i++) {
+      const segmentStart = i * framesPerSegment;
+      const segmentEnd = (i + 1) * framesPerSegment;
+      const segmentProgress = `(on-${segmentStart})/${framesPerSegment}`;
+      const clampedProgress = `min(1,max(0,${segmentProgress}))`;
+      
+      const startOffsetX = segmentOffsetsX[i];
+      const endOffsetX = segmentOffsetsX[i + 1];
+      const startOffsetY = segmentOffsetsY[i];
+      const endOffsetY = segmentOffsetsY[i + 1];
+      
+      const deltaX = endOffsetX - startOffsetX;
+      const deltaY = endOffsetY - startOffsetY;
+      
+      // Position = center + start_offset + (end_offset - start_offset) * progress
+      const segXExpr = `${centerXExpr}+iw*${startOffsetX}+iw*${deltaX}*${clampedProgress}`;
+      const segYExpr = `${centerYExpr}+ih*${startOffsetY}+ih*${deltaY}*${clampedProgress}`;
+      
+      xExprParts.push(segXExpr);
+      yExprParts.push(segYExpr);
+    }
+    
+    // Build final expression using nested if statements
     const segmentIndex = `floor(on/${framesPerSegment})`;
     
-    // Build nested if: if segment 0, use expr0, else if segment 1, use expr1, etc.
-    let xFinal = xSegments[xSegments.length - 1]; // Default to last segment
-    let yFinal = ySegments[ySegments.length - 1];
+    let xFinal = xExprParts[xExprParts.length - 1];
+    let yFinal = yExprParts[yExprParts.length - 1];
     
-    for (let i = xSegments.length - 2; i >= 0; i--) {
-      xFinal = `if(eq(${segmentIndex},${i}),${xSegments[i]},${xFinal})`;
-      yFinal = `if(eq(${segmentIndex},${i}),${ySegments[i]},${yFinal})`;
+    for (let i = xExprParts.length - 2; i >= 0; i--) {
+      xFinal = `if(eq(${segmentIndex},${i}),${xExprParts[i]},${xFinal})`;
+      yFinal = `if(eq(${segmentIndex},${i}),${yExprParts[i]},${yFinal})`;
     }
     
     xExpr = xFinal;
