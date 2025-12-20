@@ -16,7 +16,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Version identifier - update this when making pan/zoom changes
-const SERVICE_VERSION = 'v2.6-pan-adaptive-speed';
+const SERVICE_VERSION = 'v2.8-pan-9s-1.5cycles';
 
 // Create temp directory (must be defined before use)
 const TEMP_DIR = path.join(__dirname, 'temp');
@@ -101,7 +101,7 @@ function getPanEffect(sceneIndex, duration, width, height, framerate) {
   const totalFrames = Math.ceil(duration * framerate);
   
   // Log pan parameters for debugging (only for long scenes to avoid spam)
-  if (duration >= 10) {
+  if (duration >= 9) {
     console.log(`[PAN DEBUG] Scene ${sceneIndex}: duration=${duration}s, totalFrames=${totalFrames}`);
   }
   
@@ -122,27 +122,27 @@ function getPanEffect(sceneIndex, duration, width, height, framerate) {
   let panAmount;
   if (duration < 5) {
     panAmount = maxPanAmount * 0.4; // 40% of margin for very short scenes (< 5s) - slow movement
-  } else if (duration < 10) {
-    panAmount = maxPanAmount * 0.6; // 60% of margin for short scenes (5-10s) - moderate movement
+  } else if (duration < 9) {
+    panAmount = maxPanAmount * 0.6; // 60% of margin for short scenes (5-9s) - moderate movement
   } else {
-    panAmount = maxPanAmount; // 100% of margin for long scenes (>= 10s) - full movement
+    panAmount = maxPanAmount; // 100% of margin for long scenes (>= 9s) - full movement
   }
   const panDistXExpr = `iw*${panAmount}`;
   const panDistYExpr = `ih*${panAmount}`;
   
   // Log pan parameters for debugging (only for long scenes to avoid spam)
-  if (duration >= 10) {
+  if (duration >= 9) {
     console.log(`[PAN DEBUG] Scene ${sceneIndex}: duration=${duration}s, zoom=${zoomLevel}x, panAmount=${panAmount} (${(panAmount*100).toFixed(0)}%)`);
   }
   
-  // For scenes >= 10 seconds, use multiple pans in different directions
+  // For scenes >= 9 seconds, use multiple pans in different directions
   // This avoids slow pixel-by-pixel movement that causes stuttering
   // Each segment pans a significant distance, making movement fast and smooth
-  const longSceneThreshold = 10.0; // seconds
+  const longSceneThreshold = 9.0; // seconds
   let xExpr, yExpr, effect;
   
   if (duration >= longSceneThreshold) {
-    // Long scene: single back-and-forth pan (1 cycle)
+    // Long scene: up to 1.5 back-and-forth pans (1 complete cycle + 0.5, stopping at peak)
     // The panAmount is now correctly calculated to use full margin without edge sticking
     
     // Choose primary direction based on scene index (alternating between X and Y)
@@ -151,23 +151,25 @@ function getPanEffect(sceneIndex, duration, width, height, framerate) {
     // Global progress: 0 to 1 over entire scene
     const globalProgress = `on/${totalFrames}`;
     
-    // Single triangular wave: 0 -> 1 -> 0 (one back-and-forth)
-    const triangularWave = `(1-abs(2*${globalProgress}-1))`;
+    // 1.5 cycles: mod(1.5 * progress, 1) creates 1.5 cycles, then apply triangular wave
+    // At progress=1, mod(1.5, 1)=0.5, so we're at the peak of the 2nd cycle
+    const cycleProgress = `mod(1.5*${globalProgress},1)`;
+    const triangularWave = `(1-abs(2*${cycleProgress}-1))`;
     
     // Pure linear motion - only horizontal OR vertical, never diagonal
     if (useHorizontal) {
-      // Horizontal pan only (single back-and-forth)
+      // Horizontal pan only (up to 1.5 back-and-forth)
       xExpr = `${centerXExpr}+iw*${panAmount}*${triangularWave}`;
       yExpr = centerYExpr; // No vertical movement
       effect = 'continuous_pan_horizontal';
     } else {
-      // Vertical pan only (single back-and-forth)
+      // Vertical pan only (up to 1.5 back-and-forth)
       xExpr = centerXExpr; // No horizontal movement
       yExpr = `${centerYExpr}+ih*${panAmount}*${triangularWave}`;
       effect = 'continuous_pan_vertical';
     }
     
-    console.log(`[PAN DEBUG] Scene ${sceneIndex}: 1 cycle, panAmount=${panAmount.toFixed(4)}`);
+    console.log(`[PAN DEBUG] Scene ${sceneIndex}: 1.5 cycles, panAmount=${panAmount.toFixed(4)}`);
     
   } else {
     // Short scene: single pan direction
