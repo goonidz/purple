@@ -97,59 +97,129 @@ function createConcatFileForVideos(scenes, workDir) {
 function getPanEffect(sceneIndex, duration, width, height, framerate) {
   const totalFrames = Math.ceil(duration * framerate);
   
-  // Pan directions for variety (only horizontal and vertical, no diagonal)
-  const panDirections = ['pan_left', 'pan_right', 'pan_up', 'pan_down'];
-  const direction = panDirections[sceneIndex % panDirections.length];
-  
   // For pan to work, we need a slight zoom (1.2 = 20% zoom) to create margin for panning
-  // This is much less than the 6x upscale used for Ken Burns, so it's still fast
   const zoomLevel = 1.2; // 20% zoom creates enough margin for visible pan
   const zoomExpr = String(zoomLevel);
   
-  // Pan distance: move 4% of the image width/height (relative to zoomed size)
-  // This creates slower, more subtle movement within the zoomed area
-  const panAmount = 0.04;
-  
-  let xExpr, yExpr;
   // Center position (starting point) - when zoomed, center is (iw-iw/zoom)/2
   const centerXExpr = `(iw-iw/${zoomLevel})/2`;
   const centerYExpr = `(ih-ih/${zoomLevel})/2`;
   
-  // Pan distance in pixels (relative to image dimensions)
+  // Base pan amount per segment (4% of image)
+  const panAmount = 0.04;
   const panDistXExpr = `iw*${panAmount}`;
   const panDistYExpr = `ih*${panAmount}`;
   
-  switch (direction) {
-    case 'pan_left':
-      // Pan left: start viewing right side, move to left
-      xExpr = `${centerXExpr}+${panDistXExpr}*(1-on/${totalFrames})-${panDistXExpr}*(on/${totalFrames})`;
-      yExpr = centerYExpr;
-      break;
-    case 'pan_right':
-      // Pan right: start viewing left side, move to right
-      xExpr = `${centerXExpr}-${panDistXExpr}*(1-on/${totalFrames})+${panDistXExpr}*(on/${totalFrames})`;
-      yExpr = centerYExpr;
-      break;
-    case 'pan_up':
-      // Pan up: start viewing bottom, move to top
-      xExpr = centerXExpr;
-      yExpr = `${centerYExpr}+${panDistYExpr}*(1-on/${totalFrames})-${panDistYExpr}*(on/${totalFrames})`;
-      break;
-    case 'pan_down':
-      // Pan down: start viewing top, move to bottom
-      xExpr = centerXExpr;
-      yExpr = `${centerYExpr}-${panDistYExpr}*(1-on/${totalFrames})+${panDistYExpr}*(on/${totalFrames})`;
-      break;
-    default:
-      xExpr = centerXExpr;
-      yExpr = centerYExpr;
+  // For long scenes (> 8 seconds), use multiple pans in different directions
+  // This avoids slow pixel-by-pixel movement that causes stuttering
+  const longSceneThreshold = 8.0; // seconds
+  let xExpr, yExpr, effect;
+  
+  if (duration > longSceneThreshold) {
+    // Long scene: divide into multiple segments with different pan directions
+    // Number of segments: 2 for 8-15s, 3 for 15-25s, 4 for 25s+
+    const numSegments = duration <= 15 ? 2 : duration <= 25 ? 3 : 4;
+    const framesPerSegment = Math.floor(totalFrames / numSegments);
+    
+    // Pan directions for variety (only horizontal and vertical, no diagonal)
+    const panDirections = ['pan_left', 'pan_right', 'pan_up', 'pan_down'];
+    
+    // Build expressions that change direction at segment boundaries
+    // Use simpler approach: calculate which segment we're in, then apply that segment's pan
+    let xSegments = [];
+    let ySegments = [];
+    
+    for (let i = 0; i < numSegments; i++) {
+      const segmentStart = i * framesPerSegment;
+      const segmentProgress = `(on-${segmentStart})/${framesPerSegment}`;
+      const clampedProgress = `min(1,max(0,${segmentProgress}))`;
+      
+      // Choose direction for this segment (varied based on sceneIndex and segment)
+      const directionIndex = (sceneIndex * numSegments + i) % panDirections.length;
+      const direction = panDirections[directionIndex];
+      
+      let segXExpr, segYExpr;
+      switch (direction) {
+        case 'pan_left':
+          segXExpr = `${centerXExpr}+${panDistXExpr}*(1-${clampedProgress})`;
+          segYExpr = centerYExpr;
+          break;
+        case 'pan_right':
+          segXExpr = `${centerXExpr}-${panDistXExpr}*(1-${clampedProgress})`;
+          segYExpr = centerYExpr;
+          break;
+        case 'pan_up':
+          segXExpr = centerXExpr;
+          segYExpr = `${centerYExpr}+${panDistYExpr}*(1-${clampedProgress})`;
+          break;
+        case 'pan_down':
+          segXExpr = centerXExpr;
+          segYExpr = `${centerYExpr}-${panDistYExpr}*(1-${clampedProgress})`;
+          break;
+        default:
+          segXExpr = centerXExpr;
+          segYExpr = centerYExpr;
+      }
+      
+      xSegments.push(segXExpr);
+      ySegments.push(segYExpr);
+    }
+    
+    // Build final expression using nested if statements for each segment
+    // Calculate segment index: floor(on / framesPerSegment)
+    const segmentIndex = `floor(on/${framesPerSegment})`;
+    
+    // Build nested if: if segment 0, use expr0, else if segment 1, use expr1, etc.
+    let xFinal = xSegments[xSegments.length - 1]; // Default to last segment
+    let yFinal = ySegments[ySegments.length - 1];
+    
+    for (let i = xSegments.length - 2; i >= 0; i--) {
+      xFinal = `if(eq(${segmentIndex},${i}),${xSegments[i]},${xFinal})`;
+      yFinal = `if(eq(${segmentIndex},${i}),${ySegments[i]},${yFinal})`;
+    }
+    
+    xExpr = xFinal;
+    yExpr = yFinal;
+    effect = `multi_pan_${numSegments}seg`;
+    
+  } else {
+    // Short scene: single pan direction
+    const panDirections = ['pan_left', 'pan_right', 'pan_up', 'pan_down'];
+    const direction = panDirections[sceneIndex % panDirections.length];
+    
+    switch (direction) {
+      case 'pan_left':
+        // Pan left: start viewing right side, move to left
+        xExpr = `${centerXExpr}+${panDistXExpr}*(1-on/${totalFrames})`;
+        yExpr = centerYExpr;
+        break;
+      case 'pan_right':
+        // Pan right: start viewing left side, move to right
+        xExpr = `${centerXExpr}-${panDistXExpr}*(1-on/${totalFrames})`;
+        yExpr = centerYExpr;
+        break;
+      case 'pan_up':
+        // Pan up: start viewing bottom, move to top
+        xExpr = centerXExpr;
+        yExpr = `${centerYExpr}+${panDistYExpr}*(1-on/${totalFrames})`;
+        break;
+      case 'pan_down':
+        // Pan down: start viewing top, move to bottom
+        xExpr = centerXExpr;
+        yExpr = `${centerYExpr}-${panDistYExpr}*(1-on/${totalFrames})`;
+        break;
+      default:
+        xExpr = centerXExpr;
+        yExpr = centerYExpr;
+    }
+    effect = direction;
   }
   
   return {
     // Use zoompan with slight zoom (1.2x) to create margin for panning
     // This is much faster than 6x upscale for Ken Burns
     filter: `zoompan=z='${zoomExpr}':x='${xExpr}':y='${yExpr}':d=${totalFrames}:s=${width}x${height}:fps=${framerate}`,
-    effect: direction
+    effect: effect
   };
 }
 
@@ -242,6 +312,16 @@ async function renderSceneWithEffect(imagePath, outputPath, duration, width, hei
     console.log(`[${jobId}] Scene ${sceneIndex}: ${effect} effect (effectType: "${effectType}", isPan: ${isPan}), ${duration.toFixed(2)}s`);
     console.log(`[${jobId}] Filter: ${filter}`);
     
+    // Preprocessing: Scale and crop image to fill the frame completely (avoid black bars)
+    // This ensures images from zimage or other sources fill the entire frame
+    // Use scale to fit the larger dimension, then crop to exact size
+    const preprocessFilter = `scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height}`;
+    
+    // Combine preprocessing with the effect filter
+    const finalFilter = isPan 
+      ? `${preprocessFilter},${filter}` // For pan: preprocess then apply pan effect
+      : `${preprocessFilter},${filter}`; // For zoom: preprocess then apply zoom effect
+    
     // Use zoompan filter directly on the image - it generates frames from a single image
     // The filter chain handles format conversion (yuv444p -> zoompan -> yuv420p)
     const sceneFfmpegCommand = ffmpeg()
@@ -253,7 +333,7 @@ async function renderSceneWithEffect(imagePath, outputPath, duration, width, hei
         '-crf', '23',
         '-t', duration.toString() // Duration of the output
       ])
-      .videoFilters([filter])
+      .videoFilters([finalFilter])
       .output(outputPath)
       .on('start', (cmd) => {
         console.log(`[${jobId}] Scene ${sceneIndex} FFmpeg: ${cmd}`);
@@ -464,7 +544,8 @@ async function processRenderJob(jobId, renderData) {
           '-pix_fmt', 'yuv420p',
           '-movflags', '+faststart',
           '-threads', '0', // Use all available cores
-          '-shortest' // End when shortest stream ends
+          '-shortest', // End when shortest stream ends
+          '-stats_period', '0.5' // Force FFmpeg to emit stats every 0.5 seconds
         ])
         .output(outputPath);
 
@@ -475,12 +556,25 @@ async function processRenderJob(jobId, renderData) {
         jobs.set(jobId, job);
       }
 
+      // Track encoding start time for fallback progress estimation
+      let encodingStartTime = null;
+      let lastProgressUpdate = null;
+      let lastPercent = 0;
+
       ffmpegCommand
         .on('start', (commandLine) => {
           console.log(`[${jobId}] FFmpeg command: ${commandLine}`);
+          encodingStartTime = Date.now();
+          lastProgressUpdate = Date.now();
           addStep('Encodage vidéo en cours...', 75, true);
         })
         .on('progress', (progress) => {
+          const now = Date.now();
+          lastProgressUpdate = now;
+          
+          // Log all progress data for debugging
+          console.log(`[${jobId}] FFmpeg progress:`, JSON.stringify(progress));
+          
           if (progress.percent !== undefined && progress.percent !== null) {
             // Parse percent (can be string or number from FFmpeg)
             let percent = typeof progress.percent === 'string' 
@@ -489,6 +583,7 @@ async function processRenderJob(jobId, renderData) {
             
             // Clamp percent between 0 and 100 (FFmpeg can sometimes report > 100)
             percent = Math.max(0, Math.min(100, percent));
+            lastPercent = percent;
             
             // Map FFmpeg progress (0-100) to our progress range (75-95)
             const mappedProgress = 75 + Math.floor(percent * 0.2);
@@ -502,9 +597,27 @@ async function processRenderJob(jobId, renderData) {
               job.currentStep = `Encodage vidéo en cours... ${Math.round(percent)}%`;
               jobs.set(jobId, job);
             }
+            
+            console.log(`[${jobId}] Progress updated: ${Math.round(percent)}% (mapped to ${finalProgress}%)`);
+          } else if (progress.timemark) {
+            // If we have timemark but no percent, log it
+            console.log(`[${jobId}] FFmpeg timemark: ${progress.timemark}, target: ${progress.targetSize || 'N/A'}, current: ${progress.currentKbps || 'N/A'} kbps`);
+          }
+        })
+        .on('stderr', (stderrLine) => {
+          // Capture FFmpeg stderr output for debugging
+          // Look for progress indicators in stderr
+          if (stderrLine.includes('time=') || stderrLine.includes('frame=') || stderrLine.includes('bitrate=')) {
+            console.log(`[${jobId}] FFmpeg stderr: ${stderrLine.trim()}`);
+            lastProgressUpdate = Date.now();
           }
         })
         .on('end', async () => {
+          // Clean up fallback interval
+          if (fallbackInterval) {
+            clearInterval(fallbackInterval);
+          }
+          
           addStep('Encodage terminé', 95);
           
           try {
@@ -546,6 +659,11 @@ async function processRenderJob(jobId, renderData) {
           }
         })
         .on('error', async (err) => {
+          // Clean up fallback interval
+          if (fallbackInterval) {
+            clearInterval(fallbackInterval);
+          }
+          
           console.error(`[${jobId}] FFmpeg error:`, err);
           // Remove FFmpeg command reference
           const job = jobs.get(jobId);
@@ -565,6 +683,27 @@ async function processRenderJob(jobId, renderData) {
           }
         })
         .run();
+
+      // Fallback progress updater: if no progress events for 2 seconds, estimate based on time
+      const fallbackInterval = setInterval(() => {
+        if (encodingStartTime && lastProgressUpdate) {
+          const timeSinceLastUpdate = Date.now() - lastProgressUpdate;
+          // If no progress update for 2 seconds, assume we're still encoding
+          if (timeSinceLastUpdate > 2000) {
+            const job = jobs.get(jobId);
+            if (job && job.status === 'processing') {
+              // Estimate progress based on elapsed time (very rough, but better than nothing)
+              const elapsed = Date.now() - encodingStartTime;
+              // Assume encoding takes at least 10 seconds, cap at 94%
+              const estimatedPercent = Math.min(94, 75 + Math.floor((elapsed / 10000) * 19));
+              job.progress = clampProgress(estimatedPercent);
+              job.currentStep = `Encodage vidéo en cours... (estimation)`;
+              jobs.set(jobId, job);
+              console.log(`[${jobId}] Fallback progress: ${estimatedPercent}% (no update for ${Math.round(timeSinceLastUpdate/1000)}s)`);
+            }
+          }
+        }
+      }, 1000);
     });
 
   } catch (error) {
