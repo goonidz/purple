@@ -192,7 +192,7 @@ export const SceneEditor = ({
                   e.preventDefault();
                 }
               }}
-              className="h-10 resize-none"
+              className="h-10 min-h-10 resize-none px-3 py-2 text-base md:text-sm"
               placeholder="0"
             />
           </div>
@@ -226,7 +226,7 @@ export const SceneEditor = ({
                   e.preventDefault();
                 }
               }}
-              className="h-10 resize-none"
+              className="h-10 min-h-10 resize-none px-3 py-2 text-base md:text-sm"
               placeholder="0"
             />
           </div>

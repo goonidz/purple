@@ -623,6 +623,51 @@ export const ProjectConfigurationModal = ({
 
       {step === "scene-config" && (
         <div className="space-y-4">
+          {/* Preset selector */}
+          <div className="rounded-lg border p-4 bg-primary/5 border-primary/20">
+            <div className="flex items-center gap-2 mb-3">
+              <Download className="h-4 w-4 text-primary" />
+              <h3 className="font-semibold text-sm">Charger un preset (optionnel)</h3>
+            </div>
+            {isLoadingPresets ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Chargement des presets...
+              </div>
+            ) : presets.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                Aucun preset sauvegardé. Vous pourrez en créer après avoir configuré un projet.
+              </p>
+            ) : (
+              <div className="flex gap-2">
+                <Select value={selectedPresetId} onValueChange={handleLoadPreset}>
+                  <SelectTrigger className="flex-1 bg-background">
+                    <SelectValue placeholder="Sélectionner un preset..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {presets.map((preset) => (
+                      <SelectItem key={preset.id} value={preset.id}>
+                        {preset.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  variant="default"
+                  onClick={() => {
+                    if (selectedPresetId) {
+                      handleLoadPreset(selectedPresetId);
+                    }
+                  }}
+                  disabled={!selectedPresetId}
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  Charger
+                </Button>
+              </div>
+            )}
+          </div>
+
           <div className="space-y-2">
             <Label>Format de contenu</Label>
             <RadioGroup value={sceneFormat} onValueChange={(value) => {

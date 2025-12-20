@@ -103,7 +103,7 @@ export const DurationRangesEditor = ({
                 <div>
                   <Label className="text-xs text-muted-foreground">Fin de plage (sec)</Label>
                   {isLast ? (
-                    <Textarea disabled value="∞" className="bg-muted h-10 resize-none" readOnly />
+                    <Textarea disabled value="∞" className="bg-muted h-10 min-h-10 resize-none px-3 py-2 text-base md:text-sm" readOnly />
                   ) : (
                     <Textarea
                       value={range.endSeconds?.toString() || ""}
@@ -125,7 +125,7 @@ export const DurationRangesEditor = ({
                           e.preventDefault();
                         }
                       }}
-                      className="h-10 resize-none"
+                      className="h-10 min-h-10 resize-none px-3 py-2 text-base md:text-sm"
                       placeholder="0"
                     />
                   )}
@@ -152,7 +152,7 @@ export const DurationRangesEditor = ({
                         e.preventDefault();
                       }
                     }}
-                    className="h-10 resize-none"
+                    className="h-10 min-h-10 resize-none px-3 py-2 text-base md:text-sm"
                     placeholder="1"
                   />
                 </div>
