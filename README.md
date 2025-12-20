@@ -1,6 +1,6 @@
 # Welcome to your Lovable project
 
-Test 233
+VideoFlow - Créateur de vidéos IA
 
 ## Project info
 
