@@ -1,0 +1,316 @@
+# Guide de déploiement VideoFlow sur VPS Linux
+
+Ce guide explique comment déployer l'application VideoFlow sur un VPS Linux en utilisant Docker.
+
+## Prérequis
+
+### Sur le VPS
+
+1. **Docker installé**
+   ```bash
+   # Ubuntu/Debian
+   curl -fsSL https://get.docker.com -o get-docker.sh
+   sudo sh get-docker.sh
+   sudo usermod -aG docker $USER
+   ```
+
+2. **Docker Compose** (optionnel, pour utiliser docker-compose.yml)
+   ```bash
+   sudo apt-get update
+   sudo apt-get install docker-compose-plugin
+   ```
+
+3. **Git** (pour cloner le repository)
+   ```bash
+   sudo apt-get install git
+   ```
+
+4. **Port 80 disponible** (vérifier qu'aucun service n'utilise déjà le port 80)
+   ```bash
+   sudo netstat -tulpn | grep :80
+   ```
+
+## Configuration
+
+### 1. Cloner le repository
+
+```bash
+git clone https://github.com/goonidz/VideoFlow.git
+cd VideoFlow
+```
+
+### 2. Créer le fichier .env.production
+
+Créez un fichier `.env.production` à la racine du projet avec vos variables d'environnement :
+
+```bash
+cat > .env.production << EOF
+VITE_SUPABASE_URL=https://votre-projet.supabase.co
+VITE_SUPABASE_PUBLISHABLE_KEY=votre_cle_publique_supabase
+EOF
+```
+
+**Important** : Remplacez les valeurs par vos vraies credentials Supabase.
+
+### 3. Vérifier les credentials
+
+Vous pouvez trouver vos credentials Supabase dans :
+- Dashboard Supabase → Settings → API
+- `VITE_SUPABASE_URL` : Project URL
+- `VITE_SUPABASE_PUBLISHABLE_KEY` : `anon` public key
+
+## Déploiement
+
+### Option 1 : Utiliser le script de déploiement (recommandé)
+
+```bash
+./deploy.sh
+```
+
+Le script va automatiquement :
+- Vérifier les variables d'environnement
+- Builder l'image Docker
+- Arrêter l'ancien container
+- Démarrer le nouveau container
+- Nettoyer les anciennes images
+
+### Option 2 : Utiliser Docker Compose
+
+```bash
+# Charger les variables d'environnement
+export $(cat .env.production | grep -v '^#' | xargs)
+
+# Builder et démarrer
+docker compose up -d --build
+```
+
+### Option 3 : Commandes Docker manuelles
+
+```bash
+# Charger les variables d'environnement
+export $(cat .env.production | grep -v '^#' | xargs)
+
+# Builder l'image
+docker build \
+    --build-arg VITE_SUPABASE_URL="$VITE_SUPABASE_URL" \
+    --build-arg VITE_SUPABASE_PUBLISHABLE_KEY="$VITE_SUPABASE_PUBLISHABLE_KEY" \
+    -t videoflow:latest .
+
+# Arrêter l'ancien container (si existe)
+docker stop videoflow 2>/dev/null || true
+docker rm videoflow 2>/dev/null || true
+
+# Démarrer le nouveau container
+docker run -d \
+    --name videoflow \
+    -p 80:80 \
+    --restart unless-stopped \
+    videoflow:latest
+```
+
+## Vérification
+
+### Vérifier que le container tourne
+
+```bash
+docker ps | grep videoflow
+```
+
+### Vérifier les logs
+
+```bash
+docker logs videoflow
+# Ou en temps réel
+docker logs -f videoflow
+```
+
+### Tester l'application
+
+Ouvrez votre navigateur et allez sur :
+```
+http://VOTRE_IP_VPS
+```
+
+Ou si vous avez configuré un nom de domaine :
+```
+http://votre-domaine.com
+```
+
+### Health check
+
+```bash
+curl http://localhost/health
+# Devrait retourner: healthy
+```
+
+## Mise à jour de l'application
+
+### Méthode 1 : Script de déploiement
+
+```bash
+# Pull les dernières modifications
+git pull origin main
+
+# Relancer le déploiement
+./deploy.sh
+```
+
+### Méthode 2 : Docker Compose
+
+```bash
+git pull origin main
+export $(cat .env.production | grep -v '^#' | xargs)
+docker compose up -d --build
+```
+
+### Méthode 3 : Manuelle
+
+```bash
+git pull origin main
+export $(cat .env.production | grep -v '^#' | xargs)
+docker build --build-arg VITE_SUPABASE_URL="$VITE_SUPABASE_URL" --build-arg VITE_SUPABASE_PUBLISHABLE_KEY="$VITE_SUPABASE_PUBLISHABLE_KEY" -t videoflow:latest .
+docker stop videoflow
+docker rm videoflow
+docker run -d --name videoflow -p 80:80 --restart unless-stopped videoflow:latest
+```
+
+## Gestion du container
+
+### Arrêter l'application
+
+```bash
+docker stop videoflow
+```
+
+### Démarrer l'application
+
+```bash
+docker start videoflow
+```
+
+### Redémarrer l'application
+
+```bash
+docker restart videoflow
+```
+
+### Supprimer le container
+
+```bash
+docker stop videoflow
+docker rm videoflow
+```
+
+### Supprimer l'image
+
+```bash
+docker rmi videoflow:latest
+```
+
+## Configuration du firewall
+
+Si vous utilisez UFW (Ubuntu Firewall), autorisez le port 80 :
+
+```bash
+sudo ufw allow 80/tcp
+sudo ufw reload
+```
+
+## Configuration avec nom de domaine (optionnel)
+
+Si vous avez un nom de domaine, vous pouvez :
+
+1. **Configurer un reverse proxy avec nginx** (sur l'hôte, pas dans Docker)
+2. **Utiliser Let's Encrypt pour SSL** avec Certbot
+
+Exemple de configuration nginx sur l'hôte :
+
+```nginx
+server {
+    listen 80;
+    server_name votre-domaine.com;
+
+    location / {
+        proxy_pass http://localhost:80;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+## Troubleshooting
+
+### Le container ne démarre pas
+
+```bash
+# Vérifier les logs
+docker logs videoflow
+
+# Vérifier que le port 80 n'est pas déjà utilisé
+sudo netstat -tulpn | grep :80
+```
+
+### L'application ne se charge pas
+
+1. Vérifier que le container tourne : `docker ps`
+2. Vérifier les logs : `docker logs videoflow`
+3. Vérifier le firewall : `sudo ufw status`
+4. Tester localement : `curl http://localhost/health`
+
+### Erreurs de build
+
+- Vérifier que toutes les variables d'environnement sont définies dans `.env.production`
+- Vérifier les logs de build : `docker build --progress=plain -t videoflow:latest .`
+
+### Problèmes de routing (404 sur les routes)
+
+- Vérifier que `nginx.conf` est correctement configuré
+- Vérifier que le fichier `index.html` est bien présent dans `/usr/share/nginx/html`
+
+### Nettoyage
+
+Pour nettoyer les images Docker inutilisées :
+
+```bash
+docker image prune -a
+```
+
+Pour tout nettoyer (attention, supprime tout) :
+
+```bash
+docker system prune -a
+```
+
+## Architecture
+
+```
+┌─────────────────┐
+│   VPS Linux     │
+│                 │
+│  ┌───────────┐  │
+│  │  Docker   │  │
+│  │ Container │  │
+│  │  (nginx)  │  │
+│  │  Port 80  │  │
+│  └───────────┘  │
+│                 │
+│  ┌───────────┐  │
+│  │ Video     │  │
+│  │ Render    │  │
+│  │ Service   │  │
+│  │ Port 3000 │  │
+│  └───────────┘  │
+└─────────────────┘
+```
+
+- **Frontend** : Docker container sur le port 80
+- **Service de rendu vidéo** : Tourne séparément sur le port 3000 (déjà configuré)
+
+## Support
+
+Pour toute question ou problème, consultez :
+- Les logs Docker : `docker logs videoflow`
+- La documentation Supabase : https://supabase.com/docs
+- La documentation Docker : https://docs.docker.com
