@@ -26,7 +26,7 @@ export default function AppHeader({ title, children }: AppHeaderProps) {
                 <Sparkles className="h-5 w-5 text-primary-foreground" />
               </div>
               <span className="font-semibold text-lg bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
-                {title || "VideoFlow"}
+                {title || "test"}
               </span>
             </Link>
             {children}
@@ -68,4 +68,5 @@ export default function AppHeader({ title, children }: AppHeaderProps) {
     </header>
   );
 }
+
 
