@@ -65,7 +65,7 @@ export async function renderVideo(options: VideoRenderOptions): Promise<VideoRen
       }
     }
 
-    const { projectId, framerate = 25, width = 1920, height = 1080, subtitleSettings, effectType = 'zoom' } = options;
+    const { projectId, framerate = 25, width = 1920, height = 1080, subtitleSettings, effectType = 'pan' } = options;
 
     console.log('Calling render-video Edge Function with:', { projectId, framerate, width, height, effectType });
     console.log('User authenticated:', user.id);

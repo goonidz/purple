@@ -140,7 +140,7 @@ const Index = () => {
   const [exportFormat, setExportFormat] = useState<ExportFormat>("premiere-xml");
   const [exportMode, setExportMode] = useState<ExportMode>("with-images");
   const [exportFramerate, setExportFramerate] = useState<number>(25);
-  const [exportEffectType, setExportEffectType] = useState<'zoom' | 'pan'>('zoom');
+  const [exportEffectType, setExportEffectType] = useState<'zoom' | 'pan'>('pan');
   const [exportBasePath, setExportBasePath] = useState<string>("");
   const [isExporting, setIsExporting] = useState(false);
   const [isRendering, setIsRendering] = useState(false);

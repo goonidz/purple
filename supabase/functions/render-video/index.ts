@@ -84,7 +84,7 @@ serve(async (req) => {
       width = 1920,
       height = 1080,
       subtitleSettings,
-      effectType = 'zoom' // 'zoom' for Ken Burns, 'pan' for pan effects
+      effectType = 'pan' // 'zoom' for Ken Burns, 'pan' for pan effects
     } = requestBody;
 
     if (!projectId) {
