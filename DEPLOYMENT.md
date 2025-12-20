@@ -382,17 +382,44 @@ http://videoflow.duckdns.org
 
 ### 8. Configuration SSL avec Let's Encrypt (optionnel mais recommandé)
 
+**Important** : Let's Encrypt limite à **5 échecs par heure** par domaine. Si vous avez trop d'échecs, attendez 1 heure avant de réessayer.
+
+#### Méthode automatique (recommandée)
+
+```bash
+cd ~/purple
+git pull origin main
+./setup-ssl-auto.sh
+```
+
+Le script va automatiquement :
+- Vérifier et mettre à jour DuckDNS
+- Diagnostiquer les problèmes
+- Obtenir le certificat SSL
+- Configurer nginx pour HTTPS
+
+#### Méthode manuelle
+
 ```bash
 # Installer Certbot
 sudo apt-get install -y certbot python3-certbot-nginx
 
 # Obtenir le certificat SSL
-sudo certbot --nginx -d videoflow.duckdns.org
+sudo certbot --nginx -d purpleai.duckdns.org
 
 # Le certificat sera renouvelé automatiquement
 ```
 
-Après SSL, votre site sera accessible en HTTPS : `https://videoflow.duckdns.org`
+#### Si rate limit Let's Encrypt
+
+Si vous voyez l'erreur "too many failed authorizations" :
+
+1. **Attendez 1 heure** avant de réessayer
+2. Vérifiez que le domaine pointe bien vers le serveur : `nslookup purpleai.duckdns.org`
+3. Vérifiez que nginx fonctionne : `sudo systemctl status nginx`
+4. Réessayez : `./setup-ssl-delayed.sh`
+
+Après SSL, votre site sera accessible en HTTPS : `https://purpleai.duckdns.org`
 
 ### Vérification
 
