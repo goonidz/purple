@@ -15,6 +15,9 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Version identifier - update this when making pan/zoom changes
+const SERVICE_VERSION = 'v2.0-pan-fix-25-35percent';
+
 // Create temp directory (must be defined before use)
 const TEMP_DIR = path.join(__dirname, 'temp');
 if (!fs.existsSync(TEMP_DIR)) {
@@ -97,6 +100,11 @@ function createConcatFileForVideos(scenes, workDir) {
 function getPanEffect(sceneIndex, duration, width, height, framerate) {
   const totalFrames = Math.ceil(duration * framerate);
   
+  // Log pan parameters for debugging (only for long scenes to avoid spam)
+  if (duration >= 10) {
+    console.log(`[PAN DEBUG] Scene ${sceneIndex}: duration=${duration}s, totalFrames=${totalFrames}`);
+  }
+  
   // For pan to work, we need zoom to create margin for panning
   // Increase zoom for longer scenes to allow faster panning and avoid stuttering
   // More zoom = more margin = can pan faster without pixel-by-pixel movement
@@ -118,17 +126,18 @@ function getPanEffect(sceneIndex, duration, width, height, framerate) {
   const centerYExpr = `(ih-ih/${zoomLevel})/2`;
   
   // Pan amount per segment - MUST be large enough to avoid pixel-by-pixel movement
-  // For long scenes, we need much larger pan distances to move fast enough
-  // With more zoom, we have more margin, so we can pan further
+  // For long scenes, we need MUCH larger pan distances to move fast enough
+  // With more zoom, we have more margin, so we can pan much further
+  // Each segment should pan a significant portion of the visible area
   let panAmount;
   if (duration < 10) {
     panAmount = 0.04; // 4% for short scenes
   } else if (duration <= 20) {
-    panAmount = 0.12; // 12% for medium scenes (10-20s) - 3x faster
+    panAmount = 0.25; // 25% for medium scenes (10-20s) - each segment pans 25% of image
   } else if (duration <= 30) {
-    panAmount = 0.15; // 15% for long scenes (20-30s) - even faster
+    panAmount = 0.30; // 30% for long scenes (20-30s) - each segment pans 30% of image
   } else {
-    panAmount = 0.18; // 18% for very long scenes (>30s) - maximum speed
+    panAmount = 0.35; // 35% for very long scenes (>30s) - each segment pans 35% of image
   }
   const panDistXExpr = `iw*${panAmount}`;
   const panDistYExpr = `ih*${panAmount}`;
@@ -920,11 +929,16 @@ async function cleanup(workDir) {
 
 // Health check endpoint
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  res.json({ 
+    status: 'ok', 
+    version: SERVICE_VERSION,
+    timestamp: new Date().toISOString() 
+  });
 });
 
 // Start server
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Video Render Service running on port ${PORT}`);
+  console.log(`Service Version: ${SERVICE_VERSION}`);
   console.log(`Health check: http://localhost:${PORT}/health`);
 });
