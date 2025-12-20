@@ -1,4 +1,5 @@
 # VideoFlow - Créateur de Vidéos IA
+SSL auto-configuration
 
 Application web complète pour créer des vidéos professionnelles avec l'IA.
 
