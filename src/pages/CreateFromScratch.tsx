@@ -267,6 +267,53 @@ const CreateFromScratch = () => {
   const [isSavingScript, setIsSavingScript] = useState(false);
   const scriptSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Copy to clipboard with fallback
+  const copyToClipboard = async (text: string) => {
+    try {
+      // Try modern clipboard API first
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+        toast.success("Script copié !");
+        return;
+      }
+      
+      // Fallback: create temporary textarea
+      const textarea = document.createElement("textarea");
+      textarea.value = text;
+      textarea.style.position = "fixed";
+      textarea.style.left = "-999999px";
+      textarea.style.top = "-999999px";
+      document.body.appendChild(textarea);
+      textarea.focus();
+      textarea.select();
+      
+      try {
+        const successful = document.execCommand('copy');
+        if (successful) {
+          toast.success("Script copié !");
+        } else {
+          throw new Error("execCommand failed");
+        }
+      } catch (err) {
+        // Last resort: show text in alert for manual copy
+        toast.error("Impossible de copier automatiquement. Le texte est sélectionné, appuyez sur Ctrl+C (ou Cmd+C sur Mac)");
+        textarea.select();
+      } finally {
+        document.body.removeChild(textarea);
+      }
+    } catch (error) {
+      console.error("Failed to copy:", error);
+      // Fallback: select text in textarea if visible
+      const scriptTextarea = document.querySelector('textarea[value*="' + text.substring(0, 50) + '"]') as HTMLTextAreaElement;
+      if (scriptTextarea) {
+        scriptTextarea.select();
+        toast.info("Sélectionnez le texte et appuyez sur Ctrl+C (ou Cmd+C sur Mac)");
+      } else {
+        toast.error("Impossible de copier. Veuillez sélectionner le texte manuellement.");
+      }
+    }
+  };
+
   // Save script to database with debounce
   const saveScriptToDatabase = useCallback(async (script: string, pid: string) => {
     setIsSavingScript(true);
@@ -1630,10 +1677,7 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                     <Button 
                       variant="outline" 
                       size="sm"
-                      onClick={() => {
-                        navigator.clipboard.writeText(generatedScript);
-                        toast.success("Script copié !");
-                      }}
+                      onClick={() => copyToClipboard(generatedScript)}
                       disabled={!generatedScript.trim()}
                     >
                       <ClipboardCopy className="h-4 w-4 mr-2" />
