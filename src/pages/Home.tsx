@@ -26,7 +26,7 @@ const Home = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
-      <AppHeader />
+      <AppHeader title="test" />
 
       {/* Hero Section */}
       <div className="container flex flex-col items-center justify-center py-20 px-4">
