@@ -16,7 +16,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Version identifier - update this when making pan/zoom changes
-const SERVICE_VERSION = 'v2.1-pan-linear-only';
+const SERVICE_VERSION = 'v2.2-pan-multicycle';
 
 // Create temp directory (must be defined before use)
 const TEMP_DIR = path.join(__dirname, 'temp');
@@ -106,18 +106,16 @@ function getPanEffect(sceneIndex, duration, width, height, framerate) {
   }
   
   // For pan to work, we need zoom to create margin for panning
-  // Increase zoom for longer scenes to allow faster panning and avoid stuttering
-  // More zoom = more margin = can pan faster without pixel-by-pixel movement
-  // With larger pan amounts (12-18%), we need more zoom to have enough margin
+  // More zoom = more margin = can pan further without hitting edges
   let zoomLevel;
   if (duration < 10) {
-    zoomLevel = 1.2; // 20% zoom for short scenes (< 10s) - pan 4%
+    zoomLevel = 1.3; // 30% zoom for short scenes
   } else if (duration <= 20) {
-    zoomLevel = 1.6; // 60% zoom for medium scenes (10-20s) - pan 12% (needs ~30% margin)
+    zoomLevel = 1.8; // 80% zoom for medium scenes (10-20s)
   } else if (duration <= 30) {
-    zoomLevel = 1.9; // 90% zoom for long scenes (20-30s) - pan 15% (needs ~37.5% margin)
+    zoomLevel = 2.0; // 100% zoom for long scenes (20-30s)
   } else {
-    zoomLevel = 2.2; // 120% zoom for very long scenes (> 30s) - pan 18% (needs ~45% margin)
+    zoomLevel = 2.2; // 120% zoom for very long scenes (> 30s)
   }
   const zoomExpr = String(zoomLevel);
   
@@ -125,19 +123,16 @@ function getPanEffect(sceneIndex, duration, width, height, framerate) {
   const centerXExpr = `(iw-iw/${zoomLevel})/2`;
   const centerYExpr = `(ih-ih/${zoomLevel})/2`;
   
-  // Pan amount per segment - MUST be large enough to avoid pixel-by-pixel movement
-  // For long scenes, we need MUCH larger pan distances to move fast enough
-  // With more zoom, we have more margin, so we can pan much further
-  // Each segment should pan a significant portion of the visible area
+  // Calculate panAmount based on zoom level to use EXACTLY the available margin
+  // This prevents the image from "sticking" at edges (which causes the pause!)
+  // Available margin = (zoom - 1) / (2 * zoom) of image size
+  // Use 95% of margin to avoid any edge clamping
+  const maxPanAmount = (zoomLevel - 1) / (2 * zoomLevel) * 0.95;
   let panAmount;
   if (duration < 10) {
-    panAmount = 0.04; // 4% for short scenes
-  } else if (duration <= 20) {
-    panAmount = 0.25; // 25% for medium scenes (10-20s) - each segment pans 25% of image
-  } else if (duration <= 30) {
-    panAmount = 0.30; // 30% for long scenes (20-30s) - each segment pans 30% of image
+    panAmount = maxPanAmount; // Use full margin for short scenes
   } else {
-    panAmount = 0.35; // 35% for very long scenes (>30s) - each segment pans 35% of image
+    panAmount = maxPanAmount; // Use full margin for long scenes too
   }
   const panDistXExpr = `iw*${panAmount}`;
   const panDistYExpr = `ih*${panAmount}`;
@@ -154,39 +149,45 @@ function getPanEffect(sceneIndex, duration, width, height, framerate) {
   let xExpr, yExpr, effect;
   
   if (duration >= longSceneThreshold) {
-    // Long scene: use continuous pan without segment switching
-    // This ensures NO pause between movements - the image is ALWAYS moving
+    // Long scene: use multiple cycles of pan to keep movement fast
+    // More cycles = faster movement = no perception of "pixel-by-pixel" stuttering
     
-    // Use a triangular wave for smooth back-and-forth motion:
-    // First half: pan in one direction
-    // Second half: pan back to original position
-    // This guarantees mathematically continuous motion without any segment boundary issues
+    // Calculate number of cycles based on duration
+    // Each cycle should be ~4-5 seconds for smooth, noticeable movement
+    let numCycles;
+    if (duration <= 15) {
+      numCycles = 2; // 2 back-and-forth for 10-15s scenes
+    } else if (duration <= 25) {
+      numCycles = 3; // 3 back-and-forth for 15-25s scenes
+    } else {
+      numCycles = 4; // 4 back-and-forth for >25s scenes
+    }
     
     // Choose primary direction based on scene index (alternating between X and Y)
     const useHorizontal = (sceneIndex % 2) === 0;
     
-    // Global progress: 0 to 1 over entire scene
-    const globalProgress = `on/${totalFrames}`;
+    // Use mod() to create multiple cycles of the triangular wave
+    // cycleProgress goes from 0 to 1 multiple times within the scene
+    const cycleProgress = `mod(${numCycles}*on/${totalFrames},1)`;
     
-    // Triangular wave: goes from 0 -> panAmount -> 0 as progress goes 0 -> 0.5 -> 1
-    // Formula: panAmount * (1 - abs(2 * progress - 1))
-    // At progress 0: 1 - |0 - 1| = 1 - 1 = 0
-    // At progress 0.5: 1 - |1 - 1| = 1 - 0 = 1 -> offset = panAmount
-    // At progress 1: 1 - |2 - 1| = 1 - 1 = 0
-    const triangularWave = `(1-abs(2*${globalProgress}-1))`;
+    // Triangular wave with multiple cycles
+    // Goes: 0 -> 1 -> 0 -> 1 -> 0 ... (numCycles times)
+    const triangularWave = `(1-abs(2*${cycleProgress}-1))`;
     
     // Pure linear motion - only horizontal OR vertical, never diagonal
     if (useHorizontal) {
-      // Horizontal pan only (left then right)
+      // Horizontal pan only (multiple back-and-forth)
       xExpr = `${centerXExpr}+iw*${panAmount}*${triangularWave}`;
       yExpr = centerYExpr; // No vertical movement
-      effect = 'continuous_pan_horizontal';
+      effect = `continuous_pan_horizontal_${numCycles}x`;
     } else {
-      // Vertical pan only (up then down)
+      // Vertical pan only (multiple back-and-forth)
       xExpr = centerXExpr; // No horizontal movement
       yExpr = `${centerYExpr}+ih*${panAmount}*${triangularWave}`;
-      effect = 'continuous_pan_vertical';
+      effect = `continuous_pan_vertical_${numCycles}x`;
     }
+    
+    console.log(`[PAN DEBUG] Scene ${sceneIndex}: ${numCycles} cycles, panAmount=${panAmount.toFixed(4)}`);
     
   } else {
     // Short scene: single pan direction
