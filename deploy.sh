@@ -54,11 +54,12 @@ sudo docker run -d \
 echo "🧹 Cleaning up old images..."
 sudo docker image prune -f
 
-# Configuration DuckDNS automatique (si pas déjà configuré)
-if [ -f setup-duckdns.sh ] && [ ! -f ~/.duckdns ]; then
+# Configuration automatique nginx + Docker
+if [ -f fix-nginx-docker.sh ]; then
     echo ""
-    echo -e "${YELLOW}🌐 Configuration DuckDNS détectée...${NC}"
-    echo "Pour configurer DuckDNS, exécutez: ./setup-duckdns.sh"
+    echo -e "${YELLOW}🔧 Configuration automatique nginx + Docker...${NC}"
+    chmod +x fix-nginx-docker.sh
+    ./fix-nginx-docker.sh || echo -e "${YELLOW}⚠️  Configuration automatique échouée, vérifiez manuellement${NC}"
 fi
 
 echo -e "${GREEN}✅ Deployment complete!${NC}"
