@@ -16,7 +16,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Version identifier - update this when making pan/zoom changes
-const SERVICE_VERSION = 'v2.4-lanczos-support';
+const SERVICE_VERSION = 'v2.5-pan-zoom-fixed-1.3x';
 
 // Create temp directory (must be defined before use)
 const TEMP_DIR = path.join(__dirname, 'temp');
@@ -106,17 +106,8 @@ function getPanEffect(sceneIndex, duration, width, height, framerate) {
   }
   
   // For pan to work, we need zoom to create margin for panning
-  // More zoom = more margin = can pan further without hitting edges
-  let zoomLevel;
-  if (duration < 10) {
-    zoomLevel = 1.3; // 30% zoom for short scenes
-  } else if (duration <= 20) {
-    zoomLevel = 1.8; // 80% zoom for medium scenes (10-20s)
-  } else if (duration <= 30) {
-    zoomLevel = 2.0; // 100% zoom for long scenes (20-30s)
-  } else {
-    zoomLevel = 2.2; // 120% zoom for very long scenes (> 30s)
-  }
+  // Fixed zoom at 1.3x for all scenes to show more of the image
+  const zoomLevel = 1.3; // 30% zoom - fixed for all scenes
   const zoomExpr = String(zoomLevel);
   
   // Center position (starting point) - when zoomed, center is (iw-iw/zoom)/2
