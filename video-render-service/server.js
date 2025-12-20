@@ -106,8 +106,8 @@ function getPanEffect(sceneIndex, duration, width, height, framerate) {
   }
   
   // For pan to work, we need zoom to create margin for panning
-  // Fixed zoom at 1.3x for all scenes to show more of the image
-  const zoomLevel = 1.3; // 30% zoom - fixed for all scenes
+  // Fixed zoom at 1.2x for all scenes to show more of the image
+  const zoomLevel = 1.2; // 20% zoom - fixed for all scenes
   const zoomExpr = String(zoomLevel);
   
   // Center position (starting point) - when zoomed, center is (iw-iw/zoom)/2
