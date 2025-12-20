@@ -3,6 +3,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Plus, Trash2 } from "lucide-react";
 import { DurationRange, normalizeRanges } from "@/lib/durationRanges";
+import { useState, useEffect } from "react";
 
 interface DurationRangesEditorProps {
   ranges: DurationRange[];
@@ -15,6 +16,21 @@ export const DurationRangesEditor = ({
   onChange,
   maxEndValue = 600,
 }: DurationRangesEditorProps) => {
+  // Local state for input values to allow free typing
+  const [inputValues, setInputValues] = useState<Record<string, string>>({});
+  
+  // Sync input values when ranges change externally
+  useEffect(() => {
+    const newInputValues: Record<string, string> = {};
+    ranges.forEach((range, index) => {
+      if (range.endSeconds !== null) {
+        newInputValues[`end-${index}`] = range.endSeconds.toString();
+      }
+      newInputValues[`duration-${index}`] = range.sceneDuration.toString();
+    });
+    setInputValues(newInputValues);
+  }, [ranges]);
+
   const handleAddRange = () => {
     // Find a sensible default for new range
     const lastFiniteRange = ranges.filter(r => r.endSeconds !== null).pop();
@@ -46,34 +62,6 @@ export const DurationRangesEditor = ({
     onChange(normalizeRanges(newRanges));
   };
 
-  // Handle text input - only allow numbers
-  const handleTextChange = (index: number, field: "endSeconds" | "sceneDuration", value: string) => {
-    // Remove all non-numeric characters except decimal point
-    const numericValue = value.replace(/[^0-9.]/g, '');
-    
-    // Only allow one decimal point
-    const parts = numericValue.split('.');
-    const cleanedValue = parts.length > 2 
-      ? parts[0] + '.' + parts.slice(1).join('')
-      : numericValue;
-    
-    if (cleanedValue === '' || cleanedValue === '.') {
-      handleUpdateRange(index, field, null);
-      return;
-    }
-    
-    const numValue = parseFloat(cleanedValue);
-    if (!isNaN(numValue)) {
-      // For sceneDuration, round to integer
-      if (field === "sceneDuration") {
-        handleUpdateRange(index, field, Math.max(1, Math.round(numValue)));
-      } else {
-        // For endSeconds, allow decimals but ensure minimum
-        const prevEnd = index > 0 ? ranges[index - 1].endSeconds : 0;
-        handleUpdateRange(index, field, Math.max((prevEnd || 0) + 0.1, numValue));
-      }
-    }
-  };
 
   const getRangeLabel = (index: number): string => {
     if (index === 0) {
@@ -106,8 +94,47 @@ export const DurationRangesEditor = ({
                     <Textarea disabled value="∞" className="bg-muted h-10 min-h-10 resize-none px-3 py-2 text-base md:text-sm" readOnly />
                   ) : (
                     <Textarea
-                      value={range.endSeconds?.toString() || ""}
-                      onChange={(e) => handleTextChange(index, "endSeconds", e.target.value)}
+                      value={inputValues[`end-${index}`] || range.endSeconds?.toString() || ""}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        // Clean input: only allow numbers and one decimal point
+                        const numericValue = value.replace(/[^0-9.]/g, '');
+                        const parts = numericValue.split('.');
+                        const cleanedValue = parts.length > 2 
+                          ? parts[0] + '.' + parts.slice(1).join('')
+                          : numericValue;
+                        
+                        // Update local state immediately for free typing
+                        setInputValues(prev => ({ ...prev, [`end-${index}`]: cleanedValue }));
+                        
+                        // Parse and update parent state if valid
+                        if (cleanedValue === '' || cleanedValue === '.') {
+                          return; // Allow typing, validate on blur
+                        }
+                        
+                        const numValue = parseFloat(cleanedValue);
+                        if (!isNaN(numValue) && numValue >= 0) {
+                          const prevEnd = index > 0 ? ranges[index - 1].endSeconds : 0;
+                          handleUpdateRange(index, "endSeconds", Math.max((prevEnd || 0) + 0.1, numValue));
+                        }
+                      }}
+                      onBlur={(e) => {
+                        const value = e.target.value;
+                        const numericValue = value.replace(/[^0-9.]/g, '');
+                        const numValue = parseFloat(numericValue);
+                        
+                        if (isNaN(numValue) || numValue < 0) {
+                          // Reset to previous value if invalid
+                          const currentValue = ranges[index].endSeconds;
+                          setInputValues(prev => ({ ...prev, [`end-${index}`]: currentValue?.toString() || "" }));
+                          handleUpdateRange(index, "endSeconds", currentValue);
+                        } else {
+                          const prevEnd = index > 0 ? ranges[index - 1].endSeconds : 0;
+                          const finalValue = Math.max((prevEnd || 0) + 0.1, numValue);
+                          setInputValues(prev => ({ ...prev, [`end-${index}`]: finalValue.toString() }));
+                          handleUpdateRange(index, "endSeconds", finalValue);
+                        }
+                      }}
                       onKeyDown={(e) => {
                         // Allow: backspace, delete, tab, escape, enter, decimal point
                         if ([8, 9, 27, 13, 46, 110, 190].indexOf(e.keyCode) !== -1 ||
@@ -133,8 +160,40 @@ export const DurationRangesEditor = ({
                 <div>
                   <Label className="text-xs text-muted-foreground">Durée de scène (sec)</Label>
                   <Textarea
-                    value={range.sceneDuration.toString()}
-                    onChange={(e) => handleTextChange(index, "sceneDuration", e.target.value)}
+                    value={inputValues[`duration-${index}`] || range.sceneDuration.toString()}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      // Clean input: only allow numbers
+                      const numericValue = value.replace(/[^0-9]/g, '');
+                      
+                      // Update local state immediately for free typing
+                      setInputValues(prev => ({ ...prev, [`duration-${index}`]: numericValue }));
+                      
+                      // Parse and update parent state if valid
+                      if (numericValue === '') {
+                        return; // Allow typing, validate on blur
+                      }
+                      
+                      const numValue = parseInt(numericValue, 10);
+                      if (!isNaN(numValue) && numValue >= 1) {
+                        handleUpdateRange(index, "sceneDuration", numValue);
+                      }
+                    }}
+                    onBlur={(e) => {
+                      const value = e.target.value;
+                      const numericValue = value.replace(/[^0-9]/g, '');
+                      const numValue = parseInt(numericValue, 10);
+                      
+                      if (isNaN(numValue) || numValue < 1) {
+                        // Reset to previous value if invalid
+                        const currentValue = ranges[index].sceneDuration;
+                        setInputValues(prev => ({ ...prev, [`duration-${index}`]: currentValue.toString() }));
+                        handleUpdateRange(index, "sceneDuration", currentValue);
+                      } else {
+                        setInputValues(prev => ({ ...prev, [`duration-${index}`]: numValue.toString() }));
+                        handleUpdateRange(index, "sceneDuration", numValue);
+                      }
+                    }}
                     onKeyDown={(e) => {
                       // Allow: backspace, delete, tab, escape, enter
                       if ([8, 9, 27, 13, 46].indexOf(e.keyCode) !== -1 ||
