@@ -101,14 +101,14 @@ function getPanEffect(sceneIndex, duration, width, height, framerate) {
   // Increase zoom for longer scenes to allow faster panning and avoid stuttering
   // More zoom = more margin = can pan faster without pixel-by-pixel movement
   let zoomLevel;
-  if (duration <= 8) {
-    zoomLevel = 1.2; // 20% zoom for short scenes
+  if (duration < 10) {
+    zoomLevel = 1.2; // 20% zoom for short scenes (< 10s)
   } else if (duration <= 15) {
-    zoomLevel = 1.5; // 50% zoom for medium scenes
+    zoomLevel = 1.5; // 50% zoom for medium scenes (10-15s)
   } else if (duration <= 25) {
-    zoomLevel = 1.8; // 80% zoom for long scenes
+    zoomLevel = 1.8; // 80% zoom for long scenes (15-25s)
   } else {
-    zoomLevel = 2.0; // 100% zoom for very long scenes
+    zoomLevel = 2.0; // 100% zoom for very long scenes (> 25s)
   }
   const zoomExpr = String(zoomLevel);
   
