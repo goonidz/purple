@@ -16,7 +16,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Version identifier - update this when making pan/zoom changes
-const SERVICE_VERSION = 'v2.2-pan-multicycle';
+const SERVICE_VERSION = 'v2.3-pan-single-cycle';
 
 // Create temp directory (must be defined before use)
 const TEMP_DIR = path.join(__dirname, 'temp');
@@ -149,45 +149,32 @@ function getPanEffect(sceneIndex, duration, width, height, framerate) {
   let xExpr, yExpr, effect;
   
   if (duration >= longSceneThreshold) {
-    // Long scene: use multiple cycles of pan to keep movement fast
-    // More cycles = faster movement = no perception of "pixel-by-pixel" stuttering
-    
-    // Calculate number of cycles based on duration
-    // Each cycle should be ~4-5 seconds for smooth, noticeable movement
-    let numCycles;
-    if (duration <= 15) {
-      numCycles = 2; // 2 back-and-forth for 10-15s scenes
-    } else if (duration <= 25) {
-      numCycles = 3; // 3 back-and-forth for 15-25s scenes
-    } else {
-      numCycles = 4; // 4 back-and-forth for >25s scenes
-    }
+    // Long scene: single back-and-forth pan (1 cycle)
+    // The panAmount is now correctly calculated to use full margin without edge sticking
     
     // Choose primary direction based on scene index (alternating between X and Y)
     const useHorizontal = (sceneIndex % 2) === 0;
     
-    // Use mod() to create multiple cycles of the triangular wave
-    // cycleProgress goes from 0 to 1 multiple times within the scene
-    const cycleProgress = `mod(${numCycles}*on/${totalFrames},1)`;
+    // Global progress: 0 to 1 over entire scene
+    const globalProgress = `on/${totalFrames}`;
     
-    // Triangular wave with multiple cycles
-    // Goes: 0 -> 1 -> 0 -> 1 -> 0 ... (numCycles times)
-    const triangularWave = `(1-abs(2*${cycleProgress}-1))`;
+    // Single triangular wave: 0 -> 1 -> 0 (one back-and-forth)
+    const triangularWave = `(1-abs(2*${globalProgress}-1))`;
     
     // Pure linear motion - only horizontal OR vertical, never diagonal
     if (useHorizontal) {
-      // Horizontal pan only (multiple back-and-forth)
+      // Horizontal pan only (single back-and-forth)
       xExpr = `${centerXExpr}+iw*${panAmount}*${triangularWave}`;
       yExpr = centerYExpr; // No vertical movement
-      effect = `continuous_pan_horizontal_${numCycles}x`;
+      effect = 'continuous_pan_horizontal';
     } else {
-      // Vertical pan only (multiple back-and-forth)
+      // Vertical pan only (single back-and-forth)
       xExpr = centerXExpr; // No horizontal movement
       yExpr = `${centerYExpr}+ih*${panAmount}*${triangularWave}`;
-      effect = `continuous_pan_vertical_${numCycles}x`;
+      effect = 'continuous_pan_vertical';
     }
     
-    console.log(`[PAN DEBUG] Scene ${sceneIndex}: ${numCycles} cycles, panAmount=${panAmount.toFixed(4)}`);
+    console.log(`[PAN DEBUG] Scene ${sceneIndex}: 1 cycle, panAmount=${panAmount.toFixed(4)}`);
     
   } else {
     // Short scene: single pan direction
