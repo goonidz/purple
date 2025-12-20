@@ -241,6 +241,11 @@ const CreateFromScratch = () => {
   const [isGeneratingAudio, setIsGeneratingAudio] = useState(false);
   const [audioUrl, setAudioUrl] = useState("");
   const [isUploadingAudio, setIsUploadingAudio] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadSpeed, setUploadSpeed] = useState(0);
+  const [uploadedBytes, setUploadedBytes] = useState(0);
+  const [totalBytes, setTotalBytes] = useState(0);
+  const [uploadFileName, setUploadFileName] = useState("");
   const [isGenerationOpen, setIsGenerationOpen] = useState(false);
   const audioInputRef = useRef<HTMLInputElement>(null);
   
@@ -1214,7 +1219,21 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
     }
   };
 
-  // Handle audio file upload
+  // Format bytes to human readable
+  const formatBytes = (bytes: number): string => {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+  };
+
+  // Format speed
+  const formatSpeed = (bytesPerSecond: number): string => {
+    return formatBytes(bytesPerSecond) + '/s';
+  };
+
+  // Handle audio file upload with progress tracking
   const handleAudioUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -1238,17 +1257,85 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
     }
 
     setIsUploadingAudio(true);
+    setUploadProgress(0);
+    setUploadSpeed(0);
+    setUploadedBytes(0);
+    setTotalBytes(file.size);
+    setUploadFileName(file.name);
+
     try {
-      // Upload to Supabase Storage
       const timestamp = Date.now();
       const cleanFileName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
       const filePath = `${user!.id}/${projectId}/${timestamp}_${cleanFileName}`;
 
-      const { error: uploadError } = await supabase.storage
-        .from('audio-files')
-        .upload(filePath, file);
+      // Get Supabase session for auth
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        throw new Error("Session expirée. Veuillez vous reconnecter.");
+      }
 
-      if (uploadError) throw uploadError;
+      // Get Supabase URL from environment
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      if (!supabaseUrl) {
+        throw new Error("Configuration Supabase manquante");
+      }
+
+      // Construct storage API URL
+      const storageUrl = `${supabaseUrl}/storage/v1/object/audio-files/${encodeURIComponent(filePath)}`;
+
+      // Upload with progress tracking using XMLHttpRequest
+      await new Promise<void>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        let lastLoaded = 0;
+        let lastTime = Date.now();
+
+        xhr.upload.addEventListener('progress', (e) => {
+          if (e.lengthComputable) {
+            const progress = (e.loaded / e.total) * 100;
+            setUploadProgress(progress);
+            setUploadedBytes(e.loaded);
+            setTotalBytes(e.total);
+
+            // Calculate speed
+            const now = Date.now();
+            const timeDiff = (now - lastTime) / 1000; // seconds
+            if (timeDiff > 0) {
+              const bytesDiff = e.loaded - lastLoaded;
+              const speed = bytesDiff / timeDiff;
+              setUploadSpeed(speed);
+            }
+            lastLoaded = e.loaded;
+            lastTime = Date.now();
+          }
+        });
+
+        xhr.addEventListener('load', () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve();
+          } else {
+            try {
+              const errorResponse = JSON.parse(xhr.responseText);
+              reject(new Error(errorResponse.message || `Upload failed with status ${xhr.status}`));
+            } catch {
+              reject(new Error(`Upload failed with status ${xhr.status}`));
+            }
+          }
+        });
+
+        xhr.addEventListener('error', () => {
+          reject(new Error('Upload failed'));
+        });
+
+        xhr.addEventListener('abort', () => {
+          reject(new Error('Upload aborted'));
+        });
+
+        xhr.open('POST', storageUrl);
+        xhr.setRequestHeader('Authorization', `Bearer ${session.access_token}`);
+        xhr.setRequestHeader('Content-Type', file.type);
+        xhr.setRequestHeader('x-upsert', 'false');
+        xhr.send(file);
+      });
 
       // Get public URL
       const { data: urlData } = supabase.storage
@@ -1273,6 +1360,11 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
       toast.error(error.message || "Erreur lors de l'import de l'audio");
     } finally {
       setIsUploadingAudio(false);
+      setUploadProgress(0);
+      setUploadSpeed(0);
+      setUploadedBytes(0);
+      setTotalBytes(0);
+      setUploadFileName("");
       // Reset input
       if (audioInputRef.current) {
         audioInputRef.current.value = "";
@@ -1768,6 +1860,23 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                         </>
                       )}
                     </Button>
+
+                    {/* Upload Progress */}
+                    {isUploadingAudio && (
+                      <div className="space-y-2 p-4 bg-muted rounded-lg">
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="font-medium truncate">{uploadFileName}</span>
+                          <span className="text-muted-foreground">{Math.round(uploadProgress)}%</span>
+                        </div>
+                        <Progress value={uploadProgress} className="h-2" />
+                        <div className="flex items-center justify-between text-xs text-muted-foreground">
+                          <span>{formatBytes(uploadedBytes)} / {formatBytes(totalBytes)}</span>
+                          {uploadSpeed > 0 && (
+                            <span>{formatSpeed(uploadSpeed)}</span>
+                          )}
+                        </div>
+                      </div>
+                    )}
 
                     <div className="relative flex items-center justify-center">
                       <div className="absolute inset-0 flex items-center">
