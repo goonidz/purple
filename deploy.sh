@@ -63,11 +63,11 @@ if [ -f fix-nginx-docker.sh ]; then
 fi
 
 # Configuration SSL automatique (si pas déjà configuré)
-if [ -f setup-ssl.sh ] && [ ! -f /etc/letsencrypt/live/purpleai.duckdns.org/fullchain.pem ]; then
+if [ -f setup-ssl-auto.sh ] && [ ! -f /etc/letsencrypt/live/purpleai.duckdns.org/fullchain.pem ]; then
     echo ""
     echo -e "${YELLOW}🔒 Configuration SSL automatique...${NC}"
-    chmod +x setup-ssl.sh
-    ./setup-ssl.sh || echo -e "${YELLOW}⚠️  Configuration SSL échouée, exécutez manuellement: ./setup-ssl.sh${NC}"
+    chmod +x setup-ssl-auto.sh
+    ./setup-ssl-auto.sh || echo -e "${YELLOW}⚠️  Configuration SSL échouée, exécutez manuellement: ./setup-ssl-auto.sh${NC}"
 fi
 
 echo -e "${GREEN}✅ Deployment complete!${NC}"
