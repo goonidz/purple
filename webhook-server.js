@@ -5,10 +5,9 @@
  * Listens for GitHub push events and automatically deploys
  */
 
-const http = require('http');
-const crypto = require('crypto');
-const { exec } = require('child_process');
-const path = require('path');
+import http from 'http';
+import crypto from 'crypto';
+import { exec } from 'child_process';
 
 const PORT = process.env.WEBHOOK_PORT || 9000;
 const SECRET = process.env.WEBHOOK_SECRET || 'your-secret-key-change-this';
