@@ -156,10 +156,26 @@ Le problème classique avec FFmpeg `zoompan` : les zooms sont saccadés à cause
 **RAM** : 24 GB  
 **Stockage** : 200 GB  
 **IP Publique** : 51.91.158.233  
-**Port** : 3000
+**Domaine** : purpleai.duckdns.org (gratuit via DuckDNS)
+
+### Services déployés
+
+- **Frontend VideoFlow** : Docker container accessible via `http://purpleai.duckdns.org`
+  - Nginx sur l'hôte fait le proxy vers Docker (port 8080 interne)
+  - Configuration automatique via scripts de déploiement
+
+- **Service de rendu vidéo** : Node.js + FFmpeg sur le port 3000
+  - Accessible via `http://51.91.158.233:3000` ou `http://purpleai.duckdns.org:3000`
+  - Géré par PM2, démarre automatiquement au boot
+
+- **Webhook GitHub** : Service Node.js sur le port 9000
+  - Déploiement automatique à chaque push GitHub
+  - Géré par PM2
 
 ### Logiciels installés
 
+- **Docker** : v29.1.3 (pour le frontend)
+- **Nginx** : 1.18.0 (reverse proxy)
 - **Node.js** : v20.19.6
 - **npm** : 10.8.2
 - **FFmpeg** : 4.4.2
@@ -185,7 +201,10 @@ SUPABASE_URL=https://votre-projet.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=votre_service_role_key
 
 # VPS Public URL (pour les URLs de vidéos)
+# Peut utiliser l'IP directe ou le domaine DuckDNS
 VPS_PUBLIC_URL=http://51.91.158.233:3000
+# Ou avec le domaine (si nginx est configuré pour proxy le port 3000) :
+# VPS_PUBLIC_URL=http://purpleai.duckdns.org:3000
 
 # Port du service
 PORT=3000
@@ -195,9 +214,16 @@ PORT=3000
 
 **Commandes** :
 ```bash
+# Utiliser l'IP directe (recommandé pour le service vidéo)
 npx supabase secrets set FFMPEG_SERVICE_URL=http://51.91.158.233:3000
+
+# Ou utiliser le domaine DuckDNS (si nginx proxy le port 3000)
+# npx supabase secrets set FFMPEG_SERVICE_URL=http://purpleai.duckdns.org:3000
+
 npx supabase secrets set FFMPEG_SERVICE_API_KEY=votre_api_key_optional
 ```
+
+**Note** : Le service de rendu vidéo fonctionne actuellement avec l'IP directe (`51.91.158.233:3000`). Le domaine DuckDNS (`purpleai.duckdns.org`) est utilisé pour le frontend web. Les deux fonctionnent en parallèle.
 
 ## Nettoyage automatique
 

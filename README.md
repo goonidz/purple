@@ -1,7 +1,23 @@
-# Welcome to your Lovable project
+# VideoFlow - Créateur de Vidéos IA
 
-VideoFlow - Créateur de vidéos IA
-Auto-configuration nginx + Docker
+Application web complète pour créer des vidéos professionnelles avec l'IA.
+
+## Fonctionnalités
+
+- **Génération automatique** : Scripts, audio, images générés avec l'IA
+- **Rendu vidéo** : Service FFmpeg sur VPS pour le montage vidéo
+- **Déploiement automatique** : Webhook GitHub pour mise à jour automatique
+- **Nom de domaine gratuit** : Configuration DuckDNS pour accès via domaine
+
+## Déploiement
+
+Le projet est déployé sur un VPS Linux avec :
+- **Frontend** : Docker container avec nginx (port 80)
+- **Service de rendu vidéo** : Node.js + FFmpeg (port 3000)
+- **Domaine** : `purpleai.duckdns.org` (gratuit via DuckDNS)
+- **Déploiement automatique** : Webhook GitHub pour mise à jour auto
+
+Voir [DEPLOYMENT.md](DEPLOYMENT.md) pour les instructions complètes de déploiement.
 
 ## Project info
 

@@ -1,6 +1,17 @@
 # Guide de déploiement VideoFlow sur VPS Linux
 
-Ce guide explique comment déployer l'application VideoFlow sur un VPS Linux en utilisant Docker.
+Ce guide explique comment déployer l'application VideoFlow sur un VPS Linux avec Docker, nginx, DuckDNS et déploiement automatique.
+
+## Vue d'ensemble du déploiement
+
+Le projet VideoFlow est déployé avec une architecture complète :
+
+- **Frontend React** : Container Docker avec nginx, accessible via domaine DuckDNS
+- **Service de rendu vidéo** : Node.js + FFmpeg sur le port 3000 (géré par PM2)
+- **Webhook GitHub** : Déploiement automatique à chaque push (port 9000, géré par PM2)
+- **Nom de domaine** : `purpleai.duckdns.org` (gratuit via DuckDNS)
+
+Tous les services sont configurés automatiquement via les scripts de déploiement.
 
 ## Prérequis
 
@@ -463,30 +474,68 @@ Pour tout nettoyer (attention, supprime tout) :
 docker system prune -a
 ```
 
-## Architecture
+## Architecture complète
 
 ```
-┌─────────────────┐
-│   VPS Linux     │
-│                 │
-│  ┌───────────┐  │
-│  │  Docker   │  │
-│  │ Container │  │
-│  │  (nginx)  │  │
-│  │  Port 80  │  │
-│  └───────────┘  │
-│                 │
-│  ┌───────────┐  │
-│  │ Video     │  │
-│  │ Render    │  │
-│  │ Service   │  │
-│  │ Port 3000 │  │
-│  └───────────┘  │
-└─────────────────┘
+Internet
+    ↓
+purpleai.duckdns.org (DuckDNS gratuit)
+    ↓
+VPS Linux (51.91.158.233)
+    ↓
+┌─────────────────────────────────────┐
+│  Nginx (port 80)                    │
+│  - Proxy vers Docker (port 8080)    │
+│  - Gère le domaine DuckDNS          │
+└─────────────────────────────────────┘
+    ↓
+┌─────────────────────────────────────┐
+│  Docker Container (port 8080)       │
+│  - Frontend React (VideoFlow)       │
+│  - nginx interne pour servir les    │
+│    fichiers statiques               │
+└─────────────────────────────────────┘
+
+┌─────────────────────────────────────┐
+│  Service Rendu Vidéo (port 3000)    │
+│  - Node.js + FFmpeg                 │
+│  - Accessible via IP:3000           │
+│  - Géré par PM2                     │
+└─────────────────────────────────────┘
+
+┌─────────────────────────────────────┐
+│  Webhook GitHub (port 9000)         │
+│  - Déploiement automatique          │
+│  - Géré par PM2                     │
+└─────────────────────────────────────┘
 ```
 
-- **Frontend** : Docker container sur le port 80
-- **Service de rendu vidéo** : Tourne séparément sur le port 3000 (déjà configuré)
+### Services déployés
+
+- **Frontend** : Docker container accessible via `http://purpleai.duckdns.org`
+  - Nginx sur l'hôte fait le proxy vers Docker (port 8080 interne)
+  - Configuration automatique via `fix-nginx-docker.sh`
+  
+- **Service de rendu vidéo** : Node.js + FFmpeg sur le port 3000
+  - Accessible via `http://51.91.158.233:3000` ou `http://purpleai.duckdns.org:3000`
+  - Géré par PM2, démarre automatiquement au boot
+  - Les vidéos sont servies depuis le VPS (pas d'upload Supabase)
+
+- **Webhook GitHub** : Service Node.js sur le port 9000
+  - Écoute les événements push de GitHub
+  - Déclenche automatiquement le déploiement
+  - Géré par PM2
+
+### Configuration automatique
+
+Le script `fix-nginx-docker.sh` configure automatiquement :
+- Arrêt de nginx et Docker
+- Redémarrage de Docker sur le port 8080 (interne)
+- Configuration nginx pour proxy vers Docker
+- Mise à jour DuckDNS
+- Tests de validation
+
+Ce script s'exécute automatiquement à chaque déploiement via `deploy.sh`.
 
 ## Support
 
