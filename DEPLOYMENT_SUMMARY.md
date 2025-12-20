@@ -1,5 +1,9 @@
 # Résumé de la configuration VideoFlow
 
+## Configuration complète réalisée
+
+Ce document résume toute la configuration effectuée pour déployer VideoFlow sur un VPS Linux avec Docker, nginx, DuckDNS, déploiement automatique et SSL.
+
 ## Ce qui a été configuré
 
 ### 1. Déploiement Docker du Frontend
@@ -230,9 +234,28 @@ sudo systemctl restart nginx
 pm2 restart all
 ```
 
+## Corrections apportées
+
+### Bouton de copie dans CreateFromScratch
+
+Le bouton "Copier" a été corrigé pour fonctionner sur HTTP (sites non sécurisés) :
+- Utilise l'API Clipboard moderne si disponible
+- Fallback vers `document.execCommand('copy')` si l'API n'est pas disponible
+- Sélection automatique du texte en dernier recours
+- Gestion d'erreurs complète avec messages utilisateur
+
+### Service de rendu vidéo
+
+Le service de rendu vidéo fonctionne avec le site :
+- Accessible via `http://51.91.158.233:3000` (IP directe)
+- Les Edge Functions Supabase appellent ce service
+- Les vidéos sont servies directement depuis le VPS
+- Le frontend poll le statut et affiche les vidéos une fois terminées
+
 ## Support
 
 Pour toute question, consultez :
 - `DEPLOYMENT.md` : Guide de déploiement détaillé
 - `VIDEO_RENDERING_DOCUMENTATION.md` : Documentation du service de rendu vidéo
 - `DUCKDNS_SETUP.md` : Guide de configuration DuckDNS
+- `DEPLOYMENT_SUMMARY.md` : Ce fichier (résumé complet)
