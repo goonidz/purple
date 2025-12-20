@@ -143,9 +143,76 @@ curl http://localhost/health
 # Devrait retourner: healthy
 ```
 
+## Déploiement automatique avec GitHub Webhook
+
+Pour que votre site se mette à jour automatiquement à chaque push sur GitHub :
+
+### Installation
+
+1. **Installer Node.js** (si pas déjà installé) :
+   ```bash
+   curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+   sudo apt-get install -y nodejs
+   ```
+
+2. **Installer PM2** (gestionnaire de processus) :
+   ```bash
+   sudo npm install -g pm2
+   ```
+
+3. **Configurer le webhook** :
+   ```bash
+   cd ~/purple
+   chmod +x webhook-setup.sh
+   ./webhook-setup.sh
+   ```
+
+4. **Démarrer le serveur webhook** :
+   ```bash
+   pm2 start webhook-server.js --name webhook-deploy
+   pm2 save
+   pm2 startup  # Pour démarrer automatiquement au boot
+   ```
+
+5. **Configurer le firewall** :
+   ```bash
+   sudo ufw allow 9000/tcp
+   ```
+
+6. **Configurer le webhook GitHub** :
+   - Allez sur : https://github.com/goonidz/purple/settings/hooks
+   - Cliquez sur "Add webhook"
+   - **Payload URL** : `http://51.91.158.233:9000/webhook`
+   - **Content type** : `application/json`
+   - **Secret** : Copiez le secret depuis `.env.webhook` (variable `WEBHOOK_SECRET`)
+   - **Events** : Sélectionnez "Just the push event"
+   - Cliquez sur "Add webhook"
+
+### Vérification
+
+Testez le webhook :
+```bash
+# Voir les logs du webhook
+pm2 logs webhook-deploy
+
+# Vérifier le statut
+pm2 status
+```
+
+Maintenant, à chaque fois que vous faites un `git push` sur GitHub, le site se mettra à jour automatiquement !
+
 ## Mise à jour de l'application
 
-### Méthode 1 : Script de déploiement
+### Méthode 1 : Déploiement automatique (recommandé)
+
+Si vous avez configuré le webhook, il suffit de :
+```bash
+# Sur votre machine locale
+git push origin main
+# Le VPS se mettra à jour automatiquement !
+```
+
+### Méthode 2 : Script de déploiement manuel
 
 ```bash
 # Pull les dernières modifications
