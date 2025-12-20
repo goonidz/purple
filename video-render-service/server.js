@@ -16,7 +16,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Version identifier - update this when making pan/zoom changes
-const SERVICE_VERSION = 'v2.9-pan-full-margin';
+const SERVICE_VERSION = 'v2.10-pan-zoom-1.1x-test';
 
 // Create temp directory (must be defined before use)
 const TEMP_DIR = path.join(__dirname, 'temp');
@@ -106,8 +106,8 @@ function getPanEffect(sceneIndex, duration, width, height, framerate) {
   }
   
   // For pan to work, we need zoom to create margin for panning
-  // Fixed zoom at 1.2x for all scenes to show more of the image
-  const zoomLevel = 1.2; // 20% zoom - fixed for all scenes
+  // Fixed zoom at 1.1x for all scenes to show more of the image (TEST - will likely revert to 1.2x)
+  const zoomLevel = 1.1; // 10% zoom - fixed for all scenes
   const zoomExpr = String(zoomLevel);
   
   // Center position (starting point) - when zoomed, center is (iw-iw/zoom)/2
