@@ -1334,6 +1334,7 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
               </Button>
             </div>
           </div>
+          </div>
         </DialogContent>
       </Dialog>
 
@@ -1403,7 +1404,6 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
               ) : "Modifier"}
             </Button>
           </DialogFooter>
-          </div>
         </DialogContent>
       </Dialog>
     </div>
