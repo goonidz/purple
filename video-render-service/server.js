@@ -100,15 +100,16 @@ function getPanEffect(sceneIndex, duration, width, height, framerate) {
   // For pan to work, we need zoom to create margin for panning
   // Increase zoom for longer scenes to allow faster panning and avoid stuttering
   // More zoom = more margin = can pan faster without pixel-by-pixel movement
+  // With larger pan amounts (12-18%), we need more zoom to have enough margin
   let zoomLevel;
   if (duration < 10) {
-    zoomLevel = 1.2; // 20% zoom for short scenes (< 10s)
-  } else if (duration <= 15) {
-    zoomLevel = 1.5; // 50% zoom for medium scenes (10-15s)
-  } else if (duration <= 25) {
-    zoomLevel = 1.8; // 80% zoom for long scenes (15-25s)
+    zoomLevel = 1.2; // 20% zoom for short scenes (< 10s) - pan 4%
+  } else if (duration <= 20) {
+    zoomLevel = 1.6; // 60% zoom for medium scenes (10-20s) - pan 12% (needs ~30% margin)
+  } else if (duration <= 30) {
+    zoomLevel = 1.9; // 90% zoom for long scenes (20-30s) - pan 15% (needs ~37.5% margin)
   } else {
-    zoomLevel = 2.0; // 100% zoom for very long scenes (> 25s)
+    zoomLevel = 2.2; // 120% zoom for very long scenes (> 30s) - pan 18% (needs ~45% margin)
   }
   const zoomExpr = String(zoomLevel);
   
@@ -116,15 +117,25 @@ function getPanEffect(sceneIndex, duration, width, height, framerate) {
   const centerXExpr = `(iw-iw/${zoomLevel})/2`;
   const centerYExpr = `(ih-ih/${zoomLevel})/2`;
   
-  // Base pan amount per segment (4% of image)
-  // For longer scenes with more zoom, we can increase pan amount for faster movement
-  const basePanAmount = 0.04;
-  const panAmount = duration > 15 ? basePanAmount * 1.5 : basePanAmount; // 6% for long scenes
+  // Pan amount per segment - MUST be large enough to avoid pixel-by-pixel movement
+  // For long scenes, we need much larger pan distances to move fast enough
+  // With more zoom, we have more margin, so we can pan further
+  let panAmount;
+  if (duration < 10) {
+    panAmount = 0.04; // 4% for short scenes
+  } else if (duration <= 20) {
+    panAmount = 0.12; // 12% for medium scenes (10-20s) - 3x faster
+  } else if (duration <= 30) {
+    panAmount = 0.15; // 15% for long scenes (20-30s) - even faster
+  } else {
+    panAmount = 0.18; // 18% for very long scenes (>30s) - maximum speed
+  }
   const panDistXExpr = `iw*${panAmount}`;
   const panDistYExpr = `ih*${panAmount}`;
   
   // For scenes >= 10 seconds, use multiple pans in different directions
   // This avoids slow pixel-by-pixel movement that causes stuttering
+  // Each segment pans a significant distance, making movement fast and smooth
   const longSceneThreshold = 10.0; // seconds
   let xExpr, yExpr, effect;
   
