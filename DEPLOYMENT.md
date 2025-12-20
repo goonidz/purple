@@ -283,9 +283,122 @@ sudo ufw allow 80/tcp
 sudo ufw reload
 ```
 
-## Configuration avec nom de domaine (optionnel)
+## Configuration avec nom de domaine DuckDNS (gratuit)
 
-Si vous avez un nom de domaine, vous pouvez :
+DuckDNS offre des sous-domaines gratuits (ex: `videoflow.duckdns.org`). Voici comment le configurer :
+
+### 1. Créer le compte DuckDNS
+
+1. Allez sur https://www.duckdns.org
+2. Connectez-vous avec GitHub ou Google
+3. Créez un sous-domaine (ex: `videoflow`)
+4. **Notez votre Token** affiché en haut de la page
+
+Votre domaine sera : `videoflow.duckdns.org` (remplacez `videoflow` par votre choix)
+
+### 2. Configurer le script de mise à jour automatique
+
+Sur le VPS :
+
+```bash
+# Créer le fichier de configuration
+cat > ~/.duckdns << EOF
+DUCKDNS_DOMAIN=videoflow
+DUCKDNS_TOKEN=votre-token-ici
+EOF
+
+# Copier le script de mise à jour
+cp ~/purple/update-duckdns.sh ~/
+chmod +x ~/update-duckdns.sh
+
+# Tester le script
+~/update-duckdns.sh
+```
+
+### 3. Configurer le cron job
+
+Pour mettre à jour automatiquement l'IP toutes les 5 minutes :
+
+```bash
+# Éditer le crontab
+crontab -e
+
+# Ajouter cette ligne (remplacez /home/ubuntu par votre home directory)
+*/5 * * * * /home/ubuntu/update-duckdns.sh >> /home/ubuntu/duckdns.log 2>&1
+```
+
+### 4. Installer nginx
+
+```bash
+sudo apt-get update
+sudo apt-get install -y nginx
+```
+
+### 5. Configurer nginx
+
+```bash
+# Copier la configuration
+sudo cp ~/purple/nginx-videoflow.conf /etc/nginx/sites-available/videoflow
+
+# Modifier le nom de domaine dans le fichier si nécessaire
+sudo nano /etc/nginx/sites-available/videoflow
+# Remplacez "videoflow.duckdns.org" par votre domaine
+
+# Activer le site
+sudo ln -s /etc/nginx/sites-available/videoflow /etc/nginx/sites-enabled/
+
+# Tester la configuration
+sudo nginx -t
+
+# Redémarrer nginx
+sudo systemctl restart nginx
+```
+
+### 6. Configurer le firewall
+
+```bash
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp  # Pour SSL plus tard
+sudo ufw reload
+```
+
+### 7. Tester l'accès
+
+Ouvrez votre navigateur et allez sur :
+```
+http://videoflow.duckdns.org
+```
+
+### 8. Configuration SSL avec Let's Encrypt (optionnel mais recommandé)
+
+```bash
+# Installer Certbot
+sudo apt-get install -y certbot python3-certbot-nginx
+
+# Obtenir le certificat SSL
+sudo certbot --nginx -d videoflow.duckdns.org
+
+# Le certificat sera renouvelé automatiquement
+```
+
+Après SSL, votre site sera accessible en HTTPS : `https://videoflow.duckdns.org`
+
+### Vérification
+
+```bash
+# Vérifier que DuckDNS pointe vers la bonne IP
+nslookup videoflow.duckdns.org
+
+# Vérifier les logs nginx
+sudo tail -f /var/log/nginx/videoflow-access.log
+
+# Vérifier les logs DuckDNS
+tail -f ~/duckdns.log
+```
+
+## Configuration avec nom de domaine personnalisé (optionnel)
+
+Si vous avez votre propre nom de domaine, vous pouvez :
 
 1. **Configurer un reverse proxy avec nginx** (sur l'hôte, pas dans Docker)
 2. **Utiliser Let's Encrypt pour SSL** avec Certbot
