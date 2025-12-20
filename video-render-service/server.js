@@ -244,7 +244,7 @@ async function renderSceneWithEffect(imagePath, outputPath, duration, width, hei
     
     // Use zoompan filter directly on the image - it generates frames from a single image
     // The filter chain handles format conversion (yuv444p -> zoompan -> yuv420p)
-    ffmpeg()
+    const sceneFfmpegCommand = ffmpeg()
       .input(imagePath)
       .inputOptions(['-loop', '1']) // Loop the single image
       .videoCodec('libx264')
@@ -265,8 +265,19 @@ async function renderSceneWithEffect(imagePath, outputPath, duration, width, hei
       .on('error', (err) => {
         console.error(`[${jobId}] Scene ${sceneIndex} error:`, err.message);
         reject(err);
-      })
-      .run();
+      });
+    
+    // Store scene FFmpeg command in job for cancellation
+    const job = jobs.get(jobId);
+    if (job) {
+      if (!job.sceneCommands) {
+        job.sceneCommands = [];
+      }
+      job.sceneCommands.push(sceneFfmpegCommand);
+      jobs.set(jobId, job);
+    }
+    
+    sceneFfmpegCommand.run();
   });
 }
 
@@ -643,9 +654,31 @@ app.delete('/cancel/:jobId', async (req, res) => {
   }
   
   try {
-    // Kill FFmpeg process if it exists
+    // Kill all FFmpeg processes (scenes and final concatenation)
+    if (job.sceneCommands && Array.isArray(job.sceneCommands)) {
+      console.log(`[${jobId}] Killing ${job.sceneCommands.length} scene FFmpeg processes...`);
+      job.sceneCommands.forEach((cmd, index) => {
+        try {
+          cmd.kill('SIGTERM');
+        } catch (err) {
+          console.error(`[${jobId}] Error killing scene ${index}:`, err);
+        }
+      });
+      // Force kill after delay
+      setTimeout(() => {
+        job.sceneCommands?.forEach((cmd, index) => {
+          try {
+            cmd.kill('SIGKILL');
+          } catch (err) {
+            // Ignore errors
+          }
+        });
+      }, 2000);
+    }
+    
+    // Kill final concatenation FFmpeg process if it exists
     if (job.ffmpegCommand) {
-      console.log(`[${jobId}] Killing FFmpeg process...`);
+      console.log(`[${jobId}] Killing final FFmpeg concatenation process...`);
       job.ffmpegCommand.kill('SIGTERM');
       // Wait a bit, then force kill if still running
       setTimeout(() => {
@@ -666,7 +699,8 @@ app.delete('/cancel/:jobId', async (req, res) => {
       ...job,
       status: 'cancelled',
       cancelledAt: new Date().toISOString(),
-      ffmpegCommand: null
+      ffmpegCommand: null,
+      sceneCommands: []
     });
     
     // Note: Supabase update is handled by the frontend
