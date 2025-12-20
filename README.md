@@ -1,6 +1,7 @@
 # Welcome to your Lovable project
 
 VideoFlow - Créateur de vidéos IA
+Auto-configuration nginx + Docker
 
 ## Project info
 
