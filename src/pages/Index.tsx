@@ -141,6 +141,7 @@ const Index = () => {
   const [exportMode, setExportMode] = useState<ExportMode>("with-images");
   const [exportFramerate, setExportFramerate] = useState<number>(25);
   const [exportEffectType, setExportEffectType] = useState<'zoom' | 'pan'>('pan');
+  const [exportRenderMethod, setExportRenderMethod] = useState<'standard' | 'lanczos'>('standard');
   const [exportBasePath, setExportBasePath] = useState<string>("");
   const [isExporting, setIsExporting] = useState(false);
   const [isRendering, setIsRendering] = useState(false);
@@ -1631,6 +1632,7 @@ const Index = () => {
         width: imageWidth,
         height: imageHeight,
         effectType: exportEffectType,
+        renderMethod: exportRenderMethod,
         subtitleSettings: {
           enabled: false,
           fontSize: 18,
@@ -2355,11 +2357,12 @@ const Index = () => {
                                   <Download className="mr-2 h-4 w-4" />
                                   Exporter pour montage
                                 </Button>
-                                {audioUrl && (
+                                {generatedPrompts.filter(p => p && p.imageUrl).length > 0 && (
                                   <>
                                     <Select 
                                       value={exportFramerate.toString()} 
                                       onValueChange={(value) => setExportFramerate(Number(value))}
+                                      disabled={!audioUrl}
                                     >
                                       <SelectTrigger className="w-[140px] h-9">
                                         <SelectValue />
@@ -2379,6 +2382,7 @@ const Index = () => {
                                     <Select 
                                       value={exportEffectType} 
                                       onValueChange={(value) => setExportEffectType(value as 'zoom' | 'pan')}
+                                      disabled={!audioUrl}
                                     >
                                       <SelectTrigger className="w-[140px] h-9">
                                         <SelectValue />
@@ -2388,9 +2392,22 @@ const Index = () => {
                                         <SelectItem value="pan">Pan</SelectItem>
                                       </SelectContent>
                                     </Select>
+                                    <Select 
+                                      value={exportRenderMethod} 
+                                      onValueChange={(value) => setExportRenderMethod(value as 'standard' | 'lanczos')}
+                                      disabled={!audioUrl}
+                                    >
+                                      <SelectTrigger className="w-[180px] h-9">
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="standard">Standard (6x upscale)</SelectItem>
+                                        <SelectItem value="lanczos">Lanczos (2x upscale) ⚡</SelectItem>
+                                      </SelectContent>
+                                    </Select>
                                     <Button
                                       onClick={handleRenderVideo}
-                                      disabled={isRendering}
+                                      disabled={isRendering || !audioUrl}
                                       size="sm"
                                     >
                                       {isRendering ? (

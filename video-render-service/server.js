@@ -16,7 +16,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Version identifier - update this when making pan/zoom changes
-const SERVICE_VERSION = 'v2.3-pan-single-cycle';
+const SERVICE_VERSION = 'v2.4-lanczos-support';
 
 // Create temp directory (must be defined before use)
 const TEMP_DIR = path.join(__dirname, 'temp');
@@ -219,7 +219,7 @@ function getPanEffect(sceneIndex, duration, width, height, framerate) {
 }
 
 // Generate Ken Burns effect parameters for a scene
-function getKenBurnsEffect(sceneIndex, duration, width, height, framerate) {
+function getKenBurnsEffect(sceneIndex, duration, width, height, framerate, renderMethod = 'standard') {
   // Various zoom and pan directions for variety
   const effects = ['zoom_in', 'zoom_out', 'zoom_in_left', 'zoom_out_right', 'zoom_in_top', 'zoom_out_bottom'];
   const effect = effects[sceneIndex % effects.length]; // Deterministic but varied
@@ -227,17 +227,15 @@ function getKenBurnsEffect(sceneIndex, duration, width, height, framerate) {
   const totalFrames = Math.ceil(duration * framerate);
   const zoomAmount = 0.08; // 8% zoom - subtle but visible
   
-  // ULTIMATE FIX FOR JIGGLE:
-  // 1. Scale up the image 6x (more resolution = less rounding errors)
-  // 2. Apply zoompan at 6x resolution
-  // 3. Scale back down to target resolution
-  // This completely eliminates sub-pixel jitter
-  // Note: The final video is downscaled, so file size is based on target resolution
+  // Choose rendering method
+  const useLanczos = renderMethod === 'lanczos';
   
-  const scaleFactor = 6;
+  // Scale factor based on method
+  const scaleFactor = useLanczos ? 2 : 6; // Lanczos: 2x, Standard: 6x
   const scaledWidth = width * scaleFactor;
   const scaledHeight = height * scaleFactor;
   
+  // Generate zoom expressions (same for both methods)
   let zoomExpr, xExpr, yExpr;
   
   // Simple zoom expressions - the upscaling handles the precision
@@ -284,16 +282,27 @@ function getKenBurnsEffect(sceneIndex, duration, width, height, framerate) {
       yExpr = `(ih-ih/zoom)/2`;
   }
   
+  // Build filter chain based on method
+  let filter;
+  if (useLanczos) {
+    // Lanczos method: use Lanczos interpolation for upscale and downscale
+    const upscaleFilter = `scale=${scaledWidth}:${scaledHeight}:flags=lanczos`;
+    const zoompanFilter = `zoompan=z='${zoomExpr}':x='${xExpr}':y='${yExpr}':d=${totalFrames}:s=${scaledWidth}x${scaledHeight}:fps=${framerate}`;
+    const downscaleFilter = `scale=${width}:${height}:flags=lanczos`;
+    filter = `${upscaleFilter},${zoompanFilter},${downscaleFilter}`;
+  } else {
+    // Standard method: default interpolation (6x upscale)
+    filter = `scale=${scaledWidth}:${scaledHeight},zoompan=z='${zoomExpr}':x='${xExpr}':y='${yExpr}':d=${totalFrames}:s=${scaledWidth}x${scaledHeight}:fps=${framerate},scale=${width}:${height}`;
+  }
+  
   return {
-    // Pipeline: scale up 4x -> zoompan at high res -> scale back down
-    // This eliminates jiggle by having more precision during the zoom
-    filter: `scale=${scaledWidth}:${scaledHeight},zoompan=z='${zoomExpr}':x='${xExpr}':y='${yExpr}':d=${totalFrames}:s=${scaledWidth}x${scaledHeight}:fps=${framerate},scale=${width}:${height}`,
-    effect
+    filter,
+    effect: useLanczos ? `${effect}_lanczos` : effect
   };
 }
 
 // Render a single scene with effect (Ken Burns or Pan)
-async function renderSceneWithEffect(imagePath, outputPath, duration, width, height, framerate, sceneIndex, jobId, effectType = 'zoom') {
+async function renderSceneWithEffect(imagePath, outputPath, duration, width, height, framerate, sceneIndex, jobId, effectType = 'zoom', renderMethod = 'standard') {
   return new Promise((resolve, reject) => {
     console.log(`[${jobId}] Rendering scene ${sceneIndex} with effectType: "${effectType}" (type: ${typeof effectType})`);
     const isPan = String(effectType).toLowerCase().trim() === 'pan';
@@ -302,7 +311,7 @@ async function renderSceneWithEffect(imagePath, outputPath, duration, width, hei
     
     const { filter, effect } = isPan
       ? getPanEffect(sceneIndex, duration, width, height, framerate)
-      : getKenBurnsEffect(sceneIndex, duration, width, height, framerate);
+      : getKenBurnsEffect(sceneIndex, duration, width, height, framerate, renderMethod);
     
     console.log(`[${jobId}] Scene ${sceneIndex}: ${effect} effect (effectType: "${effectType}", isPan: ${isPan}), ${duration.toFixed(2)}s`);
     console.log(`[${jobId}] Filter: ${filter}`);
@@ -401,7 +410,8 @@ async function processRenderJob(jobId, renderData) {
       videoSettings = {},
       projectId,
       userId,
-      effectType = 'zoom' // 'zoom' for Ken Burns, 'pan' for pan effects
+      effectType = 'zoom', // 'zoom' for Ken Burns, 'pan' for pan effects
+      renderMethod = 'standard' // 'standard' = 6x upscale, 'lanczos' = 2x upscale with Lanczos
     } = renderData;
     
     console.log(`[${jobId}] Received effectType: ${effectType} (type: ${typeof effectType})`);
@@ -485,7 +495,8 @@ async function processRenderJob(jobId, renderData) {
         framerate, 
         i, 
         jobId,
-        effectType
+        effectType,
+        renderMethod
       );
       
       // Update current step to show completed (replaces the line)

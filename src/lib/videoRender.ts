@@ -19,6 +19,7 @@ export interface VideoRenderOptions {
   height?: number;
   subtitleSettings?: SubtitleSettings;
   effectType?: 'zoom' | 'pan'; // 'zoom' for Ken Burns, 'pan' for pan effects
+  renderMethod?: 'standard' | 'lanczos'; // 'standard' = 6x upscale, 'lanczos' = 2x upscale with Lanczos
 }
 
 export interface VideoRenderResult {
@@ -65,9 +66,9 @@ export async function renderVideo(options: VideoRenderOptions): Promise<VideoRen
       }
     }
 
-    const { projectId, framerate = 25, width = 1920, height = 1080, subtitleSettings, effectType = 'pan' } = options;
+    const { projectId, framerate = 25, width = 1920, height = 1080, subtitleSettings, effectType = 'pan', renderMethod = 'standard' } = options;
 
-    console.log('Calling render-video Edge Function with:', { projectId, framerate, width, height, effectType });
+    console.log('Calling render-video Edge Function with:', { projectId, framerate, width, height, effectType, renderMethod });
     console.log('User authenticated:', user.id);
     console.log('Session valid:', !!session);
 
@@ -78,6 +79,7 @@ export async function renderVideo(options: VideoRenderOptions): Promise<VideoRen
       height,
       subtitleSettings,
       effectType,
+      renderMethod,
     };
     
     console.log('Request body keys:', Object.keys(requestBody));

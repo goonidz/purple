@@ -56,3 +56,4 @@ echo "1. Edit .env file with your Supabase credentials"
 echo "2. Start the service: npm run pm2:start"
 echo "3. Check logs: npm run pm2:logs"
 echo "4. Make service auto-start on boot: pm2 startup && pm2 save"
+

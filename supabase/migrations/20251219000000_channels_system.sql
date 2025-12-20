@@ -48,3 +48,4 @@ EXECUTE FUNCTION public.update_updated_at_column();
 CREATE INDEX IF NOT EXISTS idx_content_calendar_channel_id ON public.content_calendar(channel_id);
 CREATE INDEX IF NOT EXISTS idx_channels_user_id ON public.channels(user_id);
 
+

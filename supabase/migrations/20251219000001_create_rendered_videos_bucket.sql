@@ -36,3 +36,4 @@ USING (
   bucket_id = 'rendered-videos' AND
   auth.uid() IS NOT NULL
 );
+
