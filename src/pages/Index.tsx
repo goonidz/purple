@@ -2940,6 +2940,29 @@ const Index = () => {
                 </p>
               </div>
 
+              {/* Preset selector */}
+              <div className="rounded-lg border p-4 bg-primary/5 border-primary/20">
+                <div className="flex items-center gap-2 mb-3">
+                  <Download className="h-4 w-4 text-primary" />
+                  <h3 className="font-semibold text-sm">Charger un preset (optionnel)</h3>
+                </div>
+                <PresetManager
+                  currentConfig={{
+                    durationRanges,
+                    examplePrompts,
+                    imageWidth,
+                    imageHeight,
+                    aspectRatio,
+                    styleReferenceUrls,
+                    imageModel,
+                    promptSystemMessage,
+                    loraUrl,
+                    loraSteps,
+                  }}
+                  onLoadPreset={handleLoadPreset}
+                />
+              </div>
+
               <div className="space-y-4">
                 <div>
                   <label className="text-sm font-medium mb-2 block">Format de contenu</label>
