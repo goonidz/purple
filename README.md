@@ -7,8 +7,12 @@ Application web complète pour créer des vidéos professionnelles avec l'IA.
 
 - **Génération automatique** : Scripts, audio, images générés avec l'IA
 - **Rendu vidéo** : Service FFmpeg sur VPS pour le montage vidéo
+  - Effets Pan et Ken Burns optimisés
+  - Pan adaptatif sur scènes longues (zoom et vitesse adaptés à la durée)
+  - Multi-pans pour scènes >= 10s (changement de direction)
 - **Déploiement automatique** : Webhook GitHub pour mise à jour automatique
 - **Nom de domaine gratuit** : Configuration DuckDNS pour accès via domaine
+- **Interface responsive** : Modals adaptatifs pour tous les appareils
 
 ## Déploiement
 
@@ -19,6 +23,20 @@ Le projet est déployé sur un VPS Linux avec :
 - **Déploiement automatique** : Webhook GitHub pour mise à jour auto
 
 Voir [DEPLOYMENT.md](DEPLOYMENT.md) pour les instructions complètes de déploiement.
+
+Voir [VIDEO_RENDERING_DOCUMENTATION.md](VIDEO_RENDERING_DOCUMENTATION.md) pour la documentation technique du système de rendu vidéo.
+
+## Améliorations récentes
+
+### Pan effect optimisé (v2.0)
+- **Zoom adaptatif** : 1.6x à 2.2x selon la durée de la scène (au lieu de 1.2x fixe)
+- **Pan amount augmenté** : 25-35% pour scènes longues (au lieu de 4%)
+- **Multi-pans** : Scènes >= 10s divisées en 2-4 segments avec directions différentes
+- **Résultat** : Mouvement 3-6x plus rapide, plus fluide, sans saccades pixel par pixel
+
+### Interface utilisateur
+- **Modals responsive** : S'adaptent à tous les écrans, scrollables, boutons toujours visibles
+- **Champs de durée éditables** : Possibilité de taper librement dans les champs de durée de scènes
 
 ## Project info
 
