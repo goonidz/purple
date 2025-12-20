@@ -46,6 +46,8 @@ function deploy() {
     const commands = [
       `cd ${REPO_PATH}`,
       'git pull origin main',
+      // Configurer DuckDNS automatiquement si pas déjà fait
+      '[ ! -f ~/.duckdns ] && [ -f setup-duckdns.sh ] && ./setup-duckdns.sh || true',
       './deploy.sh'
     ];
     
