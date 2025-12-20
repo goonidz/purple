@@ -47,7 +47,7 @@ sudo docker rm videoflow 2>/dev/null || true
 echo "▶️  Starting new container..."
 sudo docker run -d \
     --name videoflow \
-    -p 80:80 \
+    -p 127.0.0.1:8080:80 \
     --restart unless-stopped \
     videoflow:latest
 
