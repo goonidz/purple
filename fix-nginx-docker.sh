@@ -86,11 +86,26 @@ else
     echo "⚠️  nginx proxy ne répond pas encore"
 fi
 
+# Configuration SSL (si pas déjà configuré)
+echo ""
+echo "🔒 Vérification SSL..."
+if [ ! -f /etc/letsencrypt/live/purpleai.duckdns.org/fullchain.pem ]; then
+    if [ -f ~/purple/setup-ssl.sh ]; then
+        echo "   SSL non configuré. Pour activer SSL, exécutez:"
+        echo "   cd ~/purple && ./setup-ssl.sh"
+    fi
+else
+    echo "   ✅ SSL déjà configuré"
+fi
+
 echo ""
 echo "✅ Configuration terminée!"
 echo ""
 echo "🌐 Votre site devrait être accessible sur:"
 echo "   http://purpleai.duckdns.org"
+if [ -f /etc/letsencrypt/live/purpleai.duckdns.org/fullchain.pem ]; then
+    echo "   https://purpleai.duckdns.org (SSL activé)"
+fi
 echo ""
 echo "📋 Vérifications:"
 echo "   sudo docker ps"
