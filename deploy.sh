@@ -35,29 +35,29 @@ if [ -z "$VITE_SUPABASE_URL" ] || [ -z "$VITE_SUPABASE_PUBLISHABLE_KEY" ]; then
 fi
 
 echo "📦 Building Docker image..."
-docker build \
+sudo docker build \
     --build-arg VITE_SUPABASE_URL="$VITE_SUPABASE_URL" \
     --build-arg VITE_SUPABASE_PUBLISHABLE_KEY="$VITE_SUPABASE_PUBLISHABLE_KEY" \
     -t videoflow:latest .
 
 echo "🛑 Stopping existing container (if any)..."
-docker stop videoflow 2>/dev/null || true
-docker rm videoflow 2>/dev/null || true
+sudo docker stop videoflow 2>/dev/null || true
+sudo docker rm videoflow 2>/dev/null || true
 
 echo "▶️  Starting new container..."
-docker run -d \
+sudo docker run -d \
     --name videoflow \
     -p 80:80 \
     --restart unless-stopped \
     videoflow:latest
 
 echo "🧹 Cleaning up old images..."
-docker image prune -f
+sudo docker image prune -f
 
 echo -e "${GREEN}✅ Deployment complete!${NC}"
 echo ""
 echo "Your application should be available at: http://$(hostname -I | awk '{print $1}')"
 echo ""
-echo "To view logs: docker logs -f videoflow"
-echo "To stop: docker stop videoflow"
-echo "To restart: docker restart videoflow"
+echo "To view logs: sudo docker logs -f videoflow"
+echo "To stop: sudo docker stop videoflow"
+echo "To restart: sudo docker restart videoflow"
