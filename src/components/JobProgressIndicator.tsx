@@ -44,6 +44,8 @@ export function JobProgressIndicator({ job, onCancel, className }: JobProgressIn
         return 'Génération des images';
       case 'thumbnails':
         return 'Génération des miniatures';
+      case 'upscale':
+        return 'Upscaling des images';
       default:
         return 'Génération';
     }
