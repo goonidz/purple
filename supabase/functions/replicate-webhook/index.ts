@@ -424,6 +424,7 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
   }
 
   console.log(`Job ${jobId} marked as completed. Success: ${successfulPredictions.length}, Failed: ${failedCount}`);
+  console.log(`Job ${jobId} type: ${job.job_type}, project_id: ${job.project_id}`);
 
   // Handle chunk continuation or semi-auto mode chaining for images
   const metadata = job.metadata || {};
@@ -635,13 +636,18 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
       await chainNextJobFromWebhook(adminClient, job.project_id, job.user_id, job.job_type, metadata);
     }
   } else if (job.job_type === 'upscale') {
+    console.log(`Job ${jobId}: Processing upscale job completion - updating project dimensions`);
     // After upscale completes, update project dimensions to match upscaled images (1920x1088)
     // Get current project dimensions
-    const { data: project } = await adminClient
+    const { data: project, error: projectFetchError } = await adminClient
       .from('projects')
       .select('image_width, image_height, image_model')
       .eq('id', job.project_id)
       .single();
+    
+    if (projectFetchError) {
+      console.error(`Job ${jobId}: Error fetching project:`, projectFetchError);
+    }
     
     console.log(`Job ${jobId}: Upscale job completed. Project data:`, JSON.stringify(project));
     
@@ -651,33 +657,30 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
       const currentWidth = project.image_width;
       const currentHeight = project.image_height;
       
-      console.log(`Job ${jobId}: isZImage=${isZImage}, currentWidth=${currentWidth}, currentHeight=${currentHeight}`);
+      console.log(`Job ${jobId}: Upscale completed. isZImage=${isZImage}, currentWidth=${currentWidth}, currentHeight=${currentHeight}`);
       
-      // If it's Z-Image, always update to 1920x1088 after upscale
-      // Check if dimensions are either 960x544 (original) OR null/undefined OR already at a different small size
-      const needsDimensionUpdate = isZImage && (
-        (currentWidth === 960 && currentHeight === 544) ||
-        (currentWidth === null || currentWidth === undefined) ||
-        (currentWidth && currentWidth < 1920)
-      );
-      
-      if (needsDimensionUpdate) {
+      // If it's Z-Image, ALWAYS update to 1920x1088 after upscale completes
+      // This ensures the project dimensions match the upscaled images
+      if (isZImage) {
+        // Always update, regardless of current dimensions (they might be 960x544, null, or something else)
         console.log(`Job ${jobId}: Updating project dimensions from ${currentWidth}x${currentHeight} to 1920x1088 after upscale`);
-        const { error: updateError } = await adminClient
+        const { error: updateError, data: updateData } = await adminClient
           .from('projects')
           .update({
             image_width: 1920,
             image_height: 1088
           })
-          .eq('id', job.project_id);
+          .eq('id', job.project_id)
+          .select('image_width, image_height')
+          .single();
         
         if (updateError) {
           console.error(`Job ${jobId}: Failed to update dimensions:`, updateError);
         } else {
-          console.log(`Project ${job.project_id} dimensions updated to 1920x1088`);
+          console.log(`Job ${jobId}: Project ${job.project_id} dimensions updated to ${updateData?.image_width}x${updateData?.image_height}`);
         }
       } else {
-        console.log(`Job ${jobId}: No dimension update needed. isZImage=${isZImage}, width=${currentWidth}`);
+        console.log(`Job ${jobId}: Not Z-Image (${imageModel}), skipping dimension update`);
       }
     } else {
       console.error(`Job ${jobId}: Could not fetch project for dimension update`);
