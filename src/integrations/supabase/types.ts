@@ -16,31 +16,31 @@ export type Database = {
     Tables: {
       channels: {
         Row: {
-          id: string
-          user_id: string
-          name: string
           color: string
-          icon: string | null
           created_at: string
+          icon: string | null
+          id: string
+          name: string
           updated_at: string
+          user_id: string
         }
         Insert: {
-          id?: string
-          user_id: string
-          name: string
           color?: string
-          icon?: string | null
           created_at?: string
+          icon?: string | null
+          id?: string
+          name: string
           updated_at?: string
+          user_id: string
         }
         Update: {
-          id?: string
-          user_id?: string
-          name?: string
           color?: string
-          icon?: string | null
           created_at?: string
+          icon?: string | null
+          id?: string
+          name?: string
           updated_at?: string
+          user_id?: string
         }
         Relationships: []
       }
@@ -54,13 +54,13 @@ export type Database = {
           project_id: string | null
           scheduled_date: string
           script: string | null
+          source_thumbnail_url: string | null
+          source_url: string | null
           status: string
           title: string
           updated_at: string
           user_id: string
           youtube_url: string | null
-          source_url: string | null
-          source_thumbnail_url: string | null
         }
         Insert: {
           audio_url?: string | null
@@ -71,30 +71,30 @@ export type Database = {
           project_id?: string | null
           scheduled_date: string
           script?: string | null
+          source_thumbnail_url?: string | null
+          source_url?: string | null
           status?: string
           title: string
           updated_at?: string
           user_id: string
           youtube_url?: string | null
-          source_url?: string | null
-          source_thumbnail_url?: string | null
         }
         Update: {
           audio_url?: string | null
           channel_id?: string | null
           created_at?: string
           id?: string
-          youtube_url?: string | null
-          source_url?: string | null
-          source_thumbnail_url?: string | null
           notes?: string | null
           project_id?: string | null
           scheduled_date?: string
           script?: string | null
+          source_thumbnail_url?: string | null
+          source_url?: string | null
           status?: string
           title?: string
           updated_at?: string
           user_id?: string
+          youtube_url?: string | null
         }
         Relationships: [
           {
@@ -115,28 +115,28 @@ export type Database = {
       }
       export_path_presets: {
         Row: {
+          created_at: string | null
           id: string
-          user_id: string
+          is_default: boolean | null
           name: string
           path: string
-          is_default: boolean
-          created_at: string
+          user_id: string
         }
         Insert: {
+          created_at?: string | null
           id?: string
-          user_id: string
+          is_default?: boolean | null
           name: string
           path: string
-          is_default?: boolean
-          created_at?: string
+          user_id: string
         }
         Update: {
+          created_at?: string | null
           id?: string
-          user_id?: string
+          is_default?: boolean | null
           name?: string
           path?: string
-          is_default?: boolean
-          created_at?: string
+          user_id?: string
         }
         Relationships: []
       }
@@ -194,8 +194,8 @@ export type Database = {
           id: string
           preset_name: string | null
           project_id: string | null
-          thumbnail_project_id: string | null
           prompts: Json
+          thumbnail_project_id: string | null
           thumbnail_urls: Json
           user_id: string
         }
@@ -204,8 +204,8 @@ export type Database = {
           id?: string
           preset_name?: string | null
           project_id?: string | null
-          thumbnail_project_id?: string | null
           prompts?: Json
+          thumbnail_project_id?: string | null
           thumbnail_urls?: Json
           user_id: string
         }
@@ -214,12 +214,20 @@ export type Database = {
           id?: string
           preset_name?: string | null
           project_id?: string | null
-          thumbnail_project_id?: string | null
           prompts?: Json
+          thumbnail_project_id?: string | null
           thumbnail_urls?: Json
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "generated_thumbnails_thumbnail_project_id_fkey"
+            columns: ["thumbnail_project_id"]
+            isOneToOne: false
+            referencedRelation: "thumbnail_projects"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       generated_titles: {
         Row: {
@@ -594,36 +602,6 @@ export type Database = {
         }
         Relationships: []
       }
-      thumbnail_projects: {
-        Row: {
-          id: string
-          user_id: string
-          title: string
-          script: string
-          preset_id: string | null
-          created_at: string
-          updated_at: string
-        }
-        Insert: {
-          id?: string
-          user_id: string
-          title: string
-          script: string
-          preset_id?: string | null
-          created_at?: string
-          updated_at?: string
-        }
-        Update: {
-          id?: string
-          user_id?: string
-          title?: string
-          script?: string
-          preset_id?: string | null
-          created_at?: string
-          updated_at?: string
-        }
-        Relationships: []
-      }
       thumbnail_presets: {
         Row: {
           character_ref_url: string | null
@@ -659,6 +637,44 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      thumbnail_projects: {
+        Row: {
+          created_at: string | null
+          id: string
+          preset_id: string | null
+          script: string
+          title: string
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          preset_id?: string | null
+          script: string
+          title: string
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          preset_id?: string | null
+          script?: string
+          title?: string
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "thumbnail_projects_preset_id_fkey"
+            columns: ["preset_id"]
+            isOneToOne: false
+            referencedRelation: "thumbnail_presets"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       title_presets: {
         Row: {
@@ -768,6 +784,74 @@ export type Database = {
         }
         Relationships: []
       }
+      video_render_jobs: {
+        Row: {
+          completed_at: string | null
+          created_at: string
+          current_step: string | null
+          duration_seconds: number | null
+          error_message: string | null
+          file_size_mb: number | null
+          id: string
+          job_id: string
+          metadata: Json | null
+          progress: number | null
+          project_id: string
+          status: Database["public"]["Enums"]["job_status"]
+          status_url: string | null
+          steps: Json | null
+          updated_at: string
+          user_id: string
+          video_url: string | null
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string
+          current_step?: string | null
+          duration_seconds?: number | null
+          error_message?: string | null
+          file_size_mb?: number | null
+          id?: string
+          job_id: string
+          metadata?: Json | null
+          progress?: number | null
+          project_id: string
+          status?: Database["public"]["Enums"]["job_status"]
+          status_url?: string | null
+          steps?: Json | null
+          updated_at?: string
+          user_id: string
+          video_url?: string | null
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string
+          current_step?: string | null
+          duration_seconds?: number | null
+          error_message?: string | null
+          file_size_mb?: number | null
+          id?: string
+          job_id?: string
+          metadata?: Json | null
+          progress?: number | null
+          project_id?: string
+          status?: Database["public"]["Enums"]["job_status"]
+          status_url?: string | null
+          steps?: Json | null
+          updated_at?: string
+          user_id?: string
+          video_url?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "video_render_jobs_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
@@ -810,6 +894,7 @@ export type Database = {
         | "script_generation"
         | "audio_generation"
         | "full_video"
+        | "upscale"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -949,6 +1034,7 @@ export const Constants = {
         "script_generation",
         "audio_generation",
         "full_video",
+        "upscale",
       ],
     },
   },
