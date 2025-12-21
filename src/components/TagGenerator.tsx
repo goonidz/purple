@@ -103,13 +103,45 @@ export const TagGenerator = ({ projectId, videoScript, videoTitle }: TagGenerato
     }
   };
 
-  const copyTag = async (text: string, index: number | string) => {
+  const copyToClipboard = async (text: string): Promise<boolean> => {
     try {
-      await navigator.clipboard.writeText(text);
+      // Try modern Clipboard API first
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+      
+      // Fallback: use old method with textarea
+      const textArea = document.createElement('textarea');
+      textArea.value = text;
+      textArea.style.position = 'fixed';
+      textArea.style.left = '-999999px';
+      textArea.style.top = '-999999px';
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      
+      try {
+        const successful = document.execCommand('copy');
+        document.body.removeChild(textArea);
+        return successful;
+      } catch (err) {
+        document.body.removeChild(textArea);
+        return false;
+      }
+    } catch (error) {
+      console.error("Error copying to clipboard:", error);
+      return false;
+    }
+  };
+
+  const copyTag = async (text: string, index: number | string) => {
+    const success = await copyToClipboard(text);
+    if (success) {
       setCopiedIndex(index);
       toast.success("Tag copié !");
       setTimeout(() => setCopiedIndex(null), 2000);
-    } catch (error) {
+    } else {
       toast.error("Erreur lors de la copie");
     }
   };
@@ -124,10 +156,14 @@ export const TagGenerator = ({ projectId, videoScript, videoTitle }: TagGenerato
       // Format: #tag1 #tag2 #tag3 (with spaces, ready for YouTube/Instagram)
       const tagsWithHash = tags.map(tag => tag.startsWith('#') ? tag : `#${tag}`).join(' ');
       
-      await navigator.clipboard.writeText(tagsWithHash);
-      setCopiedIndex("all");
-      toast.success(`${tags.length} tags copiés !`);
-      setTimeout(() => setCopiedIndex(null), 2000);
+      const success = await copyToClipboard(tagsWithHash);
+      if (success) {
+        setCopiedIndex("all");
+        toast.success(`${tags.length} tags copiés !`);
+        setTimeout(() => setCopiedIndex(null), 2000);
+      } else {
+        toast.error("Erreur lors de la copie");
+      }
     } catch (error) {
       console.error("Error copying tags:", error);
       toast.error("Erreur lors de la copie");
