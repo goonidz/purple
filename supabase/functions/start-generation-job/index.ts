@@ -2185,6 +2185,9 @@ async function processUpscaleJob(
 ) {
   const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
   
+  // CHUNK SETTINGS - similar to images job
+  const CHUNK_SIZE = 20; // Process 20 images per chunk to avoid timeout
+  
   // Get project data
   const { data: project } = await adminClient
     .from('projects')
@@ -2196,17 +2199,41 @@ async function processUpscaleJob(
 
   const prompts = (project.prompts as any[]) || [];
   
-  // Get images that need upscaling (have imageUrl)
-  const imagesToUpscale = prompts
+  // Get images that need upscaling:
+  // - Have imageUrl (generated)
+  // - Are NOT already upscaled (check if URL contains "upscaled" or dimensions indicate upscale)
+  // For simplicity, we track upscaled images by checking if they were processed in this or previous chunks
+  const alreadyUpscaledIndices = new Set(metadata.upscaledIndices || []);
+  
+  const allImagesToUpscale = prompts
     .map((prompt: any, index: number) => ({ prompt, index }))
-    .filter(({ prompt }: any) => prompt && prompt.imageUrl);
+    .filter(({ prompt, index }: any) => prompt && prompt.imageUrl && !alreadyUpscaledIndices.has(index));
 
-  if (imagesToUpscale.length === 0) {
+  if (allImagesToUpscale.length === 0) {
     console.log("No images to upscale");
     return;
   }
 
-  console.log(`Starting upscale job for ${imagesToUpscale.length} images`);
+  // Take only CHUNK_SIZE images for this chunk
+  const imagesToUpscale = allImagesToUpscale.slice(0, CHUNK_SIZE);
+  const remainingAfterChunk = allImagesToUpscale.length - imagesToUpscale.length;
+  
+  console.log(`CHUNK MODE: Processing ${imagesToUpscale.length} upscales out of ${allImagesToUpscale.length} remaining (${remainingAfterChunk} after this chunk)`);
+
+  // Update job metadata with chunk info
+  await adminClient
+    .from('generation_jobs')
+    .update({
+      total: imagesToUpscale.length,
+      metadata: {
+        ...metadata,
+        chunkSize: imagesToUpscale.length,
+        totalToUpscale: allImagesToUpscale.length,
+        remainingAfterChunk,
+        isChunkContinuation: metadata.isChunkContinuation || false
+      }
+    })
+    .eq('id', jobId);
 
   // Build webhook URL
   const webhookUrl = `${supabaseUrl}/functions/v1/replicate-webhook`;
@@ -2215,7 +2242,7 @@ async function processUpscaleJob(
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
   const internalAuthHeader = `Bearer ${serviceRoleKey}`;
 
-  // Batch settings
+  // Batch settings for sending requests (within the chunk)
   const BATCH_SIZE = 4;
   const DELAY_BETWEEN_BATCHES_MS = 2000;
   const DELAY_BETWEEN_REQUESTS_MS = 300;
@@ -2225,7 +2252,7 @@ async function processUpscaleJob(
   
   const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
   
-  // Process in batches
+  // Process in batches (within the chunk)
   for (let batchStart = 0; batchStart < imagesToUpscale.length; batchStart += BATCH_SIZE) {
     const batch = imagesToUpscale.slice(batchStart, batchStart + BATCH_SIZE);
     console.log(`Processing upscale batch ${Math.floor(batchStart / BATCH_SIZE) + 1}/${Math.ceil(imagesToUpscale.length / BATCH_SIZE)} (${batch.length} images)`);

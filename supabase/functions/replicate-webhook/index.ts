@@ -636,61 +636,144 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
       await chainNextJobFromWebhook(adminClient, job.project_id, job.user_id, job.job_type, metadata);
     }
   } else if (job.job_type === 'upscale') {
-    console.log(`Job ${jobId}: Processing upscale job completion - updating project dimensions`);
-    // After upscale completes, update project dimensions to match upscaled images (1920x1088)
-    // Get current project dimensions
-    const { data: project, error: projectFetchError } = await adminClient
+    console.log(`Job ${jobId}: Processing upscale job completion`);
+    const metadata = job.metadata || {};
+    
+    // Check if there are more images to upscale (chunk continuation)
+    const { data: fullProject } = await adminClient
       .from('projects')
-      .select('image_width, image_height, image_model')
+      .select('prompts, image_width, image_height, image_model')
       .eq('id', job.project_id)
       .single();
     
-    if (projectFetchError) {
-      console.error(`Job ${jobId}: Error fetching project:`, projectFetchError);
-    }
-    
-    console.log(`Job ${jobId}: Upscale job completed. Project data:`, JSON.stringify(project));
-    
-    if (project) {
-      const imageModel = project.image_model || '';
+    if (fullProject) {
+      const prompts = (fullProject.prompts as any[]) || [];
+      
+      // Get indices of images that were just upscaled in this job
+      const { data: completedPredictions } = await adminClient
+        .from('pending_predictions')
+        .select('scene_index')
+        .eq('job_id', jobId)
+        .eq('status', 'completed');
+      
+      const justUpscaledIndices = (completedPredictions || []).map((p: any) => p.scene_index);
+      const previouslyUpscaled = metadata.upscaledIndices || [];
+      const allUpscaledIndices = [...new Set([...previouslyUpscaled, ...justUpscaledIndices])];
+      
+      // Count images that still need upscaling
+      const remainingToUpscale = prompts
+        .map((prompt: any, index: number) => ({ prompt, index }))
+        .filter(({ prompt, index }: any) => prompt && prompt.imageUrl && !allUpscaledIndices.includes(index));
+      
+      console.log(`Job ${jobId}: Upscale chunk complete. ${justUpscaledIndices.length} upscaled this chunk, ${remainingToUpscale.length} remaining`);
+      
+      if (remainingToUpscale.length > 0) {
+        // More images to upscale - create next chunk job
+        console.log(`Job ${jobId}: Creating next upscale chunk for ${remainingToUpscale.length} images`);
+        
+        // Check for existing upscale chunk job to prevent duplicates
+        const { data: existingChunkJob } = await adminClient
+          .from('generation_jobs')
+          .select('id')
+          .eq('project_id', job.project_id)
+          .eq('job_type', 'upscale')
+          .in('status', ['pending', 'processing'])
+          .single();
+
+        if (existingChunkJob) {
+          console.log(`Job ${jobId}: Next upscale chunk job ${existingChunkJob.id} already exists, skipping`);
+        } else {
+          const { data: nextChunkJob, error: chunkError } = await adminClient
+            .from('generation_jobs')
+            .insert({
+              project_id: job.project_id,
+              user_id: job.user_id,
+              job_type: 'upscale',
+              status: 'pending',
+              progress: 0,
+              total: Math.min(remainingToUpscale.length, 20),
+              metadata: {
+                ...metadata,
+                upscaledIndices: allUpscaledIndices,
+                isChunkContinuation: true
+              }
+            })
+            .select()
+            .single();
+          
+          if (chunkError) {
+            console.error("Error creating next upscale chunk job:", chunkError);
+          } else {
+            console.log(`Created next upscale chunk job ${nextChunkJob.id} for ${Math.min(remainingToUpscale.length, 20)} images`);
+            
+            // Start next chunk job in background
+            EdgeRuntime.waitUntil((async () => {
+              const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+              const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+              
+              await new Promise(resolve => setTimeout(resolve, 2000));
+              
+              try {
+                const response = await fetch(`${supabaseUrl}/functions/v1/start-generation-job`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${serviceRoleKey}`
+                  },
+                  body: JSON.stringify({
+                    jobId: nextChunkJob.id,
+                    projectId: job.project_id,
+                    userId: job.user_id,
+                    jobType: 'upscale',
+                    metadata: {
+                      ...metadata,
+                      upscaledIndices: allUpscaledIndices,
+                      isChunkContinuation: true
+                    }
+                  })
+                });
+                
+                if (response.ok) {
+                  console.log(`Next upscale chunk job ${nextChunkJob.id} started successfully`);
+                } else {
+                  console.error(`Failed to start next upscale chunk job: ${await response.text()}`);
+                }
+              } catch (error) {
+                console.error("Error starting next upscale chunk job:", error);
+              }
+            })());
+            
+            return; // Don't proceed to dimension update or thumbnails yet
+          }
+        }
+      }
+      
+      // All upscales done - update project dimensions
+      const imageModel = fullProject.image_model || '';
       const isZImage = imageModel === 'z-image-turbo' || imageModel === 'z-image-turbo-lora';
-      const currentWidth = project.image_width;
-      const currentHeight = project.image_height;
       
-      console.log(`Job ${jobId}: Upscale completed. isZImage=${isZImage}, currentWidth=${currentWidth}, currentHeight=${currentHeight}`);
-      
-      // If it's Z-Image, ALWAYS update to 1920x1088 after upscale completes
-      // This ensures the project dimensions match the upscaled images
       if (isZImage) {
-        // Always update, regardless of current dimensions (they might be 960x544, null, or something else)
-        console.log(`Job ${jobId}: Updating project dimensions from ${currentWidth}x${currentHeight} to 1920x1088 after upscale`);
-        const { error: updateError, data: updateData } = await adminClient
+        console.log(`Job ${jobId}: All upscales complete. Updating project dimensions to 1920x1088`);
+        const { error: updateError } = await adminClient
           .from('projects')
           .update({
             image_width: 1920,
             image_height: 1088
           })
-          .eq('id', job.project_id)
-          .select('image_width, image_height')
-          .single();
+          .eq('id', job.project_id);
         
         if (updateError) {
           console.error(`Job ${jobId}: Failed to update dimensions:`, updateError);
         } else {
-          console.log(`Job ${jobId}: Project ${job.project_id} dimensions updated to ${updateData?.image_width}x${updateData?.image_height}`);
+          console.log(`Job ${jobId}: Project ${job.project_id} dimensions updated to 1920x1088`);
         }
-      } else {
-        console.log(`Job ${jobId}: Not Z-Image (${imageModel}), skipping dimension update`);
       }
-    } else {
-      console.error(`Job ${jobId}: Could not fetch project for dimension update`);
-    }
-    
-    // After upscale completes, chain to thumbnails if semi-auto mode
-    const metadata = job.metadata || {};
-    if (metadata.semiAutoMode === true) {
-      console.log(`Job ${jobId}: Upscale complete. Chaining to thumbnails.`);
-      await chainNextJobFromWebhook(adminClient, job.project_id, job.user_id, 'images', metadata);
+      
+      // Chain to thumbnails if semi-auto mode
+      if (metadata.semiAutoMode === true) {
+        console.log(`Job ${jobId}: Upscale complete. Chaining to thumbnails.`);
+        await chainNextJobFromWebhook(adminClient, job.project_id, job.user_id, 'images', metadata);
+      }
     }
   } else if (job.job_type === 'single_image') {
     // After single image generation, check if we need to upscale it (Z-Image 16:9)
