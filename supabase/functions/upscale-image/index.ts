@@ -6,8 +6,8 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-// Real-ESRGAN model on Replicate
-const REAL_ESRGAN_MODEL = "nightmareai/real-esrgan";
+// Real-ESRGAN model on Replicate (A100 version - faster, ~4 seconds)
+const REAL_ESRGAN_MODEL = "daanelson/real-esrgan-a100";
 
 Deno.serve(async (req) => {
   // Handle CORS preflight requests
@@ -131,7 +131,7 @@ Deno.serve(async (req) => {
       
       try {
         // Get latest version of the model
-        const modelInfo = await replicate.models.get("nightmareai", "real-esrgan");
+        const modelInfo = await replicate.models.get("daanelson", "real-esrgan-a100");
         const latestVersion = modelInfo.latest_version?.id;
         
         if (!latestVersion) {
