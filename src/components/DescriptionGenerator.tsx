@@ -101,13 +101,45 @@ export const DescriptionGenerator = ({ projectId, videoScript }: DescriptionGene
     }
   };
 
-  const copyToClipboard = async (text: string) => {
+  const copyToClipboard = async (text: string): Promise<boolean> => {
     try {
-      await navigator.clipboard.writeText(text);
+      // Try modern Clipboard API first
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+      
+      // Fallback: use old method with textarea
+      const textArea = document.createElement('textarea');
+      textArea.value = text;
+      textArea.style.position = 'fixed';
+      textArea.style.left = '-999999px';
+      textArea.style.top = '-999999px';
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      
+      try {
+        const successful = document.execCommand('copy');
+        document.body.removeChild(textArea);
+        return successful;
+      } catch (err) {
+        document.body.removeChild(textArea);
+        return false;
+      }
+    } catch (error) {
+      console.error("Error copying to clipboard:", error);
+      return false;
+    }
+  };
+
+  const handleCopyDescription = async (text: string) => {
+    const success = await copyToClipboard(text);
+    if (success) {
       setCopied(true);
       toast.success("Description copiée !");
       setTimeout(() => setCopied(false), 2000);
-    } catch (error) {
+    } else {
       toast.error("Erreur lors de la copie");
     }
   };
@@ -150,7 +182,11 @@ export const DescriptionGenerator = ({ projectId, videoScript }: DescriptionGene
                 <Button
                   variant="ghost"
                   size="icon"
-                  onClick={() => copyToClipboard(generatedDescription)}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleCopyDescription(generatedDescription);
+                  }}
                   className="shrink-0"
                 >
                   {copied ? (
@@ -189,7 +225,11 @@ export const DescriptionGenerator = ({ projectId, videoScript }: DescriptionGene
                   <Button
                     variant="ghost"
                     size="icon"
-                    onClick={() => copyToClipboard((history.descriptions as string[])[0])}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleCopyDescription((history.descriptions as string[])[0]);
+                    }}
                     className="shrink-0"
                   >
                     {copied ? (

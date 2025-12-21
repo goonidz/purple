@@ -914,10 +914,44 @@ const Index = () => {
   };
 
   const copyToClipboard = async (prompt: string, index: number) => {
-    await navigator.clipboard.writeText(prompt);
-    setCopiedIndex(index);
-    toast.success("Prompt copié !");
-    setTimeout(() => setCopiedIndex(null), 2000);
+    try {
+      // Try modern Clipboard API first
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(prompt);
+        setCopiedIndex(index);
+        toast.success("Prompt copié !");
+        setTimeout(() => setCopiedIndex(null), 2000);
+        return;
+      }
+      
+      // Fallback: use old method with textarea
+      const textArea = document.createElement('textarea');
+      textArea.value = prompt;
+      textArea.style.position = 'fixed';
+      textArea.style.left = '-999999px';
+      textArea.style.top = '-999999px';
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      
+      try {
+        const successful = document.execCommand('copy');
+        document.body.removeChild(textArea);
+        if (successful) {
+          setCopiedIndex(index);
+          toast.success("Prompt copié !");
+          setTimeout(() => setCopiedIndex(null), 2000);
+        } else {
+          toast.error("Erreur lors de la copie");
+        }
+      } catch (err) {
+        document.body.removeChild(textArea);
+        toast.error("Erreur lors de la copie");
+      }
+    } catch (error) {
+      console.error("Error copying to clipboard:", error);
+      toast.error("Erreur lors de la copie");
+    }
   };
 
   const handleAspectRatioChange = (ratio: string) => {
