@@ -116,11 +116,20 @@ export const TagGenerator = ({ projectId, videoScript, videoTitle }: TagGenerato
 
   const copyAllTags = async (tags: string[]) => {
     try {
-      await navigator.clipboard.writeText(tags.join(", "));
+      if (!tags || tags.length === 0) {
+        toast.error("Aucun tag à copier");
+        return;
+      }
+      
+      // Format: #tag1 #tag2 #tag3 (with spaces, ready for YouTube/Instagram)
+      const tagsWithHash = tags.map(tag => tag.startsWith('#') ? tag : `#${tag}`).join(' ');
+      
+      await navigator.clipboard.writeText(tagsWithHash);
       setCopiedIndex("all");
-      toast.success("Tous les tags copiés !");
+      toast.success(`${tags.length} tags copiés !`);
       setTimeout(() => setCopiedIndex(null), 2000);
     } catch (error) {
+      console.error("Error copying tags:", error);
       toast.error("Erreur lors de la copie");
     }
   };
@@ -162,14 +171,25 @@ export const TagGenerator = ({ projectId, videoScript, videoTitle }: TagGenerato
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => copyAllTags(generatedTags)}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    console.log("Copy all clicked, tags:", generatedTags);
+                    copyAllTags(generatedTags);
+                  }}
+                  disabled={generatedTags.length === 0}
                 >
                   {copiedIndex === "all" ? (
-                    <Check className="mr-2 h-4 w-4" />
+                    <>
+                      <Check className="mr-2 h-4 w-4" />
+                      Copiés !
+                    </>
                   ) : (
-                    <Copy className="mr-2 h-4 w-4" />
+                    <>
+                      <Copy className="mr-2 h-4 w-4" />
+                      Copier tous
+                    </>
                   )}
-                  Copier tous
                 </Button>
               </div>
               <div className="flex flex-wrap gap-2">
