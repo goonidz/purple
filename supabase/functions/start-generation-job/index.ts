@@ -1912,6 +1912,69 @@ async function processSingleImageJob(
     .from('generation_jobs')
     .update({ progress: 1 })
     .eq('id', jobId);
+
+  // IMPORTANT: Auto-upscale for Z-Image 16:9 single images
+  if (isZImage) {
+    console.log(`Single image generated for Z-Image 16:9 - triggering upscale for scene ${sceneIndex}`);
+    
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const webhookUrl = `${supabaseUrl}/functions/v1/replicate-webhook`;
+    
+    // Create upscale job for tracking
+    const { data: upscaleJob } = await adminClient
+      .from('generation_jobs')
+      .insert({
+        project_id: projectId,
+        user_id: userId,
+        job_type: 'upscale',
+        status: 'processing',
+        progress: 0,
+        total: 1,
+        metadata: {
+          singleImage: true,
+          sceneIndex,
+          imageModel
+        }
+      })
+      .select()
+      .single();
+    
+    if (upscaleJob) {
+      try {
+        const upscaleResponse = await fetch(`${supabaseUrl}/functions/v1/upscale-image`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${serviceRoleKey}`
+          },
+          body: JSON.stringify({
+            imageUrl,
+            projectId,
+            sceneIndex,
+            jobId: upscaleJob.id,
+            webhookUrl
+          })
+        });
+        
+        if (upscaleResponse.ok) {
+          console.log(`Upscale started for scene ${sceneIndex}`);
+        } else {
+          const errorText = await upscaleResponse.text();
+          console.error(`Failed to start upscale: ${errorText}`);
+          await adminClient
+            .from('generation_jobs')
+            .update({ status: 'failed', error_message: errorText })
+            .eq('id', upscaleJob.id);
+        }
+      } catch (error) {
+        console.error(`Error calling upscale-image:`, error);
+        await adminClient
+          .from('generation_jobs')
+          .update({ status: 'failed', error_message: String(error) })
+          .eq('id', upscaleJob.id);
+      }
+    }
+  }
 }
 
 // Process thumbnails job - generates 3 thumbnail variations using webhooks (non-blocking)
