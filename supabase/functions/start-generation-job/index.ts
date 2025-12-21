@@ -2220,17 +2220,30 @@ async function processUpscaleJob(
   
   console.log(`CHUNK MODE: Processing ${imagesToUpscale.length} upscales out of ${allImagesToUpscale.length} remaining (${remainingAfterChunk} after this chunk)`);
 
-  // Update job metadata with chunk info
+  // Get current job to preserve total if it's already set (for chunk continuation)
+  const { data: currentJob } = await adminClient
+    .from('generation_jobs')
+    .select('total')
+    .eq('id', jobId)
+    .single();
+  
+  // Calculate total global: if this is a continuation, use existing total, otherwise use all images
+  const totalGlobal = metadata.isChunkContinuation && currentJob?.total 
+    ? currentJob.total 
+    : allImagesToUpscale.length;
+  
+  // Update job metadata with chunk info - keep total global, don't change it
   await adminClient
     .from('generation_jobs')
     .update({
-      total: imagesToUpscale.length,
+      total: totalGlobal, // Keep total global, not chunk size
       metadata: {
         ...metadata,
         chunkSize: imagesToUpscale.length,
         totalToUpscale: allImagesToUpscale.length,
         remainingAfterChunk,
-        isChunkContinuation: metadata.isChunkContinuation || false
+        isChunkContinuation: metadata.isChunkContinuation || false,
+        totalGlobal // Store for reference
       }
     })
     .eq('id', jobId);

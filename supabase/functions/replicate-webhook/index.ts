@@ -296,23 +296,39 @@ async function updateUpscaledImage(adminClient: any, prediction: any, imageUrl: 
     console.error(`Scene ${sceneIndex + 1} not found or project missing`);
   }
   
-  // Update job progress
+  // Update job progress - account for chunking (global progress)
   if (prediction.job_id) {
+    // Get job metadata to check if this is a chunk continuation
+    const { data: job } = await adminClient
+      .from('generation_jobs')
+      .select('metadata, total')
+      .eq('id', prediction.job_id)
+      .single();
+    
+    const metadata = job?.metadata || {};
+    const alreadyUpscaled = metadata.upscaledIndices?.length || 0;
+    
+    // Count completed predictions in this job
     const { data: completedPredictions } = await adminClient
       .from('pending_predictions')
       .select('id')
       .eq('job_id', prediction.job_id)
       .eq('status', 'completed');
     
-    const completedCount = completedPredictions?.length || 0;
+    const completedInThisChunk = completedPredictions?.length || 0;
+    
+    // Global progress = already upscaled in previous chunks + completed in this chunk
+    const globalProgress = alreadyUpscaled + completedInThisChunk;
     
     await adminClient
       .from('generation_jobs')
       .update({ 
-        progress: completedCount,
+        progress: globalProgress,
         updated_at: new Date().toISOString()
       })
       .eq('id', prediction.job_id);
+    
+    console.log(`Upscale progress updated: ${globalProgress}/${job?.total || '?'} (${alreadyUpscaled} from previous chunks + ${completedInThisChunk} in this chunk)`);
   }
 }
 
@@ -683,6 +699,9 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
         if (existingChunkJob) {
           console.log(`Job ${jobId}: Next upscale chunk job ${existingChunkJob.id} already exists, skipping`);
         } else {
+          // Calculate total global: original total from first job or sum of all images
+          const totalGlobal = job.total || (allUpscaledIndices.length + remainingToUpscale.length);
+          
           const { data: nextChunkJob, error: chunkError } = await adminClient
             .from('generation_jobs')
             .insert({
@@ -690,12 +709,13 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
               user_id: job.user_id,
               job_type: 'upscale',
               status: 'pending',
-              progress: 0,
-              total: Math.min(remainingToUpscale.length, 20),
+              progress: allUpscaledIndices.length, // Start progress from where we left off
+              total: totalGlobal, // Use total global, not chunk size
               metadata: {
                 ...metadata,
                 upscaledIndices: allUpscaledIndices,
-                isChunkContinuation: true
+                isChunkContinuation: true,
+                totalGlobal
               }
             })
             .select()
@@ -704,7 +724,7 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
           if (chunkError) {
             console.error("Error creating next upscale chunk job:", chunkError);
           } else {
-            console.log(`Created next upscale chunk job ${nextChunkJob.id} for ${Math.min(remainingToUpscale.length, 20)} images`);
+            console.log(`Created next upscale chunk job ${nextChunkJob.id} for ${Math.min(remainingToUpscale.length, 30)} images`);
             
             // Start next chunk job in background
             EdgeRuntime.waitUntil((async () => {
