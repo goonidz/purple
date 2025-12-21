@@ -1793,13 +1793,17 @@ async function processSingleImageJob(
     }
   }
 
+  // Build webhook URL - use async webhook mode like processImagesJob
+  const webhookUrl = `${supabaseUrl}/functions/v1/replicate-webhook`;
+
   const requestBody: any = {
     prompt: prompt.prompt,
     width: imageWidth,
     height: imageHeight,
     model: imageModel,
     async: true,
-    userId, // Required for internal service role calls
+    webhook_url: webhookUrl, // Use webhook mode
+    userId,
   };
 
   if (styleReferenceUrls.length > 0) {
@@ -1816,7 +1820,21 @@ async function processSingleImageJob(
     }
   }
 
-  // Start async generation
+  // Update job metadata with image model info (for upscaling detection in webhook)
+  await adminClient
+    .from('generation_jobs')
+    .update({
+      metadata: {
+        ...metadata,
+        imageModel,
+        imageWidth,
+        imageHeight,
+        sceneIndex
+      }
+    })
+    .eq('id', jobId);
+
+  // Start async generation with webhook
   const startResponse = await fetch(`${supabaseUrl}/functions/v1/generate-image-seedream`, {
     method: 'POST',
     headers: {
@@ -1837,144 +1855,33 @@ async function processSingleImageJob(
     throw new Error("No prediction ID returned");
   }
 
-  // Poll for completion
-  let imageUrl = null;
-  const maxWaitMs = 600000; // 10 minutes
-  const pollIntervalMs = 3000;
-  const startTime = Date.now();
-
-  while (Date.now() - startTime < maxWaitMs) {
-    await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
-
-    const statusResponse = await fetch(`${supabaseUrl}/functions/v1/generate-image-seedream`, {
-      method: 'POST',
-      headers: {
-        'Authorization': authHeader,
-        'Content-Type': 'application/json',
+  // Create pending_prediction entry for webhook tracking (like processImagesJob)
+  const { error: insertError } = await adminClient
+    .from('pending_predictions')
+    .insert({
+      job_id: jobId,
+      prediction_id: predictionId,
+      prediction_type: 'scene_image',
+      scene_index: sceneIndex,
+      project_id: projectId,
+      user_id: userId,
+      metadata: { 
+        prompt: prompt.prompt,
+        imageModel,
+        imageWidth,
+        imageHeight
       },
-      body: JSON.stringify({ predictionId, userId }),
+      status: 'pending'
     });
 
-    if (!statusResponse.ok) continue;
-
-    const statusData = await statusResponse.json();
-
-    if (statusData.status === 'succeeded') {
-      const output = Array.isArray(statusData.output) ? statusData.output[0] : statusData.output;
-      if (output) {
-        // Download and upload to Supabase storage
-        const imageResponse = await fetch(output);
-        if (imageResponse.ok) {
-          const blob = await imageResponse.blob();
-          const timestamp = Date.now();
-          const filename = `${projectId}/scene_${sceneIndex + 1}_${timestamp}.jpg`;
-
-          const { error: uploadError } = await adminClient.storage
-            .from('generated-images')
-            .upload(filename, blob, {
-              contentType: 'image/jpeg',
-              upsert: true
-            });
-
-          if (!uploadError) {
-            const { data: { publicUrl } } = adminClient.storage
-              .from('generated-images')
-              .getPublicUrl(filename);
-            
-            imageUrl = publicUrl;
-          }
-        }
-      }
-      break;
-    }
-
-    if (statusData.status === 'failed' || statusData.status === 'canceled') {
-      throw new Error(`Generation ${statusData.status}`);
-    }
+  if (insertError) {
+    console.error(`Failed to create pending_prediction:`, insertError);
   }
 
-  if (!imageUrl) {
-    throw new Error("Image generation timed out or failed");
-  }
+  console.log(`Single image generation started for scene ${sceneIndex} with webhook mode`);
 
-  // Update the prompts array with the new image
-  const updatedPrompts = [...prompts];
-  updatedPrompts[sceneIndex] = { ...updatedPrompts[sceneIndex], imageUrl };
-
-  // Save prompts to project
-  await adminClient
-    .from('projects')
-    .update({ prompts: updatedPrompts })
-    .eq('id', projectId);
-
-  // Update progress
-  await adminClient
-    .from('generation_jobs')
-    .update({ progress: 1 })
-    .eq('id', jobId);
-
-  // IMPORTANT: Auto-upscale for Z-Image 16:9 single images
-  if (isZImage) {
-    console.log(`Single image generated for Z-Image 16:9 - triggering upscale for scene ${sceneIndex}`);
-    
-    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const webhookUrl = `${supabaseUrl}/functions/v1/replicate-webhook`;
-    
-    // Create upscale job for tracking
-    const { data: upscaleJob } = await adminClient
-      .from('generation_jobs')
-      .insert({
-        project_id: projectId,
-        user_id: userId,
-        job_type: 'upscale',
-        status: 'processing',
-        progress: 0,
-        total: 1,
-        metadata: {
-          singleImage: true,
-          sceneIndex,
-          imageModel
-        }
-      })
-      .select()
-      .single();
-    
-    if (upscaleJob) {
-      try {
-        const upscaleResponse = await fetch(`${supabaseUrl}/functions/v1/upscale-image`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${serviceRoleKey}`
-          },
-          body: JSON.stringify({
-            imageUrl,
-            projectId,
-            sceneIndex,
-            jobId: upscaleJob.id,
-            webhookUrl
-          })
-        });
-        
-        if (upscaleResponse.ok) {
-          console.log(`Upscale started for scene ${sceneIndex}`);
-        } else {
-          const errorText = await upscaleResponse.text();
-          console.error(`Failed to start upscale: ${errorText}`);
-          await adminClient
-            .from('generation_jobs')
-            .update({ status: 'failed', error_message: errorText })
-            .eq('id', upscaleJob.id);
-        }
-      } catch (error) {
-        console.error(`Error calling upscale-image:`, error);
-        await adminClient
-          .from('generation_jobs')
-          .update({ status: 'failed', error_message: String(error) })
-          .eq('id', upscaleJob.id);
-      }
-    }
-  }
+  // Throw to keep job in processing status - webhook will handle completion and upscale
+  throw new Error("WEBHOOK_MODE_ACTIVE");
 }
 
 // Process thumbnails job - generates 3 thumbnail variations using webhooks (non-blocking)
