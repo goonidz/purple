@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { ImageIcon, Plus, Trash2, Clock, Edit, FolderOpen } from "lucide-react";
+import { ImageIcon, Plus, Trash2, Clock, Edit, FolderOpen, ArrowLeft } from "lucide-react";
 import AppHeader from "@/components/AppHeader";
 import { supabase } from "@/integrations/supabase/client";
 import { ThumbnailGenerator } from "@/components/ThumbnailGenerator";
