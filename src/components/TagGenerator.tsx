@@ -153,10 +153,12 @@ export const TagGenerator = ({ projectId, videoScript, videoTitle }: TagGenerato
         return;
       }
       
-      // Format: #tag1 #tag2 #tag3 (with spaces, ready for YouTube/Instagram)
-      const tagsWithHash = tags.map(tag => tag.startsWith('#') ? tag : `#${tag}`).join(' ');
+      // Format YouTube: "tag1, tag2, tag3" (without hashtags, comma-separated)
+      const tagsFormatted = tags
+        .map(tag => tag.startsWith('#') ? tag.substring(1) : tag) // Remove # if present
+        .join(', '); // Join with comma and space
       
-      const success = await copyToClipboard(tagsWithHash);
+      const success = await copyToClipboard(tagsFormatted);
       if (success) {
         setCopiedIndex("all");
         toast.success(`${tags.length} tags copiés !`);
