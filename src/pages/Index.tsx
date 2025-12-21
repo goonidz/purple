@@ -31,7 +31,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Upload, X, Loader2, Image as ImageIcon, RefreshCw, Settings, Download, Video, Type, Check, Copy, FolderOpen, Pencil, AlertCircle, FileText, ArrowUp, MonitorPlay, Cloud, Trash2, Hash, Play, Sparkles, User as UserIcon, CheckCircle2, Clock } from "lucide-react";
+import { Upload, X, Loader2, Image as ImageIcon, RefreshCw, Settings, Download, Video, Type, Check, Copy, FolderOpen, Pencil, AlertCircle, FileText, ArrowUp, MonitorPlay, Cloud, Trash2, Hash, Play, Sparkles, User as UserIcon, CheckCircle2, Clock, Maximize2 } from "lucide-react";
 import AppHeader from "@/components/AppHeader";
 import { ProjectConfigurationModal } from "@/components/ProjectConfigurationModal";
 import { toast } from "sonner";
@@ -1481,6 +1481,41 @@ const Index = () => {
     }
   };
 
+  const generateUpscale = async () => {
+    if (!currentProjectId) {
+      toast.error("Veuillez d'abord sélectionner ou créer un projet");
+      return;
+    }
+
+    // Check if Z-Image 16:9
+    const isZImage = imageModel === 'z-image-turbo' || imageModel === 'z-image-turbo-lora';
+    const is16x9 = aspectRatio === '16:9';
+    
+    if (!isZImage || !is16x9) {
+      toast.error("L'upscaling automatique est uniquement disponible pour Z-Image en format 16:9");
+      return;
+    }
+
+    // Check if images exist
+    const imagesWithUrl = generatedPrompts.filter((p: any) => p && p.imageUrl).length;
+    if (imagesWithUrl === 0) {
+      toast.error("Aucune image à upscaler. Générez d'abord les images.");
+      return;
+    }
+
+    // Check if already has active upscale job
+    if (hasActiveJob('upscale')) {
+      toast.info("Un upscaling est déjà en cours");
+      return;
+    }
+
+    // Start background job
+    const result = await startJob('upscale', {});
+    if (result) {
+      toast.info("Upscaling lancé en arrière-plan. Vous pouvez quitter cette page.");
+    }
+  };
+
   const handleExport = async () => {
     console.log("handleExport called");
     if (generatedPrompts.length === 0) {
@@ -2492,6 +2527,27 @@ const Index = () => {
                                 <>
                                   <ImageIcon className="mr-2 h-4 w-4" />
                                   Générer toutes les images
+                                </>
+                              )}
+                            </Button>
+                          )}
+                          {generatedPrompts.length > 0 && !isGeneratingImages && (imageModel === 'z-image-turbo' || imageModel === 'z-image-turbo-lora') && aspectRatio === '16:9' && generatedPrompts.some((p: any) => p && p.imageUrl) && (
+                            <Button
+                              onClick={generateUpscale}
+                              disabled={hasActiveJob('upscale')}
+                              title="Upscaler toutes les images en 1920x1088"
+                              size="sm"
+                              variant="outline"
+                            >
+                              {hasActiveJob('upscale') ? (
+                                <>
+                                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                  Upscaling en cours...
+                                </>
+                              ) : (
+                                <>
+                                  <Maximize2 className="mr-2 h-4 w-4" />
+                                  Upscaler les images (1920x1088)
                                 </>
                               )}
                             </Button>
