@@ -70,6 +70,61 @@ export default function Calendar() {
     }
   }, [user, currentMonth]);
 
+  // Subscribe to realtime updates for calendar entries and projects
+  useEffect(() => {
+    if (!user) return;
+
+    // Subscribe to content_calendar changes
+    const calendarChannel = supabase
+      .channel(`calendar-${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'content_calendar',
+          filter: `user_id=eq.${user.id}`
+        },
+        (payload) => {
+          console.log('Calendar entry changed:', payload);
+          // Refresh entries when calendar changes
+          fetchEntries();
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'projects',
+          filter: `user_id=eq.${user.id}`
+        },
+        (payload) => {
+          console.log('Project changed:', payload);
+          // If a project name changed, update corresponding calendar entry
+          if (payload.eventType === 'UPDATE' && payload.new) {
+            const project = payload.new as any;
+            if (project.name) {
+              // Update calendar entry title if linked to this project
+              supabase
+                .from('content_calendar')
+                .update({ title: project.name })
+                .eq('project_id', project.id)
+                .then(() => {
+                  // Refresh entries to show updated title
+                  fetchEntries();
+                });
+            }
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(calendarChannel);
+    };
+  }, [user]);
+
   const fetchChannels = async () => {
     if (!user) return;
     

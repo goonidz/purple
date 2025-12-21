@@ -456,6 +456,37 @@ const Index = () => {
     }
   }, [currentProjectId]);
 
+  // Subscribe to realtime updates for calendar entries linked to this project
+  useEffect(() => {
+    if (!currentProjectId) return;
+
+    const calendarChannel = supabase
+      .channel(`project-calendar-${currentProjectId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'content_calendar',
+          filter: `project_id=eq.${currentProjectId}`
+        },
+        (payload) => {
+          console.log('Calendar entry updated for this project:', payload);
+          const updatedEntry = payload.new as any;
+          // If calendar entry title changed, update project name
+          if (updatedEntry.title && updatedEntry.title !== projectName) {
+            setProjectName(updatedEntry.title);
+            console.log('Project name synchronized from calendar:', updatedEntry.title);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(calendarChannel);
+    };
+  }, [currentProjectId, projectName]);
+
   // Poll for project updates to refresh images in real-time during generation
   useEffect(() => {
     if (!currentProjectId) return;
@@ -762,14 +793,28 @@ const Index = () => {
     if (!currentProjectId || !editingProjectNameValue.trim()) return;
     
     try {
-      const { error } = await supabase
+      const newName = editingProjectNameValue.trim();
+      
+      // Update project name
+      const { error: projectError } = await supabase
         .from("projects")
-        .update({ name: editingProjectNameValue.trim() })
+        .update({ name: newName })
         .eq("id", currentProjectId);
 
-      if (error) throw error;
+      if (projectError) throw projectError;
       
-      setProjectName(editingProjectNameValue.trim());
+      // Also update title in content_calendar if this project is linked to a calendar entry
+      const { error: calendarError } = await supabase
+        .from("content_calendar")
+        .update({ title: newName })
+        .eq("project_id", currentProjectId);
+
+      if (calendarError) {
+        console.warn("Could not update calendar entry title:", calendarError);
+        // Don't throw - project update succeeded, calendar update is optional
+      }
+      
+      setProjectName(newName);
       setIsEditingProjectName(false);
       setEditingProjectNameValue("");
       toast.success("Titre mis à jour");

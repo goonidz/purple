@@ -303,6 +303,21 @@ export default function CalendarVideoModal({
         toast.success(entry ? "Vidéo mise à jour" : "Vidéo planifiée");
       }
 
+      // If this entry is linked to a project, also update the project name
+      if (projectId && title.trim()) {
+        const { error: projectUpdateError } = await supabase
+          .from("projects")
+          .update({ name: title.trim() })
+          .eq("id", projectId);
+        
+        if (projectUpdateError) {
+          console.warn("Could not update project name:", projectUpdateError);
+          // Don't throw - calendar update succeeded, project update is optional
+        } else {
+          console.log("Project name synchronized with calendar entry");
+        }
+      }
+
       onSaved();
     } catch (error: any) {
       console.error("Error saving entry:", error);
