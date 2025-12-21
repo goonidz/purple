@@ -766,21 +766,45 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
                   },
                   body: JSON.stringify({
                     imageUrl,
-                    projectId: job.project_id,
-                    sceneIndex,
-                    jobId: upscaleJob.id,
-                    webhookUrl
+                    userId: job.user_id, // Required for internal calls
+                    async: true, // Use webhook mode
+                    webhook_url: webhookUrl
                   })
                 });
                 
                 if (response.ok) {
-                  console.log(`Job ${jobId}: Upscale request sent for scene ${sceneIndex}`);
+                  const responseData = await response.json();
+                  const predictionId = responseData.predictionId;
+                  
+                  if (predictionId) {
+                    // Create pending_prediction for webhook tracking (like processUpscaleJob)
+                    await adminClient
+                      .from('pending_predictions')
+                      .insert({
+                        job_id: upscaleJob.id,
+                        prediction_id: predictionId,
+                        prediction_type: 'upscale',
+                        scene_index: sceneIndex,
+                        project_id: job.project_id,
+                        user_id: job.user_id,
+                        metadata: { 
+                          originalImageUrl: imageUrl,
+                          sceneIndex
+                        },
+                        status: 'pending'
+                      });
+                    
+                    console.log(`Job ${jobId}: Upscale started for scene ${sceneIndex}, prediction: ${predictionId}`);
+                  } else {
+                    throw new Error('No prediction ID returned');
+                  }
                 } else {
-                  console.error(`Job ${jobId}: Failed to start upscale: ${await response.text()}`);
+                  const errorText = await response.text();
+                  console.error(`Job ${jobId}: Failed to start upscale: ${errorText}`);
                   // Mark upscale job as failed
                   await adminClient
                     .from('generation_jobs')
-                    .update({ status: 'failed', error_message: 'Failed to start upscale' })
+                    .update({ status: 'failed', error_message: `Failed to start upscale: ${errorText}` })
                     .eq('id', upscaleJob.id);
                 }
               } catch (error) {
