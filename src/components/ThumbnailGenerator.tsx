@@ -766,9 +766,18 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
       const publicUrl = Array.isArray(data.output) ? data.output[0] : data.output;
 
       // Add to local history
+      // Generate UUID compatible with all browsers
+      const generateUUID = () => {
+        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+          const r = Math.random() * 16 | 0;
+          const v = c === 'x' ? r : (r & 0x3 | 0x8);
+          return v.toString(16);
+        });
+      };
+      
       const newHistory: GeneratedThumbnailHistory[] = [
         {
-          id: crypto.randomUUID(),
+          id: generateUUID(),
           prompts: [editingImagePrompt],
           thumbnail_urls: [publicUrl],
           created_at: new Date().toISOString(),
