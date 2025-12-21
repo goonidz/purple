@@ -538,9 +538,14 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
     const isZImage = imageModel === 'z-image-turbo' || imageModel === 'z-image-turbo-lora';
     const imageWidth = fullProject?.image_width || 1920;
     const imageHeight = fullProject?.image_height || 1080;
-    const is16x9 = Math.abs((imageWidth / imageHeight) - (16 / 9)) < 0.1;
     
-    // Check if upscaling is needed (Z-Image 16:9)
+    // More robust 16:9 detection: check ratio OR exact dimensions (960x544 is the base for upscaling)
+    const ratio = imageWidth / imageHeight;
+    const is16x9 = Math.abs(ratio - (16 / 9)) < 0.1 || (imageWidth === 960 && imageHeight === 544);
+    
+    console.log(`Job ${jobId}: Checking upscale need - model: ${imageModel}, isZImage: ${isZImage}, dimensions: ${imageWidth}x${imageHeight}, is16x9: ${is16x9}`);
+    
+    // Check if upscaling is needed (Z-Image 16:9) - works in both manual and semi-auto mode
     if (isZImage && is16x9) {
       // Check if there's already an upscale job
       const { data: existingUpscaleJob } = await adminClient
