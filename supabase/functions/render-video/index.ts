@@ -126,7 +126,12 @@ serve(async (req) => {
       throw new Error(`${missingImages.length} scene(s) are missing images`);
     }
 
+    // Use project dimensions from DB (important after upscale), fallback to request dimensions
+    const projectWidth = project.image_width || width;
+    const projectHeight = project.image_height || height;
+    
     console.log(`Processing ${scenes.length} scenes with framerate ${framerate}`);
+    console.log(`Using dimensions from DB: ${projectWidth}x${projectHeight} (request: ${width}x${height})`);
 
     // Prepare render data
     const renderData = {
@@ -151,8 +156,8 @@ serve(async (req) => {
         y: 85
       },
       videoSettings: {
-        width,
-        height,
+        width: projectWidth,
+        height: projectHeight,
         framerate,
         format: 'mp4',
       },

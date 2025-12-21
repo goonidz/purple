@@ -312,10 +312,13 @@ async function renderSceneWithEffect(imagePath, outputPath, duration, width, hei
     
     console.log(`[${jobId}] Scene ${sceneIndex}: ${effect} effect (effectType: "${effectType}", isPan: ${isPan}), ${duration.toFixed(2)}s`);
     console.log(`[${jobId}] Filter: ${filter}`);
+    console.log(`[${jobId}] Target dimensions: ${width}x${height}`);
+    console.log(`[${jobId}] Image path: ${imagePath}`);
     
     // Preprocessing: Scale and crop image to fill the frame completely (avoid black bars)
     // This ensures images from zimage or other sources fill the entire frame
     // Use scale to fit the larger dimension, then crop to exact size
+    // Note: If image is already at target size (e.g., 1920x1088), scale will preserve it
     const preprocessFilter = `scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height}`;
     
     // Combine preprocessing with the effect filter
@@ -429,6 +432,8 @@ async function processRenderJob(jobId, renderData) {
       format = 'mp4'
     } = videoSettings;
 
+    console.log(`[${jobId}] Video settings received: width=${width}, height=${height}, framerate=${framerate}`);
+    console.log(`[${jobId}] Full videoSettings:`, JSON.stringify(videoSettings));
     addStep(`Démarrage du rendu: ${scenes.length} scènes, ${width}x${height}@${framerate}fps`, 5);
 
     // Step 1: Download audio
