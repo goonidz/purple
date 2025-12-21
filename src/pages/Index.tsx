@@ -1714,6 +1714,33 @@ const Index = () => {
       return;
     }
 
+    // Check if there are already active render jobs (across all projects to avoid rate limiting)
+    const { data: activeRenderJobs, error: activeJobsError } = await supabase
+      .from('video_render_jobs')
+      .select('id, status, project_id, created_at')
+      .in('status', ['pending', 'processing'])
+      .eq('user_id', currentUser.id)
+      .order('created_at', { ascending: false });
+    
+    if (activeRenderJobs && activeRenderJobs.length > 0) {
+      const otherProjectJobs = activeRenderJobs.filter(j => j.project_id !== currentProjectId);
+      if (otherProjectJobs.length > 0) {
+        // Check if the most recent job was started less than 5 seconds ago (rate limiting protection)
+        const mostRecentJob = otherProjectJobs[0];
+        const jobAge = Date.now() - new Date(mostRecentJob.created_at).getTime();
+        const minDelayMs = 5000; // 5 seconds minimum between render starts
+        
+        if (jobAge < minDelayMs) {
+          const waitTime = Math.ceil((minDelayMs - jobAge) / 1000);
+          toast.error(`Un rendu vient d'être lancé sur un autre projet. Veuillez attendre ${waitTime} seconde(s) avant de lancer un nouveau rendu pour éviter les erreurs de rate limiting.`);
+          return;
+        } else {
+          // Show info toast but allow the render
+          toast.info("Un autre rendu est en cours. Le nouveau rendu va démarrer dans quelques secondes...");
+        }
+      }
+    }
+
     setIsRendering(true);
 
     try {
@@ -1817,7 +1844,12 @@ const Index = () => {
       }
     } catch (error: any) {
       console.error("Error rendering video:", error);
-      toast.error(error.message || "Erreur lors du rendu vidéo");
+      // Check if it's a rate limit error
+      if (error.message?.includes('429') || error.message?.includes('Trop de requêtes') || error.message?.includes('rate limit')) {
+        toast.error("Trop de requêtes simultanées. Veuillez attendre quelques secondes avant de relancer un rendu.");
+      } else {
+        toast.error(error.message || "Erreur lors du rendu vidéo");
+      }
     } finally {
       setIsRendering(false);
     }

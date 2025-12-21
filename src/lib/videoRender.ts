@@ -100,7 +100,17 @@ export async function renderVideo(options: VideoRenderOptions): Promise<VideoRen
         throw new Error('Erreur d\'authentification. Veuillez vous reconnecter.');
       }
       
+      // Check if it's a rate limit error (429)
+      if (error.message?.includes('429') || error.status === 429 || data?.status === 429) {
+        throw new Error(data?.error || 'Trop de requêtes simultanées. Veuillez attendre quelques secondes avant de relancer un rendu.');
+      }
+      
       throw new Error(error.message || 'Failed to invoke Edge Function');
+    }
+    
+    // Check if response indicates rate limiting
+    if (data && !data.success && data.status === 429) {
+      throw new Error(data.error || 'Trop de requêtes simultanées. Veuillez attendre quelques secondes avant de relancer un rendu.');
     }
 
     if (data && data.success) {

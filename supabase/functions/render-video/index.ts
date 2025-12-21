@@ -248,6 +248,22 @@ serve(async (req) => {
       
       console.error(`FFmpeg service error (${renderResponse.status}):`, errorText);
       
+      // Handle rate limiting (429) specifically
+      if (renderResponse.status === 429) {
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: "Trop de requêtes simultanées. Veuillez attendre quelques secondes avant de relancer un rendu.",
+            status: 429,
+            retryAfter: 10 // Suggest retry after 10 seconds
+          }),
+          {
+            status: 429,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
+        );
+      }
+      
       return new Response(
         JSON.stringify({
           success: false,
