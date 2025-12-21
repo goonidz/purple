@@ -2205,6 +2205,10 @@ async function processUpscaleJob(
   // Build webhook URL
   const webhookUrl = `${supabaseUrl}/functions/v1/replicate-webhook`;
 
+  // Use service role key for internal calls
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+  const internalAuthHeader = `Bearer ${serviceRoleKey}`;
+
   // Batch settings
   const BATCH_SIZE = 4;
   const DELAY_BETWEEN_BATCHES_MS = 2000;
@@ -2236,7 +2240,7 @@ async function processUpscaleJob(
         const startResponse = await fetch(`${supabaseUrl}/functions/v1/upscale-image`, {
           method: 'POST',
           headers: {
-            'Authorization': authHeader,
+            'Authorization': internalAuthHeader,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify(requestBody),
