@@ -57,7 +57,7 @@ import { TitleGenerator } from "@/components/TitleGenerator";
 import { DescriptionGenerator } from "@/components/DescriptionGenerator";
 import { TagGenerator } from "@/components/TagGenerator";
 import { YouTubeTester } from "@/components/YouTubeTester";
-import { DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -3253,11 +3253,11 @@ Return ONLY the prompt text, no JSON, no title, just the optimized prompt in ENG
 
         {/* Image settings dialog */}
         <Dialog open={imageSettingsOpen} onOpenChange={setImageSettingsOpen}>
-          <DialogContent className="max-w-2xl">
-            <div className="space-y-6">
-              <div>
-                <h3 className="text-lg font-semibold mb-4">Paramètres d'image</h3>
-              </div>
+          <DialogContent className="max-w-2xl max-h-[90vh] w-[95vw] sm:w-full flex flex-col p-6">
+            <DialogHeader className="flex-shrink-0">
+              <DialogTitle>Paramètres d'image</DialogTitle>
+            </DialogHeader>
+            <div className="overflow-y-auto flex-1 min-h-0 space-y-6 pr-2 -mr-2">
 
               <div>
                 <label className="text-sm font-medium mb-2 block">
@@ -3402,13 +3402,12 @@ Return ONLY the prompt text, no JSON, no title, just the optimized prompt in ENG
                   </div>
                 </div>
               </div>
-
-              <div className="flex justify-end">
-                <Button onClick={() => setImageSettingsOpen(false)}>
-                  Fermer
-                </Button>
-              </div>
             </div>
+            <DialogFooter className="flex-shrink-0 mt-4">
+              <Button onClick={() => setImageSettingsOpen(false)}>
+                Fermer
+              </Button>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
 
