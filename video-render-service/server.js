@@ -397,11 +397,16 @@ async function processRenderJob(jobId, renderData) {
   }
   
   try {
+    // Log job start with active jobs info
+    const activeJobsBefore = Array.from(jobs.values()).filter(j => j.status === 'processing' || j.status === 'pending').length;
+    console.log(`[${jobId}] Starting render job. Active jobs before: ${activeJobsBefore}, Total jobs: ${jobs.size}`);
+    
     // Update job status with steps array
     jobs.set(jobId, { status: 'processing', progress: 0, startTime, steps: [], currentStep: null });
     
-    // Create working directory
+    // Create working directory - each job has its own isolated directory
     await mkdir(workDir, { recursive: true });
+    console.log(`[${jobId}] Created isolated work directory: ${workDir}`);
     
     const {
       scenes,
@@ -734,11 +739,17 @@ app.post('/render', async (req, res) => {
   // Log received data for debugging
   console.log(`[${jobId}] POST /render - Received effectType:`, req.body.effectType, '(type:', typeof req.body.effectType, ')');
   console.log(`[${jobId}] POST /render - Request body keys:`, Object.keys(req.body));
+  
+  // Log current active jobs count
+  const activeJobsCount = Array.from(jobs.values()).filter(j => j.status === 'processing' || j.status === 'pending').length;
+  console.log(`[${jobId}] Current active jobs: ${activeJobsCount}`);
+  console.log(`[${jobId}] Total jobs in memory: ${jobs.size}`);
 
   // Initialize job status
   jobs.set(jobId, { status: 'pending', progress: 0, steps: [], createdAt: new Date().toISOString() });
 
   // Start processing in background (don't await)
+  // Each job runs independently - no cancellation of other jobs
   processRenderJob(jobId, req.body).catch((error) => {
     console.error(`[${jobId}] Background job error:`, error);
     jobs.set(jobId, {
