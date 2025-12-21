@@ -955,10 +955,10 @@ async function processImagesJob(
 ) {
   const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
   
-  // CHUNK SETTINGS - first chunk smaller for quick feedback, then larger chunks
-  const FIRST_CHUNK_SIZE = 20;
-  const SUBSEQUENT_CHUNK_SIZE = 50;
-  const isFirstChunk = (metadata.chunkStart || 0) === 0;
+  // CHUNK SETTINGS - optimized for speed while avoiding timeout
+  const FIRST_CHUNK_SIZE = 30; // First chunk (was 20)
+  const SUBSEQUENT_CHUNK_SIZE = 50; // Subsequent chunks
+  const isFirstChunk = !metadata.isChunkContinuation;
   const CHUNK_SIZE = isFirstChunk ? FIRST_CHUNK_SIZE : SUBSEQUENT_CHUNK_SIZE;
   
   // Get project data
@@ -1037,10 +1037,10 @@ async function processImagesJob(
   // Build webhook URL
   const webhookUrl = `${supabaseUrl}/functions/v1/replicate-webhook`;
 
-  // Batch settings for sending requests
-  const BATCH_SIZE = 4;
-  const DELAY_BETWEEN_BATCHES_MS = 4000;
-  const DELAY_BETWEEN_REQUESTS_MS = 300;
+  // Batch settings for sending requests - optimized for speed
+  const BATCH_SIZE = 10; // More parallel requests
+  const DELAY_BETWEEN_BATCHES_MS = 500; // 0.5s between batches (was 4s)
+  const DELAY_BETWEEN_REQUESTS_MS = 50; // 50ms between requests (was 300ms)
   const MAX_RETRIES = 3;
   const BASE_RETRY_DELAY_MS = 10000;
 
@@ -2185,8 +2185,8 @@ async function processUpscaleJob(
 ) {
   const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
   
-  // CHUNK SETTINGS - similar to images job
-  const CHUNK_SIZE = 20; // Process 20 images per chunk to avoid timeout
+  // CHUNK SETTINGS - optimized for speed while avoiding timeout
+  const CHUNK_SIZE = 30; // Process 30 images per chunk (was 20)
   
   // Get project data
   const { data: project } = await adminClient
@@ -2242,10 +2242,10 @@ async function processUpscaleJob(
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
   const internalAuthHeader = `Bearer ${serviceRoleKey}`;
 
-  // Batch settings for sending requests (within the chunk)
-  const BATCH_SIZE = 4;
-  const DELAY_BETWEEN_BATCHES_MS = 2000;
-  const DELAY_BETWEEN_REQUESTS_MS = 300;
+  // Batch settings for sending requests (within the chunk) - optimized for speed
+  const BATCH_SIZE = 10; // More parallel requests
+  const DELAY_BETWEEN_BATCHES_MS = 500; // 0.5s between batches (was 2s)
+  const DELAY_BETWEEN_REQUESTS_MS = 50; // 50ms between requests (was 300ms)
 
   let startedCount = 0;
   let failedCount = 0;
