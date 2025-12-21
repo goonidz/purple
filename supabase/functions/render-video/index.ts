@@ -133,41 +133,29 @@ serve(async (req) => {
     console.log(`Processing ${scenes.length} scenes with framerate ${framerate}`);
     console.log(`Initial dimensions from DB: ${projectWidth}x${projectHeight} (request: ${width}x${height})`);
     
-    // FALLBACK: If Z-Image model with 960x544 dimensions, check if upscale job completed
-    // If so, use 1920x1088 and update the project dimensions
+    // IMPORTANT FIX: If Z-Image model with small dimensions (960x544 or similar), 
+    // always use 1920x1088 because upscale is always done for Z-Image 16:9
     const imageModel = project.image_model || '';
     const isZImage = imageModel === 'z-image-turbo' || imageModel === 'z-image-turbo-lora';
     
-    if (isZImage && projectWidth === 960 && projectHeight === 544) {
-      console.log(`Z-Image detected with 960x544 - checking for completed upscale job`);
+    // Check if dimensions suggest pre-upscale state (960x544 or smaller, or null)
+    const needsUpscaleDimensions = projectWidth <= 960 || projectHeight <= 544 || !project.image_width;
+    
+    if (isZImage && needsUpscaleDimensions) {
+      console.log(`Z-Image detected with small dimensions (${projectWidth}x${projectHeight}) - forcing 1920x1088`);
+      projectWidth = 1920;
+      projectHeight = 1088;
       
-      // Check if there's a completed upscale job for this project
-      const { data: upscaleJob } = await supabase
-        .from('generation_jobs')
-        .select('id, status')
-        .eq('project_id', projectId)
-        .eq('job_type', 'upscale')
-        .eq('status', 'completed')
-        .single();
+      // Also update the project dimensions in DB (fix for the bug)
+      const { error: updateError } = await supabase
+        .from('projects')
+        .update({ image_width: 1920, image_height: 1088 })
+        .eq('id', projectId);
       
-      if (upscaleJob) {
-        console.log(`Found completed upscale job ${upscaleJob.id} - using 1920x1088 dimensions`);
-        projectWidth = 1920;
-        projectHeight = 1088;
-        
-        // Also update the project dimensions in DB (fix for the bug)
-        const { error: updateError } = await supabase
-          .from('projects')
-          .update({ image_width: 1920, image_height: 1088 })
-          .eq('id', projectId);
-        
-        if (updateError) {
-          console.error(`Failed to update project dimensions:`, updateError);
-        } else {
-          console.log(`Updated project ${projectId} dimensions to 1920x1088`);
-        }
+      if (updateError) {
+        console.error(`Failed to update project dimensions:`, updateError);
       } else {
-        console.log(`No completed upscale job found - using original 960x544`);
+        console.log(`Updated project ${projectId} dimensions to 1920x1088`);
       }
     }
     
