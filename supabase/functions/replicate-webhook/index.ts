@@ -643,24 +643,44 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
       .eq('id', job.project_id)
       .single();
     
+    console.log(`Job ${jobId}: Upscale job completed. Project data:`, JSON.stringify(project));
+    
     if (project) {
       const imageModel = project.image_model || '';
       const isZImage = imageModel === 'z-image-turbo' || imageModel === 'z-image-turbo-lora';
-      const currentWidth = project.image_width || 1920;
-      const currentHeight = project.image_height || 1080;
+      const currentWidth = project.image_width;
+      const currentHeight = project.image_height;
       
-      // If it's Z-Image and dimensions are 960x544 (before upscale), update to 1920x1088
-      if (isZImage && currentWidth === 960 && currentHeight === 544) {
+      console.log(`Job ${jobId}: isZImage=${isZImage}, currentWidth=${currentWidth}, currentHeight=${currentHeight}`);
+      
+      // If it's Z-Image, always update to 1920x1088 after upscale
+      // Check if dimensions are either 960x544 (original) OR null/undefined OR already at a different small size
+      const needsDimensionUpdate = isZImage && (
+        (currentWidth === 960 && currentHeight === 544) ||
+        (currentWidth === null || currentWidth === undefined) ||
+        (currentWidth && currentWidth < 1920)
+      );
+      
+      if (needsDimensionUpdate) {
         console.log(`Job ${jobId}: Updating project dimensions from ${currentWidth}x${currentHeight} to 1920x1088 after upscale`);
-        await adminClient
+        const { error: updateError } = await adminClient
           .from('projects')
           .update({
             image_width: 1920,
             image_height: 1088
           })
           .eq('id', job.project_id);
-        console.log(`Project ${job.project_id} dimensions updated to 1920x1088`);
+        
+        if (updateError) {
+          console.error(`Job ${jobId}: Failed to update dimensions:`, updateError);
+        } else {
+          console.log(`Project ${job.project_id} dimensions updated to 1920x1088`);
+        }
+      } else {
+        console.log(`Job ${jobId}: No dimension update needed. isZImage=${isZImage}, width=${currentWidth}`);
       }
+    } else {
+      console.error(`Job ${jobId}: Could not fetch project for dimension update`);
     }
     
     // After upscale completes, chain to thumbnails if semi-auto mode
