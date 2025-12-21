@@ -630,6 +630,34 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
       await chainNextJobFromWebhook(adminClient, job.project_id, job.user_id, job.job_type, metadata);
     }
   } else if (job.job_type === 'upscale') {
+    // After upscale completes, update project dimensions to match upscaled images (1920x1088)
+    // Get current project dimensions
+    const { data: project } = await adminClient
+      .from('projects')
+      .select('image_width, image_height, image_model')
+      .eq('id', job.project_id)
+      .single();
+    
+    if (project) {
+      const imageModel = project.image_model || '';
+      const isZImage = imageModel === 'z-image-turbo' || imageModel === 'z-image-turbo-lora';
+      const currentWidth = project.image_width || 1920;
+      const currentHeight = project.image_height || 1080;
+      
+      // If it's Z-Image and dimensions are 960x544 (before upscale), update to 1920x1088
+      if (isZImage && currentWidth === 960 && currentHeight === 544) {
+        console.log(`Job ${jobId}: Updating project dimensions from ${currentWidth}x${currentHeight} to 1920x1088 after upscale`);
+        await adminClient
+          .from('projects')
+          .update({
+            image_width: 1920,
+            image_height: 1088
+          })
+          .eq('id', job.project_id);
+        console.log(`Project ${job.project_id} dimensions updated to 1920x1088`);
+      }
+    }
+    
     // After upscale completes, chain to thumbnails if semi-auto mode
     const metadata = job.metadata || {};
     if (metadata.semiAutoMode === true) {
