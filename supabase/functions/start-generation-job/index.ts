@@ -971,9 +971,21 @@ async function processImagesJob(
   if (!project) throw new Error("Project not found");
 
   const prompts = (project.prompts as any[]) || [];
-  const imageWidth = project.image_width || 1920;
-  const imageHeight = project.image_height || 1080;
+  let imageWidth = project.image_width || 1920;
+  let imageHeight = project.image_height || 1080;
   const imageModel = project.image_model || 'seedream-4.5';
+  
+  // IMPORTANT: For Z-Image models with 16:9, always generate at 960x544 (will be upscaled later)
+  const isZImage = imageModel === 'z-image-turbo' || imageModel === 'z-image-turbo-lora';
+  if (isZImage) {
+    const ratio = imageWidth / imageHeight;
+    const is16x9 = Math.abs(ratio - (16 / 9)) < 0.1;
+    if (is16x9) {
+      console.log(`Z-Image 16:9 detected - forcing 960x544 for generation (was ${imageWidth}x${imageHeight})`);
+      imageWidth = 960;
+      imageHeight = 544;
+    }
+  }
   
   // Parse style references
   let styleReferenceUrls: string[] = [];
@@ -1283,9 +1295,21 @@ async function processTestImagesJob(
   const transcriptData = project.transcript_json as any;
   const examplePrompts = (project.example_prompts as string[]) || [];
   const customSystemPrompt = project.prompt_system_message || undefined;
-  const imageWidth = project.image_width || 1920;
-  const imageHeight = project.image_height || 1080;
+  let imageWidth = project.image_width || 1920;
+  let imageHeight = project.image_height || 1080;
   const imageModel = project.image_model || 'seedream-4.5';
+  
+  // IMPORTANT: For Z-Image models with 16:9, always generate at 960x544 (will be upscaled later)
+  const isZImage = imageModel === 'z-image-turbo' || imageModel === 'z-image-turbo-lora';
+  if (isZImage) {
+    const ratio = imageWidth / imageHeight;
+    const is16x9 = Math.abs(ratio - (16 / 9)) < 0.1;
+    if (is16x9) {
+      console.log(`Z-Image 16:9 detected - forcing 960x544 for generation (was ${imageWidth}x${imageHeight})`);
+      imageWidth = 960;
+      imageHeight = 544;
+    }
+  }
   
   // Parse style references
   let styleReferenceUrls: string[] = [];
@@ -1732,9 +1756,21 @@ async function processSingleImageJob(
   if (!project) throw new Error("Project not found");
 
   const prompts = (project.prompts as any[]) || [];
-  const imageWidth = project.image_width || 1920;
-  const imageHeight = project.image_height || 1080;
+  let imageWidth = project.image_width || 1920;
+  let imageHeight = project.image_height || 1080;
   const imageModel = project.image_model || 'seedream-4.5';
+
+  // IMPORTANT: For Z-Image models with 16:9, always generate at 960x544 (will be upscaled later)
+  const isZImage = imageModel === 'z-image-turbo' || imageModel === 'z-image-turbo-lora';
+  if (isZImage) {
+    const ratio = imageWidth / imageHeight;
+    const is16x9 = Math.abs(ratio - (16 / 9)) < 0.1;
+    if (is16x9) {
+      console.log(`Z-Image 16:9 detected - forcing 960x544 for generation (was ${imageWidth}x${imageHeight})`);
+      imageWidth = 960;
+      imageHeight = 544;
+    }
+  }
 
   if (sceneIndex >= prompts.length || !prompts[sceneIndex]) {
     throw new Error(`Prompt at index ${sceneIndex} not found`);

@@ -133,29 +133,20 @@ serve(async (req) => {
     console.log(`Processing ${scenes.length} scenes with framerate ${framerate}`);
     console.log(`Initial dimensions from DB: ${projectWidth}x${projectHeight} (request: ${width}x${height})`);
     
-    // IMPORTANT FIX: If Z-Image model with small dimensions (960x544 or similar), 
-    // always use 1920x1088 because upscale is always done for Z-Image 16:9
+    // IMPORTANT: For Z-Image models, always render at 1920x1088 (upscaled dimensions)
+    // but DON'T update the project DB - keep 960x544 for image generation
     const imageModel = project.image_model || '';
     const isZImage = imageModel === 'z-image-turbo' || imageModel === 'z-image-turbo-lora';
     
-    // Check if dimensions suggest pre-upscale state (960x544 or smaller, or null)
-    const needsUpscaleDimensions = projectWidth <= 960 || projectHeight <= 544 || !project.image_width;
-    
-    if (isZImage && needsUpscaleDimensions) {
-      console.log(`Z-Image detected with small dimensions (${projectWidth}x${projectHeight}) - forcing 1920x1088`);
-      projectWidth = 1920;
-      projectHeight = 1088;
+    // For Z-Image 16:9, always use 1920x1088 for rendering (images are upscaled)
+    if (isZImage) {
+      const ratio = projectWidth / projectHeight;
+      const is16x9 = Math.abs(ratio - (16 / 9)) < 0.1;
       
-      // Also update the project dimensions in DB (fix for the bug)
-      const { error: updateError } = await supabase
-        .from('projects')
-        .update({ image_width: 1920, image_height: 1088 })
-        .eq('id', projectId);
-      
-      if (updateError) {
-        console.error(`Failed to update project dimensions:`, updateError);
-      } else {
-        console.log(`Updated project ${projectId} dimensions to 1920x1088`);
+      if (is16x9 && projectWidth < 1920) {
+        console.log(`Z-Image 16:9 detected (${projectWidth}x${projectHeight}) - using 1920x1088 for render`);
+        projectWidth = 1920;
+        projectHeight = 1088;
       }
     }
     
