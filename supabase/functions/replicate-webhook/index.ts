@@ -122,6 +122,8 @@ serve(async (req) => {
             await updateSceneImage(adminClient, prediction, publicUrl);
           } else if (prediction.prediction_type === 'thumbnail') {
             await updateThumbnail(adminClient, prediction, publicUrl);
+          } else if (prediction.prediction_type === 'upscale') {
+            await updateUpscaledImage(adminClient, prediction, publicUrl);
           }
 
           // Check if all predictions for this job are complete
@@ -269,6 +271,49 @@ async function updateThumbnail(adminClient: any, prediction: any, imageUrl: stri
     .eq('id', jobId);
 
   console.log(`Updated thumbnail ${prediction.thumbnail_index + 1}, progress: ${newProgress}/3`);
+}
+
+async function updateUpscaledImage(adminClient: any, prediction: any, imageUrl: string) {
+  const sceneIndex = prediction.scene_index;
+  
+  if (sceneIndex === undefined || sceneIndex === null) {
+    console.error(`Invalid scene index for upscale prediction ${prediction.id}`);
+    return;
+  }
+
+  // Use atomic database function to update scene image with upscaled version
+  const { data: result, error: rpcError } = await adminClient.rpc('update_scene_image_url', {
+    p_project_id: prediction.project_id,
+    p_scene_index: sceneIndex,
+    p_image_url: imageUrl
+  });
+
+  if (rpcError) {
+    console.error(`Failed to update scene ${sceneIndex + 1} with upscaled image via RPC:`, rpcError);
+  } else if (result === true) {
+    console.log(`Updated scene ${sceneIndex + 1} with upscaled image (atomic)`);
+  } else {
+    console.error(`Scene ${sceneIndex + 1} not found or project missing`);
+  }
+  
+  // Update job progress
+  if (prediction.job_id) {
+    const { data: completedPredictions } = await adminClient
+      .from('pending_predictions')
+      .select('id')
+      .eq('job_id', prediction.job_id)
+      .eq('status', 'completed');
+    
+    const completedCount = completedPredictions?.length || 0;
+    
+    await adminClient
+      .from('generation_jobs')
+      .update({ 
+        progress: completedCount,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', prediction.job_id);
+  }
 }
 
 async function checkJobCompletion(adminClient: any, jobId: string) {
@@ -481,10 +526,115 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
       }
     }
     
-    // All images are done (missingCount === 0) - proceed to semi-auto chaining if enabled
+    // All images are done (missingCount === 0) - check if upscaling is needed
+    // Get full project data to check image model and aspect ratio
+    const { data: fullProject } = await adminClient
+      .from('projects')
+      .select('image_model, image_width, image_height, prompts')
+      .eq('id', job.project_id)
+      .single();
+    
+    const imageModel = fullProject?.image_model || '';
+    const isZImage = imageModel === 'z-image-turbo' || imageModel === 'z-image-turbo-lora';
+    const imageWidth = fullProject?.image_width || 1920;
+    const imageHeight = fullProject?.image_height || 1080;
+    const is16x9 = Math.abs((imageWidth / imageHeight) - (16 / 9)) < 0.1;
+    
+    // Check if upscaling is needed (Z-Image 16:9)
+    if (isZImage && is16x9) {
+      // Check if there's already an upscale job
+      const { data: existingUpscaleJob } = await adminClient
+        .from('generation_jobs')
+        .select('id')
+        .eq('project_id', job.project_id)
+        .eq('job_type', 'upscale')
+        .in('status', ['pending', 'processing', 'completed'])
+        .single();
+      
+      if (!existingUpscaleJob) {
+        // Create upscale job
+        const projectPrompts = (fullProject?.prompts as any[]) || [];
+        const imagesWithUrl = projectPrompts.filter((p: any) => p && p.imageUrl).length;
+        
+        console.log(`Job ${jobId}: Z-Image 16:9 detected. Creating upscale job for ${imagesWithUrl} images.`);
+        
+        const { data: upscaleJob, error: upscaleError } = await adminClient
+          .from('generation_jobs')
+          .insert({
+            project_id: job.project_id,
+            user_id: job.user_id,
+            job_type: 'upscale',
+            status: 'pending',
+            progress: 0,
+            total: imagesWithUrl,
+            metadata: {
+              ...metadata,
+              imageModel,
+              skipExisting: false // Always upscale all images
+            }
+          })
+          .select()
+          .single();
+        
+        if (upscaleError) {
+          console.error("Error creating upscale job:", upscaleError);
+        } else {
+          console.log(`Created upscale job ${upscaleJob.id}`);
+          
+          // Start upscale job in background
+          EdgeRuntime.waitUntil((async () => {
+            const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+            const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+            
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            
+            try {
+              const response = await fetch(`${supabaseUrl}/functions/v1/start-generation-job`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${serviceRoleKey}`
+                },
+                body: JSON.stringify({
+                  jobId: upscaleJob.id,
+                  projectId: job.project_id,
+                  userId: job.user_id,
+                  jobType: 'upscale',
+                  metadata: {
+                    ...metadata,
+                    imageModel
+                  }
+                })
+              });
+              
+              if (response.ok) {
+                console.log(`Upscale job ${upscaleJob.id} started successfully`);
+              } else {
+                console.error(`Failed to start upscale job: ${await response.text()}`);
+              }
+            } catch (error) {
+              console.error("Error starting upscale job:", error);
+            }
+          })());
+          
+          return; // Don't proceed to thumbnails yet - wait for upscale to complete
+        }
+      } else {
+        console.log(`Job ${jobId}: Upscale job already exists (${existingUpscaleJob.id}), skipping`);
+      }
+    }
+    
+    // Proceed to semi-auto chaining if enabled (thumbnails)
     if (metadata.semiAutoMode === true) {
       console.log(`Job ${jobId}: All images generated. Chaining to thumbnails.`);
       await chainNextJobFromWebhook(adminClient, job.project_id, job.user_id, job.job_type, metadata);
+    }
+  } else if (job.job_type === 'upscale') {
+    // After upscale completes, chain to thumbnails if semi-auto mode
+    const metadata = job.metadata || {};
+    if (metadata.semiAutoMode === true) {
+      console.log(`Job ${jobId}: Upscale complete. Chaining to thumbnails.`);
+      await chainNextJobFromWebhook(adminClient, job.project_id, job.user_id, 'images', metadata);
     }
   } else if (metadata.semiAutoMode === true) {
     // For other job types in semi-auto, just chain

@@ -13,7 +13,7 @@ const corsHeaders = {
 
 interface JobRequest {
   projectId: string;
-  jobType: 'transcription' | 'prompts' | 'images' | 'thumbnails' | 'test_images' | 'single_prompt' | 'single_image' | 'script_generation' | 'audio_generation';
+  jobType: 'transcription' | 'prompts' | 'images' | 'thumbnails' | 'test_images' | 'single_prompt' | 'single_image' | 'script_generation' | 'audio_generation' | 'upscale';
   metadata?: Record<string, any>;
 }
 
@@ -238,6 +238,10 @@ serve(async (req) => {
       total = 1; // Single script generation
     } else if (jobType === 'audio_generation') {
       total = 1; // Single audio generation
+    } else if (jobType === 'upscale') {
+      // Count images that need upscaling (Z-Image 16:9 images)
+      const prompts = (project?.prompts as any[]) || [];
+      total = prompts.filter((p: any) => p && p.imageUrl).length;
     }
 
     // Create the job record (use null for project_id in standalone mode)
@@ -331,6 +335,8 @@ async function processJob(
       await processScriptGenerationJob(jobId, projectId, userId, metadata, authHeader, adminClient);
     } else if (jobType === 'audio_generation') {
       await processAudioGenerationJob(jobId, projectId, userId, metadata, authHeader, adminClient);
+    } else if (jobType === 'upscale') {
+      await processUpscaleJob(jobId, projectId, userId, metadata, authHeader, adminClient);
     }
 
     // Handle prompts chunk continuation
@@ -999,7 +1005,7 @@ async function processImagesJob(
   
   console.log(`CHUNK MODE: Processing ${promptsToProcess.length} images out of ${allPromptsToProcess.length} missing (${remainingAfterThisChunk} remaining after this chunk)`);
 
-  // Update job metadata with chunk info
+  // Update job metadata with chunk info and image model
   await adminClient
     .from('generation_jobs')
     .update({
@@ -1008,7 +1014,10 @@ async function processImagesJob(
         ...metadata,
         chunkSize: promptsToProcess.length,
         totalImages: allPromptsToProcess.length,
-        remainingAfterChunk: remainingAfterThisChunk
+        remainingAfterChunk: remainingAfterThisChunk,
+        imageModel, // Store for upscaling detection
+        imageWidth,
+        imageHeight
       }
     })
     .eq('id', jobId);
@@ -1087,7 +1096,12 @@ async function processImagesJob(
                   scene_index: index,
                   project_id: projectId,
                   user_id: userId,
-                  metadata: { prompt: prompt.prompt },
+                  metadata: { 
+                    prompt: prompt.prompt,
+                    imageModel, // Store image model for upscaling detection
+                    imageWidth,
+                    imageHeight
+                  },
                   status: 'pending'
                 });
 
@@ -2151,5 +2165,154 @@ async function processAudioGenerationJob(
   console.log(`Audio generation job ${jobId} processing in background...`);
   
   // Throw a special marker to prevent the job from being marked complete by processJob
+  throw new Error("WEBHOOK_MODE_ACTIVE");
+}
+
+// Process upscale job - upscales Z-Image generated images using Real-ESRGAN
+async function processUpscaleJob(
+  jobId: string,
+  projectId: string,
+  userId: string,
+  metadata: Record<string, any>,
+  authHeader: string,
+  adminClient: any
+) {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+  
+  // Get project data
+  const { data: project } = await adminClient
+    .from('projects')
+    .select('*')
+    .eq('id', projectId)
+    .single();
+
+  if (!project) throw new Error("Project not found");
+
+  const prompts = (project.prompts as any[]) || [];
+  
+  // Get images that need upscaling (have imageUrl)
+  const imagesToUpscale = prompts
+    .map((prompt: any, index: number) => ({ prompt, index }))
+    .filter(({ prompt }: any) => prompt && prompt.imageUrl);
+
+  if (imagesToUpscale.length === 0) {
+    console.log("No images to upscale");
+    return;
+  }
+
+  console.log(`Starting upscale job for ${imagesToUpscale.length} images`);
+
+  // Build webhook URL
+  const webhookUrl = `${supabaseUrl}/functions/v1/replicate-webhook`;
+
+  // Batch settings
+  const BATCH_SIZE = 4;
+  const DELAY_BETWEEN_BATCHES_MS = 2000;
+  const DELAY_BETWEEN_REQUESTS_MS = 300;
+
+  let startedCount = 0;
+  let failedCount = 0;
+  
+  const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+  
+  // Process in batches
+  for (let batchStart = 0; batchStart < imagesToUpscale.length; batchStart += BATCH_SIZE) {
+    const batch = imagesToUpscale.slice(batchStart, batchStart + BATCH_SIZE);
+    console.log(`Processing upscale batch ${Math.floor(batchStart / BATCH_SIZE) + 1}/${Math.ceil(imagesToUpscale.length / BATCH_SIZE)} (${batch.length} images)`);
+    
+    for (let i = 0; i < batch.length; i++) {
+      const { prompt, index } = batch[i];
+      
+      try {
+        const requestBody = {
+          imageUrl: prompt.imageUrl,
+          scale: 2,
+          faceEnhance: false,
+          async: true,
+          webhook_url: webhookUrl,
+          userId,
+        };
+
+        const startResponse = await fetch(`${supabaseUrl}/functions/v1/upscale-image`, {
+          method: 'POST',
+          headers: {
+            'Authorization': authHeader,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(requestBody),
+        });
+
+        if (startResponse.ok) {
+          const startData = await startResponse.json();
+          const predictionId = startData.predictionId;
+
+          if (predictionId) {
+            const { error: insertError } = await adminClient
+              .from('pending_predictions')
+              .insert({
+                job_id: jobId,
+                prediction_id: predictionId,
+                prediction_type: 'upscale',
+                scene_index: index,
+                project_id: projectId,
+                user_id: userId,
+                metadata: { 
+                  originalImageUrl: prompt.imageUrl,
+                  sceneIndex: index
+                },
+                status: 'pending'
+              });
+
+            if (!insertError) {
+              startedCount++;
+              console.log(`Scene ${index + 1} upscale started: ${predictionId}`);
+            }
+          }
+        } else {
+          const errorText = await startResponse.text().catch(() => 'Unknown error');
+          console.error(`Failed to start upscale for scene ${index + 1}: ${errorText}`);
+          failedCount++;
+        }
+
+        if (i < batch.length - 1) {
+          await delay(DELAY_BETWEEN_REQUESTS_MS);
+        }
+
+      } catch (error) {
+        console.error(`Error starting upscale for scene ${index + 1}:`, error);
+        failedCount++;
+      }
+    }
+    
+    if (batchStart + BATCH_SIZE < imagesToUpscale.length) {
+      console.log(`Batch complete. Waiting ${DELAY_BETWEEN_BATCHES_MS / 1000}s before next batch...`);
+      await delay(DELAY_BETWEEN_BATCHES_MS);
+    }
+  }
+
+  console.log(`Upscale job: Started ${startedCount}/${imagesToUpscale.length} upscales (${failedCount} failed to start)`);
+
+  // Update job total to match actually started generations
+  if (startedCount > 0) {
+    await adminClient
+      .from('generation_jobs')
+      .update({ total: startedCount })
+      .eq('id', jobId);
+  }
+
+  // If no predictions were started, mark job as failed
+  if (startedCount === 0) {
+    await adminClient
+      .from('generation_jobs')
+      .update({ 
+        status: 'failed',
+        error_message: 'Aucun upscale démarré - vérifiez votre quota Replicate',
+        completed_at: new Date().toISOString()
+      })
+      .eq('id', jobId);
+    return;
+  }
+
+  // Job stays in 'processing' status - the webhook will mark it complete
   throw new Error("WEBHOOK_MODE_ACTIVE");
 }

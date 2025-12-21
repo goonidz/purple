@@ -869,8 +869,8 @@ const Index = () => {
     const isZImageTurbo = imageModel === 'z-image-turbo' || imageModel === 'z-image-turbo-lora';
     switch (ratio) {
       case "16:9":
-        setImageWidth(isZImageTurbo ? 1280 : 1920);
-        setImageHeight(isZImageTurbo ? 720 : 1080);
+        setImageWidth(isZImageTurbo ? 960 : 1920);
+        setImageHeight(isZImageTurbo ? 544 : 1080);
         break;
       case "9:16":
         setImageWidth(isZImageTurbo ? 720 : 1080);
@@ -898,8 +898,8 @@ const Index = () => {
       // Always use standard z-image-turbo resolutions based on aspect ratio
       switch (aspectRatio) {
         case "16:9":
-          setImageWidth(1280);
-          setImageHeight(720);
+          setImageWidth(960);
+          setImageHeight(544);
           break;
         case "9:16":
           setImageWidth(720);
@@ -914,7 +914,7 @@ const Index = () => {
           setImageHeight(960);
           break;
       }
-      toast.info("Dimensions ajustées pour Z-Image Turbo (max 720p)");
+      toast.info("Dimensions ajustées pour Z-Image Turbo (upscale x2 automatique)");
     } else if (model === 'seedream-4.0' || model === 'seedream-4.5') {
       // SeedDream can handle HD, restore HD resolutions based on aspect ratio
       switch (aspectRatio) {

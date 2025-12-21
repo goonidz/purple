@@ -945,7 +945,7 @@ export const PresetManager = ({ currentConfig, onLoadPreset }: PresetManagerProp
                           // Use z-image-turbo standard resolutions
                           switch (editFormData.aspectRatio) {
                             case "16:9":
-                              setEditFormData({ ...editFormData, imageModel: value, imageWidth: 1280, imageHeight: 720 });
+                              setEditFormData({ ...editFormData, imageModel: value, imageWidth: 960, imageHeight: 544 });
                               break;
                             case "9:16":
                               setEditFormData({ ...editFormData, imageModel: value, imageWidth: 720, imageHeight: 1280 });
