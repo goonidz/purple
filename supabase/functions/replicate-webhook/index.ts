@@ -692,6 +692,111 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
       console.log(`Job ${jobId}: Upscale complete. Chaining to thumbnails.`);
       await chainNextJobFromWebhook(adminClient, job.project_id, job.user_id, 'images', metadata);
     }
+  } else if (job.job_type === 'single_image') {
+    // After single image generation, check if we need to upscale it (Z-Image 16:9)
+    const { data: project } = await adminClient
+      .from('projects')
+      .select('image_model, image_width, image_height')
+      .eq('id', job.project_id)
+      .single();
+    
+    if (project) {
+      const imageModel = project.image_model || '';
+      const isZImage = imageModel === 'z-image-turbo' || imageModel === 'z-image-turbo-lora';
+      const projectWidth = project.image_width || 1920;
+      const projectHeight = project.image_height || 1080;
+      const is16x9 = Math.abs((projectWidth / projectHeight) - (16 / 9)) < 0.1 || (projectWidth === 960 && projectHeight === 544);
+      
+      console.log(`Job ${jobId}: Single image completed. isZImage=${isZImage}, dimensions=${projectWidth}x${projectHeight}, is16x9=${is16x9}`);
+      
+      if (isZImage && is16x9) {
+        // Get the scene index from metadata
+        const sceneIndex = job.metadata?.sceneIndex;
+        
+        if (sceneIndex !== undefined && sceneIndex !== null) {
+          console.log(`Job ${jobId}: Triggering upscale for single image at scene ${sceneIndex}`);
+          
+          // Call upscale-image directly for this single image
+          const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+          const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+          
+          // Get the image URL from the project prompts
+          const { data: fullProject } = await adminClient
+            .from('projects')
+            .select('prompts')
+            .eq('id', job.project_id)
+            .single();
+          
+          const prompts = (fullProject?.prompts as any[]) || [];
+          const imageUrl = prompts[sceneIndex]?.imageUrl;
+          
+          if (imageUrl) {
+            console.log(`Job ${jobId}: Upscaling image at index ${sceneIndex}: ${imageUrl.substring(0, 50)}...`);
+            
+            // Create a mini upscale job for tracking
+            const { data: upscaleJob } = await adminClient
+              .from('generation_jobs')
+              .insert({
+                project_id: job.project_id,
+                user_id: job.user_id,
+                job_type: 'upscale',
+                status: 'processing',
+                progress: 0,
+                total: 1,
+                metadata: {
+                  singleImage: true,
+                  sceneIndex,
+                  imageModel
+                }
+              })
+              .select()
+              .single();
+            
+            if (upscaleJob) {
+              // Build webhook URL
+              const webhookUrl = `${supabaseUrl}/functions/v1/replicate-webhook`;
+              
+              // Call upscale-image function
+              try {
+                const response = await fetch(`${supabaseUrl}/functions/v1/upscale-image`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${serviceRoleKey}`
+                  },
+                  body: JSON.stringify({
+                    imageUrl,
+                    projectId: job.project_id,
+                    sceneIndex,
+                    jobId: upscaleJob.id,
+                    webhookUrl
+                  })
+                });
+                
+                if (response.ok) {
+                  console.log(`Job ${jobId}: Upscale request sent for scene ${sceneIndex}`);
+                } else {
+                  console.error(`Job ${jobId}: Failed to start upscale: ${await response.text()}`);
+                  // Mark upscale job as failed
+                  await adminClient
+                    .from('generation_jobs')
+                    .update({ status: 'failed', error_message: 'Failed to start upscale' })
+                    .eq('id', upscaleJob.id);
+                }
+              } catch (error) {
+                console.error(`Job ${jobId}: Error calling upscale-image:`, error);
+                await adminClient
+                  .from('generation_jobs')
+                  .update({ status: 'failed', error_message: String(error) })
+                  .eq('id', upscaleJob.id);
+              }
+            }
+          } else {
+            console.log(`Job ${jobId}: No image URL found at index ${sceneIndex}`);
+          }
+        }
+      }
+    }
   } else if (metadata.semiAutoMode === true) {
     // For other job types in semi-auto, just chain
     await chainNextJobFromWebhook(adminClient, job.project_id, job.user_id, job.job_type, metadata);
