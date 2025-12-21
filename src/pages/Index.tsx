@@ -214,7 +214,8 @@ const Index = () => {
         'thumbnails': 'Miniatures générées en arrière-plan !',
         'test_images': 'Test des 2 premières scènes terminé !',
         'single_prompt': 'Prompt généré !',
-        'single_image': 'Image générée !'
+        'single_image': 'Image générée !',
+        'upscale': 'Images upscalées en 1920x1088 !'
       };
       toast.success(messages[job.job_type] || 'Génération terminée !');
     }
@@ -290,6 +291,17 @@ const Index = () => {
           // Update audio URL
           if (data.audio_url) {
             setAudioUrl(data.audio_url);
+          }
+          
+          // Update image dimensions (especially important after upscale)
+          if (data.image_width) {
+            setImageWidth(data.image_width);
+          }
+          if (data.image_height) {
+            setImageHeight(data.image_height);
+          }
+          if (data.aspect_ratio) {
+            setAspectRatio(data.aspect_ratio);
           }
           
           // If transcription just completed and no scenes yet, show configuration modal
@@ -1660,12 +1672,33 @@ const Index = () => {
     setIsRendering(true);
 
     try {
+      // Fetch fresh project dimensions from DB (important after upscale)
+      const { data: projectData, error: projectError } = await supabase
+        .from('projects')
+        .select('image_width, image_height')
+        .eq('id', currentProjectId)
+        .single();
+      
+      // Use fresh dimensions from DB, fallback to state values
+      const renderWidth = projectData?.image_width || imageWidth;
+      const renderHeight = projectData?.image_height || imageHeight;
+      
+      console.log(`Rendering video with dimensions: ${renderWidth}x${renderHeight} (DB: ${projectData?.image_width}x${projectData?.image_height}, State: ${imageWidth}x${imageHeight})`);
+      
+      // Also update local state if dimensions changed
+      if (projectData?.image_width && projectData.image_width !== imageWidth) {
+        setImageWidth(projectData.image_width);
+      }
+      if (projectData?.image_height && projectData.image_height !== imageHeight) {
+        setImageHeight(projectData.image_height);
+      }
+
       // Subtitles disabled - Ken Burns effect enabled
       const result = await renderVideo({
         projectId: currentProjectId!,
         framerate: exportFramerate,
-        width: imageWidth,
-        height: imageHeight,
+        width: renderWidth,
+        height: renderHeight,
         effectType: exportEffectType,
         renderMethod: exportRenderMethod,
         subtitleSettings: {
@@ -1708,8 +1741,8 @@ const Index = () => {
                 current_step: null,
                 metadata: {
                   framerate: exportFramerate,
-                  width: imageWidth,
-                  height: imageHeight,
+                  width: renderWidth,
+                  height: renderHeight,
                 },
               })
               .select()
