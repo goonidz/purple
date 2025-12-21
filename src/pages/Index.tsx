@@ -3142,11 +3142,11 @@ const Index = () => {
 
         {/* Prompt settings dialog */}
         <Dialog open={promptSettingsOpen} onOpenChange={setPromptSettingsOpen}>
-          <DialogContent className="max-w-2xl">
-            <div className="space-y-6">
-              <div>
-                <h3 className="text-lg font-semibold mb-4">Paramètres de prompts</h3>
-              </div>
+          <DialogContent className="max-w-2xl max-h-[90vh] w-[95vw] sm:w-full flex flex-col p-6">
+            <DialogHeader className="flex-shrink-0">
+              <DialogTitle>Paramètres de prompts</DialogTitle>
+            </DialogHeader>
+            <div className="overflow-y-auto flex-1 min-h-0 space-y-6 pr-2 -mr-2">
 
               <div className="space-y-4">
                 <div>
@@ -3241,13 +3241,12 @@ Return ONLY the prompt text, no JSON, no title, just the optimized prompt in ENG
                   </div>
                 ))}
               </div>
-
-              <div className="flex justify-end gap-2">
-                <Button variant="outline" onClick={() => setPromptSettingsOpen(false)}>
-                  Fermer
-                </Button>
-              </div>
             </div>
+            <DialogFooter className="flex-shrink-0 mt-4">
+              <Button variant="outline" onClick={() => setPromptSettingsOpen(false)}>
+                Fermer
+              </Button>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
 
