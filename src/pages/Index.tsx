@@ -31,7 +31,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Upload, X, Loader2, Image as ImageIcon, RefreshCw, Settings, Download, Video, Type, Check, Copy, FolderOpen, Pencil, AlertCircle, FileText, ArrowUp, MonitorPlay, Cloud, Trash2, Hash, Play, Sparkles, User as UserIcon, CheckCircle2, Clock, Maximize2 } from "lucide-react";
+import { Upload, X, Loader2, Image as ImageIcon, RefreshCw, Settings, Download, Video, Type, Check, Copy, FolderOpen, Pencil, AlertCircle, FileText, ArrowUp, MonitorPlay, Cloud, Trash2, Hash, Play, Sparkles, User as UserIcon, CheckCircle2, Clock, Maximize2, Calendar } from "lucide-react";
 import AppHeader from "@/components/AppHeader";
 import { ProjectConfigurationModal } from "@/components/ProjectConfigurationModal";
 import { toast } from "sonner";
@@ -90,6 +90,7 @@ const Index = () => {
   const [session, setSession] = useState<Session | null>(null);
   const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
   const [projectName, setProjectName] = useState<string>("");
+  const [calendarDate, setCalendarDate] = useState<string | null>(null);
   const [transcriptFile, setTranscriptFile] = useState<File | null>(null);
   const [transcriptData, setTranscriptData] = useState<TranscriptData | null>(null);
   const [examplePrompts, setExamplePrompts] = useState<string[]>(["", "", ""]);
@@ -478,6 +479,10 @@ const Index = () => {
             setProjectName(updatedEntry.title);
             console.log('Project name synchronized from calendar:', updatedEntry.title);
           }
+          // Update calendar date if it changed
+          if (updatedEntry.scheduled_date) {
+            setCalendarDate(updatedEntry.scheduled_date);
+          }
         }
       )
       .subscribe();
@@ -670,6 +675,16 @@ const Index = () => {
       if (projectData.thumbnail_preset_id) {
         thumbnailPresetIdRef.current = projectData.thumbnail_preset_id;
       }
+      
+      // Load calendar date if project is linked to calendar
+      const { data: calendarEntry } = await supabase
+        .from("content_calendar")
+        .select("scheduled_date")
+        .eq("project_id", projectId)
+        .not("scheduled_date", "is", null)
+        .maybeSingle();
+      
+      setCalendarDate(calendarEntry?.scheduled_date || null);
       
       // Mark that project data has been loaded
       projectDataLoadedRef.current = true;
@@ -2026,8 +2041,28 @@ const Index = () => {
                 }} className="flex-shrink-0">Annuler</Button>
               </div>
             ) : (
-              <div className="flex items-center gap-2 group min-w-0">
-                <h1 className="text-sm sm:text-lg font-semibold truncate">{projectName}</h1>
+              <div className="flex items-center gap-3 group min-w-0">
+                <div className="flex items-center gap-2 min-w-0 flex-1">
+                  <h1 className="text-sm sm:text-lg font-semibold truncate">{projectName}</h1>
+                  {calendarDate && (
+                    <div className="flex items-center gap-1.5 text-primary text-xs sm:text-sm flex-shrink-0">
+                      <Calendar className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                      <span className="hidden sm:inline">
+                        {new Date(calendarDate).toLocaleDateString("fr-FR", {
+                          day: "numeric",
+                          month: "short",
+                          year: "numeric"
+                        })}
+                      </span>
+                      <span className="sm:hidden">
+                        {new Date(calendarDate).toLocaleDateString("fr-FR", {
+                          day: "numeric",
+                          month: "short"
+                        })}
+                      </span>
+                    </div>
+                  )}
+                </div>
                 <Button
                   variant="ghost"
                   size="icon"
