@@ -226,11 +226,11 @@ export const PresetManager = ({ currentConfig, onLoadPreset }: PresetManagerProp
       if (!user) throw new Error("User not authenticated");
 
       // Convert durationRanges to legacy format for backward compatibility
-      const ranges = currentConfig.durationRanges;
+      const ranges = currentConfig.durationRanges || [];
       const legacyRanges = {
         scene_duration_0to1: ranges[0]?.sceneDuration || 4,
         scene_duration_1to3: ranges[1]?.sceneDuration || 6,
-        scene_duration_3plus: ranges[ranges.length - 1]?.sceneDuration || 8,
+        scene_duration_3plus: ranges.length > 0 ? (ranges[ranges.length - 1]?.sceneDuration || 8) : 8,
         range_end_1: ranges[0]?.endSeconds || 60,
         range_end_2: ranges[1]?.endSeconds || 180,
       };
@@ -241,14 +241,14 @@ export const PresetManager = ({ currentConfig, onLoadPreset }: PresetManagerProp
           name: newPresetName.trim(),
           ...legacyRanges,
           duration_ranges: ranges as any, // Store full ranges as JSON
-          example_prompts: currentConfig.examplePrompts,
-          image_width: currentConfig.imageWidth,
-          image_height: currentConfig.imageHeight,
-          aspect_ratio: currentConfig.aspectRatio,
-          image_model: currentConfig.imageModel,
+          example_prompts: currentConfig.examplePrompts || [],
+          image_width: currentConfig.imageWidth || 1920,
+          image_height: currentConfig.imageHeight || 1080,
+          aspect_ratio: currentConfig.aspectRatio || '16:9',
+          image_model: currentConfig.imageModel || 'z-image-turbo',
           lora_url: currentConfig.loraUrl || null,
           lora_steps: currentConfig.loraSteps || 10,
-          style_reference_url: JSON.stringify(currentConfig.styleReferenceUrls),
+          style_reference_url: JSON.stringify(currentConfig.styleReferenceUrls || []),
           prompt_system_message: currentConfig.promptSystemMessage || DEFAULT_PROMPT_SYSTEM_MESSAGE,
         },
       ]);
