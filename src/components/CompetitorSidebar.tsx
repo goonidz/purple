@@ -276,10 +276,12 @@ export default function CompetitorSidebar({
 
   // Drag and Drop handlers
   const [draggedChannel, setDraggedChannel] = useState<Channel | null>(null);
+  const [draggedFromFolder, setDraggedFromFolder] = useState<string | null>(null);
   const [dragOverFolder, setDragOverFolder] = useState<string | null>(null);
 
-  const handleDragStart = (e: React.DragEvent, channel: Channel) => {
+  const handleDragStart = (e: React.DragEvent, channel: Channel, fromFolderId: string | null) => {
     setDraggedChannel(channel);
+    setDraggedFromFolder(fromFolderId);
     e.dataTransfer.effectAllowed = "move";
     e.dataTransfer.setData("text/plain", channel.id);
     // Style visuel pendant le drag
@@ -293,17 +295,25 @@ export default function CompetitorSidebar({
       e.currentTarget.style.opacity = "1";
     }
     setDraggedChannel(null);
+    setDraggedFromFolder(null);
     setDragOverFolder(null);
+    setIsDuplicating(false);
   };
+
+  const [isDuplicating, setIsDuplicating] = useState(false);
 
   const handleDragOver = (e: React.DragEvent, folderId: string | null) => {
     e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
+    // Si Ctrl est pressé, c'est une duplication (copy), sinon c'est un déplacement (move)
+    const isDup = e.ctrlKey || e.metaKey;
+    setIsDuplicating(isDup);
+    e.dataTransfer.dropEffect = isDup ? "copy" : "move";
     setDragOverFolder(folderId);
   };
 
   const handleDragLeave = () => {
     setDragOverFolder(null);
+    setIsDuplicating(false);
   };
 
   const handleDrop = async (e: React.DragEvent, targetFolderId: string | null) => {
@@ -313,6 +323,7 @@ export default function CompetitorSidebar({
     if (!draggedChannel) return;
 
     const channelId = draggedChannel.id;
+    const isDuplicating = e.ctrlKey || e.metaKey; // Ctrl ou Cmd pour duplication
 
     // Si on dépose dans un dossier
     if (targetFolderId) {
@@ -321,15 +332,29 @@ export default function CompetitorSidebar({
         cf => cf.channel_id === channelId && cf.folder_id === targetFolderId
       );
 
-      if (!existing) {
-        // Ajouter au dossier (duplication visuelle - la chaîne apparaîtra dans les deux dossiers)
-        await handleAddChannelToFolder(channelId, targetFolderId);
-      } else {
-        // Déjà dans ce dossier, on ne fait rien mais on affiche un message
+      if (existing) {
         toast.info("Cette chaîne est déjà dans ce dossier");
+        setDraggedChannel(null);
+        setDraggedFromFolder(null);
+        return;
+      }
+
+      if (isDuplicating) {
+        // DUPLICATION : Ajouter au dossier cible sans retirer du dossier source
+        await handleAddChannelToFolder(channelId, targetFolderId);
+        toast.success("Chaîne dupliquée dans le dossier");
+      } else {
+        // DÉPLACEMENT : Retirer du dossier source et ajouter au dossier cible
+        // Si la chaîne était dans un dossier, la retirer
+        if (draggedFromFolder) {
+          await handleRemoveChannelFromFolder(channelId, draggedFromFolder);
+        }
+        // Ajouter au nouveau dossier
+        await handleAddChannelToFolder(channelId, targetFolderId);
+        toast.success("Chaîne déplacée");
       }
     } else {
-      // Retirer de tous les dossiers (déplacer vers "sans dossier")
+      // Déposer dans "sans dossier" = retirer de tous les dossiers
       const currentFolders = channelFolders
         .filter(cf => cf.channel_id === channelId)
         .map(cf => cf.folder_id);
@@ -337,9 +362,12 @@ export default function CompetitorSidebar({
       for (const folderId of currentFolders) {
         await handleRemoveChannelFromFolder(channelId, folderId);
       }
+      toast.success("Chaîne retirée de tous les dossiers");
     }
 
     setDraggedChannel(null);
+    setDraggedFromFolder(null);
+    setIsDuplicating(false);
   };
 
   const toggleFolder = (folderId: string) => {
@@ -410,7 +438,9 @@ export default function CompetitorSidebar({
                   ? 'bg-primary/10 border border-primary/20' 
                   : 'hover:bg-accent/50'
               } ${
-                dragOverFolder === null && draggedChannel ? 'ring-2 ring-primary' : ''
+                dragOverFolder === null && draggedChannel 
+                  ? `ring-2 ${isDuplicating ? 'ring-green-500 bg-green-50/50' : 'ring-primary'}` 
+                  : ''
               }`}
               onDragOver={(e) => handleDragOver(e, null)}
               onDragLeave={handleDragLeave}
@@ -496,7 +526,9 @@ export default function CompetitorSidebar({
                   <CollapsibleContent>
                     <div 
                       className={`pl-6 pr-2 space-y-1 min-h-[20px] ${
-                        dragOverFolder === folder.id && draggedChannel ? 'ring-2 ring-primary rounded' : ''
+                        dragOverFolder === folder.id && draggedChannel 
+                          ? `ring-2 rounded ${isDuplicating ? 'ring-green-500 bg-green-50/50' : 'ring-primary'}` 
+                          : ''
                       }`}
                       onDragOver={(e) => handleDragOver(e, folder.id)}
                       onDragLeave={handleDragLeave}
@@ -506,7 +538,7 @@ export default function CompetitorSidebar({
                         <div
                           key={channel.id}
                           draggable
-                          onDragStart={(e) => handleDragStart(e, channel)}
+                          onDragStart={(e) => handleDragStart(e, channel, folder.id)}
                           onDragEnd={handleDragEnd}
                           className="flex items-center gap-2 p-2 rounded-lg hover:bg-accent/50 group cursor-move"
                         >
@@ -618,7 +650,7 @@ export default function CompetitorSidebar({
                   <div
                     key={channel.id}
                     draggable
-                    onDragStart={(e) => handleDragStart(e, channel)}
+                    onDragStart={(e) => handleDragStart(e, channel, null)}
                     onDragEnd={handleDragEnd}
                     className="flex items-center gap-2 p-2 rounded-lg hover:bg-accent/50 group cursor-move"
                   >
