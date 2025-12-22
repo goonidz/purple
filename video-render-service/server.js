@@ -315,11 +315,11 @@ async function renderSceneWithEffect(imagePath, outputPath, duration, width, hei
     console.log(`[${jobId}] Target dimensions: ${width}x${height}`);
     console.log(`[${jobId}] Image path: ${imagePath}`);
     
-    // Preprocessing: Scale and crop image to fill the frame completely (avoid black bars)
-    // This ensures images from zimage or other sources fill the entire frame
-    // Use scale to fit the larger dimension, then crop to exact size
-    // Note: If image is already at target size (e.g., 1920x1088), scale will preserve it
-    const preprocessFilter = `scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height}`;
+    // Preprocessing: Resize image to fit target dimensions as closely as possible without cropping
+    // This preserves the entire image content, downscaling larger images (like SeedDream) and upscaling smaller ones
+    // The image will be scaled to fit within the target dimensions while maintaining aspect ratio
+    // Note: If aspect ratios differ, there may be letterboxing/pillarboxing, but no content is lost
+    const preprocessFilter = `scale=${width}:${height}`;
     
     // Combine preprocessing with the effect filter
     const finalFilter = isPan 
