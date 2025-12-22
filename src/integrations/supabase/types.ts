@@ -97,6 +97,7 @@ export type Database = {
           view_count: number
           like_count: number
           comment_count: number
+          duration_seconds: number | null
           views_per_hour: number | null
           outlier_score: number | null
           last_fetched_at: string
@@ -111,6 +112,7 @@ export type Database = {
           view_count?: number
           like_count?: number
           comment_count?: number
+          duration_seconds?: number | null
           views_per_hour?: number | null
           outlier_score?: number | null
           last_fetched_at?: string
@@ -125,6 +127,7 @@ export type Database = {
           view_count?: number
           like_count?: number
           comment_count?: number
+          duration_seconds?: number | null
           views_per_hour?: number | null
           outlier_score?: number | null
           last_fetched_at?: string

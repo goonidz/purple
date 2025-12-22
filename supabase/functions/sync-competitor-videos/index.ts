@@ -22,6 +22,18 @@ function getPeriodDate(period: string): Date {
   }
 }
 
+// Parse ISO 8601 duration (e.g., PT1M30S = 90 seconds, PT15S = 15 seconds)
+function parseDuration(duration: string): number {
+  const match = duration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+  if (!match) return 0;
+  
+  const hours = parseInt(match[1] || '0', 10);
+  const minutes = parseInt(match[2] || '0', 10);
+  const seconds = parseInt(match[3] || '0', 10);
+  
+  return hours * 3600 + minutes * 60 + seconds;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { 
@@ -139,8 +151,8 @@ serve(async (req) => {
           continue;
         }
 
-        // Fetch video statistics
-        const statsUrl = `https://www.googleapis.com/youtube/v3/videos?part=statistics,snippet&id=${videoIds.join(',')}&key=${YOUTUBE_API_KEY}`;
+        // Fetch video statistics and content details (for duration)
+        const statsUrl = `https://www.googleapis.com/youtube/v3/videos?part=statistics,snippet,contentDetails&id=${videoIds.join(',')}&key=${YOUTUBE_API_KEY}`;
         const statsResponse = await fetch(statsUrl);
         const statsData = await statsResponse.json();
 
@@ -165,6 +177,7 @@ serve(async (req) => {
           const viewCount = parseInt(video.statistics.viewCount) || 0;
           const likeCount = parseInt(video.statistics.likeCount) || 0;
           const commentCount = parseInt(video.statistics.commentCount) || 0;
+          const durationSeconds = parseDuration(video.contentDetails?.duration || 'PT0S');
 
           const viewsPerHour = viewCount / hoursAgo;
           const outlierScore = viewCount / avgViews;
@@ -178,6 +191,7 @@ serve(async (req) => {
             view_count: viewCount,
             like_count: likeCount,
             comment_count: commentCount,
+            duration_seconds: durationSeconds,
             views_per_hour: parseFloat(viewsPerHour.toFixed(2)),
             outlier_score: parseFloat(outlierScore.toFixed(2)),
             last_fetched_at: new Date().toISOString(),

@@ -37,6 +37,7 @@ interface Video {
   thumbnail_url: string | null;
   published_at: string;
   view_count: number;
+  duration_seconds: number | null;
   views_per_hour: number;
   outlier_score: number;
 }
@@ -144,7 +145,13 @@ export default function Competitors() {
 
       if (error) throw error;
 
-      setVideos(data || []);
+      // Filter out shorts (videos < 60 seconds)
+      const filteredVideos = (data || []).filter(video => {
+        // If duration is null or >= 60 seconds, keep it
+        return !video.duration_seconds || video.duration_seconds >= 60;
+      });
+
+      setVideos(filteredVideos);
     } catch (error) {
       console.error("Error loading videos:", error);
       toast.error("Erreur lors du chargement des vidéos");
