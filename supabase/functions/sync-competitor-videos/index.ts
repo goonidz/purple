@@ -122,8 +122,8 @@ serve(async (req) => {
           await new Promise(resolve => setTimeout(resolve, 100));
         }
 
-        // Fetch videos from this channel
-        const videosUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&channelId=${channel.channel_id}&type=video&order=date&publishedAfter=${publishedAfter}&maxResults=50&key=${YOUTUBE_API_KEY}`;
+        // Fetch videos from this channel (exclude shorts: only medium and long videos)
+        const videosUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&channelId=${channel.channel_id}&type=video&order=date&publishedAfter=${publishedAfter}&videoDuration=medium,long&maxResults=50&key=${YOUTUBE_API_KEY}`;
         const videosResponse = await fetch(videosUrl);
         const videosData = await videosResponse.json();
 
@@ -178,6 +178,12 @@ serve(async (req) => {
           const likeCount = parseInt(video.statistics.likeCount) || 0;
           const commentCount = parseInt(video.statistics.commentCount) || 0;
           const durationSeconds = parseDuration(video.contentDetails?.duration || 'PT0S');
+
+          // Skip shorts (videos < 2 minutes = 120 seconds)
+          if (durationSeconds > 0 && durationSeconds < 120) {
+            console.log(`Skipping short video: ${video.snippet.title} (${durationSeconds}s)`);
+            continue;
+          }
 
           const viewsPerHour = viewCount / hoursAgo;
           const outlierScore = viewCount / avgViews;

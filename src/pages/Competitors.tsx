@@ -145,10 +145,10 @@ export default function Competitors() {
 
       if (error) throw error;
 
-      // Filter out shorts (videos < 60 seconds)
+      // Filter out shorts (videos < 2 minutes = 120 seconds)
       const filteredVideos = (data || []).filter(video => {
-        // If duration is null or >= 60 seconds, keep it
-        return !video.duration_seconds || video.duration_seconds >= 60;
+        // If duration is null or >= 120 seconds (2 minutes), keep it
+        return !video.duration_seconds || video.duration_seconds >= 120;
       });
 
       setVideos(filteredVideos);
