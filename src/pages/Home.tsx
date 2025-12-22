@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { History, Sparkles, Calendar, Mic, FileText, ImageIcon } from "lucide-react";
+import { History, Sparkles, Calendar, Mic, FileText, ImageIcon, Users } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
@@ -79,7 +79,7 @@ const Home = () => {
         </div>
 
         {/* Secondary Action Cards */}
-        <div className="grid md:grid-cols-3 gap-6 w-full max-w-4xl">
+        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 w-full max-w-5xl">
           <Link to="/thumbnails" className="group">
             <Card className="p-6 hover:shadow-lg transition-all duration-300 hover:scale-105 border hover:border-primary/30 bg-card/30 backdrop-blur h-full">
               <div className="flex items-center gap-4">
@@ -106,6 +106,22 @@ const Home = () => {
                   <h3 className="text-lg font-bold">Calendrier</h3>
                   <p className="text-sm text-muted-foreground">
                     Planifiez vos vidéos
+                  </p>
+                </div>
+              </div>
+            </Card>
+          </Link>
+
+          <Link to="/competitors" className="group">
+            <Card className="p-6 hover:shadow-lg transition-all duration-300 hover:scale-105 border hover:border-primary/30 bg-card/30 backdrop-blur h-full">
+              <div className="flex items-center gap-4">
+                <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors flex-shrink-0">
+                  <Users className="h-6 w-6 text-primary" />
+                </div>
+                <div className="text-left">
+                  <h3 className="text-lg font-bold">Competitors</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Analysez vos concurrents YouTube
                   </p>
                 </div>
               </div>
