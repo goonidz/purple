@@ -50,3 +50,9 @@ verify_jwt = false
 
 [functions.check-stuck-jobs]
 verify_jwt = false
+
+[functions.add-competitor]
+verify_jwt = false
+
+[functions.sync-competitor-videos]
+verify_jwt = false
