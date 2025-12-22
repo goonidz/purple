@@ -2393,11 +2393,7 @@ const Index = () => {
 
                 <PresetManager
                   currentConfig={{
-                    sceneDuration0to1,
-                    sceneDuration1to3,
-                    sceneDuration3plus,
-                    range1End,
-                    range2End,
+                    durationRanges,
                     examplePrompts,
                     imageWidth,
                     imageHeight,
