@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Plus, Trash2, MoreHorizontal, Folder, ChevronDown, ChevronRight, FolderPlus } from "lucide-react";
+import { Plus, Trash2, MoreHorizontal, Folder, ChevronDown, ChevronRight } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -267,53 +267,6 @@ export default function CompetitorSidebar({
     }
   };
 
-  const handleDuplicateChannel = async (channel: Channel) => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Non authentifié");
-
-      // Créer une copie de la chaîne
-      const { data: newChannel, error: insertError } = await supabase
-        .from('competitor_channels')
-        .insert({
-          user_id: user.id,
-          channel_id: channel.channel_id,
-          channel_name: channel.channel_name,
-          channel_avatar: channel.channel_avatar,
-          subscriber_count: channel.subscriber_count,
-          avg_views_per_video: 0, // Reset pour recalculer
-          is_active: channel.is_active,
-        })
-        .select()
-        .single();
-
-      if (insertError) throw insertError;
-
-      // Copier les associations de dossiers
-      const currentFolders = channelFolders
-        .filter(cf => cf.channel_id === channel.id)
-        .map(cf => cf.folder_id);
-
-      if (currentFolders.length > 0) {
-        const associations = currentFolders.map(folderId => ({
-          channel_id: newChannel.id,
-          folder_id: folderId,
-        }));
-
-        const { error: assocError } = await supabase
-          .from('competitor_channel_folders')
-          .insert(associations);
-
-        if (assocError) throw assocError;
-      }
-
-      toast.success(`${channel.channel_name} dupliqué`);
-      onRefresh();
-    } catch (error) {
-      console.error("Error duplicating channel:", error);
-      toast.error("Erreur lors de la duplication");
-    }
-  };
 
   // Drag and Drop handlers
   const [draggedChannel, setDraggedChannel] = useState<Channel | null>(null);
@@ -563,9 +516,21 @@ export default function CompetitorSidebar({
                           </Avatar>
                           
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium truncate">
-                              {channel.channel_name}
-                            </p>
+                            <div className="flex items-center gap-1.5">
+                              <p className="text-sm font-medium truncate">
+                                {channel.channel_name}
+                              </p>
+                              {(() => {
+                                const folderCount = channelFolders.filter(
+                                  cf => cf.channel_id === channel.id
+                                ).length;
+                                return folderCount > 0 ? (
+                                  <span className="text-xs bg-primary/10 text-primary px-1.5 py-0.5 rounded flex-shrink-0">
+                                    {folderCount}
+                                  </span>
+                                ) : null;
+                              })()}
+                            </div>
                             <p className="text-xs text-muted-foreground truncate">
                               {formatSubscribers(channel.subscriber_count)} subscribers
                             </p>
@@ -585,27 +550,32 @@ export default function CompetitorSidebar({
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
                               <DropdownMenuItem
-                                onClick={() => handleDuplicateChannel(channel)}
-                              >
-                                <FolderPlus className="h-4 w-4 mr-2" />
-                                Dupliquer
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
                                 onClick={() => handleRemoveChannelFromFolder(channel.id, folder.id)}
                               >
                                 Retirer de ce dossier
                               </DropdownMenuItem>
                               {sortedFolders
                                 .filter(f => f.id !== folder.id)
-                                .map((otherFolder) => (
-                                  <DropdownMenuItem
-                                    key={otherFolder.id}
-                                    onClick={() => handleAddChannelToFolder(channel.id, otherFolder.id)}
-                                  >
-                                    <Folder className="h-4 w-4 mr-2" style={{ color: otherFolder.color }} />
-                                    Ajouter à {otherFolder.name}
-                                  </DropdownMenuItem>
-                                ))}
+                                .map((otherFolder) => {
+                                  const isInOtherFolder = channelFolders.some(
+                                    cf => cf.channel_id === channel.id && cf.folder_id === otherFolder.id
+                                  );
+                                  return (
+                                    <DropdownMenuItem
+                                      key={otherFolder.id}
+                                      onClick={() => {
+                                        if (isInOtherFolder) {
+                                          handleRemoveChannelFromFolder(channel.id, otherFolder.id);
+                                        } else {
+                                          handleAddChannelToFolder(channel.id, otherFolder.id);
+                                        }
+                                      }}
+                                    >
+                                      <Folder className="h-4 w-4 mr-2" style={{ color: otherFolder.color }} />
+                                      {isInOtherFolder ? `✓ Retirer de ${otherFolder.name}` : `Ajouter à ${otherFolder.name}`}
+                                    </DropdownMenuItem>
+                                  );
+                                })}
                               <DropdownMenuItem
                                 className="text-destructive"
                                 onClick={() => handleDeleteChannel(channel)}
@@ -658,9 +628,21 @@ export default function CompetitorSidebar({
                     </Avatar>
                     
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">
-                        {channel.channel_name}
-                      </p>
+                      <div className="flex items-center gap-1.5">
+                        <p className="text-sm font-medium truncate">
+                          {channel.channel_name}
+                        </p>
+                        {(() => {
+                          const folderCount = channelFolders.filter(
+                            cf => cf.channel_id === channel.id
+                          ).length;
+                          return folderCount > 0 ? (
+                            <span className="text-xs bg-primary/10 text-primary px-1.5 py-0.5 rounded flex-shrink-0">
+                              {folderCount}
+                            </span>
+                          ) : null;
+                        })()}
+                      </div>
                       <p className="text-xs text-muted-foreground truncate">
                         {formatSubscribers(channel.subscriber_count)} subscribers
                       </p>
@@ -679,12 +661,6 @@ export default function CompetitorSidebar({
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                          onClick={() => handleDuplicateChannel(channel)}
-                        >
-                          <FolderPlus className="h-4 w-4 mr-2" />
-                          Dupliquer
-                        </DropdownMenuItem>
                         {sortedFolders.map((folder) => {
                           const isInFolder = channelFolders.some(
                             cf => cf.channel_id === channel.id && cf.folder_id === folder.id
@@ -701,7 +677,7 @@ export default function CompetitorSidebar({
                               }}
                             >
                               <Folder className="h-4 w-4 mr-2" style={{ color: folder.color }} />
-                              {isInFolder ? `Retirer de ${folder.name}` : `Ajouter à ${folder.name}`}
+                              {isInFolder ? `✓ Retirer de ${folder.name}` : `Ajouter à ${folder.name}`}
                             </DropdownMenuItem>
                           );
                         })}
