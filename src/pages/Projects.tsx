@@ -71,6 +71,7 @@ const Projects = () => {
   const [semiAutoMode, setSemiAutoMode] = useState(false);
   const [thumbnailPresets, setThumbnailPresets] = useState<any[]>([]);
   const [selectedThumbnailPresetId, setSelectedThumbnailPresetId] = useState<string>("");
+  const [isDraggingAudio, setIsDraggingAudio] = useState(false);
 
   useEffect(() => {
     document.title = "Projets | VideoFlow";
@@ -345,6 +346,34 @@ const Projects = () => {
       toast.error("Erreur lors du chargement des projets");
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleAudioDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingAudio(true);
+  };
+
+  const handleAudioDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingAudio(false);
+  };
+
+  const handleAudioDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingAudio(false);
+    
+    const file = e.dataTransfer.files[0];
+    if (file) {
+      // Check if it's an audio file
+      if (!file.type.startsWith('audio/') && !file.name.match(/\.(mp3|wav|m4a|ogg)$/i)) {
+        toast.error("Veuillez importer un fichier audio (MP3, WAV, etc.)");
+        return;
+      }
+      await handleAudioUpload(file);
     }
   };
 
@@ -668,7 +697,14 @@ const Projects = () => {
                       onChange={(e) => setNewProjectName(e.target.value)}
                       disabled={isCreating}
                     />
-                    <div className="border-2 border-dashed rounded-lg p-8 text-center">
+                    <div
+                      className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
+                        isDraggingAudio ? 'border-primary bg-primary/10' : 'border-muted-foreground/25 hover:border-primary/50'
+                      }`}
+                      onDragOver={handleAudioDragOver}
+                      onDragLeave={handleAudioDragLeave}
+                      onDrop={handleAudioDrop}
+                    >
                       <Input
                         type="file"
                         accept="audio/mp3,audio/wav,audio/mpeg"
@@ -696,7 +732,7 @@ const Projects = () => {
                             <>
                               <Plus className="h-8 w-8 text-muted-foreground" />
                               <p className="text-sm text-muted-foreground">
-                                Cliquez pour importer un fichier audio
+                                Glissez-déposez ou cliquez pour importer un fichier audio
                               </p>
                               <p className="text-xs text-muted-foreground">
                                 MP3 ou WAV
