@@ -384,7 +384,7 @@ export default function CompetitorSidebar({
 
   return (
     <>
-      <div className="w-72 border-l bg-card/50 flex flex-col h-full overflow-hidden">
+      <div className="w-72 flex-shrink-0 border-l bg-card/50 flex flex-col h-full overflow-hidden">
         <div className="p-4 border-b flex-shrink-0">
           <div className="flex items-center justify-between mb-2">
             <h3 className="font-semibold">Competitors</h3>
@@ -429,8 +429,8 @@ export default function CompetitorSidebar({
           </label>
         </div>
 
-        <ScrollArea className="flex-1 min-h-0">
-          <div className="p-2 space-y-1 overflow-x-hidden">
+        <ScrollArea className="flex-1 min-h-0 w-full">
+          <div className="p-2 space-y-1 w-full max-w-full">
             {/* Bouton "Tous" - Zone de drop */}
             <div 
               className={`flex items-center gap-2 p-2 rounded-lg transition-colors ${
@@ -511,7 +511,7 @@ export default function CompetitorSidebar({
                           <MoreHorizontal className="h-3 w-3" />
                         </Button>
                       </DropdownMenuTrigger>
-                      <DropdownMenuContent align="start" side="left">
+                      <DropdownMenuContent align="end" sideOffset={5}>
                         <DropdownMenuItem
                           className="text-destructive"
                           onClick={() => handleDeleteFolder(folder)}
@@ -577,7 +577,7 @@ export default function CompetitorSidebar({
                                 <MoreHorizontal className="h-4 w-4" />
                               </Button>
                             </DropdownMenuTrigger>
-                            <DropdownMenuContent align="start" side="left">
+                            <DropdownMenuContent align="end" sideOffset={5}>
                               <DropdownMenuItem
                                 onClick={() => handleRemoveChannelFromFolder(channel.id, folder.id)}
                               >
@@ -677,7 +677,7 @@ export default function CompetitorSidebar({
                           <MoreHorizontal className="h-4 w-4" />
                         </Button>
                       </DropdownMenuTrigger>
-                      <DropdownMenuContent align="start" side="left">
+                      <DropdownMenuContent align="end" sideOffset={5}>
                         {sortedFolders.map((folder) => {
                           const isInFolder = channelFolders.some(
                             cf => cf.channel_id === channel.id && cf.folder_id === folder.id

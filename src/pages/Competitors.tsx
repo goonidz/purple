@@ -253,7 +253,7 @@ export default function Competitors() {
         </div>
       </AppHeader>
 
-      <div className="flex h-[calc(100vh-73px)]">
+      <div className="flex h-[calc(100vh-73px)] overflow-hidden">
         {/* Main content */}
         <div className="flex-1 overflow-auto">
           <div className="p-6">
