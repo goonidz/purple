@@ -188,11 +188,13 @@ export default function CompetitorVideoList({ videos, channels, isLoading }: Com
                 <TableCell>
                   <div className="flex gap-3">
                     {video.thumbnail_url && (
-                      <img
-                        src={video.thumbnail_url}
-                        alt={video.title}
-                        className="w-32 h-18 object-cover rounded flex-shrink-0"
-                      />
+                      <div className="w-32 aspect-video rounded overflow-hidden flex-shrink-0 bg-muted">
+                        <img
+                          src={video.thumbnail_url}
+                          alt={video.title}
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
                     )}
                     <div className="min-w-0">
                       <p className="font-medium text-sm line-clamp-2 mb-1">
