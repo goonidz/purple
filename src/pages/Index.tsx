@@ -2050,28 +2050,19 @@ const Index = () => {
               </div>
             ) : (
               <div className="flex items-center gap-3 group min-w-0">
-                <div className="flex items-center gap-2 min-w-0 flex-1">
+                <div className="flex flex-col gap-1 min-w-0 flex-1">
                   <h1 className="text-sm sm:text-lg font-semibold truncate">{projectName}</h1>
-                  {calendarDate ? (
-                    <div className="flex items-center gap-1.5 text-primary text-xs sm:text-sm flex-shrink-0">
-                      <Calendar className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                      <span className="hidden sm:inline">
+                  {calendarDate && (
+                    <div className="flex items-center gap-1.5 text-primary text-xs">
+                      <Calendar className="h-3 w-3" />
+                      <span>
                         Prévu le {new Date(calendarDate).toLocaleDateString("fr-FR", {
                           day: "numeric",
                           month: "short",
                           year: "numeric"
                         })}
                       </span>
-                      <span className="sm:hidden">
-                        {new Date(calendarDate).toLocaleDateString("fr-FR", {
-                          day: "numeric",
-                          month: "short"
-                        })}
-                      </span>
                     </div>
-                  ) : (
-                    // Debug: show if calendarDate is null
-                    console.log("No calendar date for project:", currentProjectId)
                   )}
                 </div>
                 <Button
