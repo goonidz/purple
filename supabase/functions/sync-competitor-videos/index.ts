@@ -89,7 +89,35 @@ serve(async (req) => {
     if (channelId) {
       channelsQuery = channelsQuery.eq('channel_id', channelId);
     } else if (folderId) {
-      channelsQuery = channelsQuery.eq('folder_id', folderId);
+      // Get channel IDs from folder associations
+      const { data: associations } = await supabase
+        .from('competitor_channel_folders')
+        .select('channel_id')
+        .eq('folder_id', folderId);
+
+      const channelIds = associations?.map(a => a.channel_id) || [];
+      
+      // Also include channels with folder_id for backward compatibility
+      const { data: legacyChannels } = await supabase
+        .from('competitor_channels')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('folder_id', folderId);
+
+      const allChannelIds = [
+        ...channelIds,
+        ...(legacyChannels?.map(c => c.id) || [])
+      ];
+
+      if (allChannelIds.length > 0) {
+        channelsQuery = channelsQuery.in('id', allChannelIds);
+      } else {
+        // No channels in this folder
+        return new Response(
+          JSON.stringify({ success: true, message: "No channels in folder", synced: 0 }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
     }
 
     const { data: channels, error: channelsError } = await channelsQuery;
