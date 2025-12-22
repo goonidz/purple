@@ -173,35 +173,32 @@ function getPanEffect(sceneIndex, duration, width, height, framerate) {
     console.log(`[PAN DEBUG] Scene ${sceneIndex}: 1.5 cycles, panAmount=${panAmount.toFixed(4)}`);
     
   } else {
-    // Short scene: single pan direction with acceleration curve for smoother, faster movement
-    // Use ease-in-out curve (smooth acceleration and deceleration) to avoid stuttering
-    // Formula: t^2 * (3 - 2*t) creates a smooth S-curve
-    const progress = `on/${totalFrames}`;
-    const easeInOut = `${progress}*${progress}*(3-2*${progress})`; // Smooth S-curve for faster, smoother movement
+    // Short scene: single pan direction with LINEAR movement (constant speed)
+    const progress = `on/${totalFrames}`; // Linear 0 to 1
     
     const panDirections = ['pan_left', 'pan_right', 'pan_up', 'pan_down'];
     const direction = panDirections[sceneIndex % panDirections.length];
     
     switch (direction) {
       case 'pan_left':
-        // Pan left: start at center, move left (increase X) with acceleration
-        xExpr = `${centerXExpr}+${panDistXExpr}*${easeInOut}`;
+        // Pan left: start at center, move left (increase X)
+        xExpr = `${centerXExpr}+${panDistXExpr}*${progress}`;
         yExpr = centerYExpr;
         break;
       case 'pan_right':
-        // Pan right: start at center, move right (decrease X) with acceleration
-        xExpr = `${centerXExpr}-${panDistXExpr}*${easeInOut}`;
+        // Pan right: start at center, move right (decrease X)
+        xExpr = `${centerXExpr}-${panDistXExpr}*${progress}`;
         yExpr = centerYExpr;
         break;
       case 'pan_up':
-        // Pan up: start at center, move up (increase Y) with acceleration
+        // Pan up: start at center, move up (increase Y)
         xExpr = centerXExpr;
-        yExpr = `${centerYExpr}+${panDistYExpr}*${easeInOut}`;
+        yExpr = `${centerYExpr}+${panDistYExpr}*${progress}`;
         break;
       case 'pan_down':
-        // Pan down: start at center, move down (decrease Y) with acceleration
+        // Pan down: start at center, move down (decrease Y)
         xExpr = centerXExpr;
-        yExpr = `${centerYExpr}-${panDistYExpr}*${easeInOut}`;
+        yExpr = `${centerYExpr}-${panDistYExpr}*${progress}`;
         break;
       default:
         xExpr = centerXExpr;
