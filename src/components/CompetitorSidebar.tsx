@@ -557,7 +557,7 @@ export default function CompetitorSidebar({
                           </Avatar>
                           
                           <div className="flex-1 w-0">
-                            <p className="text-sm font-medium truncate">
+                            <p className="text-sm font-medium truncate" title={channel.channel_name}>
                               {channel.channel_name}
                             </p>
                             <p className="text-xs text-muted-foreground truncate">
@@ -657,7 +657,7 @@ export default function CompetitorSidebar({
                     </Avatar>
                     
                     <div className="flex-1 w-0">
-                      <p className="text-sm font-medium truncate">
+                      <p className="text-sm font-medium truncate" title={channel.channel_name}>
                         {channel.channel_name}
                       </p>
                       <p className="text-xs text-muted-foreground truncate">
