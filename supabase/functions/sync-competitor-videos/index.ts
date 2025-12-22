@@ -60,7 +60,7 @@ serve(async (req) => {
       });
     }
 
-    const { channelId, period = '30d' } = await req.json();
+    const { channelId, folderId, period = '30d' } = await req.json();
 
     const YOUTUBE_API_KEY = Deno.env.get("YOUTUBE_API_KEY");
     if (!YOUTUBE_API_KEY) {
@@ -76,6 +76,8 @@ serve(async (req) => {
 
     if (channelId) {
       channelsQuery = channelsQuery.eq('channel_id', channelId);
+    } else if (folderId) {
+      channelsQuery = channelsQuery.eq('folder_id', folderId);
     }
 
     const { data: channels, error: channelsError } = await channelsQuery;

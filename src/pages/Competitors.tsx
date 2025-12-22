@@ -47,6 +47,7 @@ export default function Competitors() {
   const [folders, setFolders] = useState<Folder[]>([]);
   const [videos, setVideos] = useState<Video[]>([]);
   const [selectedChannels, setSelectedChannels] = useState<string[]>([]);
+  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [period, setPeriod] = useState<string>('30d');
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -117,8 +118,22 @@ export default function Competitors() {
       const periodDate = new Date();
       periodDate.setDate(periodDate.getDate() - periodDays);
 
+      // Filter channels by selected folder
+      let channelsToUse = channels;
+      if (selectedFolderId) {
+        channelsToUse = channels.filter(c => c.folder_id === selectedFolderId);
+      }
+
       // Get videos for selected channels
-      const channelsToFetch = selectedChannels.length > 0 ? selectedChannels : channels.map(c => c.channel_id);
+      const channelsToFetch = selectedChannels.length > 0 
+        ? selectedChannels.filter(id => channelsToUse.some(c => c.channel_id === id))
+        : channelsToUse.map(c => c.channel_id);
+
+      if (channelsToFetch.length === 0) {
+        setVideos([]);
+        setIsLoading(false);
+        return;
+      }
 
       const { data, error } = await supabase
         .from('competitor_videos')
@@ -136,7 +151,7 @@ export default function Competitors() {
     } finally {
       setIsLoading(false);
     }
-  }, [channels, selectedChannels, period]);
+  }, [channels, selectedChannels, period, selectedFolderId]);
 
   // Initial load
   useEffect(() => {
@@ -154,7 +169,10 @@ export default function Competitors() {
     setIsSyncing(true);
     try {
       const { data, error } = await supabase.functions.invoke('sync-competitor-videos', {
-        body: { period }
+        body: { 
+          period,
+          folderId: selectedFolderId || undefined
+        }
       });
 
       if (error) throw error;
@@ -204,7 +222,14 @@ export default function Competitors() {
             {/* Header */}
             <div className="flex items-center justify-between mb-6">
               <div>
-                <h1 className="text-2xl font-bold">Top Videos From Your Competitors</h1>
+                <div className="flex items-center gap-2">
+                  <h1 className="text-2xl font-bold">Top Videos From Your Competitors</h1>
+                  {selectedFolderId && (
+                    <span className="text-sm px-2 py-1 rounded-full bg-primary/10 text-primary font-medium">
+                      {folders.find(f => f.id === selectedFolderId)?.name || 'Dossier sélectionné'}
+                    </span>
+                  )}
+                </div>
                 <p className="text-muted-foreground mt-1">
                   {videos.length} vidéos de {selectedChannels.length || channels.length} chaînes
                 </p>
@@ -247,7 +272,9 @@ export default function Competitors() {
           channels={channels}
           folders={folders}
           selectedChannels={selectedChannels}
+          selectedFolderId={selectedFolderId}
           onSelectionChange={handleSelectionChange}
+          onFolderSelect={setSelectedFolderId}
           onAddClick={() => setShowAddModal(true)}
           onRefresh={() => {
             loadFolders();
