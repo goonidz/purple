@@ -384,7 +384,7 @@ export default function CompetitorSidebar({
 
   return (
     <>
-      <div className="w-72 flex-shrink-0 border-l bg-card/50 flex flex-col h-full overflow-hidden">
+      <div className="w-72 min-w-[288px] max-w-[288px] flex-shrink-0 border-l bg-card/50 flex flex-col h-full overflow-hidden">
         <div className="p-4 border-b flex-shrink-0">
           <div className="flex items-center justify-between mb-2">
             <h3 className="font-semibold">Competitors</h3>
@@ -429,8 +429,8 @@ export default function CompetitorSidebar({
           </label>
         </div>
 
-        <ScrollArea className="flex-1 min-h-0 w-full">
-          <div className="p-2 space-y-1 w-full max-w-full">
+        <ScrollArea className="flex-1 min-h-0">
+          <div className="p-2 space-y-1 overflow-hidden">
             {/* Bouton "Tous" - Zone de drop */}
             <div 
               className={`flex items-center gap-2 p-2 rounded-lg transition-colors ${
@@ -525,7 +525,7 @@ export default function CompetitorSidebar({
                   </div>
                   <CollapsibleContent>
                     <div 
-                      className={`pl-6 pr-2 space-y-1 min-h-[20px] ${
+                      className={`pl-6 pr-2 space-y-1 min-h-[20px] overflow-hidden ${
                         dragOverFolder === folder.id && draggedChannel 
                           ? `ring-2 rounded ${isDuplicating ? 'ring-green-500 bg-green-50/50' : 'ring-primary'}` 
                           : ''
@@ -540,7 +540,7 @@ export default function CompetitorSidebar({
                           draggable
                           onDragStart={(e) => handleDragStart(e, channel, folder.id)}
                           onDragEnd={handleDragEnd}
-                          className="flex items-center gap-2 p-2 rounded-lg hover:bg-accent/50 group cursor-move"
+                          className="flex items-center gap-2 p-2 rounded-lg hover:bg-accent/50 group cursor-move w-full max-w-full overflow-hidden"
                         >
                           <Checkbox
                             checked={selectedChannels.includes(channel.channel_id)}
@@ -629,7 +629,7 @@ export default function CompetitorSidebar({
             {/* Chaînes sans dossier */}
             {channelsWithoutFolder.length > 0 && (
               <div 
-                className="space-y-1"
+                className="space-y-1 overflow-hidden"
                 onDragOver={(e) => handleDragOver(e, null)}
                 onDragLeave={handleDragLeave}
                 onDrop={(e) => handleDrop(e, null)}
@@ -640,7 +640,7 @@ export default function CompetitorSidebar({
                     draggable
                     onDragStart={(e) => handleDragStart(e, channel, null)}
                     onDragEnd={handleDragEnd}
-                    className="flex items-center gap-2 p-2 rounded-lg hover:bg-accent/50 group cursor-move"
+                    className="flex items-center gap-2 p-2 rounded-lg hover:bg-accent/50 group cursor-move w-full max-w-full overflow-hidden"
                   >
                     <Checkbox
                       checked={selectedChannels.includes(channel.channel_id)}
