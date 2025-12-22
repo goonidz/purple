@@ -556,7 +556,7 @@ export default function CompetitorSidebar({
                             </AvatarFallback>
                           </Avatar>
                           
-                          <div className="flex-1 min-w-0">
+                          <div className="flex-1 w-0">
                             <p className="text-sm font-medium truncate">
                               {channel.channel_name}
                             </p>
@@ -656,7 +656,7 @@ export default function CompetitorSidebar({
                       </AvatarFallback>
                     </Avatar>
                     
-                    <div className="flex-1 min-w-0">
+                    <div className="flex-1 w-0">
                       <p className="text-sm font-medium truncate">
                         {channel.channel_name}
                       </p>
