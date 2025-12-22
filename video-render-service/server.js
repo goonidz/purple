@@ -117,15 +117,14 @@ function getPanEffect(sceneIndex, duration, width, height, framerate) {
   // Calculate panAmount based on zoom level and scene duration
   // Available margin from center to edge = (iw - iw/zoom)/2 = iw*(1 - 1/zoom)/2
   // As percentage of image width: (1 - 1/zoom)/2
-  // For short scenes: use less pan to keep movement slow and smooth
-  // For long scenes: use more pan to avoid pixel-by-pixel stuttering
-  // Use 100% of available margin to go all the way to the edge
+  // For short scenes: use more pan and faster movement to avoid stuttering
+  // For long scenes: use full pan with smooth back-and-forth movement
   const maxPanAmount = (1 - 1 / zoomLevel) / 2;
   let panAmount;
   if (duration < 5) {
-    panAmount = maxPanAmount * 0.4; // 40% of margin for very short scenes (< 5s) - slow movement
+    panAmount = maxPanAmount * 0.8; // 80% of margin for very short scenes (< 5s) - faster movement to avoid stuttering
   } else if (duration < 9) {
-    panAmount = maxPanAmount * 0.6; // 60% of margin for short scenes (5-9s) - moderate movement
+    panAmount = maxPanAmount * 0.9; // 90% of margin for short scenes (5-9s) - faster movement
   } else {
     panAmount = maxPanAmount; // 100% of margin for long scenes (>= 9s) - full movement
   }
@@ -174,37 +173,44 @@ function getPanEffect(sceneIndex, duration, width, height, framerate) {
     console.log(`[PAN DEBUG] Scene ${sceneIndex}: 1.5 cycles, panAmount=${panAmount.toFixed(4)}`);
     
   } else {
-    // Short scene: single pan direction
-    // Start at center and pan immediately (no delay)
+    // Short scene: single pan direction with acceleration curve for smoother, faster movement
+    // Use ease-in-out curve (smooth acceleration and deceleration) to avoid stuttering
+    // Formula: t^2 * (3 - 2*t) creates a smooth S-curve
+    const progress = `on/${totalFrames}`;
+    const easeInOut = `${progress}*${progress}*(3-2*${progress})`; // Smooth S-curve for faster, smoother movement
+    
     const panDirections = ['pan_left', 'pan_right', 'pan_up', 'pan_down'];
     const direction = panDirections[sceneIndex % panDirections.length];
     
     switch (direction) {
       case 'pan_left':
-        // Pan left: start at center, move left (increase X)
-        xExpr = `${centerXExpr}+${panDistXExpr}*(on/${totalFrames})`;
+        // Pan left: start at center, move left (increase X) with acceleration
+        xExpr = `${centerXExpr}+${panDistXExpr}*${easeInOut}`;
         yExpr = centerYExpr;
         break;
       case 'pan_right':
-        // Pan right: start at center, move right (decrease X)
-        xExpr = `${centerXExpr}-${panDistXExpr}*(on/${totalFrames})`;
+        // Pan right: start at center, move right (decrease X) with acceleration
+        xExpr = `${centerXExpr}-${panDistXExpr}*${easeInOut}`;
         yExpr = centerYExpr;
         break;
       case 'pan_up':
-        // Pan up: start at center, move up (increase Y)
+        // Pan up: start at center, move up (increase Y) with acceleration
         xExpr = centerXExpr;
-        yExpr = `${centerYExpr}+${panDistYExpr}*(on/${totalFrames})`;
+        yExpr = `${centerYExpr}+${panDistYExpr}*${easeInOut}`;
         break;
       case 'pan_down':
-        // Pan down: start at center, move down (decrease Y)
+        // Pan down: start at center, move down (decrease Y) with acceleration
         xExpr = centerXExpr;
-        yExpr = `${centerYExpr}-${panDistYExpr}*(on/${totalFrames})`;
+        yExpr = `${centerYExpr}-${panDistYExpr}*${easeInOut}`;
         break;
       default:
         xExpr = centerXExpr;
         yExpr = centerYExpr;
     }
     effect = direction;
+    
+    // Log pan parameters for short scenes to help debug
+    console.log(`[PAN DEBUG] Scene ${sceneIndex}: short scene (${duration.toFixed(2)}s), panAmount=${panAmount.toFixed(4)} (${(panAmount*100).toFixed(0)}%), direction=${direction}`);
   }
   
   return {
