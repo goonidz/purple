@@ -103,12 +103,23 @@ serve(async (req) => {
       try {
         console.log(`Syncing channel: ${channel.channel_name} (${channel.channel_id})`);
 
+        // Small delay between channels to avoid rate limits (100ms)
+        if (channels.indexOf(channel) > 0) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+
         // Fetch videos from this channel
         const videosUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&channelId=${channel.channel_id}&type=video&order=date&publishedAfter=${publishedAfter}&maxResults=50&key=${YOUTUBE_API_KEY}`;
         const videosResponse = await fetch(videosUrl);
         const videosData = await videosResponse.json();
 
         if (!videosResponse.ok) {
+          if (videosResponse.status === 429) {
+            console.error(`Rate limit reached for ${channel.channel_name}`);
+            errors.push(`${channel.channel_name}: Rate limit atteint. Réessayez plus tard.`);
+            // Stop syncing remaining channels to avoid more rate limits
+            break;
+          }
           console.error(`Failed to fetch videos for ${channel.channel_name}:`, videosData);
           errors.push(`${channel.channel_name}: Failed to fetch videos`);
           continue;
@@ -132,6 +143,11 @@ serve(async (req) => {
         const statsData = await statsResponse.json();
 
         if (!statsResponse.ok) {
+          if (statsResponse.status === 429) {
+            console.error(`Rate limit reached for ${channel.channel_name} stats`);
+            errors.push(`${channel.channel_name}: Rate limit atteint. Réessayez plus tard.`);
+            break;
+          }
           console.error(`Failed to fetch stats for ${channel.channel_name}:`, statsData);
           errors.push(`${channel.channel_name}: Failed to fetch video stats`);
           continue;
