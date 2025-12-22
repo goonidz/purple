@@ -552,7 +552,7 @@ async function processRenderJob(jobId, renderData) {
         .videoCodec('libx264')
         .audioCodec('aac')
         .outputOptions([
-          '-preset', 'medium',  // Better compression for smaller files
+          '-preset', 'ultrafast',  // Fastest encoding for concatenation (files will be slightly larger)
           '-crf', '28',  // Higher CRF = smaller file size (28 is good balance for storage)
           '-pix_fmt', 'yuv420p',
           '-movflags', '+faststart',
