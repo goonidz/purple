@@ -525,7 +525,7 @@ export default function CompetitorSidebar({
                   </div>
                   <CollapsibleContent>
                     <div 
-                      className={`pl-4 space-y-1 min-h-[20px] ${
+                      className={`pl-4 space-y-1 min-h-[20px] overflow-hidden ${
                         dragOverFolder === folder.id && draggedChannel 
                           ? `ring-2 rounded ${isDuplicating ? 'ring-green-500 bg-green-50/50' : 'ring-primary'}` 
                           : ''
@@ -540,7 +540,7 @@ export default function CompetitorSidebar({
                           draggable
                           onDragStart={(e) => handleDragStart(e, channel, folder.id)}
                           onDragEnd={handleDragEnd}
-                          className="flex items-center gap-2 p-2 rounded-lg hover:bg-accent/50 group cursor-move min-w-0 w-full"
+                          className="flex items-center gap-2 p-2 rounded-lg hover:bg-accent/50 group cursor-move min-w-0 overflow-hidden"
                         >
                           <Checkbox
                             checked={selectedChannels.includes(channel.channel_id)}
@@ -629,7 +629,7 @@ export default function CompetitorSidebar({
             {/* Chaînes sans dossier */}
             {channelsWithoutFolder.length > 0 && (
               <div 
-                className="space-y-1 min-w-0"
+                className="space-y-1 overflow-hidden"
                 onDragOver={(e) => handleDragOver(e, null)}
                 onDragLeave={handleDragLeave}
                 onDrop={(e) => handleDrop(e, null)}
@@ -640,7 +640,7 @@ export default function CompetitorSidebar({
                     draggable
                     onDragStart={(e) => handleDragStart(e, channel, null)}
                     onDragEnd={handleDragEnd}
-                    className="flex items-center gap-2 p-2 rounded-lg hover:bg-accent/50 group cursor-move min-w-0 w-full"
+                    className="flex items-center gap-2 p-2 rounded-lg hover:bg-accent/50 group cursor-move min-w-0 overflow-hidden"
                   >
                     <Checkbox
                       checked={selectedChannels.includes(channel.channel_id)}
