@@ -7,6 +7,7 @@ import Home from "./pages/Home";
 import Index from "./pages/Index";
 import Projects from "./pages/Projects";
 import Auth from "./pages/Auth";
+import Competitors from "./pages/Competitors";
 
 import TestScenes from "./pages/TestScenes";
 import Profile from "./pages/Profile";
@@ -29,6 +30,7 @@ const App = () => (
           <Route path="/projects" element={<Projects />} />
           
           <Route path="/calendar" element={<Calendar />} />
+          <Route path="/competitors" element={<Competitors />} />
           <Route path="/create-from-scratch" element={<CreateFromScratch />} />
           <Route path="/thumbnails" element={<StandaloneThumbnails />} />
           <Route path="/test-scenes" element={<TestScenes />} />

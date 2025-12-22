@@ -14,6 +14,90 @@ export type Database = {
   }
   public: {
     Tables: {
+      competitor_channels: {
+        Row: {
+          id: string
+          user_id: string
+          channel_id: string
+          channel_name: string
+          channel_avatar: string | null
+          subscriber_count: number
+          avg_views_per_video: number
+          is_active: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          channel_id: string
+          channel_name: string
+          channel_avatar?: string | null
+          subscriber_count?: number
+          avg_views_per_video?: number
+          is_active?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          channel_id?: string
+          channel_name?: string
+          channel_avatar?: string | null
+          subscriber_count?: number
+          avg_views_per_video?: number
+          is_active?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      competitor_videos: {
+        Row: {
+          id: string
+          channel_id: string
+          video_id: string
+          title: string
+          thumbnail_url: string | null
+          published_at: string
+          view_count: number
+          like_count: number
+          comment_count: number
+          views_per_hour: number | null
+          outlier_score: number | null
+          last_fetched_at: string
+        }
+        Insert: {
+          id?: string
+          channel_id: string
+          video_id: string
+          title: string
+          thumbnail_url?: string | null
+          published_at: string
+          view_count?: number
+          like_count?: number
+          comment_count?: number
+          views_per_hour?: number | null
+          outlier_score?: number | null
+          last_fetched_at?: string
+        }
+        Update: {
+          id?: string
+          channel_id?: string
+          video_id?: string
+          title?: string
+          thumbnail_url?: string | null
+          published_at?: string
+          view_count?: number
+          like_count?: number
+          comment_count?: number
+          views_per_hour?: number | null
+          outlier_score?: number | null
+          last_fetched_at?: string
+        }
+        Relationships: []
+      }
       channels: {
         Row: {
           color: string
