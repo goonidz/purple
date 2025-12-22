@@ -677,22 +677,22 @@ const Index = () => {
       }
       
       // Load calendar date if project is linked to calendar
-      const { data: calendarEntry, error: calendarError } = await supabase
+      const { data: calendarEntries, error: calendarError } = await supabase
         .from("content_calendar")
-        .select("scheduled_date")
-        .eq("project_id", projectId)
-        .not("scheduled_date", "is", null)
-        .maybeSingle();
+        .select("scheduled_date, id")
+        .eq("project_id", projectId);
       
       if (calendarError) {
         console.error("Error loading calendar date:", calendarError);
+        setCalendarDate(null);
       } else {
-        console.log("Calendar entry for project:", calendarEntry);
+        console.log("Calendar entries for project:", calendarEntries);
+        // Get the first entry with a scheduled_date
+        const entryWithDate = calendarEntries?.find(entry => entry.scheduled_date);
+        const scheduledDate = entryWithDate?.scheduled_date || null;
+        console.log("Setting calendar date:", scheduledDate, "from entry:", entryWithDate);
+        setCalendarDate(scheduledDate);
       }
-      
-      const scheduledDate = calendarEntry?.scheduled_date || null;
-      console.log("Setting calendar date:", scheduledDate);
-      setCalendarDate(scheduledDate);
       
       // Mark that project data has been loaded
       projectDataLoadedRef.current = true;
