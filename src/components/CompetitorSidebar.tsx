@@ -434,7 +434,7 @@ export default function CompetitorSidebar({
             {/* Bouton "Tous" - Zone de drop */}
             <div 
               className={`flex items-center gap-2 p-2 rounded-lg transition-colors ${
-                selectedFolderId === null 
+                selectedFolderId === "__all__"
                   ? 'bg-primary/10 border border-primary/20' 
                   : 'hover:bg-accent/50'
               } ${
@@ -447,15 +447,15 @@ export default function CompetitorSidebar({
               onDrop={(e) => handleDrop(e, null)}
             >
               <Checkbox
-                checked={selectedFolderId === null}
-                onCheckedChange={() => onFolderSelect(null)}
+                checked={selectedFolderId === "__all__"}
+                onCheckedChange={() => onFolderSelect(selectedFolderId === "__all__" ? null : "__all__")}
               />
               <button
-                onClick={() => onFolderSelect(null)}
+                onClick={() => onFolderSelect(selectedFolderId === "__all__" ? null : "__all__")}
                 className="flex items-center gap-2 flex-1 text-left"
               >
                 <Folder className="h-4 w-4" />
-                <span className={`text-sm font-medium ${selectedFolderId === null ? 'text-primary' : ''}`}>
+                <span className={`text-sm font-medium ${selectedFolderId === "__all__" ? 'text-primary' : ''}`}>
                   Tous les concurrents
                 </span>
               </button>

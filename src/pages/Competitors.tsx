@@ -55,6 +55,7 @@ export default function Competitors() {
   const [channelFolders, setChannelFolders] = useState<ChannelFolder[]>([]);
   const [videos, setVideos] = useState<Video[]>([]);
   const [selectedChannels, setSelectedChannels] = useState<string[]>([]);
+  // null = nothing selected, "__all__" = all competitors
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [period, setPeriod] = useState<string>('30d');
   const [isLoading, setIsLoading] = useState(true);
@@ -116,11 +117,6 @@ export default function Competitors() {
       if (error) throw error;
 
       setChannels(data || []);
-      
-      // Select all channels by default
-      if (selectedChannels.length === 0 && data && data.length > 0) {
-        setSelectedChannels(data.map(c => c.channel_id));
-      }
     } catch (error) {
       console.error("Error loading channels:", error);
       toast.error("Erreur lors du chargement des chaînes");
@@ -144,7 +140,7 @@ export default function Competitors() {
 
       // Filter channels by selected folder (using associations)
       let channelsToUse = channels;
-      if (selectedFolderId) {
+      if (selectedFolderId && selectedFolderId !== "__all__") {
         const channelIdsInFolder = channelFolders
           .filter(cf => cf.folder_id === selectedFolderId)
           .map(cf => cf.channel_id);
@@ -209,7 +205,7 @@ export default function Competitors() {
       const { data, error } = await supabase.functions.invoke('sync-competitor-videos', {
         body: { 
           period,
-          folderId: selectedFolderId || undefined
+          folderId: selectedFolderId && selectedFolderId !== "__all__" ? selectedFolderId : undefined
         }
       });
 
@@ -262,7 +258,7 @@ export default function Competitors() {
               <div>
                 <div className="flex items-center gap-2">
                   <h1 className="text-2xl font-bold">Top Videos From Your Competitors</h1>
-                  {selectedFolderId && (
+                  {selectedFolderId && selectedFolderId !== "__all__" && (
                     <span className="text-sm px-2 py-1 rounded-full bg-primary/10 text-primary font-medium">
                       {folders.find(f => f.id === selectedFolderId)?.name || 'Dossier sélectionné'}
                     </span>
