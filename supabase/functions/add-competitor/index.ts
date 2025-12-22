@@ -114,8 +114,8 @@ serve(async (req) => {
       if (!searchResponse.ok || !searchData.items?.length) {
         console.error("Channel search failed:", searchData);
         return new Response(
-          JSON.stringify({ error: "Channel not found" }),
-          { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          JSON.stringify({ error: "Chaîne YouTube non trouvée. Vérifiez l'URL ou le handle." }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
       
@@ -129,8 +129,8 @@ serve(async (req) => {
       if (!searchResponse.ok || !searchData.items?.length) {
         console.error("Channel search failed:", searchData);
         return new Response(
-          JSON.stringify({ error: "Channel not found" }),
-          { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          JSON.stringify({ error: "Chaîne YouTube non trouvée. Vérifiez l'URL ou le handle." }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
       
