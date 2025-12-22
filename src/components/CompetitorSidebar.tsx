@@ -267,17 +267,27 @@ export default function CompetitorSidebar({
         <ScrollArea className="flex-1">
           <div className="p-2 space-y-1">
             {/* Bouton "Tous" */}
-            <button
-              onClick={() => onFolderSelect(null)}
-              className={`w-full flex items-center gap-2 p-2 rounded-lg text-sm font-medium transition-colors ${
+            <div 
+              className={`flex items-center gap-2 p-2 rounded-lg transition-colors ${
                 selectedFolderId === null 
-                  ? 'bg-primary text-primary-foreground' 
-                  : 'hover:bg-accent/50 text-foreground'
+                  ? 'bg-primary/10 border border-primary/20' 
+                  : 'hover:bg-accent/50'
               }`}
             >
-              <Folder className="h-4 w-4" />
-              Tous les concurrents
-            </button>
+              <Checkbox
+                checked={selectedFolderId === null}
+                onCheckedChange={() => onFolderSelect(null)}
+              />
+              <button
+                onClick={() => onFolderSelect(null)}
+                className="flex items-center gap-2 flex-1 text-left"
+              >
+                <Folder className="h-4 w-4" />
+                <span className={`text-sm font-medium ${selectedFolderId === null ? 'text-primary' : ''}`}>
+                  Tous les concurrents
+                </span>
+              </button>
+            </div>
 
             {/* Dossiers */}
             {sortedFolders.map((folder) => {
@@ -293,25 +303,29 @@ export default function CompetitorSidebar({
                 >
                   <div className="space-y-1">
                     <div 
-                      className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer transition-colors group ${
+                      className={`flex items-center gap-2 p-2 rounded-lg transition-colors group ${
                         isSelected 
-                          ? 'bg-primary text-primary-foreground' 
+                          ? 'bg-primary/10 border border-primary/20' 
                           : 'hover:bg-accent/50'
                       }`}
-                      onClick={() => onFolderSelect(isSelected ? null : folder.id)}
                     >
-                      <CollapsibleTrigger asChild onClick={(e) => e.stopPropagation()}>
+                      <Checkbox
+                        checked={isSelected}
+                        onCheckedChange={() => onFolderSelect(isSelected ? null : folder.id)}
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                      <CollapsibleTrigger asChild>
                         <button className="flex items-center gap-2 flex-1 min-w-0">
                           {isOpen ? (
-                            <ChevronDown className="h-4 w-4 flex-shrink-0" />
+                            <ChevronDown className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
                           ) : (
-                            <ChevronRight className="h-4 w-4 flex-shrink-0" />
+                            <ChevronRight className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
                           )}
-                          <Folder className="h-4 w-4 flex-shrink-0" style={{ color: isSelected ? 'currentColor' : folder.color }} />
-                          <span className="text-sm font-medium flex-1 text-left truncate">
+                          <Folder className="h-4 w-4 flex-shrink-0" style={{ color: folder.color }} />
+                          <span className={`text-sm font-medium flex-1 text-left truncate ${isSelected ? 'text-primary' : ''}`}>
                             {folder.name}
                           </span>
-                          <span className={`text-xs flex-shrink-0 ${isSelected ? 'opacity-80' : 'text-muted-foreground'}`}>
+                          <span className={`text-xs flex-shrink-0 ${isSelected ? 'text-primary' : 'text-muted-foreground'}`}>
                             {folderChannels.length}
                           </span>
                         </button>
