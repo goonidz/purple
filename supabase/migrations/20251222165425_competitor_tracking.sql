@@ -9,7 +9,7 @@ CREATE TABLE competitor_channels (
   channel_name TEXT NOT NULL,
   channel_avatar TEXT,
   subscriber_count INTEGER DEFAULT 0,
-  avg_views_per_video INTEGER DEFAULT 0, -- Moyenne sur 30 dernieres videos
+  avg_views_per_video INTEGER DEFAULT 0, -- Moyenne sur 10 dernieres videos
   is_active BOOLEAN DEFAULT true,        -- Pour filtrer dans la vue
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now(),

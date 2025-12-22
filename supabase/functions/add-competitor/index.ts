@@ -188,8 +188,8 @@ serve(async (req) => {
       subscriber_count: parseInt(channel.statistics.subscriberCount) || 0,
     };
 
-    // Fetch recent videos to calculate average views
-    const videosUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&channelId=${actualChannelId}&type=video&order=date&maxResults=30&key=${YOUTUBE_API_KEY}`;
+    // Fetch recent videos to calculate average views (10 latest)
+    const videosUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&channelId=${actualChannelId}&type=video&order=date&maxResults=10&key=${YOUTUBE_API_KEY}`;
     const videosResponse = await fetch(videosUrl);
     const videosData = await videosResponse.json();
 
