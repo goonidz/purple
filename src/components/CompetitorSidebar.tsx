@@ -301,57 +301,56 @@ export default function CompetitorSidebar({
                   open={isOpen}
                   onOpenChange={() => toggleFolder(folder.id)}
                 >
-                  <div className="space-y-1">
-                    <div 
-                      className={`flex items-center gap-2 p-2 rounded-lg transition-colors group ${
-                        isSelected 
-                          ? 'bg-primary/10 border border-primary/20' 
-                          : 'hover:bg-accent/50'
-                      }`}
-                    >
-                      <Checkbox
-                        checked={isSelected}
-                        onCheckedChange={() => onFolderSelect(isSelected ? null : folder.id)}
-                        onClick={(e) => e.stopPropagation()}
-                      />
-                      <CollapsibleTrigger asChild>
-                        <button className="flex items-center gap-2 flex-1 min-w-0">
-                          {isOpen ? (
-                            <ChevronDown className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
-                          ) : (
-                            <ChevronRight className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
-                          )}
-                          <Folder className="h-4 w-4 flex-shrink-0" style={{ color: folder.color }} />
-                          <span className={`text-sm font-medium flex-1 text-left truncate ${isSelected ? 'text-primary' : ''}`}>
-                            {folder.name}
-                          </span>
-                          <span className={`text-xs flex-shrink-0 ${isSelected ? 'text-primary' : 'text-muted-foreground'}`}>
-                            {folderChannels.length}
-                          </span>
-                        </button>
-                      </CollapsibleTrigger>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
-                          >
-                            <MoreHorizontal className="h-3 w-3" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem
-                            className="text-destructive"
-                            onClick={() => handleDeleteFolder(folder)}
-                            disabled={deletingFolderId === folder.id}
-                          >
-                            <Trash2 className="h-4 w-4 mr-2" />
-                            Supprimer
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
+                  <div 
+                    className={`flex items-center gap-2 p-2 rounded-lg transition-colors group ${
+                      isSelected 
+                        ? 'bg-primary/10 border border-primary/20' 
+                        : 'hover:bg-accent/50'
+                    }`}
+                  >
+                    <Checkbox
+                      checked={isSelected}
+                      onCheckedChange={() => onFolderSelect(isSelected ? null : folder.id)}
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                    <CollapsibleTrigger asChild>
+                      <button className="flex items-center gap-2 flex-1 min-w-0">
+                        {isOpen ? (
+                          <ChevronDown className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+                        ) : (
+                          <ChevronRight className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+                        )}
+                        <Folder className="h-4 w-4 flex-shrink-0" style={{ color: folder.color }} />
+                        <span className={`text-sm font-medium flex-1 text-left truncate ${isSelected ? 'text-primary' : ''}`}>
+                          {folder.name}
+                        </span>
+                        <span className={`text-xs flex-shrink-0 ${isSelected ? 'text-primary' : 'text-muted-foreground'}`}>
+                          {folderChannels.length}
+                        </span>
+                      </button>
+                    </CollapsibleTrigger>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+                        >
+                          <MoreHorizontal className="h-3 w-3" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem
+                          className="text-destructive"
+                          onClick={() => handleDeleteFolder(folder)}
+                          disabled={deletingFolderId === folder.id}
+                        >
+                          <Trash2 className="h-4 w-4 mr-2" />
+                          Supprimer
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
                   <CollapsibleContent>
                     <div className="pl-6 space-y-1">
                       {folderChannels.map((channel) => (
