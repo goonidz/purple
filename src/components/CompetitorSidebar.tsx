@@ -267,6 +267,119 @@ export default function CompetitorSidebar({
     }
   };
 
+  const handleDuplicateChannel = async (channel: Channel) => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Non authentifié");
+
+      // Créer une copie de la chaîne
+      const { data: newChannel, error: insertError } = await supabase
+        .from('competitor_channels')
+        .insert({
+          user_id: user.id,
+          channel_id: channel.channel_id,
+          channel_name: channel.channel_name,
+          channel_avatar: channel.channel_avatar,
+          subscriber_count: channel.subscriber_count,
+          avg_views_per_video: 0, // Reset pour recalculer
+          is_active: channel.is_active,
+        })
+        .select()
+        .single();
+
+      if (insertError) throw insertError;
+
+      // Copier les associations de dossiers
+      const currentFolders = channelFolders
+        .filter(cf => cf.channel_id === channel.id)
+        .map(cf => cf.folder_id);
+
+      if (currentFolders.length > 0) {
+        const associations = currentFolders.map(folderId => ({
+          channel_id: newChannel.id,
+          folder_id: folderId,
+        }));
+
+        const { error: assocError } = await supabase
+          .from('competitor_channel_folders')
+          .insert(associations);
+
+        if (assocError) throw assocError;
+      }
+
+      toast.success(`${channel.channel_name} dupliqué`);
+      onRefresh();
+    } catch (error) {
+      console.error("Error duplicating channel:", error);
+      toast.error("Erreur lors de la duplication");
+    }
+  };
+
+  // Drag and Drop handlers
+  const [draggedChannel, setDraggedChannel] = useState<Channel | null>(null);
+  const [dragOverFolder, setDragOverFolder] = useState<string | null>(null);
+
+  const handleDragStart = (e: React.DragEvent, channel: Channel) => {
+    setDraggedChannel(channel);
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", channel.id);
+    // Style visuel pendant le drag
+    if (e.currentTarget instanceof HTMLElement) {
+      e.currentTarget.style.opacity = "0.5";
+    }
+  };
+
+  const handleDragEnd = (e: React.DragEvent) => {
+    if (e.currentTarget instanceof HTMLElement) {
+      e.currentTarget.style.opacity = "1";
+    }
+    setDraggedChannel(null);
+    setDragOverFolder(null);
+  };
+
+  const handleDragOver = (e: React.DragEvent, folderId: string | null) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    setDragOverFolder(folderId);
+  };
+
+  const handleDragLeave = () => {
+    setDragOverFolder(null);
+  };
+
+  const handleDrop = async (e: React.DragEvent, targetFolderId: string | null) => {
+    e.preventDefault();
+    setDragOverFolder(null);
+
+    if (!draggedChannel) return;
+
+    const channelId = draggedChannel.id;
+
+    // Si on dépose dans un dossier
+    if (targetFolderId) {
+      // Vérifier si la chaîne est déjà dans ce dossier
+      const existing = channelFolders.find(
+        cf => cf.channel_id === channelId && cf.folder_id === targetFolderId
+      );
+
+      if (!existing) {
+        // Ajouter au dossier
+        await handleAddChannelToFolder(channelId, targetFolderId);
+      }
+    } else {
+      // Retirer de tous les dossiers
+      const currentFolders = channelFolders
+        .filter(cf => cf.channel_id === channelId)
+        .map(cf => cf.folder_id);
+
+      for (const folderId of currentFolders) {
+        await handleRemoveChannelFromFolder(channelId, folderId);
+      }
+    }
+
+    setDraggedChannel(null);
+  };
+
   const toggleFolder = (folderId: string) => {
     const newOpen = new Set(openFolders);
     if (newOpen.has(folderId)) {
@@ -328,13 +441,18 @@ export default function CompetitorSidebar({
 
         <ScrollArea className="flex-1">
           <div className="p-2 space-y-1">
-            {/* Bouton "Tous" */}
+            {/* Bouton "Tous" - Zone de drop */}
             <div 
               className={`flex items-center gap-2 p-2 rounded-lg transition-colors ${
                 selectedFolderId === null 
                   ? 'bg-primary/10 border border-primary/20' 
                   : 'hover:bg-accent/50'
+              } ${
+                dragOverFolder === null && draggedChannel ? 'ring-2 ring-primary' : ''
               }`}
+              onDragOver={(e) => handleDragOver(e, null)}
+              onDragLeave={handleDragLeave}
+              onDrop={(e) => handleDrop(e, null)}
             >
               <Checkbox
                 checked={selectedFolderId === null}
@@ -414,15 +532,27 @@ export default function CompetitorSidebar({
                     </DropdownMenu>
                   </div>
                   <CollapsibleContent>
-                    <div className="pl-6 pr-2 space-y-1">
+                    <div 
+                      className={`pl-6 pr-2 space-y-1 min-h-[20px] ${
+                        dragOverFolder === folder.id && draggedChannel ? 'ring-2 ring-primary rounded' : ''
+                      }`}
+                      onDragOver={(e) => handleDragOver(e, folder.id)}
+                      onDragLeave={handleDragLeave}
+                      onDrop={(e) => handleDrop(e, folder.id)}
+                    >
                       {folderChannels.map((channel) => (
                         <div
                           key={channel.id}
-                          className="flex items-center gap-2 p-2 rounded-lg hover:bg-accent/50 group"
+                          draggable
+                          onDragStart={(e) => handleDragStart(e, channel)}
+                          onDragEnd={handleDragEnd}
+                          className="flex items-center gap-2 p-2 rounded-lg hover:bg-accent/50 group cursor-move"
                         >
                           <Checkbox
                             checked={selectedChannels.includes(channel.channel_id)}
                             onCheckedChange={() => handleToggleChannel(channel.channel_id)}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onClick={(e) => e.stopPropagation()}
                           />
                           
                           <Avatar className="h-8 w-8 flex-shrink-0">
@@ -447,11 +577,19 @@ export default function CompetitorSidebar({
                                 variant="ghost"
                                 size="icon"
                                 className="h-8 w-8 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                                onMouseDown={(e) => e.stopPropagation()}
+                                onClick={(e) => e.stopPropagation()}
                               >
                                 <MoreHorizontal className="h-4 w-4" />
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                onClick={() => handleDuplicateChannel(channel)}
+                              >
+                                <FolderPlus className="h-4 w-4 mr-2" />
+                                Dupliquer
+                              </DropdownMenuItem>
                               <DropdownMenuItem
                                 onClick={() => handleRemoveChannelFromFolder(channel.id, folder.id)}
                               >
@@ -491,18 +629,28 @@ export default function CompetitorSidebar({
 
             {/* Chaînes sans dossier */}
             {channelsWithoutFolder.length > 0 && (
-              <div className="space-y-1">
+              <div 
+                className="space-y-1"
+                onDragOver={(e) => handleDragOver(e, null)}
+                onDragLeave={handleDragLeave}
+                onDrop={(e) => handleDrop(e, null)}
+              >
                 {channelsWithoutFolder.map((channel) => (
                   <div
                     key={channel.id}
-                    className="flex items-center gap-2 p-2 rounded-lg hover:bg-accent/50 group"
+                    draggable
+                    onDragStart={(e) => handleDragStart(e, channel)}
+                    onDragEnd={handleDragEnd}
+                    className="flex items-center gap-2 p-2 rounded-lg hover:bg-accent/50 group cursor-move"
                   >
                     <Checkbox
                       checked={selectedChannels.includes(channel.channel_id)}
                       onCheckedChange={() => handleToggleChannel(channel.channel_id)}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      onClick={(e) => e.stopPropagation()}
                     />
                     
-                    <Avatar className="h-8 w-8">
+                    <Avatar className="h-8 w-8 flex-shrink-0">
                       <AvatarImage src={channel.channel_avatar || undefined} />
                       <AvatarFallback className="text-xs">
                         {channel.channel_name.substring(0, 2).toUpperCase()}
@@ -513,7 +661,7 @@ export default function CompetitorSidebar({
                       <p className="text-sm font-medium truncate">
                         {channel.channel_name}
                       </p>
-                      <p className="text-xs text-muted-foreground">
+                      <p className="text-xs text-muted-foreground truncate">
                         {formatSubscribers(channel.subscriber_count)} subscribers
                       </p>
                     </div>
@@ -523,12 +671,20 @@ export default function CompetitorSidebar({
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity"
+                          className="h-8 w-8 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                          onMouseDown={(e) => e.stopPropagation()}
+                          onClick={(e) => e.stopPropagation()}
                         >
                           <MoreHorizontal className="h-4 w-4" />
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
+                        <DropdownMenuItem
+                          onClick={() => handleDuplicateChannel(channel)}
+                        >
+                          <FolderPlus className="h-4 w-4 mr-2" />
+                          Dupliquer
+                        </DropdownMenuItem>
                         {sortedFolders.map((folder) => {
                           const isInFolder = channelFolders.some(
                             cf => cf.channel_id === channel.id && cf.folder_id === folder.id
