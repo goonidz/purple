@@ -122,9 +122,9 @@ function getPanEffect(sceneIndex, duration, width, height, framerate) {
   const maxPanAmount = (1 - 1 / zoomLevel) / 2;
   let panAmount;
   if (duration < 5) {
-    panAmount = maxPanAmount * 0.8; // 80% of margin for very short scenes (< 5s) - faster movement to avoid stuttering
+    panAmount = maxPanAmount * 1.0; // 100% of margin for very short scenes (< 5s) - maximum speed to avoid stuttering
   } else if (duration < 9) {
-    panAmount = maxPanAmount * 0.9; // 90% of margin for short scenes (5-9s) - faster movement
+    panAmount = maxPanAmount * 0.95; // 95% of margin for short scenes (5-9s) - fast movement
   } else {
     panAmount = maxPanAmount; // 100% of margin for long scenes (>= 9s) - full movement
   }
