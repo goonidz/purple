@@ -15,7 +15,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Loader2, Plus, Trash2, Pencil, Check, X, Cloud } from "lucide-react";
+import { Loader2, Plus, Trash2, Pencil, Check, X, Cloud, Calendar } from "lucide-react";
 import AppHeader from "@/components/AppHeader";
 import { toast } from "sonner";
 import type { User } from "@supabase/supabase-js";
@@ -36,6 +36,8 @@ interface Project {
   updated_at: string;
   scenes: any;
   prompts: any;
+  calendar_date?: string | null; // Date prévue du calendrier si lié
+  calendar_id?: string | null; // ID de l'entrée calendrier si lié
 }
 
 const Projects = () => {
@@ -334,13 +336,44 @@ const Projects = () => {
 
   const loadProjects = async () => {
     try {
-      const { data, error } = await supabase
+      const { data: projectsData, error } = await supabase
         .from("projects")
         .select("id, name, created_at, updated_at, scenes, prompts")
         .order("updated_at", { ascending: false });
 
       if (error) throw error;
-      setProjects(data || []);
+
+      // Load calendar entries linked to projects
+      const projectIds = (projectsData || []).map(p => p.id);
+      let calendarEntries: Record<string, { scheduled_date: string; id: string }> = {};
+      
+      if (projectIds.length > 0) {
+        const { data: calendarData } = await supabase
+          .from("content_calendar")
+          .select("id, project_id, scheduled_date")
+          .in("project_id", projectIds)
+          .not("scheduled_date", "is", null);
+        
+        if (calendarData) {
+          calendarData.forEach(entry => {
+            if (entry.project_id) {
+              calendarEntries[entry.project_id] = {
+                scheduled_date: entry.scheduled_date,
+                id: entry.id
+              };
+            }
+          });
+        }
+      }
+
+      // Merge calendar data with projects
+      const projectsWithCalendar = (projectsData || []).map(project => ({
+        ...project,
+        calendar_date: calendarEntries[project.id]?.scheduled_date || null,
+        calendar_id: calendarEntries[project.id]?.id || null,
+      }));
+
+      setProjects(projectsWithCalendar);
     } catch (error: any) {
       console.error("Error loading projects:", error);
       toast.error("Erreur lors du chargement des projets");
@@ -1284,6 +1317,18 @@ const Projects = () => {
                       <span>Prompts:</span>
                       <span className="font-medium">{getPromptCount(project.prompts)}</span>
                     </div>
+                    {project.calendar_date && (
+                      <div className="flex items-center gap-2 text-primary">
+                        <Calendar className="h-4 w-4" />
+                        <span className="text-sm font-medium">
+                          Prévu le {new Date(project.calendar_date).toLocaleDateString("fr-FR", {
+                            day: "numeric",
+                            month: "short",
+                            year: "numeric"
+                          })}
+                        </span>
+                      </div>
+                    )}
                     <div className="pt-2 mt-2 border-t">
                       <div className="text-xs">
                         Modifié le {formatDate(project.updated_at)}
