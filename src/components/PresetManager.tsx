@@ -23,7 +23,7 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Loader2, Save, Trash2, Plus, Copy, Settings, FolderOpen, ChevronDown, Pencil } from "lucide-react";
+import { Loader2, Save, Trash2, Plus, Copy, Settings, FolderOpen, ChevronDown, Pencil, Upload, X } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -143,6 +143,7 @@ export const PresetManager = ({ currentConfig, onLoadPreset }: PresetManagerProp
   const [duplicateLoraPresetDialogOpen, setDuplicateLoraPresetDialogOpen] = useState(false);
   const [duplicateLoraPresetName, setDuplicateLoraPresetName] = useState("");
   const [isDuplicatingLoraPreset, setIsDuplicatingLoraPreset] = useState(false);
+  const [isUploadingStyleImage, setIsUploadingStyleImage] = useState(false);
 
   useEffect(() => {
     loadPresets();
@@ -465,6 +466,41 @@ export const PresetManager = ({ currentConfig, onLoadPreset }: PresetManagerProp
       onLoadPreset(preset);
       toast.success(`Preset "${preset.name}" chargé !`);
     }
+  };
+
+  const handleUploadStyleImageForEdit = async (file: File) => {
+    if (!editFormData) return;
+    
+    setIsUploadingStyleImage(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("User not authenticated");
+
+      const fileName = `${user.id}/${Date.now()}_${file.name}`;
+      const { error: uploadError } = await supabase.storage
+        .from("style-references")
+        .upload(fileName, file);
+
+      if (uploadError) throw uploadError;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from("style-references")
+        .getPublicUrl(fileName);
+
+      setEditFormData({ ...editFormData, styleReferenceUrls: [publicUrl] });
+      toast.success("Image de référence uploadée !");
+    } catch (error: any) {
+      console.error("Error uploading style image:", error);
+      toast.error("Erreur lors de l'upload de l'image");
+    } finally {
+      setIsUploadingStyleImage(false);
+    }
+  };
+
+  const handleRemoveStyleImageForEdit = () => {
+    if (!editFormData) return;
+    setEditFormData({ ...editFormData, styleReferenceUrls: [] });
+    toast.success("Image supprimée");
   };
 
   const handleUpdatePreset = async () => {
@@ -1153,28 +1189,84 @@ export const PresetManager = ({ currentConfig, onLoadPreset }: PresetManagerProp
                       <Label htmlFor="edit-style-ref" className="text-sm">
                         URL de l'image
                       </Label>
-                      <Input
-                        id="edit-style-ref"
-                        placeholder="https://..."
-                        value={editFormData.styleReferenceUrls[0] || ""}
-                        onChange={(e) => setEditFormData({ ...editFormData, styleReferenceUrls: e.target.value ? [e.target.value] : [] })}
-                      />
+                      <div className="flex gap-2">
+                        <Input
+                          id="edit-style-ref"
+                          placeholder="https://..."
+                          value={editFormData.styleReferenceUrls[0] || ""}
+                          onChange={(e) => setEditFormData({ ...editFormData, styleReferenceUrls: e.target.value ? [e.target.value] : [] })}
+                          className="flex-1"
+                        />
+                        {editFormData.styleReferenceUrls.length > 0 && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="icon"
+                            onClick={handleRemoveStyleImageForEdit}
+                            title="Supprimer l'image"
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="text-xs text-center text-muted-foreground">ou</div>
+                      <div className="flex gap-2">
+                        <Input
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              handleUploadStyleImageForEdit(file);
+                            }
+                          }}
+                          disabled={isUploadingStyleImage}
+                          className="flex-1"
+                          id="edit-style-upload"
+                        />
+                        {isUploadingStyleImage && (
+                          <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                        )}
+                      </div>
                     </div>
                     {editFormData.styleReferenceUrls.length > 0 && (
                       <div className="rounded-lg border bg-muted/30 p-4">
-                        <p className="text-xs text-muted-foreground mb-2">Aperçu ({editFormData.styleReferenceUrls.length} image{editFormData.styleReferenceUrls.length > 1 ? 's' : ''}):</p>
+                        <div className="flex items-center justify-between mb-2">
+                          <p className="text-xs text-muted-foreground">Aperçu ({editFormData.styleReferenceUrls.length} image{editFormData.styleReferenceUrls.length > 1 ? 's' : ''}):</p>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={handleRemoveStyleImageForEdit}
+                            className="h-6 px-2 text-xs"
+                          >
+                            <Trash2 className="h-3 w-3 mr-1" />
+                            Supprimer
+                          </Button>
+                        </div>
                         <div className="grid grid-cols-3 gap-2">
                           {editFormData.styleReferenceUrls.map((url, index) => (
-                            <img 
-                              key={index}
-                              src={url} 
-                              alt={`Style de référence ${index + 1}`} 
-                              className="w-full h-24 object-cover rounded shadow-sm"
-                              onError={(e) => {
-                                e.currentTarget.src = "";
-                                e.currentTarget.alt = "Image non disponible";
-                              }}
-                            />
+                            <div key={index} className="relative group">
+                              <img 
+                                src={url} 
+                                alt={`Style de référence ${index + 1}`} 
+                                className="w-full h-24 object-cover rounded shadow-sm"
+                                onError={(e) => {
+                                  e.currentTarget.src = "";
+                                  e.currentTarget.alt = "Image non disponible";
+                                }}
+                              />
+                              <button
+                                type="button"
+                                onClick={handleRemoveStyleImageForEdit}
+                                className="absolute top-1 right-1 bg-destructive text-destructive-foreground rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                                title="Supprimer"
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            </div>
                           ))}
                         </div>
                       </div>
