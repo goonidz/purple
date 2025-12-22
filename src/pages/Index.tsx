@@ -3364,6 +3364,9 @@ const Index = () => {
                   <RefreshCw className="mr-2 h-4 w-4" />
                   Regénérer les scènes
                 </Button>
+                <Button variant="outline" onClick={() => setSceneSettingsOpen(false)}>
+                  Fermer
+                </Button>
                 <Button onClick={async () => {
                   if (currentProjectId) {
                     await saveProjectData();
@@ -3371,7 +3374,7 @@ const Index = () => {
                   }
                   setSceneSettingsOpen(false);
                 }}>
-                  Fermer
+                  Sauvegarder
                 </Button>
               </div>
           </DialogContent>
@@ -3482,6 +3485,15 @@ Return ONLY the prompt text, no JSON, no title, just the optimized prompt in ENG
             <DialogFooter className="flex-shrink-0 mt-4">
               <Button variant="outline" onClick={() => setPromptSettingsOpen(false)}>
                 Fermer
+              </Button>
+              <Button onClick={async () => {
+                if (currentProjectId) {
+                  await saveProjectData();
+                  toast.success("Paramètres de prompts sauvegardés");
+                }
+                setPromptSettingsOpen(false);
+              }}>
+                Sauvegarder
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -3640,8 +3652,17 @@ Return ONLY the prompt text, no JSON, no title, just the optimized prompt in ENG
               </div>
             </div>
             <DialogFooter className="flex-shrink-0 mt-4">
-              <Button onClick={() => setImageSettingsOpen(false)}>
+              <Button variant="outline" onClick={() => setImageSettingsOpen(false)}>
                 Fermer
+              </Button>
+              <Button onClick={async () => {
+                if (currentProjectId) {
+                  await saveProjectData();
+                  toast.success("Paramètres d'image sauvegardés");
+                }
+                setImageSettingsOpen(false);
+              }}>
+                Sauvegarder
               </Button>
             </DialogFooter>
           </DialogContent>

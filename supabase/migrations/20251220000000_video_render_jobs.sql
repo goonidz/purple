@@ -59,3 +59,4 @@ CREATE INDEX idx_video_render_jobs_status ON public.video_render_jobs(status);
 CREATE INDEX idx_video_render_jobs_created_at ON public.video_render_jobs(created_at DESC);
 
 
+
