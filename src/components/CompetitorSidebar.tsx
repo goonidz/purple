@@ -38,9 +38,16 @@ interface Folder {
   position: number;
 }
 
+interface ChannelFolder {
+  id: string;
+  channel_id: string;
+  folder_id: string;
+}
+
 interface CompetitorSidebarProps {
   channels: Channel[];
   folders: Folder[];
+  channelFolders: ChannelFolder[];
   selectedChannels: string[];
   selectedFolderId: string | null;
   onSelectionChange: (channelIds: string[]) => void;
@@ -63,6 +70,7 @@ function formatSubscribers(count: number): string {
 export default function CompetitorSidebar({
   channels,
   folders,
+  channelFolders,
   selectedChannels,
   selectedFolderId,
   onSelectionChange,
@@ -77,11 +85,29 @@ export default function CompetitorSidebar({
   const [newFolderName, setNewFolderName] = useState("");
   const [deletingFolderId, setDeletingFolderId] = useState<string | null>(null);
 
-  // Organiser les chaînes par dossier
+  // Organiser les chaînes par dossier (utiliser les associations + folder_id pour compatibilité)
   const channelsByFolder = channels.reduce((acc, channel) => {
-    const folderId = channel.folder_id || "none";
-    if (!acc[folderId]) acc[folderId] = [];
-    acc[folderId].push(channel);
+    // Trouver tous les dossiers de cette chaîne via les associations
+    const folderIds = channelFolders
+      .filter(cf => cf.channel_id === channel.id)
+      .map(cf => cf.folder_id);
+    
+    // Ajouter aussi folder_id pour compatibilité avec anciennes données
+    if (channel.folder_id && !folderIds.includes(channel.folder_id)) {
+      folderIds.push(channel.folder_id);
+    }
+
+    if (folderIds.length === 0) {
+      // Chaîne sans dossier
+      if (!acc["none"]) acc["none"] = [];
+      acc["none"].push(channel);
+    } else {
+      // Ajouter la chaîne à tous ses dossiers
+      folderIds.forEach(folderId => {
+        if (!acc[folderId]) acc[folderId] = [];
+        acc[folderId].push(channel);
+      });
+    }
     return acc;
   }, {} as Record<string, Channel[]>);
 
@@ -166,7 +192,13 @@ export default function CompetitorSidebar({
   const handleDeleteFolder = async (folder: Folder) => {
     setDeletingFolderId(folder.id);
     try {
-      // Déplacer les chaînes hors du dossier
+      // Supprimer les associations (CASCADE supprimera automatiquement via la FK)
+      await supabase
+        .from('competitor_channel_folders')
+        .delete()
+        .eq('folder_id', folder.id);
+
+      // Supprimer aussi folder_id pour compatibilité avec anciennes données
       await supabase
         .from('competitor_channels')
         .update({ folder_id: null })
@@ -190,18 +222,48 @@ export default function CompetitorSidebar({
     }
   };
 
-  const handleMoveChannelToFolder = async (channelId: string, folderId: string | null) => {
+  const handleAddChannelToFolder = async (channelId: string, folderId: string) => {
     try {
+      // Vérifier si l'association existe déjà
+      const existing = channelFolders.find(
+        cf => cf.channel_id === channelId && cf.folder_id === folderId
+      );
+
+      if (existing) {
+        toast.info("Cette chaîne est déjà dans ce dossier");
+        return;
+      }
+
       const { error } = await supabase
-        .from('competitor_channels')
-        .update({ folder_id: folderId })
-        .eq('id', channelId);
+        .from('competitor_channel_folders')
+        .insert({
+          channel_id: channelId,
+          folder_id: folderId,
+        });
 
       if (error) throw error;
+      toast.success("Chaîne ajoutée au dossier");
       onRefresh();
     } catch (error) {
-      console.error("Error moving channel:", error);
-      toast.error("Erreur lors du déplacement");
+      console.error("Error adding channel to folder:", error);
+      toast.error("Erreur lors de l'ajout au dossier");
+    }
+  };
+
+  const handleRemoveChannelFromFolder = async (channelId: string, folderId: string) => {
+    try {
+      const { error } = await supabase
+        .from('competitor_channel_folders')
+        .delete()
+        .eq('channel_id', channelId)
+        .eq('folder_id', folderId);
+
+      if (error) throw error;
+      toast.success("Chaîne retirée du dossier");
+      onRefresh();
+    } catch (error) {
+      console.error("Error removing channel from folder:", error);
+      toast.error("Erreur lors du retrait du dossier");
     }
   };
 
@@ -352,7 +414,7 @@ export default function CompetitorSidebar({
                     </DropdownMenu>
                   </div>
                   <CollapsibleContent>
-                    <div className="pl-6 space-y-1">
+                    <div className="pl-6 pr-2 space-y-1">
                       {folderChannels.map((channel) => (
                         <div
                           key={channel.id}
@@ -363,7 +425,7 @@ export default function CompetitorSidebar({
                             onCheckedChange={() => handleToggleChannel(channel.channel_id)}
                           />
                           
-                          <Avatar className="h-8 w-8">
+                          <Avatar className="h-8 w-8 flex-shrink-0">
                             <AvatarImage src={channel.channel_avatar || undefined} />
                             <AvatarFallback className="text-xs">
                               {channel.channel_name.substring(0, 2).toUpperCase()}
@@ -374,7 +436,7 @@ export default function CompetitorSidebar({
                             <p className="text-sm font-medium truncate">
                               {channel.channel_name}
                             </p>
-                            <p className="text-xs text-muted-foreground">
+                            <p className="text-xs text-muted-foreground truncate">
                               {formatSubscribers(channel.subscriber_count)} subscribers
                             </p>
                           </div>
@@ -384,17 +446,28 @@ export default function CompetitorSidebar({
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity"
+                                className="h-8 w-8 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
                               >
                                 <MoreHorizontal className="h-4 w-4" />
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
                               <DropdownMenuItem
-                                onClick={() => handleMoveChannelToFolder(channel.id, null)}
+                                onClick={() => handleRemoveChannelFromFolder(channel.id, folder.id)}
                               >
-                                Retirer du dossier
+                                Retirer de ce dossier
                               </DropdownMenuItem>
+                              {sortedFolders
+                                .filter(f => f.id !== folder.id)
+                                .map((otherFolder) => (
+                                  <DropdownMenuItem
+                                    key={otherFolder.id}
+                                    onClick={() => handleAddChannelToFolder(channel.id, otherFolder.id)}
+                                  >
+                                    <Folder className="h-4 w-4 mr-2" style={{ color: otherFolder.color }} />
+                                    Ajouter à {otherFolder.name}
+                                  </DropdownMenuItem>
+                                ))}
                               <DropdownMenuItem
                                 className="text-destructive"
                                 onClick={() => handleDeleteChannel(channel)}
@@ -456,15 +529,26 @@ export default function CompetitorSidebar({
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        {sortedFolders.map((folder) => (
-                          <DropdownMenuItem
-                            key={folder.id}
-                            onClick={() => handleMoveChannelToFolder(channel.id, folder.id)}
-                          >
-                            <Folder className="h-4 w-4 mr-2" style={{ color: folder.color }} />
-                            Déplacer vers {folder.name}
-                          </DropdownMenuItem>
-                        ))}
+                        {sortedFolders.map((folder) => {
+                          const isInFolder = channelFolders.some(
+                            cf => cf.channel_id === channel.id && cf.folder_id === folder.id
+                          );
+                          return (
+                            <DropdownMenuItem
+                              key={folder.id}
+                              onClick={() => {
+                                if (isInFolder) {
+                                  handleRemoveChannelFromFolder(channel.id, folder.id);
+                                } else {
+                                  handleAddChannelToFolder(channel.id, folder.id);
+                                }
+                              }}
+                            >
+                              <Folder className="h-4 w-4 mr-2" style={{ color: folder.color }} />
+                              {isInFolder ? `Retirer de ${folder.name}` : `Ajouter à ${folder.name}`}
+                            </DropdownMenuItem>
+                          );
+                        })}
                         <DropdownMenuItem
                           className="text-destructive"
                           onClick={() => handleDeleteChannel(channel)}

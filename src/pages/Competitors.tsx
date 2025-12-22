@@ -29,6 +29,12 @@ interface Folder {
   position: number;
 }
 
+interface ChannelFolder {
+  id: string;
+  channel_id: string;
+  folder_id: string;
+}
+
 interface Video {
   id: string;
   video_id: string;
@@ -46,6 +52,7 @@ export default function Competitors() {
   const navigate = useNavigate();
   const [channels, setChannels] = useState<Channel[]>([]);
   const [folders, setFolders] = useState<Folder[]>([]);
+  const [channelFolders, setChannelFolders] = useState<ChannelFolder[]>([]);
   const [videos, setVideos] = useState<Video[]>([]);
   const [selectedChannels, setSelectedChannels] = useState<string[]>([]);
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
@@ -79,6 +86,22 @@ export default function Competitors() {
     } catch (error) {
       console.error("Error loading folders:", error);
       toast.error("Erreur lors du chargement des dossiers");
+    }
+  }, []);
+
+  // Load channel-folder associations
+  const loadChannelFolders = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('competitor_channel_folders')
+        .select('*');
+
+      if (error) throw error;
+
+      setChannelFolders(data || []);
+    } catch (error) {
+      console.error("Error loading channel folders:", error);
+      // Silently fail - might not exist yet
     }
   }, []);
 
@@ -119,10 +142,17 @@ export default function Competitors() {
       const periodDate = new Date();
       periodDate.setDate(periodDate.getDate() - periodDays);
 
-      // Filter channels by selected folder
+      // Filter channels by selected folder (using associations)
       let channelsToUse = channels;
       if (selectedFolderId) {
-        channelsToUse = channels.filter(c => c.folder_id === selectedFolderId);
+        const channelIdsInFolder = channelFolders
+          .filter(cf => cf.folder_id === selectedFolderId)
+          .map(cf => cf.channel_id);
+        
+        // Also include channels with folder_id for backward compatibility
+        channelsToUse = channels.filter(c => 
+          channelIdsInFolder.includes(c.id) || c.folder_id === selectedFolderId
+        );
       }
 
       // Get videos for selected channels
@@ -158,13 +188,14 @@ export default function Competitors() {
     } finally {
       setIsLoading(false);
     }
-  }, [channels, selectedChannels, period, selectedFolderId]);
+  }, [channels, selectedChannels, period, selectedFolderId, channelFolders]);
 
   // Initial load
   useEffect(() => {
     loadFolders();
     loadChannels();
-  }, [loadFolders, loadChannels]);
+    loadChannelFolders();
+  }, [loadFolders, loadChannels, loadChannelFolders]);
 
   // Load videos when channels or filters change
   useEffect(() => {
@@ -278,6 +309,7 @@ export default function Competitors() {
         <CompetitorSidebar
           channels={channels}
           folders={folders}
+          channelFolders={channelFolders}
           selectedChannels={selectedChannels}
           selectedFolderId={selectedFolderId}
           onSelectionChange={handleSelectionChange}
@@ -286,6 +318,7 @@ export default function Competitors() {
           onRefresh={() => {
             loadFolders();
             loadChannels();
+            loadChannelFolders();
           }}
         />
       </div>

@@ -44,6 +44,27 @@ export type Database = {
         }
         Relationships: []
       }
+      competitor_channel_folders: {
+        Row: {
+          id: string
+          channel_id: string
+          folder_id: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          channel_id: string
+          folder_id: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          channel_id?: string
+          folder_id?: string
+          created_at?: string
+        }
+        Relationships: []
+      }
       competitor_channels: {
         Row: {
           id: string
