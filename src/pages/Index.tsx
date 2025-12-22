@@ -677,14 +677,22 @@ const Index = () => {
       }
       
       // Load calendar date if project is linked to calendar
-      const { data: calendarEntry } = await supabase
+      const { data: calendarEntry, error: calendarError } = await supabase
         .from("content_calendar")
         .select("scheduled_date")
         .eq("project_id", projectId)
         .not("scheduled_date", "is", null)
         .maybeSingle();
       
-      setCalendarDate(calendarEntry?.scheduled_date || null);
+      if (calendarError) {
+        console.error("Error loading calendar date:", calendarError);
+      } else {
+        console.log("Calendar entry for project:", calendarEntry);
+      }
+      
+      const scheduledDate = calendarEntry?.scheduled_date || null;
+      console.log("Setting calendar date:", scheduledDate);
+      setCalendarDate(scheduledDate);
       
       // Mark that project data has been loaded
       projectDataLoadedRef.current = true;
@@ -2044,11 +2052,11 @@ const Index = () => {
               <div className="flex items-center gap-3 group min-w-0">
                 <div className="flex items-center gap-2 min-w-0 flex-1">
                   <h1 className="text-sm sm:text-lg font-semibold truncate">{projectName}</h1>
-                  {calendarDate && (
+                  {calendarDate ? (
                     <div className="flex items-center gap-1.5 text-primary text-xs sm:text-sm flex-shrink-0">
                       <Calendar className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                       <span className="hidden sm:inline">
-                        {new Date(calendarDate).toLocaleDateString("fr-FR", {
+                        Prévu le {new Date(calendarDate).toLocaleDateString("fr-FR", {
                           day: "numeric",
                           month: "short",
                           year: "numeric"
@@ -2061,6 +2069,9 @@ const Index = () => {
                         })}
                       </span>
                     </div>
+                  ) : (
+                    // Debug: show if calendarDate is null
+                    console.log("No calendar date for project:", currentProjectId)
                   )}
                 </div>
                 <Button
