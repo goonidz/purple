@@ -2049,33 +2049,33 @@ const Index = () => {
                 }} className="flex-shrink-0">Annuler</Button>
               </div>
             ) : (
-              <div className="flex items-start gap-3 group min-w-0">
-                <div className="flex flex-col gap-1 min-w-0 flex-1">
+              <div className="group min-w-0">
+                <div className="flex items-center gap-2">
                   <h1 className="text-sm sm:text-lg font-semibold truncate">{projectName}</h1>
-                  {calendarDate && (
-                    <div className="flex items-center gap-1.5 text-primary text-xs">
-                      <Calendar className="h-3 w-3" />
-                      <span>
-                        Prévu le {new Date(calendarDate).toLocaleDateString("fr-FR", {
-                          day: "numeric",
-                          month: "short",
-                          year: "numeric"
-                        })}
-                      </span>
-                    </div>
-                  )}
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+                    onClick={() => {
+                      setEditingProjectNameValue(projectName);
+                      setIsEditingProjectName(true);
+                    }}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 mt-0.5"
-                  onClick={() => {
-                    setEditingProjectNameValue(projectName);
-                    setIsEditingProjectName(true);
-                  }}
-                >
-                  <Pencil className="h-3.5 w-3.5" />
-                </Button>
+                {calendarDate && (
+                  <div className="flex items-center gap-1.5 text-primary text-xs mt-0.5">
+                    <Calendar className="h-3 w-3" />
+                    <span>
+                      Prévu le {new Date(calendarDate).toLocaleDateString("fr-FR", {
+                        day: "numeric",
+                        month: "short",
+                        year: "numeric"
+                      })}
+                    </span>
+                  </div>
+                )}
               </div>
             )}
           </>
