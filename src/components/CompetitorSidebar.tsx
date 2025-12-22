@@ -408,7 +408,7 @@ export default function CompetitorSidebar({
               size="sm" 
               variant="outline"
             >
-              <FolderPlus className="h-4 w-4" />
+              <Folder className="h-4 w-4" />
             </Button>
           </div>
           
