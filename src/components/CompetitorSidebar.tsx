@@ -525,7 +525,7 @@ export default function CompetitorSidebar({
                   </div>
                   <CollapsibleContent>
                     <div 
-                      className={`pl-6 pr-2 space-y-1 min-h-[20px] min-w-0 ${
+                      className={`pl-4 space-y-1 min-h-[20px] ${
                         dragOverFolder === folder.id && draggedChannel 
                           ? `ring-2 rounded ${isDuplicating ? 'ring-green-500 bg-green-50/50' : 'ring-primary'}` 
                           : ''
@@ -540,7 +540,7 @@ export default function CompetitorSidebar({
                           draggable
                           onDragStart={(e) => handleDragStart(e, channel, folder.id)}
                           onDragEnd={handleDragEnd}
-                          className="flex items-center gap-2 p-2 rounded-lg hover:bg-accent/50 group cursor-move min-w-0"
+                          className="flex items-center gap-2 p-2 rounded-lg hover:bg-accent/50 group cursor-move min-w-0 w-full"
                         >
                           <Checkbox
                             checked={selectedChannels.includes(channel.channel_id)}
@@ -640,7 +640,7 @@ export default function CompetitorSidebar({
                     draggable
                     onDragStart={(e) => handleDragStart(e, channel, null)}
                     onDragEnd={handleDragEnd}
-                    className="flex items-center gap-2 p-2 rounded-lg hover:bg-accent/50 group cursor-move min-w-0"
+                    className="flex items-center gap-2 p-2 rounded-lg hover:bg-accent/50 group cursor-move min-w-0 w-full"
                   >
                     <Checkbox
                       checked={selectedChannels.includes(channel.channel_id)}
