@@ -429,8 +429,8 @@ export default function CompetitorSidebar({
           </label>
         </div>
 
-        <ScrollArea className="flex-1 min-h-0">
-          <div className="p-2 space-y-1 min-w-0">
+        <ScrollArea className="flex-1 min-h-0 w-full">
+          <div className="p-2 space-y-1 w-full">
             {/* Bouton "Tous" - Zone de drop */}
             <div 
               className={`flex items-center gap-2 p-2 rounded-lg transition-colors ${
