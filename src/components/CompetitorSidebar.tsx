@@ -242,6 +242,12 @@ export default function CompetitorSidebar({
         });
 
       if (error) throw error;
+      
+      // Ouvrir le dossier pour que l'utilisateur voie la chaîne ajoutée
+      const newOpen = new Set(openFolders);
+      newOpen.add(folderId);
+      setOpenFolders(newOpen);
+      
       toast.success("Chaîne ajoutée au dossier");
       onRefresh();
     } catch (error) {
@@ -316,11 +322,14 @@ export default function CompetitorSidebar({
       );
 
       if (!existing) {
-        // Ajouter au dossier
+        // Ajouter au dossier (duplication visuelle - la chaîne apparaîtra dans les deux dossiers)
         await handleAddChannelToFolder(channelId, targetFolderId);
+      } else {
+        // Déjà dans ce dossier, on ne fait rien mais on affiche un message
+        toast.info("Cette chaîne est déjà dans ce dossier");
       }
     } else {
-      // Retirer de tous les dossiers
+      // Retirer de tous les dossiers (déplacer vers "sans dossier")
       const currentFolders = channelFolders
         .filter(cf => cf.channel_id === channelId)
         .map(cf => cf.folder_id);
