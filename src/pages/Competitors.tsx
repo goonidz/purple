@@ -18,7 +18,15 @@ interface Channel {
   subscriber_count: number;
   avg_views_per_video: number;
   is_active: boolean;
+  folder_id: string | null;
   updated_at: string;
+}
+
+interface Folder {
+  id: string;
+  name: string;
+  color: string;
+  position: number;
 }
 
 interface Video {
@@ -36,6 +44,7 @@ interface Video {
 export default function Competitors() {
   const navigate = useNavigate();
   const [channels, setChannels] = useState<Channel[]>([]);
+  const [folders, setFolders] = useState<Folder[]>([]);
   const [videos, setVideos] = useState<Video[]>([]);
   const [selectedChannels, setSelectedChannels] = useState<string[]>([]);
   const [period, setPeriod] = useState<string>('30d');
@@ -53,6 +62,23 @@ export default function Competitors() {
     };
     checkAuth();
   }, [navigate]);
+
+  // Load folders
+  const loadFolders = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('competitor_folders')
+        .select('*')
+        .order('position', { ascending: true });
+
+      if (error) throw error;
+
+      setFolders(data || []);
+    } catch (error) {
+      console.error("Error loading folders:", error);
+      toast.error("Erreur lors du chargement des dossiers");
+    }
+  }, []);
 
   // Load channels
   const loadChannels = useCallback(async () => {
@@ -114,8 +140,9 @@ export default function Competitors() {
 
   // Initial load
   useEffect(() => {
+    loadFolders();
     loadChannels();
-  }, [loadChannels]);
+  }, [loadFolders, loadChannels]);
 
   // Load videos when channels or filters change
   useEffect(() => {
@@ -218,10 +245,14 @@ export default function Competitors() {
         {/* Sidebar */}
         <CompetitorSidebar
           channels={channels}
+          folders={folders}
           selectedChannels={selectedChannels}
           onSelectionChange={handleSelectionChange}
           onAddClick={() => setShowAddModal(true)}
-          onRefresh={loadChannels}
+          onRefresh={() => {
+            loadFolders();
+            loadChannels();
+          }}
         />
       </div>
 

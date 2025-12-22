@@ -14,6 +14,36 @@ export type Database = {
   }
   public: {
     Tables: {
+      competitor_folders: {
+        Row: {
+          id: string
+          user_id: string
+          name: string
+          color: string
+          position: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          name: string
+          color?: string
+          position?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          name?: string
+          color?: string
+          position?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       competitor_channels: {
         Row: {
           id: string
@@ -24,6 +54,7 @@ export type Database = {
           subscriber_count: number
           avg_views_per_video: number
           is_active: boolean
+          folder_id: string | null
           created_at: string
           updated_at: string
         }
@@ -36,6 +67,7 @@ export type Database = {
           subscriber_count?: number
           avg_views_per_video?: number
           is_active?: boolean
+          folder_id?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -48,6 +80,7 @@ export type Database = {
           subscriber_count?: number
           avg_views_per_video?: number
           is_active?: boolean
+          folder_id?: string | null
           created_at?: string
           updated_at?: string
         }
