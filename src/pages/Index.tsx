@@ -3112,60 +3112,50 @@ const Index = () => {
               </TabsContent>
 
               <TabsContent value="transcript" className="m-0">
-                <div className="max-w-3xl mx-auto space-y-6">
-                  <div>
-                    <h2 className="text-xl font-semibold mb-4">Transcription</h2>
+                <div className="max-w-4xl mx-auto space-y-8 p-6">
+                  {/* Script/Transcription Section */}
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h2 className="text-2xl font-bold">Script / Transcription</h2>
+                    </div>
                     {transcriptData && (transcriptData as { segments?: Array<{ text: string }> }).segments ? (
-                      <div className="bg-muted/50 rounded-lg p-6 border">
-                        <p className="text-foreground leading-relaxed whitespace-pre-wrap">
-                          {((transcriptData as { segments?: Array<{ text: string }> }).segments || []).map(s => s.text).join(' ')}
-                        </p>
+                      <div className="bg-card rounded-lg border-2 p-6 shadow-sm">
+                        <div className="prose prose-sm max-w-none">
+                          <p className="text-foreground leading-relaxed whitespace-pre-wrap text-base">
+                            {((transcriptData as { segments?: Array<{ text: string }> }).segments || []).map(s => s.text).join(' ')}
+                          </p>
+                        </div>
+                      </div>
+                    ) : projectData?.summary ? (
+                      <div className="bg-card rounded-lg border-2 p-6 shadow-sm">
+                        <div className="prose prose-sm max-w-none">
+                          <p className="text-foreground leading-relaxed whitespace-pre-wrap text-base">
+                            {projectData.summary}
+                          </p>
+                        </div>
                       </div>
                     ) : (
-                      <p className="text-muted-foreground">Aucune transcription disponible</p>
+                      <div className="bg-muted/30 rounded-lg border p-6">
+                        <p className="text-muted-foreground text-center">Aucune transcription disponible</p>
+                      </div>
                     )}
                   </div>
                   
-                  {/* Show script generation prompt FIRST if it exists (this is what the user wants to see) */}
+                  {/* Script Generation Prompt Section */}
                   {scriptGenerationPrompt && (
-                    <div>
-                      <h2 className="text-xl font-semibold mb-4">Prompt utilisé pour générer le script</h2>
-                      <div className="bg-muted/50 rounded-lg p-6 border">
-                        <p className="text-foreground leading-relaxed whitespace-pre-wrap text-sm">
-                          {scriptGenerationPrompt}
-                        </p>
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <h2 className="text-2xl font-bold">Prompt utilisé pour générer le script</h2>
                       </div>
-                      <p className="text-xs text-muted-foreground mt-2">
-                        Ce prompt a été utilisé pour générer le script de la vidéo (stocké dans "Summary").
-                      </p>
-                    </div>
-                  )}
-                  
-                  {/* Show image prompt system message only if no script prompt exists */}
-                  {!scriptGenerationPrompt && promptSystemMessage && (
-                    <div>
-                      <h2 className="text-xl font-semibold mb-4">Prompt système pour les images</h2>
-                      <div className="bg-muted/50 rounded-lg p-6 border">
-                        <p className="text-foreground leading-relaxed whitespace-pre-wrap text-sm font-mono">
-                          {promptSystemMessage}
-                        </p>
+                      <div className="bg-primary/5 rounded-lg border-2 border-primary/20 p-6 shadow-sm">
+                        <div className="prose prose-sm max-w-none">
+                          <p className="text-foreground leading-relaxed whitespace-pre-wrap text-base font-medium">
+                            {scriptGenerationPrompt}
+                          </p>
+                        </div>
                       </div>
-                      <p className="text-xs text-muted-foreground mt-2">
-                        Ce prompt système a été utilisé pour générer les prompts d'images à partir de la transcription.
-                      </p>
-                    </div>
-                  )}
-                  
-                  {!scriptGenerationPrompt && !promptSystemMessage && generatedPrompts.length > 0 && (
-                    <div>
-                      <h2 className="text-xl font-semibold mb-4">Prompt système pour les images</h2>
-                      <div className="bg-muted/50 rounded-lg p-6 border">
-                        <p className="text-foreground leading-relaxed whitespace-pre-wrap text-sm font-mono">
-                          Prompt système par défaut (récupération en cours...)
-                        </p>
-                      </div>
-                      <p className="text-xs text-muted-foreground mt-2">
-                        Ce projet a été créé avant l'enregistrement des prompts système. Le prompt par défaut a été utilisé.
+                      <p className="text-sm text-muted-foreground italic">
+                        Ce prompt a été utilisé pour générer le script de la vidéo via Claude.
                       </p>
                     </div>
                   )}
