@@ -54,7 +54,6 @@ interface CompetitorSidebarProps {
   onFolderSelect: (folderId: string | null) => void;
   onAddClick: () => void;
   onRefresh: () => void;
-  maxChannels?: number;
 }
 
 function formatSubscribers(count: number): string {
@@ -76,8 +75,7 @@ export default function CompetitorSidebar({
   onSelectionChange,
   onFolderSelect,
   onAddClick,
-  onRefresh,
-  maxChannels = 20
+  onRefresh
 }: CompetitorSidebarProps) {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [openFolders, setOpenFolders] = useState<Set<string>>(new Set());
@@ -389,7 +387,7 @@ export default function CompetitorSidebar({
           <div className="flex items-center justify-between mb-2">
             <h3 className="font-semibold">Competitors</h3>
             <span className="text-xs text-muted-foreground">
-              {channels.length}/{maxChannels}
+              {channels.length}
             </span>
           </div>
           
@@ -398,7 +396,6 @@ export default function CompetitorSidebar({
               onClick={onAddClick} 
               size="sm" 
               className="flex-1"
-              disabled={channels.length >= maxChannels}
             >
               <Plus className="h-4 w-4 mr-2" />
               Ajouter
@@ -411,12 +408,6 @@ export default function CompetitorSidebar({
               <Folder className="h-4 w-4" />
             </Button>
           </div>
-          
-          {channels.length >= maxChannels && (
-            <p className="text-xs text-muted-foreground mt-2 text-center">
-              Limite de {maxChannels} concurrents atteinte
-            </p>
-          )}
         </div>
 
         <div className="p-3 border-b flex-shrink-0">
