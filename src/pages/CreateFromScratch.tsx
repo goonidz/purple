@@ -1036,7 +1036,7 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
           body: JSON.stringify({
             anthropicApiKey: apiKeyData,
             customPrompt: finalPrompt,
-            model: 'claude-opus-4-1-20250805'
+            model: 'claude-opus-4-5-20251101'
           })
         });
 
@@ -1695,7 +1695,7 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                         </div>
                       )}
                       <p className="text-xs text-muted-foreground">
-                        Ce prompt sera envoyé à {scriptModel === "gpt5" ? "GPT-5.1" : scriptModel === "claude-thinking" ? "Claude Opus 4.1 (Anthropic)" : "Claude"} pour générer le script. Incluez tous les détails: sujet, durée, style, langue, etc.
+                        Ce prompt sera envoyé à {scriptModel === "gpt5" ? "GPT-5.1" : scriptModel === "claude-thinking" ? "Claude Opus 4.5 (Anthropic)" : "Claude"} pour générer le script. Incluez tous les détails: sujet, durée, style, langue, etc.
                         <br />
                         <span className="font-semibold">Variables disponibles:</span> <code className="bg-primary/20 text-primary px-1 rounded font-semibold">{"{{projectName}}"}</code> sera automatiquement remplacé par le nom du projet.
                       </p>
@@ -1718,9 +1718,9 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                         </SelectItem>
                         <SelectItem value="claude-thinking">
                           <div className="flex flex-col w-full min-w-[300px]">
-                            <span className="font-medium">Claude Opus 4.1 (Anthropic Direct)</span>
+                            <span className="font-medium">Claude Opus 4.5 (Anthropic Direct)</span>
                             <span className="text-xs text-muted-foreground">Via Anthropic API directe (nécessite clé API Anthropic)</span>
-                            <span className="text-xs text-primary mt-1 whitespace-normal break-words">✨ Modèle le plus puissant d'Anthropic</span>
+                            <span className="text-xs text-primary mt-1 whitespace-normal break-words">✨ Modèle premium - intelligence maximale</span>
                           </div>
                         </SelectItem>
                         <SelectItem value="gpt5">

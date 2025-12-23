@@ -918,7 +918,7 @@ async function cleanup(workDir) {
 
 // Generate script endpoint - calls Anthropic API without timeout
 app.post('/generate-script', async (req, res) => {
-  const { anthropicApiKey, customPrompt, model = 'claude-opus-4-1-20250805' } = req.body;
+  const { anthropicApiKey, customPrompt, model = 'claude-opus-4-5-20251101' } = req.body;
   
   if (!anthropicApiKey) {
     return res.status(400).json({ error: 'Anthropic API key required' });
