@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { YoutubeTranscript } from 'npm:youtube-transcript@1.2.1';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -85,6 +86,19 @@ Deno.serve(async (req) => {
       ? maxresThumbnail 
       : `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
 
+    // Try to fetch transcript (optional, don't fail if unavailable)
+    let transcript = null;
+    try {
+      const transcriptData = await YoutubeTranscript.fetchTranscript(videoId);
+      if (transcriptData && transcriptData.length > 0) {
+        // Combine all transcript segments into a single text
+        transcript = transcriptData.map((item: any) => item.text).join(' ');
+      }
+    } catch (transcriptError) {
+      // Transcript not available (video might not have captions)
+      console.log('Transcript not available for video:', videoId);
+    }
+
     return new Response(
       JSON.stringify({
         success: true,
@@ -95,6 +109,7 @@ Deno.serve(async (req) => {
         thumbnailUrl,
         thumbnails: getAllThumbnailUrls(videoId),
         embedHtml: oembedData.html,
+        transcript,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );

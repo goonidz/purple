@@ -393,7 +393,13 @@ export default function CalendarVideoModal({
           if (data.thumbnailUrl) {
             setSourceThumbnailUrl(data.thumbnailUrl);
           }
-          toast.success(`Informations récupérées : ${data.title}`);
+          // Auto-fill transcript if available and script is empty
+          if (data.transcript && !script.trim()) {
+            setScript(data.transcript);
+            toast.success(`Informations récupérées : ${data.title} (transcript inclus)`);
+          } else {
+            toast.success(`Informations récupérées : ${data.title}${data.transcript ? ' (transcript disponible)' : ''}`);
+          }
         }
       } catch (error: any) {
         console.error("Error scraping YouTube:", error);
