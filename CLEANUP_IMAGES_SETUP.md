@@ -4,7 +4,61 @@ La fonction Edge `cleanup-old-images` est déjà déployée et prête à être u
 
 ## Méthodes disponibles
 
-### ✅ Méthode 1 : Service externe gratuit (RECOMMANDÉ)
+### ✅ Méthode 1 : Sur le serveur VPS (RECOMMANDÉ si tu as un serveur)
+
+Si tu as un serveur VPS qui héberge le site et le worker FFmpeg (comme décrit dans `DEPLOYMENT.md`), c'est la meilleure solution.
+
+#### Configuration automatique
+
+```bash
+# Sur le serveur VPS
+cd ~/purple
+git pull origin main
+chmod +x scripts/setup-cleanup-cron.sh
+./scripts/setup-cleanup-cron.sh
+```
+
+Le script va automatiquement :
+- Vérifier la configuration
+- Ajouter le cron job pour nettoyer tous les jours à 2h du matin UTC
+- Configurer les logs
+
+#### Configuration manuelle
+
+1. **Ajouter la clé service role dans `.env.production`** :
+   ```bash
+   echo "SUPABASE_SERVICE_ROLE_KEY=ta_clé_ici" >> .env.production
+   ```
+   Récupère la clé depuis : https://supabase.com/dashboard/project/laqgmqyjstisipsbljha/settings/api
+
+2. **Ajouter le cron job** :
+   ```bash
+   crontab -e
+   ```
+   
+   Ajouter cette ligne (remplace `/home/ubuntu` par ton home directory) :
+   ```bash
+   0 2 * * * cd /home/ubuntu/purple && node scripts/cleanup-supabase-images.js >> /home/ubuntu/purple/cleanup-images.log 2>&1
+   ```
+
+#### Vérification
+
+```bash
+# Vérifier le cron job
+crontab -l
+
+# Voir les logs
+tail -f ~/purple/cleanup-images.log
+
+# Tester manuellement
+cd ~/purple && node scripts/cleanup-supabase-images.js
+```
+
+**Avantages**: Utilise ton infrastructure existante, pas de service externe, logs locaux
+
+---
+
+### Méthode 2 : Service externe gratuit
 
 **cron-job.org** (gratuit, pas besoin de carte bancaire)
 
