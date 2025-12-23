@@ -1618,11 +1618,11 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                       <div className="relative">
                         {/* Highlight overlay - shows all text with colored variables */}
                         <div 
-                          className="absolute inset-0 pointer-events-none z-0 rounded-md border border-input px-3 py-2 text-sm font-mono whitespace-pre-wrap break-words overflow-auto bg-background"
+                          className="absolute inset-0 pointer-events-none z-0 rounded-md border border-input px-3 py-2 text-sm font-mono whitespace-pre-wrap break-words overflow-auto"
                           style={{ 
                             minHeight: '200px',
                             lineHeight: '1.5',
-                            padding: '0.5rem 0.75rem'
+                            backgroundColor: 'hsl(var(--background))'
                           }}
                           aria-hidden="true"
                         >
@@ -1630,7 +1630,7 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                             customPrompt.split(/(\{\{[^}]+\}\})/g).map((part, index) => {
                               if (part.match(/^\{\{[^}]+\}\}$/)) {
                                 return (
-                                  <span key={index} className="bg-primary/50 text-primary font-semibold rounded px-1 py-0.5">
+                                  <span key={index} className="bg-primary/60 text-primary font-semibold rounded px-1 py-0.5">
                                     {part}
                                   </span>
                                 );
@@ -1645,13 +1645,13 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                         <Textarea
                           value={customPrompt}
                           onChange={(e) => setCustomPrompt(e.target.value)}
-                          className="min-h-[200px] font-mono text-sm relative z-10 caret-foreground"
+                          className="min-h-[200px] font-mono text-sm relative z-10"
                           placeholder=""
                           style={{ 
-                            backgroundColor: 'transparent !important',
-                            color: 'transparent !important',
+                            backgroundColor: 'transparent',
+                            color: 'transparent',
                             caretColor: 'hsl(var(--foreground))',
-                            border: '1px solid transparent'
+                            border: '1px solid hsl(var(--input))'
                           }}
                         />
                       </div>
