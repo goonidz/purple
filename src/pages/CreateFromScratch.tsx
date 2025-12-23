@@ -1015,7 +1015,66 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
       // Replace variables in prompt before sending
       const finalPrompt = replacePromptVariables(promptToUse, tempProjectName);
 
-      // Start the script generation job via backend
+      // If using Anthropic direct (claude-thinking), call VPS directly to avoid Supabase timeout
+      if (scriptModel === "claude-thinking") {
+        // Get Anthropic API key from Supabase
+        const { data: apiKeyData, error: apiKeyError } = await supabase.rpc('get_user_api_key', {
+          key_name: 'anthropic'
+        });
+        
+        if (apiKeyError || !apiKeyData) {
+          throw new Error("Clé API Anthropic non configurée. Allez dans Profil pour l'ajouter.");
+        }
+
+        // Call VPS directly (no timeout)
+        const VPS_URL = "http://51.91.158.233:3000";
+        const response = await fetch(`${VPS_URL}/generate-script`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            anthropicApiKey: apiKeyData,
+            customPrompt: finalPrompt,
+            model: 'claude-sonnet-4-20250514'
+          })
+        });
+
+        clearInterval(progressInterval);
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || `Erreur VPS: ${response.status}`);
+        }
+
+        const result = await response.json();
+        
+        // Save script to project
+        const { error: updateError } = await supabase
+          .from("projects")
+          .update({ script: result.script })
+          .eq("id", tempProject.id);
+
+        if (updateError) throw updateError;
+
+        // Update calendar entry status if linked
+        if (entryIdToLink) {
+          await supabase
+            .from("content_calendar")
+            .update({ status: 'script_ready' })
+            .eq("id", entryIdToLink);
+        }
+
+        setScript(result.script);
+        setScriptWordCount(result.wordCount);
+        setGenerationProgress(100);
+        setIsGeneratingScript(false);
+        setStep("script");
+        toast.success(`Script généré ! (${result.wordCount} mots, ${result.generationTime}s)`);
+        return;
+      }
+
+      // For other models, use the standard Supabase Edge Function flow
       const { data, error } = await supabase.functions.invoke('start-generation-job', {
         body: {
           projectId: tempProject.id,

@@ -916,6 +916,88 @@ async function cleanup(workDir) {
   }
 }
 
+// Generate script endpoint - calls Anthropic API without timeout
+app.post('/generate-script', async (req, res) => {
+  const { anthropicApiKey, customPrompt, model = 'claude-sonnet-4-20250514' } = req.body;
+  
+  if (!anthropicApiKey) {
+    return res.status(400).json({ error: 'Anthropic API key required' });
+  }
+  
+  if (!customPrompt) {
+    return res.status(400).json({ error: 'Custom prompt required' });
+  }
+  
+  console.log(`[generate-script] Starting script generation with model: ${model}`);
+  console.log(`[generate-script] Prompt length: ${customPrompt.length} characters`);
+  
+  const systemPrompt = `Tu es un assistant d'écriture professionnel. Tu génères exactement ce que l'utilisateur demande, sans commentaires ni explications supplémentaires. Réponds uniquement avec le contenu demandé.
+
+RÈGLE CRITIQUE SUR LA LONGUEUR:
+- Si l'utilisateur demande un certain nombre de mots, tu DOIS atteindre ce nombre MINIMUM
+- Ne t'arrête JAMAIS avant d'avoir atteint le nombre de mots demandé
+- Développe chaque section en profondeur pour atteindre la longueur requise
+- Ajoute des détails, des exemples, des transitions, des descriptions riches`;
+
+  try {
+    const startTime = Date.now();
+    
+    const anthropicResponse = await axios.post('https://api.anthropic.com/v1/messages', {
+      model: model,
+      max_tokens: 16000,
+      system: systemPrompt,
+      messages: [
+        {
+          role: 'user',
+          content: customPrompt
+        }
+      ]
+    }, {
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': anthropicApiKey,
+        'anthropic-version': '2023-06-01'
+      },
+      timeout: 300000 // 5 minutes timeout
+    });
+    
+    const duration = ((Date.now() - startTime) / 1000).toFixed(2);
+    console.log(`[generate-script] API call completed in ${duration}s`);
+    
+    // Extract the script from the response
+    let script = '';
+    if (anthropicResponse.data.content && anthropicResponse.data.content.length > 0) {
+      script = anthropicResponse.data.content
+        .filter(block => block.type === 'text')
+        .map(block => block.text)
+        .join('\n\n');
+    }
+    
+    if (!script) {
+      throw new Error('No script content returned from Anthropic API');
+    }
+    
+    const wordCount = script.split(/\s+/).filter(w => w.length > 0).length;
+    console.log(`[generate-script] Script generated: ${wordCount} words`);
+    
+    res.json({
+      script,
+      wordCount,
+      estimatedDuration: Math.round(wordCount / 2.5),
+      model,
+      generationTime: parseFloat(duration)
+    });
+    
+  } catch (error) {
+    console.error('[generate-script] Error:', error.response?.data || error.message);
+    
+    const errorMessage = error.response?.data?.error?.message || error.message;
+    res.status(500).json({ 
+      error: `Anthropic API error: ${errorMessage}` 
+    });
+  }
+});
+
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({ 
