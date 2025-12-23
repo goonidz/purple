@@ -94,16 +94,30 @@ Deno.serve(async (req) => {
       // Use the Deno-compatible youtube-transcript library
       const transcriptData = await YoutubeTranscript.fetchTranscript(videoId);
       
+      console.log('Transcript fetch result:', {
+        hasData: !!transcriptData,
+        dataType: typeof transcriptData,
+        isArray: Array.isArray(transcriptData),
+        length: transcriptData?.length || 0,
+        firstItem: transcriptData?.[0] || null
+      });
+      
       if (transcriptData && transcriptData.length > 0) {
         // Combine all transcript segments into a single text
         transcript = transcriptData.map((item: any) => item.text).join(' ');
         console.log('Transcript extracted successfully, total length:', transcript.length, 'segments:', transcriptData.length);
       } else {
-        console.log('Transcript data is empty');
+        console.log('Transcript data is empty or invalid');
       }
     } catch (transcriptError: any) {
       // Transcript not available (video might not have captions)
-      console.log('Transcript not available for video:', videoId, 'Error:', transcriptError?.message || transcriptError);
+      console.error('Transcript fetch error:', {
+        message: transcriptError?.message,
+        stack: transcriptError?.stack,
+        name: transcriptError?.name,
+        fullError: transcriptError
+      });
+      console.log('Transcript not available for video:', videoId);
     }
 
     return new Response(

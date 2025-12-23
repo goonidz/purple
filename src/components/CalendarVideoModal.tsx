@@ -381,6 +381,12 @@ export default function CalendarVideoModal({
       if (error) throw error;
 
       console.log("Scrape response:", data);
+      console.log("Transcript in response:", {
+        hasTranscript: !!data.transcript,
+        transcriptType: typeof data.transcript,
+        transcriptLength: data.transcript?.length || 0,
+        transcriptPreview: data.transcript?.substring(0, 100) || null
+      });
 
       if (data.success) {
         // Auto-fill title if empty
@@ -392,7 +398,7 @@ export default function CalendarVideoModal({
           setSourceThumbnailUrl(data.thumbnailUrl);
         }
         // Auto-fill transcript if available and script is empty
-        if (data.transcript) {
+        if (data.transcript && data.transcript.trim().length > 0) {
           console.log("Transcript received, length:", data.transcript.length);
           if (!script.trim()) {
             setScript(data.transcript);
@@ -401,8 +407,8 @@ export default function CalendarVideoModal({
             toast.success(`Informations récupérées : ${data.title} (transcript disponible mais script déjà rempli)`);
           }
         } else {
-          console.log("No transcript available");
-          toast.success(`Informations récupérées : ${data.title}`);
+          console.log("No transcript available in response");
+          toast.success(`Informations récupérées : ${data.title}${data.transcript === null ? ' (pas de sous-titres disponibles)' : ''}`);
         }
       }
     } catch (error: any) {
