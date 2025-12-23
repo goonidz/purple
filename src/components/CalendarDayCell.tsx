@@ -144,7 +144,7 @@ export default function CalendarDayCell({
             const bColor = b.channel?.color || '#ffffff';
             return aColor.localeCompare(bColor);
           })
-          .slice(0, 3)
+          .slice(0, 5)
           .map((entry) => {
           const hasChannel = !!entry.channel?.name;
           const isCompleted = entry.status === 'completed';
@@ -223,7 +223,7 @@ export default function CalendarDayCell({
             </div>
           );
         })}
-        {entries.length > 3 && (
+        {entries.length > 5 && (
           <button
             className="text-xs text-muted-foreground pl-1 hover:text-primary transition-colors w-full text-left"
             onClick={(e) => {
@@ -231,7 +231,7 @@ export default function CalendarDayCell({
               setShowAllEntriesDialog(true);
             }}
           >
-            +{entries.length - 3} autres
+            +{entries.length - 5} autres
           </button>
         )}
       </div>
