@@ -5,9 +5,6 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// VPS Transcription Service URL
-const VPS_TRANSCRIPTION_URL = Deno.env.get('VPS_TRANSCRIPTION_URL') || 'http://51.91.158.233:3001';
-
 // Extract video ID from various YouTube URL formats
 function extractVideoId(url: string): string | null {
   const patterns = [
@@ -88,45 +85,116 @@ Deno.serve(async (req) => {
       ? maxresThumbnail 
       : `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
 
-    // Try to fetch transcript via VPS service (optional, don't fail if unavailable)
+    // Try to fetch transcript directly from YouTube (optional, don't fail if unavailable)
     let transcript = null;
     let transcriptSource = null;
     try {
-      console.log('Attempting to fetch transcript from VPS service for video:', videoId);
+      console.log('Attempting to fetch transcript directly for video:', videoId);
       
-      // Call VPS transcription service - synchronous mode for quick response
-      const transcriptResponse = await fetch(`${VPS_TRANSCRIPTION_URL}/transcribe/youtube/sync`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          url: `https://www.youtube.com/watch?v=${videoId}`,
-          language: 'auto',
-          forceWhisper: false // Try YouTube captions first
-        })
+      // Fetch the YouTube video page to get caption track info
+      const videoPageResponse = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept-Language': 'en-US,en;q=0.9',
+        }
       });
       
-      if (transcriptResponse.ok) {
-        const transcriptData = await transcriptResponse.json();
-        console.log('VPS transcript response:', {
-          success: transcriptData.success,
-          hasText: !!transcriptData.text,
-          textLength: transcriptData.text?.length || 0,
-          source: transcriptData.source
-        });
+      if (videoPageResponse.ok) {
+        const html = await videoPageResponse.text();
         
-        if (transcriptData.success && transcriptData.text) {
-          transcript = transcriptData.text;
-          transcriptSource = transcriptData.source || 'vps';
-          console.log('Transcript extracted successfully via VPS, length:', transcript.length);
+        // Try to find caption track URL in the page
+        const captionUrlMatch = html.match(/"captionTracks":\s*\[(.*?)\]/);
+        
+        if (captionUrlMatch) {
+          console.log('Found caption tracks in page');
+          
+          // Extract the baseUrl for captions
+          const baseUrlMatch = captionUrlMatch[1].match(/"baseUrl":\s*"([^"]+)"/);
+          
+          if (baseUrlMatch) {
+            let captionUrl = baseUrlMatch[1].replace(/\\u0026/g, '&');
+            console.log('Caption URL found:', captionUrl.substring(0, 100) + '...');
+            
+            // Fetch the caption XML
+            const captionResponse = await fetch(captionUrl);
+            
+            if (captionResponse.ok) {
+              const captionXml = await captionResponse.text();
+              
+              // Parse the XML to extract text
+              const textSegments: string[] = [];
+              const textMatches = captionXml.matchAll(/<text[^>]*>([^<]*)<\/text>/g);
+              
+              for (const match of textMatches) {
+                let text = match[1]
+                  .replace(/&amp;/g, '&')
+                  .replace(/&lt;/g, '<')
+                  .replace(/&gt;/g, '>')
+                  .replace(/&quot;/g, '"')
+                  .replace(/&#39;/g, "'")
+                  .replace(/&nbsp;/g, ' ')
+                  .trim();
+                
+                if (text) {
+                  textSegments.push(text);
+                }
+              }
+              
+              if (textSegments.length > 0) {
+                transcript = textSegments.join(' ');
+                transcriptSource = 'youtube_captions';
+                console.log('Transcript extracted successfully, length:', transcript.length, 'segments:', textSegments.length);
+              }
+            }
+          }
         }
-      } else {
-        const errorText = await transcriptResponse.text();
-        console.log('VPS transcript service error:', transcriptResponse.status, errorText);
+        
+        // If no captions found, try alternative method (timedtext)
+        if (!transcript) {
+          const timedtextMatch = html.match(/"baseUrl":\s*"(https:\/\/www\.youtube\.com\/api\/timedtext[^"]+)"/);
+          
+          if (timedtextMatch) {
+            let timedtextUrl = timedtextMatch[1].replace(/\\u0026/g, '&');
+            console.log('Trying timedtext URL...');
+            
+            const timedtextResponse = await fetch(timedtextUrl);
+            
+            if (timedtextResponse.ok) {
+              const timedtextXml = await timedtextResponse.text();
+              const textSegments: string[] = [];
+              const textMatches = timedtextXml.matchAll(/<text[^>]*>([^<]*)<\/text>/g);
+              
+              for (const match of textMatches) {
+                let text = match[1]
+                  .replace(/&amp;/g, '&')
+                  .replace(/&lt;/g, '<')
+                  .replace(/&gt;/g, '>')
+                  .replace(/&quot;/g, '"')
+                  .replace(/&#39;/g, "'")
+                  .replace(/&nbsp;/g, ' ')
+                  .trim();
+                
+                if (text) {
+                  textSegments.push(text);
+                }
+              }
+              
+              if (textSegments.length > 0) {
+                transcript = textSegments.join(' ');
+                transcriptSource = 'youtube_timedtext';
+                console.log('Transcript extracted via timedtext, length:', transcript.length);
+              }
+            }
+          }
+        }
+        
+        if (!transcript) {
+          console.log('No captions available for this video');
+        }
       }
     } catch (transcriptError: any) {
-      // VPS service not available or error
-      console.error('VPS transcript fetch error:', transcriptError?.message);
-      console.log('Transcript service unavailable for video:', videoId);
+      console.error('Transcript fetch error:', transcriptError?.message);
+      console.log('Could not fetch transcript for video:', videoId);
     }
 
     return new Response(
