@@ -151,37 +151,56 @@ serve(async (req) => {
         }
 
         // Fetch videos from this channel (exclude shorts: only medium and long videos)
-        // Note: YouTube API max is 50 per request, we'll need to paginate if we want more
-        const videosUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&channelId=${channel.channel_id}&type=video&order=date&publishedAfter=${publishedAfter}&videoDuration=medium,long&maxResults=50&key=${YOUTUBE_API_KEY}`;
-        const videosResponse = await fetch(videosUrl);
-        const videosData = await videosResponse.json();
+        // Note: YouTube API only accepts one videoDuration value at a time, so we need two separate calls
+        const fetchVideosByDuration = async (duration: 'medium' | 'long') => {
+          const videosUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&channelId=${channel.channel_id}&type=video&order=date&publishedAfter=${publishedAfter}&videoDuration=${duration}&maxResults=50&key=${YOUTUBE_API_KEY}`;
+          const videosResponse = await fetch(videosUrl);
+          const videosData = await videosResponse.json();
+          
+          if (!videosResponse.ok) {
+            if (videosResponse.status === 429) {
+              throw new Error('RATE_LIMIT');
+            }
+            const errorMessage = videosData?.error?.message || videosData?.message || 'Unknown error';
+            const errorReason = videosData?.error?.errors?.[0]?.reason || 'unknown';
+            throw new Error(`${errorMessage} (${errorReason})`);
+          }
+          
+          return videosData.items || [];
+        };
 
-        if (!videosResponse.ok) {
-          if (videosResponse.status === 429) {
+        // Fetch both medium and long videos, then combine
+        let allVideoItems: any[] = [];
+        try {
+          const [mediumVideos, longVideos] = await Promise.all([
+            fetchVideosByDuration('medium'),
+            fetchVideosByDuration('long')
+          ]);
+          allVideoItems = [...mediumVideos, ...longVideos];
+        } catch (fetchError: any) {
+          if (fetchError.message === 'RATE_LIMIT') {
             console.error(`Rate limit reached for ${channel.channel_name}`);
             errors.push(`${channel.channel_name}: Rate limit atteint. Réessayez plus tard.`);
-            // Stop syncing remaining channels to avoid more rate limits
             break;
           }
-          const errorMessage = videosData?.error?.message || videosData?.message || 'Unknown error';
-          const errorReason = videosData?.error?.errors?.[0]?.reason || 'unknown';
-          console.error(`Failed to fetch videos for ${channel.channel_name} (${channel.channel_id}):`, {
-            status: videosResponse.status,
-            error: errorMessage,
-            reason: errorReason,
-            fullError: videosData
-          });
-          errors.push(`${channel.channel_name}: ${errorMessage} (${errorReason})`);
+          console.error(`Failed to fetch videos for ${channel.channel_name} (${channel.channel_id}):`, fetchError.message);
+          errors.push(`${channel.channel_name}: ${fetchError.message}`);
           continue;
         }
 
-        if (!videosData.items?.length) {
+        if (allVideoItems.length === 0) {
           console.log(`No videos found for ${channel.channel_name} in period`);
           continue;
         }
 
-        // Get video IDs
-        const videoIds = videosData.items.map((v: any) => v.id.videoId).filter(Boolean);
+        // Get video IDs (remove duplicates)
+        const videoIdsSet = new Set<string>();
+        allVideoItems.forEach((v: any) => {
+          if (v.id?.videoId) {
+            videoIdsSet.add(v.id.videoId);
+          }
+        });
+        const videoIds = Array.from(videoIdsSet);
         
         if (videoIds.length === 0) {
           continue;
