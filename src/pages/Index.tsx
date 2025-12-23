@@ -3117,37 +3117,37 @@ const Index = () => {
               </TabsContent>
 
               <TabsContent value="transcript" className="m-0">
-                <div className="h-[calc(100vh-200px)] p-6">
+                <div className="h-[calc(100vh-250px)] max-h-[800px] p-4">
                   {scriptGenerationPrompt ? (
                     <ResizablePanelGroup direction="horizontal" className="h-full">
                       {/* Script/Transcription Panel */}
                       <ResizablePanel defaultSize={50} minSize={20} maxSize={80}>
                         <Collapsible open={!isScriptCollapsed} onOpenChange={setIsScriptCollapsed} className="h-full flex flex-col">
-                          <div className="flex items-center justify-between mb-4 pb-2 border-b">
-                            <h2 className="text-xl font-bold">Script / Transcription</h2>
+                          <div className="flex items-center justify-between mb-2 pb-2 border-b">
+                            <h2 className="text-lg font-semibold">Script / Transcription</h2>
                             <CollapsibleTrigger asChild>
-                              <Button variant="ghost" size="sm">
+                              <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
                                 {isScriptCollapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
                               </Button>
                             </CollapsibleTrigger>
                           </div>
-                          <CollapsibleContent className="flex-1 overflow-hidden">
+                          <CollapsibleContent className="flex-1 overflow-hidden min-h-0">
                             <ScrollArea className="h-full">
                               {transcriptData && (transcriptData as { segments?: Array<{ text: string }> }).segments ? (
-                                <div className="bg-card rounded-lg border-2 p-4 shadow-sm">
-                                  <p className="text-foreground leading-relaxed whitespace-pre-wrap text-sm">
+                                <div className="bg-card rounded-lg border p-3">
+                                  <p className="text-foreground leading-relaxed whitespace-pre-wrap text-xs">
                                     {((transcriptData as { segments?: Array<{ text: string }> }).segments || []).map(s => s.text).join(' ')}
                                   </p>
                                 </div>
                               ) : projectData?.summary ? (
-                                <div className="bg-card rounded-lg border-2 p-4 shadow-sm">
-                                  <p className="text-foreground leading-relaxed whitespace-pre-wrap text-sm">
+                                <div className="bg-card rounded-lg border p-3">
+                                  <p className="text-foreground leading-relaxed whitespace-pre-wrap text-xs">
                                     {projectData.summary}
                                   </p>
                                 </div>
                               ) : (
-                                <div className="bg-muted/30 rounded-lg border p-4">
-                                  <p className="text-muted-foreground text-center">Aucune transcription disponible</p>
+                                <div className="bg-muted/30 rounded-lg border p-3">
+                                  <p className="text-muted-foreground text-center text-xs">Aucune transcription disponible</p>
                                 </div>
                               )}
                             </ScrollArea>
@@ -3160,18 +3160,18 @@ const Index = () => {
                       {/* Prompt Panel */}
                       <ResizablePanel defaultSize={50} minSize={20} maxSize={80}>
                         <Collapsible open={!isPromptCollapsed} onOpenChange={setIsPromptCollapsed} className="h-full flex flex-col">
-                          <div className="flex items-center justify-between mb-4 pb-2 border-b">
-                            <h2 className="text-xl font-bold">Prompt de génération</h2>
+                          <div className="flex items-center justify-between mb-2 pb-2 border-b">
+                            <h2 className="text-lg font-semibold">Prompt de génération</h2>
                             <CollapsibleTrigger asChild>
-                              <Button variant="ghost" size="sm">
+                              <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
                                 {isPromptCollapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
                               </Button>
                             </CollapsibleTrigger>
                           </div>
-                          <CollapsibleContent className="flex-1 overflow-hidden">
+                          <CollapsibleContent className="flex-1 overflow-hidden min-h-0">
                             <ScrollArea className="h-full">
-                              <div className="bg-primary/5 rounded-lg border-2 border-primary/20 p-4 shadow-sm">
-                                <p className="text-foreground leading-relaxed whitespace-pre-wrap text-sm font-medium">
+                              <div className="bg-primary/5 rounded-lg border border-primary/20 p-3">
+                                <p className="text-foreground leading-relaxed whitespace-pre-wrap text-xs font-medium">
                                   {scriptGenerationPrompt}
                                 </p>
                               </div>
@@ -3185,25 +3185,25 @@ const Index = () => {
                     </ResizablePanelGroup>
                   ) : (
                     <div className="h-full flex flex-col">
-                      <div className="flex items-center justify-between mb-4 pb-2 border-b">
-                        <h2 className="text-xl font-bold">Script / Transcription</h2>
+                      <div className="flex items-center justify-between mb-2 pb-2 border-b">
+                        <h2 className="text-lg font-semibold">Script / Transcription</h2>
                       </div>
-                      <ScrollArea className="flex-1">
+                      <ScrollArea className="flex-1 min-h-0">
                         {transcriptData && (transcriptData as { segments?: Array<{ text: string }> }).segments ? (
-                          <div className="bg-card rounded-lg border-2 p-4 shadow-sm">
-                            <p className="text-foreground leading-relaxed whitespace-pre-wrap text-sm">
+                          <div className="bg-card rounded-lg border p-3">
+                            <p className="text-foreground leading-relaxed whitespace-pre-wrap text-xs">
                               {((transcriptData as { segments?: Array<{ text: string }> }).segments || []).map(s => s.text).join(' ')}
                             </p>
                           </div>
                         ) : projectData?.summary ? (
-                          <div className="bg-card rounded-lg border-2 p-4 shadow-sm">
-                            <p className="text-foreground leading-relaxed whitespace-pre-wrap text-sm">
+                          <div className="bg-card rounded-lg border p-3">
+                            <p className="text-foreground leading-relaxed whitespace-pre-wrap text-xs">
                               {projectData.summary}
                             </p>
                           </div>
                         ) : (
-                          <div className="bg-muted/30 rounded-lg border p-4">
-                            <p className="text-muted-foreground text-center">Aucune transcription disponible</p>
+                          <div className="bg-muted/30 rounded-lg border p-3">
+                            <p className="text-muted-foreground text-center text-xs">Aucune transcription disponible</p>
                           </div>
                         )}
                       </ScrollArea>
