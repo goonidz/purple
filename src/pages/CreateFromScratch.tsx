@@ -1636,7 +1636,7 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                         </div>
                       )}
                       <p className="text-xs text-muted-foreground">
-                        Ce prompt sera envoyé à {scriptModel === "gpt5" ? "GPT-5.1" : scriptModel === "claude-thinking" ? "Claude 3.5 Sonnet (Anthropic)" : "Claude"} pour générer le script. Incluez tous les détails: sujet, durée, style, langue, etc.
+                        Ce prompt sera envoyé à {scriptModel === "gpt5" ? "GPT-5.1" : scriptModel === "claude-thinking" ? "Claude Sonnet 4 (Anthropic)" : "Claude"} pour générer le script. Incluez tous les détails: sujet, durée, style, langue, etc.
                         <br />
                         <span className="font-semibold">Variables disponibles:</span> <code className="bg-primary/20 text-primary px-1 rounded font-semibold">{"{{projectName}}"}</code> sera automatiquement remplacé par le nom du projet.
                       </p>
@@ -1659,9 +1659,9 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                         </SelectItem>
                         <SelectItem value="claude-thinking">
                           <div className="flex flex-col w-full min-w-[300px]">
-                            <span className="font-medium">Claude 3.5 Sonnet (Anthropic Direct)</span>
+                            <span className="font-medium">Claude Sonnet 4 (Anthropic Direct)</span>
                             <span className="text-xs text-muted-foreground">Via Anthropic API directe (nécessite clé API Anthropic)</span>
-                            <span className="text-xs text-primary mt-1 whitespace-normal break-words">✨ Plus rapide, pas de limite Replicate</span>
+                            <span className="text-xs text-primary mt-1 whitespace-normal break-words">✨ Dernier modèle, meilleure qualité</span>
                           </div>
                         </SelectItem>
                         <SelectItem value="gpt5">
