@@ -241,7 +241,7 @@ export default function Competitors() {
 
   // Set page title
   useEffect(() => {
-    document.title = "Competitors - VideoFlow";
+    document.title = "Competitors";
   }, []);
 
   return (

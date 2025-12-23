@@ -11,7 +11,7 @@ const Home = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    document.title = "Accueil | VideoFlow";
+    document.title = "Accueil";
   }, []);
 
   useEffect(() => {

@@ -21,7 +21,7 @@ const Auth = () => {
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
-    document.title = "Connexion | VideoFlow";
+    document.title = "Connexion";
   }, []);
 
   useEffect(() => {

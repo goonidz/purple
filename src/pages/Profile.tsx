@@ -32,7 +32,7 @@ const Profile = () => {
   });
 
   useEffect(() => {
-    document.title = "Profil | VideoFlow";
+    document.title = "Profil";
   }, []);
 
   useEffect(() => {

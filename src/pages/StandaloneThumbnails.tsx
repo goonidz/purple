@@ -43,7 +43,7 @@ const StandaloneThumbnails = () => {
   const [editScript, setEditScript] = useState("");
 
   useEffect(() => {
-    document.title = "Miniatures | VideoFlow";
+    document.title = "Miniatures";
   }, []);
 
   useEffect(() => {

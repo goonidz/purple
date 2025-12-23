@@ -48,7 +48,7 @@ export default function Calendar() {
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
 
   useEffect(() => {
-    document.title = "Calendrier | VideoFlow";
+    document.title = "Calendrier";
   }, []);
 
   useEffect(() => {

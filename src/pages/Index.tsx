@@ -172,7 +172,7 @@ const Index = () => {
 
   // Set page title based on project name
   useEffect(() => {
-    document.title = projectName ? `${projectName} | VideoFlow` : "Projet | VideoFlow";
+    document.title = projectName || "Projet";
   }, [projectName]);
 
   // Use ref for currentProjectId to avoid stale closures in callbacks

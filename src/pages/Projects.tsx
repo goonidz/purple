@@ -76,7 +76,7 @@ const Projects = () => {
   const [isDraggingAudio, setIsDraggingAudio] = useState(false);
 
   useEffect(() => {
-    document.title = "Projets | VideoFlow";
+    document.title = "Projets";
   }, []);
 
   // Job management for background transcription
