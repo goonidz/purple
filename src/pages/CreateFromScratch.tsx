@@ -1615,12 +1615,38 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                           Sauvegarder preset
                         </Button>
                       </div>
-                      <Textarea
-                        value={customPrompt}
-                        onChange={(e) => setCustomPrompt(e.target.value)}
-                        className="min-h-[200px] font-mono text-sm"
-                        placeholder="Instructions pour l'IA..."
-                      />
+                      <div className="relative">
+                        {/* Highlight overlay */}
+                        <div 
+                          className="absolute inset-0 pointer-events-none z-0 rounded-md border border-input px-3 py-2 text-sm font-mono whitespace-pre-wrap break-words overflow-hidden"
+                          style={{ 
+                            color: 'transparent',
+                            minHeight: '200px',
+                            lineHeight: '1.5'
+                          }}
+                          aria-hidden="true"
+                        >
+                          {customPrompt.split(/(\{\{[^}]+\}\})/g).map((part, index) => {
+                            if (part.match(/^\{\{[^}]+\}\}$/)) {
+                              return (
+                                <span key={index} className="bg-primary/30 text-primary font-semibold rounded px-0.5">
+                                  {part}
+                                </span>
+                              );
+                            }
+                            return <span key={index}>{part}</span>;
+                          })}
+                        </div>
+                        <Textarea
+                          value={customPrompt}
+                          onChange={(e) => setCustomPrompt(e.target.value)}
+                          className="min-h-[200px] font-mono text-sm relative z-10 bg-transparent caret-foreground"
+                          placeholder="Instructions pour l'IA..."
+                          style={{ 
+                            color: customPrompt ? 'inherit' : 'transparent'
+                          }}
+                        />
+                      </div>
                       <p className="text-xs text-muted-foreground">
                         Ce prompt sera envoyé à {scriptModel === "gpt5" ? "GPT-5.1" : "Claude"} pour générer le script. Incluez tous les détails: sujet, durée, style, langue, etc.
                         <br />
