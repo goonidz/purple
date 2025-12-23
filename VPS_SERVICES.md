@@ -8,7 +8,6 @@ Tous les services sont hébergés sur un VPS OVH :
 |---------|------|-------------|----------|
 | **Frontend** | 80 (nginx) | Site web VideoFlow | Docker container |
 | **Video Render** | 3000 | Rendu vidéo avec FFmpeg | `video-render` |
-| **Transcription** | 3001 | Transcription YouTube/Audio avec Whisper | `transcription-service` |
 | **Webhook Deploy** | 9000 | Déploiement auto GitHub | `webhook-deploy` |
 
 ## Informations VPS
@@ -100,69 +99,7 @@ pm2 status
 
 ---
 
-## 3. Transcription Service
-
-**Port** : 3001  
-**PM2 Name** : `transcription-service`  
-**Répertoire** : `~/purple/transcription-service/`
-
-Service Node.js + Python Whisper pour transcrire les vidéos YouTube.
-
-### Fonctionnement
-1. Reçoit une URL YouTube
-2. Essaie d'abord les sous-titres YouTube (instantané)
-3. Si pas de sous-titres → télécharge l'audio avec yt-dlp + Whisper
-
-### URLs
-- Health check : http://51.91.158.233:3001/health
-
-### API Endpoints
-| Méthode | Endpoint | Description |
-|---------|----------|-------------|
-| GET | `/health` | État du service |
-| POST | `/transcribe` | Transcription async (audio URL) |
-| POST | `/transcribe/youtube` | Transcription YouTube async |
-| POST | `/transcribe/youtube/sync` | Transcription YouTube sync |
-| POST | `/transcribe/upload` | Upload fichier + transcription |
-| GET | `/status/:jobId` | Statut d'un job |
-
-### Exemple d'utilisation
-```bash
-# Transcrire une vidéo YouTube
-curl -X POST http://51.91.158.233:3001/transcribe/youtube/sync \
-  -H "Content-Type: application/json" \
-  -d '{"url": "https://www.youtube.com/watch?v=VIDEO_ID"}'
-```
-
-### Commandes
-```bash
-cd ~/purple/transcription-service
-
-# Activer Python venv (nécessaire pour Whisper)
-source venv/bin/activate
-
-# Logs
-pm2 logs transcription-service
-
-# Redémarrer
-pm2 restart transcription-service
-```
-
-### Modèles Whisper disponibles
-| Modèle | Taille | Qualité | Vitesse |
-|--------|--------|---------|---------|
-| tiny | 39M | Basse | Très rapide |
-| base | 74M | Moyenne | Rapide |
-| small | 244M | Bonne | Moyen |
-| **medium** | 769M | Très bonne | Lent |
-| large-v3 | 1550M | Excellente | Très lent |
-
-### Documentation complète
-→ `transcription-service/README.md`
-
----
-
-## 4. Webhook Deploy Service
+## 3. Webhook Deploy Service
 
 **Port** : 9000  
 **PM2 Name** : `webhook-deploy`
@@ -211,7 +148,6 @@ sudo ufw status
 | 80 | HTTP (Frontend) |
 | 443 | HTTPS |
 | 3000 | Video Render |
-| 3001 | Transcription |
 | 9000 | Webhook |
 
 ### Ouvrir un nouveau port
