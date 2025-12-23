@@ -1642,16 +1642,14 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                           )}
                         </div>
                         {/* Textarea on top - transparent text so overlay shows through */}
-                        <Textarea
+                        <textarea
                           value={customPrompt}
                           onChange={(e) => setCustomPrompt(e.target.value)}
-                          className="min-h-[200px] font-mono text-sm relative z-10"
-                          placeholder=""
+                          className="min-h-[200px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm font-mono ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 relative z-10 resize-none"
+                          placeholder="Instructions pour l'IA..."
                           style={{ 
-                            backgroundColor: 'transparent',
                             color: 'transparent',
-                            caretColor: 'hsl(var(--foreground))',
-                            border: '1px solid hsl(var(--input))'
+                            caretColor: 'hsl(var(--foreground))'
                           }}
                         />
                       </div>
