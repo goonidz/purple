@@ -1,0 +1,25 @@
+-- Migration: Setup for automatic cleanup of old generated images
+-- 
+-- This migration creates the infrastructure for automatic cleanup.
+-- The actual cleanup is done by the cleanup-old-images Edge Function.
+--
+-- To set up automatic cleanup, use one of these methods:
+--
+-- 1. External Cron Service (Recommended):
+--    - Use cron-job.org, EasyCron, or similar service
+--    - Schedule daily POST request to: https://[project-ref].supabase.co/functions/v1/cleanup-old-images
+--    - Headers: Authorization: Bearer [SERVICE_ROLE_KEY]
+--
+-- 2. GitHub Actions (if repo is on GitHub):
+--    - Create .github/workflows/cleanup-images.yml
+--    - Schedule with: schedule: - cron: '0 2 * * *'
+--
+-- 3. Local Cron (if you have a server):
+--    - Add to crontab: 0 2 * * * cd /path/to/project && node scripts/cleanup-old-images.js
+--
+-- 4. pg_cron (if available on your Supabase plan):
+--    - Requires superuser access
+--    - See cleanup-old-images Edge Function for implementation
+
+-- Note: This migration doesn't create any database objects
+-- It's here for documentation and future pg_cron setup if needed
