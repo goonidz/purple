@@ -1616,11 +1616,10 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                         </Button>
                       </div>
                       <div className="relative">
-                        {/* Highlight overlay */}
+                        {/* Highlight overlay - shows all text with colored variables */}
                         <div 
-                          className="absolute inset-0 pointer-events-none z-0 rounded-md border border-input px-3 py-2 text-sm font-mono whitespace-pre-wrap break-words overflow-hidden"
+                          className="absolute inset-0 pointer-events-none z-0 rounded-md border border-input px-3 py-2 text-sm font-mono whitespace-pre-wrap break-words overflow-hidden bg-background"
                           style={{ 
-                            color: 'transparent',
                             minHeight: '200px',
                             lineHeight: '1.5'
                           }}
@@ -1629,21 +1628,24 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                           {customPrompt.split(/(\{\{[^}]+\}\})/g).map((part, index) => {
                             if (part.match(/^\{\{[^}]+\}\}$/)) {
                               return (
-                                <span key={index} className="bg-primary/30 text-primary font-semibold rounded px-0.5">
+                                <span key={index} className="bg-primary/40 text-primary font-semibold rounded px-1 py-0.5">
                                   {part}
                                 </span>
                               );
                             }
-                            return <span key={index}>{part}</span>;
+                            return <span key={index} className="text-foreground">{part}</span>;
                           })}
                         </div>
+                        {/* Textarea on top - transparent text so overlay shows through */}
                         <Textarea
                           value={customPrompt}
                           onChange={(e) => setCustomPrompt(e.target.value)}
-                          className="min-h-[200px] font-mono text-sm relative z-10 bg-transparent caret-foreground"
+                          className="min-h-[200px] font-mono text-sm relative z-10 caret-foreground"
                           placeholder="Instructions pour l'IA..."
                           style={{ 
-                            color: customPrompt ? 'inherit' : 'transparent'
+                            backgroundColor: 'transparent',
+                            color: 'transparent',
+                            caretColor: 'hsl(var(--foreground))'
                           }}
                         />
                       </div>
