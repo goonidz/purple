@@ -680,18 +680,69 @@ const Index = () => {
         setPromptSystemMessage('Prompt système par défaut (en cours de récupération...)');
       }
 
-      // Try to find script generation prompt from generation_jobs
+      // Try to find script generation prompt from generation_jobs or pending_predictions
       if (currentProjectId) {
-        const { data: scriptJobs } = await supabase
+        // First try generation_jobs (this is where the customPrompt is stored when creating the job)
+        const { data: scriptJobs, error: scriptJobsError } = await supabase
           .from('generation_jobs')
-          .select('metadata')
+          .select('metadata, id')
           .eq('project_id', currentProjectId)
           .eq('job_type', 'script_generation')
           .order('created_at', { ascending: false })
           .limit(1);
         
-        if (scriptJobs && scriptJobs.length > 0 && scriptJobs[0].metadata?.customPrompt) {
-          setScriptGenerationPrompt(scriptJobs[0].metadata.customPrompt);
+        console.log('Script jobs found:', scriptJobs, 'Error:', scriptJobsError);
+        
+        let foundPrompt = false;
+        
+        if (scriptJobs && scriptJobs.length > 0) {
+          console.log('Script job metadata:', scriptJobs[0].metadata);
+          if (scriptJobs[0].metadata?.customPrompt) {
+            console.log('Setting script generation prompt from generation_jobs:', scriptJobs[0].metadata.customPrompt);
+            setScriptGenerationPrompt(scriptJobs[0].metadata.customPrompt);
+            foundPrompt = true;
+          } else {
+            console.log('No customPrompt in generation_jobs metadata, trying pending_predictions via job_id');
+            
+            // Fallback: try pending_predictions using job_id
+            const jobId = scriptJobs[0].id;
+            const { data: predictions } = await supabase
+              .from('pending_predictions')
+              .select('metadata')
+              .eq('job_id', jobId)
+              .eq('prediction_type', 'script')
+              .order('created_at', { ascending: false })
+              .limit(1);
+            
+            console.log('Pending predictions found for job_id:', jobId, predictions);
+            
+            if (predictions && predictions.length > 0 && predictions[0].metadata?.customPrompt) {
+              console.log('Setting script generation prompt from pending_predictions (via job_id):', predictions[0].metadata.customPrompt);
+              setScriptGenerationPrompt(predictions[0].metadata.customPrompt);
+              foundPrompt = true;
+            }
+          }
+        }
+        
+        // If still not found, try pending_predictions directly by project_id
+        if (!foundPrompt) {
+          console.log('Trying pending_predictions directly by project_id');
+          const { data: predictions } = await supabase
+            .from('pending_predictions')
+            .select('metadata')
+            .eq('project_id', currentProjectId)
+            .eq('prediction_type', 'script')
+            .order('created_at', { ascending: false })
+            .limit(1);
+          
+          console.log('Pending predictions found by project_id:', predictions);
+          
+          if (predictions && predictions.length > 0 && predictions[0].metadata?.customPrompt) {
+            console.log('Setting script generation prompt from pending_predictions (via project_id):', predictions[0].metadata.customPrompt);
+            setScriptGenerationPrompt(predictions[0].metadata.customPrompt);
+          } else {
+            console.log('No script generation prompt found in any location');
+          }
         }
       }
       
@@ -3075,20 +3126,7 @@ const Index = () => {
                     )}
                   </div>
                   
-                  {promptSystemMessage && (
-                    <div>
-                      <h2 className="text-xl font-semibold mb-4">Prompt système pour les images</h2>
-                      <div className="bg-muted/50 rounded-lg p-6 border">
-                        <p className="text-foreground leading-relaxed whitespace-pre-wrap text-sm font-mono">
-                          {promptSystemMessage}
-                        </p>
-                      </div>
-                      <p className="text-xs text-muted-foreground mt-2">
-                        Ce prompt système a été utilisé pour générer les prompts d'images à partir de la transcription.
-                      </p>
-                    </div>
-                  )}
-                  
+                  {/* Show script generation prompt FIRST if it exists (this is what the user wants to see) */}
                   {scriptGenerationPrompt && (
                     <div>
                       <h2 className="text-xl font-semibold mb-4">Prompt utilisé pour générer le script</h2>
@@ -3103,7 +3141,22 @@ const Index = () => {
                     </div>
                   )}
                   
-                  {!promptSystemMessage && generatedPrompts.length > 0 && (
+                  {/* Show image prompt system message only if no script prompt exists */}
+                  {!scriptGenerationPrompt && promptSystemMessage && (
+                    <div>
+                      <h2 className="text-xl font-semibold mb-4">Prompt système pour les images</h2>
+                      <div className="bg-muted/50 rounded-lg p-6 border">
+                        <p className="text-foreground leading-relaxed whitespace-pre-wrap text-sm font-mono">
+                          {promptSystemMessage}
+                        </p>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-2">
+                        Ce prompt système a été utilisé pour générer les prompts d'images à partir de la transcription.
+                      </p>
+                    </div>
+                  )}
+                  
+                  {!scriptGenerationPrompt && !promptSystemMessage && generatedPrompts.length > 0 && (
                     <div>
                       <h2 className="text-xl font-semibold mb-4">Prompt système pour les images</h2>
                       <div className="bg-muted/50 rounded-lg p-6 border">
