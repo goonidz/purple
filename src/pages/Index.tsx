@@ -31,7 +31,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Upload, X, Loader2, Image as ImageIcon, RefreshCw, Settings, Download, Video, Type, Check, Copy, FolderOpen, Pencil, AlertCircle, FileText, ArrowUp, MonitorPlay, Cloud, Trash2, Hash, Play, Sparkles, User as UserIcon, CheckCircle2, Clock, Maximize2, Calendar } from "lucide-react";
+import { Upload, X, Loader2, Image as ImageIcon, RefreshCw, Settings, Download, Video, Type, Check, Copy, FolderOpen, Pencil, AlertCircle, FileText, ArrowUp, MonitorPlay, Cloud, Trash2, Hash, Play, Sparkles, User as UserIcon, CheckCircle2, Clock, Maximize2, Calendar, ChevronDown, ChevronUp, Minimize2 } from "lucide-react";
 import AppHeader from "@/components/AppHeader";
 import { ProjectConfigurationModal } from "@/components/ProjectConfigurationModal";
 import { toast } from "sonner";
@@ -65,6 +65,9 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { useGenerationJobs, GenerationJob } from "@/hooks/useGenerationJobs";
 import { useVideoRenderJobs, VideoRenderJob } from "@/hooks/useVideoRenderJobs";
 import { ActiveJobsBanner, ActiveVideoRenderJobsBanner } from "@/components/JobProgressIndicator";
@@ -111,6 +114,8 @@ const Index = () => {
   const [preferSentenceBoundaries, setPreferSentenceBoundaries] = useState(true);
   const [promptSystemMessage, setPromptSystemMessage] = useState<string>("");
   const [scriptGenerationPrompt, setScriptGenerationPrompt] = useState<string | null>(null);
+  const [isScriptCollapsed, setIsScriptCollapsed] = useState(false);
+  const [isPromptCollapsed, setIsPromptCollapsed] = useState(false);
   const cancelGenerationRef = useRef(false);
   const cancelImageGenerationRef = useRef(false);
   const [imageWidth, setImageWidth] = useState<number>(1920);
@@ -3112,51 +3117,96 @@ const Index = () => {
               </TabsContent>
 
               <TabsContent value="transcript" className="m-0">
-                <div className="max-w-4xl mx-auto space-y-8 p-6">
-                  {/* Script/Transcription Section */}
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <h2 className="text-2xl font-bold">Script / Transcription</h2>
-                    </div>
-                    {transcriptData && (transcriptData as { segments?: Array<{ text: string }> }).segments ? (
-                      <div className="bg-card rounded-lg border-2 p-6 shadow-sm">
-                        <div className="prose prose-sm max-w-none">
-                          <p className="text-foreground leading-relaxed whitespace-pre-wrap text-base">
-                            {((transcriptData as { segments?: Array<{ text: string }> }).segments || []).map(s => s.text).join(' ')}
-                          </p>
-                        </div>
+                <div className="h-[calc(100vh-200px)] p-6">
+                  {scriptGenerationPrompt ? (
+                    <ResizablePanelGroup direction="horizontal" className="h-full">
+                      {/* Script/Transcription Panel */}
+                      <ResizablePanel defaultSize={50} minSize={20} maxSize={80}>
+                        <Collapsible open={!isScriptCollapsed} onOpenChange={setIsScriptCollapsed} className="h-full flex flex-col">
+                          <div className="flex items-center justify-between mb-4 pb-2 border-b">
+                            <h2 className="text-xl font-bold">Script / Transcription</h2>
+                            <CollapsibleTrigger asChild>
+                              <Button variant="ghost" size="sm">
+                                {isScriptCollapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
+                              </Button>
+                            </CollapsibleTrigger>
+                          </div>
+                          <CollapsibleContent className="flex-1 overflow-hidden">
+                            <ScrollArea className="h-full">
+                              {transcriptData && (transcriptData as { segments?: Array<{ text: string }> }).segments ? (
+                                <div className="bg-card rounded-lg border-2 p-4 shadow-sm">
+                                  <p className="text-foreground leading-relaxed whitespace-pre-wrap text-sm">
+                                    {((transcriptData as { segments?: Array<{ text: string }> }).segments || []).map(s => s.text).join(' ')}
+                                  </p>
+                                </div>
+                              ) : projectData?.summary ? (
+                                <div className="bg-card rounded-lg border-2 p-4 shadow-sm">
+                                  <p className="text-foreground leading-relaxed whitespace-pre-wrap text-sm">
+                                    {projectData.summary}
+                                  </p>
+                                </div>
+                              ) : (
+                                <div className="bg-muted/30 rounded-lg border p-4">
+                                  <p className="text-muted-foreground text-center">Aucune transcription disponible</p>
+                                </div>
+                              )}
+                            </ScrollArea>
+                          </CollapsibleContent>
+                        </Collapsible>
+                      </ResizablePanel>
+                      
+                      <ResizableHandle withHandle />
+                      
+                      {/* Prompt Panel */}
+                      <ResizablePanel defaultSize={50} minSize={20} maxSize={80}>
+                        <Collapsible open={!isPromptCollapsed} onOpenChange={setIsPromptCollapsed} className="h-full flex flex-col">
+                          <div className="flex items-center justify-between mb-4 pb-2 border-b">
+                            <h2 className="text-xl font-bold">Prompt de génération</h2>
+                            <CollapsibleTrigger asChild>
+                              <Button variant="ghost" size="sm">
+                                {isPromptCollapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
+                              </Button>
+                            </CollapsibleTrigger>
+                          </div>
+                          <CollapsibleContent className="flex-1 overflow-hidden">
+                            <ScrollArea className="h-full">
+                              <div className="bg-primary/5 rounded-lg border-2 border-primary/20 p-4 shadow-sm">
+                                <p className="text-foreground leading-relaxed whitespace-pre-wrap text-sm font-medium">
+                                  {scriptGenerationPrompt}
+                                </p>
+                              </div>
+                              <p className="text-xs text-muted-foreground italic mt-2">
+                                Ce prompt a été utilisé pour générer le script de la vidéo via Claude.
+                              </p>
+                            </ScrollArea>
+                          </CollapsibleContent>
+                        </Collapsible>
+                      </ResizablePanel>
+                    </ResizablePanelGroup>
+                  ) : (
+                    <div className="h-full flex flex-col">
+                      <div className="flex items-center justify-between mb-4 pb-2 border-b">
+                        <h2 className="text-xl font-bold">Script / Transcription</h2>
                       </div>
-                    ) : projectData?.summary ? (
-                      <div className="bg-card rounded-lg border-2 p-6 shadow-sm">
-                        <div className="prose prose-sm max-w-none">
-                          <p className="text-foreground leading-relaxed whitespace-pre-wrap text-base">
-                            {projectData.summary}
-                          </p>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="bg-muted/30 rounded-lg border p-6">
-                        <p className="text-muted-foreground text-center">Aucune transcription disponible</p>
-                      </div>
-                    )}
-                  </div>
-                  
-                  {/* Script Generation Prompt Section */}
-                  {scriptGenerationPrompt && (
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between">
-                        <h2 className="text-2xl font-bold">Prompt utilisé pour générer le script</h2>
-                      </div>
-                      <div className="bg-primary/5 rounded-lg border-2 border-primary/20 p-6 shadow-sm">
-                        <div className="prose prose-sm max-w-none">
-                          <p className="text-foreground leading-relaxed whitespace-pre-wrap text-base font-medium">
-                            {scriptGenerationPrompt}
-                          </p>
-                        </div>
-                      </div>
-                      <p className="text-sm text-muted-foreground italic">
-                        Ce prompt a été utilisé pour générer le script de la vidéo via Claude.
-                      </p>
+                      <ScrollArea className="flex-1">
+                        {transcriptData && (transcriptData as { segments?: Array<{ text: string }> }).segments ? (
+                          <div className="bg-card rounded-lg border-2 p-4 shadow-sm">
+                            <p className="text-foreground leading-relaxed whitespace-pre-wrap text-sm">
+                              {((transcriptData as { segments?: Array<{ text: string }> }).segments || []).map(s => s.text).join(' ')}
+                            </p>
+                          </div>
+                        ) : projectData?.summary ? (
+                          <div className="bg-card rounded-lg border-2 p-4 shadow-sm">
+                            <p className="text-foreground leading-relaxed whitespace-pre-wrap text-sm">
+                              {projectData.summary}
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="bg-muted/30 rounded-lg border p-4">
+                            <p className="text-muted-foreground text-center">Aucune transcription disponible</p>
+                          </div>
+                        )}
+                      </ScrollArea>
                     </div>
                   )}
                 </div>
