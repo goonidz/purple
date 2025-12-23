@@ -4,7 +4,7 @@ const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 const { promisify } = require('util');
-const { spawn } = require('child_process');
+const { spawn, execSync } = require('child_process');
 const multer = require('multer');
 
 require('dotenv').config();
@@ -13,7 +13,7 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 // Version identifier
-const SERVICE_VERSION = 'v1.0.0';
+const SERVICE_VERSION = 'v1.1.0-youtube';
 
 // Create temp directory
 const TEMP_DIR = path.join(__dirname, 'temp');
@@ -94,6 +94,157 @@ async function extractAudio(inputPath, outputPath) {
 
     ffmpeg.on('error', reject);
   });
+}
+
+// Extract YouTube video ID from URL
+function extractYouTubeVideoId(url) {
+  const patterns = [
+    /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/,
+    /youtube\.com\/shorts\/([a-zA-Z0-9_-]{11})/
+  ];
+  
+  for (const pattern of patterns) {
+    const match = url.match(pattern);
+    if (match) return match[1];
+  }
+  return null;
+}
+
+// Download YouTube audio using yt-dlp
+async function downloadYouTubeAudio(url, outputPath) {
+  return new Promise((resolve, reject) => {
+    console.log(`Downloading YouTube audio: ${url}`);
+    
+    const ytdlp = spawn('yt-dlp', [
+      '-x',                          // Extract audio
+      '--audio-format', 'mp3',       // Convert to MP3
+      '--audio-quality', '0',        // Best quality
+      '-o', outputPath,              // Output path
+      '--no-playlist',               // Single video only
+      '--no-warnings',
+      url
+    ]);
+
+    let stderr = '';
+    let stdout = '';
+    
+    ytdlp.stdout.on('data', (data) => {
+      stdout += data.toString();
+      console.log(`yt-dlp: ${data.toString().trim()}`);
+    });
+    
+    ytdlp.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+
+    ytdlp.on('close', (code) => {
+      if (code === 0) {
+        // yt-dlp adds extension automatically, find the file
+        const dir = path.dirname(outputPath);
+        const base = path.basename(outputPath, path.extname(outputPath));
+        const files = fs.readdirSync(dir).filter(f => f.startsWith(base));
+        if (files.length > 0) {
+          resolve(path.join(dir, files[0]));
+        } else {
+          resolve(outputPath);
+        }
+      } else {
+        reject(new Error(`yt-dlp failed with code ${code}: ${stderr}`));
+      }
+    });
+
+    ytdlp.on('error', (err) => {
+      if (err.code === 'ENOENT') {
+        reject(new Error('yt-dlp not installed. Run: sudo apt install yt-dlp OR pip install yt-dlp'));
+      } else {
+        reject(err);
+      }
+    });
+  });
+}
+
+// Try to get YouTube transcript via API first (faster, no Whisper needed)
+async function getYouTubeTranscript(videoId) {
+  try {
+    // Try to get transcript from YouTube's timedtext API
+    const response = await axios.get(
+      `https://www.youtube.com/watch?v=${videoId}`,
+      { 
+        headers: { 
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+      }
+    );
+    
+    const html = response.data;
+    
+    // Extract captions data from page
+    const captionMatch = html.match(/"captions":\s*({[^}]+playerCaptionsTracklistRenderer[^}]+})/);
+    if (!captionMatch) {
+      console.log('No captions found in page, will use Whisper');
+      return null;
+    }
+    
+    // Try to find caption track URL
+    const trackMatch = html.match(/"baseUrl":"(https:\/\/www\.youtube\.com\/api\/timedtext[^"]+)"/);
+    if (!trackMatch) {
+      console.log('No caption track URL found, will use Whisper');
+      return null;
+    }
+    
+    const trackUrl = trackMatch[1].replace(/\\u0026/g, '&');
+    console.log('Found caption track:', trackUrl);
+    
+    // Fetch the transcript
+    const transcriptResponse = await axios.get(trackUrl);
+    const transcriptXml = transcriptResponse.data;
+    
+    // Parse XML transcript
+    const segments = [];
+    const textMatches = transcriptXml.matchAll(/<text start="([\d.]+)" dur="([\d.]+)"[^>]*>([^<]*)<\/text>/g);
+    
+    let fullText = '';
+    for (const match of textMatches) {
+      const start = parseFloat(match[1]);
+      const duration = parseFloat(match[2]);
+      const text = match[3]
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/\n/g, ' ')
+        .trim();
+      
+      if (text) {
+        segments.push({
+          id: segments.length,
+          start: start,
+          end: start + duration,
+          text: text
+        });
+        fullText += text + ' ';
+      }
+    }
+    
+    if (segments.length === 0) {
+      console.log('No segments parsed from captions, will use Whisper');
+      return null;
+    }
+    
+    console.log(`Got ${segments.length} segments from YouTube captions`);
+    
+    return {
+      text: fullText.trim(),
+      segments: segments,
+      language: 'auto',
+      source: 'youtube_captions'
+    };
+    
+  } catch (error) {
+    console.log('Failed to get YouTube transcript:', error.message);
+    return null;
+  }
 }
 
 // Transcribe using local Whisper
@@ -257,7 +408,7 @@ function formatTranscription(whisperResult) {
 
 // Process transcription job
 async function processTranscriptionJob(jobId, options) {
-  const { audioUrl, audioPath: uploadedPath, language, model, engine } = options;
+  const { audioUrl, audioPath: uploadedPath, youtubeUrl, language, model, engine, forceWhisper } = options;
   const workDir = path.join(TEMP_DIR, jobId);
   
   try {
@@ -271,9 +422,38 @@ async function processTranscriptionJob(jobId, options) {
     });
 
     let audioPath;
+    let transcriptResult = null;
     
-    // Step 1: Get audio file
-    if (audioUrl) {
+    // Check if it's a YouTube URL
+    const videoId = youtubeUrl ? extractYouTubeVideoId(youtubeUrl) : null;
+    
+    if (videoId) {
+      console.log(`[${jobId}] YouTube video detected: ${videoId}`);
+      
+      // Step 1: Try to get YouTube's own captions first (much faster)
+      if (!forceWhisper) {
+        jobs.set(jobId, { ...jobs.get(jobId), progress: 10, message: 'Checking YouTube captions...' });
+        transcriptResult = await getYouTubeTranscript(videoId);
+        
+        if (transcriptResult) {
+          console.log(`[${jobId}] Got transcript from YouTube captions`);
+          jobs.set(jobId, { ...jobs.get(jobId), progress: 90, message: 'Got YouTube captions' });
+        }
+      }
+      
+      // Step 2: If no captions, download audio and use Whisper
+      if (!transcriptResult) {
+        jobs.set(jobId, { ...jobs.get(jobId), progress: 20, message: 'Downloading YouTube audio...' });
+        const audioOutputPath = path.join(workDir, 'youtube_audio');
+        const downloadedPath = await downloadYouTubeAudio(youtubeUrl, audioOutputPath);
+        
+        jobs.set(jobId, { ...jobs.get(jobId), progress: 40, message: 'Converting audio...' });
+        audioPath = path.join(workDir, 'audio.wav');
+        await extractAudio(downloadedPath, audioPath);
+      }
+      
+    } else if (audioUrl) {
+      // Regular audio URL
       jobs.set(jobId, { ...jobs.get(jobId), progress: 10, message: 'Downloading audio...' });
       
       const ext = path.extname(new URL(audioUrl).pathname) || '.mp3';
@@ -303,26 +483,28 @@ async function processTranscriptionJob(jobId, options) {
       throw new Error('No audio source provided');
     }
 
-    // Step 2: Transcribe
-    jobs.set(jobId, { ...jobs.get(jobId), progress: 50, message: 'Transcribing with Whisper...' });
-    
-    let result;
-    const whisperModel = model || 'medium';
-    const whisperEngine = engine || 'whisper'; // 'whisper' or 'faster-whisper'
-    
-    console.log(`[${jobId}] Using ${whisperEngine} with model ${whisperModel}`);
-    
-    if (whisperEngine === 'faster-whisper') {
-      result = await transcribeWithFasterWhisper(audioPath, language, whisperModel);
-    } else {
-      result = await transcribeWithWhisper(audioPath, language, whisperModel);
+    // Step 3: Transcribe with Whisper if we don't have a result yet
+    if (!transcriptResult && audioPath) {
+      jobs.set(jobId, { ...jobs.get(jobId), progress: 50, message: 'Transcribing with Whisper...' });
+      
+      const whisperModel = model || 'medium';
+      const whisperEngine = engine || 'whisper'; // 'whisper' or 'faster-whisper'
+      
+      console.log(`[${jobId}] Using ${whisperEngine} with model ${whisperModel}`);
+      
+      if (whisperEngine === 'faster-whisper') {
+        transcriptResult = await transcribeWithFasterWhisper(audioPath, language, whisperModel);
+      } else {
+        transcriptResult = await transcribeWithWhisper(audioPath, language, whisperModel);
+      }
+      transcriptResult.source = 'whisper';
     }
 
-    // Step 3: Format result
+    // Step 4: Format result
     jobs.set(jobId, { ...jobs.get(jobId), progress: 90, message: 'Formatting results...' });
-    const formattedResult = formatTranscription(result);
+    const formattedResult = formatTranscription(transcriptResult);
 
-    // Step 4: Cleanup and complete
+    // Step 5: Cleanup and complete
     fs.rmSync(workDir, { recursive: true, force: true });
     
     jobs.set(jobId, {
@@ -333,7 +515,7 @@ async function processTranscriptionJob(jobId, options) {
       completedAt: new Date().toISOString()
     });
 
-    console.log(`[${jobId}] Transcription completed successfully`);
+    console.log(`[${jobId}] Transcription completed successfully (source: ${transcriptResult.source})`);
 
   } catch (error) {
     console.error(`[${jobId}] Error:`, error);
@@ -372,16 +554,17 @@ app.get('/health', (req, res) => {
 app.post('/transcribe', async (req, res) => {
   const jobId = `transcribe_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   
-  const { audioUrl, language, model, engine } = req.body;
+  const { audioUrl, youtubeUrl, language, model, engine, forceWhisper } = req.body;
   
-  if (!audioUrl) {
+  if (!audioUrl && !youtubeUrl) {
     return res.status(400).json({
       success: false,
-      error: 'audioUrl is required'
+      error: 'audioUrl or youtubeUrl is required'
     });
   }
 
-  console.log(`[${jobId}] Starting transcription job for: ${audioUrl}`);
+  const sourceUrl = youtubeUrl || audioUrl;
+  console.log(`[${jobId}] Starting transcription job for: ${sourceUrl}`);
   
   // Initialize job
   jobs.set(jobId, { 
@@ -391,7 +574,7 @@ app.post('/transcribe', async (req, res) => {
   });
 
   // Process in background
-  processTranscriptionJob(jobId, { audioUrl, language, model, engine }).catch(err => {
+  processTranscriptionJob(jobId, { audioUrl, youtubeUrl, language, model, engine, forceWhisper }).catch(err => {
     console.error(`[${jobId}] Background job error:`, err);
   });
 
@@ -401,6 +584,109 @@ app.post('/transcribe', async (req, res) => {
     status: 'pending',
     message: 'Transcription job started'
   });
+});
+
+// Transcribe YouTube video (convenience endpoint)
+app.post('/transcribe/youtube', async (req, res) => {
+  const jobId = `transcribe_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  
+  const { url, language, model, engine, forceWhisper } = req.body;
+  
+  if (!url) {
+    return res.status(400).json({
+      success: false,
+      error: 'url is required'
+    });
+  }
+
+  const videoId = extractYouTubeVideoId(url);
+  if (!videoId) {
+    return res.status(400).json({
+      success: false,
+      error: 'Invalid YouTube URL'
+    });
+  }
+
+  console.log(`[${jobId}] Starting YouTube transcription for: ${url} (videoId: ${videoId})`);
+  
+  // Initialize job
+  jobs.set(jobId, { 
+    status: 'pending', 
+    progress: 0,
+    videoId,
+    createdAt: new Date().toISOString()
+  });
+
+  // Process in background
+  processTranscriptionJob(jobId, { youtubeUrl: url, language, model, engine, forceWhisper }).catch(err => {
+    console.error(`[${jobId}] Background job error:`, err);
+  });
+
+  res.json({
+    success: true,
+    jobId,
+    videoId,
+    status: 'pending',
+    message: 'YouTube transcription job started'
+  });
+});
+
+// Synchronous YouTube transcription (waits for result)
+app.post('/transcribe/youtube/sync', async (req, res) => {
+  const jobId = `transcribe_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  
+  const { url, language, model, engine, forceWhisper } = req.body;
+  
+  if (!url) {
+    return res.status(400).json({
+      success: false,
+      error: 'url is required'
+    });
+  }
+
+  const videoId = extractYouTubeVideoId(url);
+  if (!videoId) {
+    return res.status(400).json({
+      success: false,
+      error: 'Invalid YouTube URL'
+    });
+  }
+
+  console.log(`[${jobId}] Starting synchronous YouTube transcription for: ${url}`);
+  
+  try {
+    jobs.set(jobId, { 
+      status: 'processing', 
+      progress: 0,
+      videoId,
+      createdAt: new Date().toISOString()
+    });
+
+    await processTranscriptionJob(jobId, { youtubeUrl: url, language, model, engine, forceWhisper });
+    
+    const job = jobs.get(jobId);
+    
+    if (job.status === 'completed') {
+      res.json({
+        success: true,
+        jobId,
+        videoId,
+        ...job.result
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        error: job.error || 'Transcription failed'
+      });
+    }
+    
+  } catch (error) {
+    console.error(`[${jobId}] Error:`, error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
 });
 
 // Upload file and transcribe (async)

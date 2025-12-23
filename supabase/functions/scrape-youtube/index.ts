@@ -1,10 +1,12 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { YoutubeTranscript } from 'jsr:@fbehrens/youtube-transcript@1.0.2';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
+
+// VPS Transcription Service URL
+const VPS_TRANSCRIPTION_URL = Deno.env.get('VPS_TRANSCRIPTION_URL') || 'http://51.91.158.233:3001';
 
 // Extract video ID from various YouTube URL formats
 function extractVideoId(url: string): string | null {
@@ -86,38 +88,45 @@ Deno.serve(async (req) => {
       ? maxresThumbnail 
       : `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
 
-    // Try to fetch transcript (optional, don't fail if unavailable)
+    // Try to fetch transcript via VPS service (optional, don't fail if unavailable)
     let transcript = null;
+    let transcriptSource = null;
     try {
-      console.log('Attempting to fetch transcript for video:', videoId);
+      console.log('Attempting to fetch transcript from VPS service for video:', videoId);
       
-      // Use the Deno-compatible youtube-transcript library
-      const transcriptData = await YoutubeTranscript.fetchTranscript(videoId);
-      
-      console.log('Transcript fetch result:', {
-        hasData: !!transcriptData,
-        dataType: typeof transcriptData,
-        isArray: Array.isArray(transcriptData),
-        length: transcriptData?.length || 0,
-        firstItem: transcriptData?.[0] || null
+      // Call VPS transcription service - synchronous mode for quick response
+      const transcriptResponse = await fetch(`${VPS_TRANSCRIPTION_URL}/transcribe/youtube/sync`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          url: `https://www.youtube.com/watch?v=${videoId}`,
+          language: 'auto',
+          forceWhisper: false // Try YouTube captions first
+        })
       });
       
-      if (transcriptData && transcriptData.length > 0) {
-        // Combine all transcript segments into a single text
-        transcript = transcriptData.map((item: any) => item.text).join(' ');
-        console.log('Transcript extracted successfully, total length:', transcript.length, 'segments:', transcriptData.length);
+      if (transcriptResponse.ok) {
+        const transcriptData = await transcriptResponse.json();
+        console.log('VPS transcript response:', {
+          success: transcriptData.success,
+          hasText: !!transcriptData.text,
+          textLength: transcriptData.text?.length || 0,
+          source: transcriptData.source
+        });
+        
+        if (transcriptData.success && transcriptData.text) {
+          transcript = transcriptData.text;
+          transcriptSource = transcriptData.source || 'vps';
+          console.log('Transcript extracted successfully via VPS, length:', transcript.length);
+        }
       } else {
-        console.log('Transcript data is empty or invalid');
+        const errorText = await transcriptResponse.text();
+        console.log('VPS transcript service error:', transcriptResponse.status, errorText);
       }
     } catch (transcriptError: any) {
-      // Transcript not available (video might not have captions)
-      console.error('Transcript fetch error:', {
-        message: transcriptError?.message,
-        stack: transcriptError?.stack,
-        name: transcriptError?.name,
-        fullError: transcriptError
-      });
-      console.log('Transcript not available for video:', videoId);
+      // VPS service not available or error
+      console.error('VPS transcript fetch error:', transcriptError?.message);
+      console.log('Transcript service unavailable for video:', videoId);
     }
 
     return new Response(
@@ -131,6 +140,7 @@ Deno.serve(async (req) => {
         thumbnails: getAllThumbnailUrls(videoId),
         embedHtml: oembedData.html,
         transcript,
+        transcriptSource,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );

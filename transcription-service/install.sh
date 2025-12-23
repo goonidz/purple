@@ -1,7 +1,7 @@
 #!/bin/bash
 
-echo "🎤 Installation du service de transcription Whisper"
-echo "=================================================="
+echo "🎤 Installation du service de transcription Whisper + YouTube"
+echo "============================================================="
 
 # Check if running as root
 if [ "$EUID" -eq 0 ]; then
@@ -23,6 +23,11 @@ sudo apt install -y python3 python3-pip python3-venv
 echo ""
 echo "🎬 Installation de FFmpeg..."
 sudo apt install -y ffmpeg
+
+# Install yt-dlp for YouTube downloads
+echo ""
+echo "📺 Installation de yt-dlp..."
+sudo apt install -y yt-dlp || pip install yt-dlp
 
 # Install Node.js if not present
 if ! command -v node &> /dev/null; then
