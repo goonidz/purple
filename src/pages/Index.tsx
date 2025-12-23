@@ -3025,16 +3025,32 @@ const Index = () => {
               </TabsContent>
 
               <TabsContent value="transcript" className="m-0">
-                <div className="max-w-3xl mx-auto">
-                  <h2 className="text-xl font-semibold mb-4">Transcription</h2>
-                  {transcriptData && (transcriptData as { segments?: Array<{ text: string }> }).segments ? (
-                    <div className="bg-muted/50 rounded-lg p-6 border">
-                      <p className="text-foreground leading-relaxed whitespace-pre-wrap">
-                        {((transcriptData as { segments?: Array<{ text: string }> }).segments || []).map(s => s.text).join(' ')}
+                <div className="max-w-3xl mx-auto space-y-6">
+                  <div>
+                    <h2 className="text-xl font-semibold mb-4">Transcription</h2>
+                    {transcriptData && (transcriptData as { segments?: Array<{ text: string }> }).segments ? (
+                      <div className="bg-muted/50 rounded-lg p-6 border">
+                        <p className="text-foreground leading-relaxed whitespace-pre-wrap">
+                          {((transcriptData as { segments?: Array<{ text: string }> }).segments || []).map(s => s.text).join(' ')}
+                        </p>
+                      </div>
+                    ) : (
+                      <p className="text-muted-foreground">Aucune transcription disponible</p>
+                    )}
+                  </div>
+                  
+                  {promptSystemMessage && (
+                    <div>
+                      <h2 className="text-xl font-semibold mb-4">Prompt système utilisé</h2>
+                      <div className="bg-muted/50 rounded-lg p-6 border">
+                        <p className="text-foreground leading-relaxed whitespace-pre-wrap text-sm font-mono">
+                          {promptSystemMessage}
+                        </p>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-2">
+                        Ce prompt système a été utilisé pour générer les prompts d'images à partir de la transcription.
                       </p>
                     </div>
-                  ) : (
-                    <p className="text-muted-foreground">Aucune transcription disponible</p>
                   )}
                 </div>
               </TabsContent>
