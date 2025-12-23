@@ -163,8 +163,15 @@ serve(async (req) => {
             // Stop syncing remaining channels to avoid more rate limits
             break;
           }
-          console.error(`Failed to fetch videos for ${channel.channel_name}:`, videosData);
-          errors.push(`${channel.channel_name}: Failed to fetch videos`);
+          const errorMessage = videosData?.error?.message || videosData?.message || 'Unknown error';
+          const errorReason = videosData?.error?.errors?.[0]?.reason || 'unknown';
+          console.error(`Failed to fetch videos for ${channel.channel_name} (${channel.channel_id}):`, {
+            status: videosResponse.status,
+            error: errorMessage,
+            reason: errorReason,
+            fullError: videosData
+          });
+          errors.push(`${channel.channel_name}: ${errorMessage} (${errorReason})`);
           continue;
         }
 
@@ -191,8 +198,15 @@ serve(async (req) => {
             errors.push(`${channel.channel_name}: Rate limit atteint. Réessayez plus tard.`);
             break;
           }
-          console.error(`Failed to fetch stats for ${channel.channel_name}:`, statsData);
-          errors.push(`${channel.channel_name}: Failed to fetch video stats`);
+          const errorMessage = statsData?.error?.message || statsData?.message || 'Unknown error';
+          const errorReason = statsData?.error?.errors?.[0]?.reason || 'unknown';
+          console.error(`Failed to fetch stats for ${channel.channel_name}:`, {
+            status: statsResponse.status,
+            error: errorMessage,
+            reason: errorReason,
+            fullError: statsData
+          });
+          errors.push(`${channel.channel_name}: ${errorMessage} (${errorReason})`);
           continue;
         }
 
