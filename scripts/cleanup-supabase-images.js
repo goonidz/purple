@@ -11,11 +11,36 @@
  *   0 2 * * * cd /home/ubuntu/purple && node scripts/cleanup-supabase-images.js >> /home/ubuntu/purple/cleanup-images.log 2>&1
  */
 
-import dotenv from 'dotenv';
 import https from 'https';
+import fs from 'fs';
 
-// Charger les variables d'environnement
-dotenv.config({ path: '.env.production' });
+// Charger les variables d'environnement depuis .env.production
+function loadEnvFile(filePath) {
+  if (!fs.existsSync(filePath)) {
+    return {};
+  }
+  
+  const content = fs.readFileSync(filePath, 'utf8');
+  const env = {};
+  
+  content.split('\n').forEach(line => {
+    const trimmed = line.trim();
+    if (trimmed && !trimmed.startsWith('#')) {
+      const match = trimmed.match(/^([^=]+)=(.*)$/);
+      if (match) {
+        const key = match[1].trim();
+        const value = match[2].trim().replace(/^["']|["']$/g, '');
+        env[key] = value;
+      }
+    }
+  });
+  
+  return env;
+}
+
+// Charger .env.production
+const env = loadEnvFile('.env.production');
+Object.assign(process.env, env);
 
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://laqgmqyjstisipsbljha.supabase.co';
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
