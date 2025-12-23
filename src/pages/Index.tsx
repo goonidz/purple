@@ -110,6 +110,7 @@ const Index = () => {
   const range2End = durationRanges[1]?.endSeconds || 180;
   const [preferSentenceBoundaries, setPreferSentenceBoundaries] = useState(true);
   const [promptSystemMessage, setPromptSystemMessage] = useState<string>("");
+  const [scriptGenerationPrompt, setScriptGenerationPrompt] = useState<string | null>(null);
   const cancelGenerationRef = useRef(false);
   const cancelImageGenerationRef = useRef(false);
   const [imageWidth, setImageWidth] = useState<number>(1920);
@@ -677,6 +678,21 @@ const Index = () => {
         });
         // Set default message for display while backfill is running
         setPromptSystemMessage('Prompt système par défaut (en cours de récupération...)');
+      }
+
+      // Try to find script generation prompt from generation_jobs
+      if (currentProjectId) {
+        const { data: scriptJobs } = await supabase
+          .from('generation_jobs')
+          .select('metadata')
+          .eq('project_id', currentProjectId)
+          .eq('job_type', 'script_generation')
+          .order('created_at', { ascending: false })
+          .limit(1);
+        
+        if (scriptJobs && scriptJobs.length > 0 && scriptJobs[0].metadata?.customPrompt) {
+          setScriptGenerationPrompt(scriptJobs[0].metadata.customPrompt);
+        }
       }
       
       const parsedUrls = parseStyleReferenceUrls(data.style_reference_url);
@@ -3059,9 +3075,9 @@ const Index = () => {
                     )}
                   </div>
                   
-                  {promptSystemMessage ? (
+                  {promptSystemMessage && (
                     <div>
-                      <h2 className="text-xl font-semibold mb-4">Prompt système utilisé</h2>
+                      <h2 className="text-xl font-semibold mb-4">Prompt système pour les images</h2>
                       <div className="bg-muted/50 rounded-lg p-6 border">
                         <p className="text-foreground leading-relaxed whitespace-pre-wrap text-sm font-mono">
                           {promptSystemMessage}
@@ -3071,9 +3087,25 @@ const Index = () => {
                         Ce prompt système a été utilisé pour générer les prompts d'images à partir de la transcription.
                       </p>
                     </div>
-                  ) : generatedPrompts.length > 0 && (
+                  )}
+                  
+                  {scriptGenerationPrompt && (
                     <div>
-                      <h2 className="text-xl font-semibold mb-4">Prompt système utilisé</h2>
+                      <h2 className="text-xl font-semibold mb-4">Prompt utilisé pour générer le script</h2>
+                      <div className="bg-muted/50 rounded-lg p-6 border">
+                        <p className="text-foreground leading-relaxed whitespace-pre-wrap text-sm">
+                          {scriptGenerationPrompt}
+                        </p>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-2">
+                        Ce prompt a été utilisé pour générer le script de la vidéo (stocké dans "Summary").
+                      </p>
+                    </div>
+                  )}
+                  
+                  {!promptSystemMessage && generatedPrompts.length > 0 && (
+                    <div>
+                      <h2 className="text-xl font-semibold mb-4">Prompt système pour les images</h2>
                       <div className="bg-muted/50 rounded-lg p-6 border">
                         <p className="text-foreground leading-relaxed whitespace-pre-wrap text-sm font-mono">
                           Prompt système par défaut (récupération en cours...)
