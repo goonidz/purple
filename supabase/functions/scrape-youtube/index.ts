@@ -89,14 +89,19 @@ Deno.serve(async (req) => {
     // Try to fetch transcript (optional, don't fail if unavailable)
     let transcript = null;
     try {
+      console.log('Attempting to fetch transcript for video:', videoId);
       const transcriptData = await YoutubeTranscript.fetchTranscript(videoId);
+      console.log('Transcript data received:', transcriptData?.length, 'segments');
       if (transcriptData && transcriptData.length > 0) {
         // Combine all transcript segments into a single text
         transcript = transcriptData.map((item: any) => item.text).join(' ');
+        console.log('Transcript combined, total length:', transcript.length);
+      } else {
+        console.log('Transcript data is empty');
       }
-    } catch (transcriptError) {
+    } catch (transcriptError: any) {
       // Transcript not available (video might not have captions)
-      console.log('Transcript not available for video:', videoId);
+      console.log('Transcript not available for video:', videoId, 'Error:', transcriptError?.message || transcriptError);
     }
 
     return new Response(

@@ -364,6 +364,55 @@ export default function CalendarVideoModal({
     setIsPlaying(!isPlaying);
   };
 
+  const scrapeYouTubeUrl = async (url: string) => {
+    // Check if it's a YouTube URL
+    const youtubePattern = /(?:youtube\.com\/(?:watch\?v=|embed\/|v\/|shorts\/)|youtu\.be\/|^)([a-zA-Z0-9_-]{11})/;
+    if (!youtubePattern.test(url)) {
+      return;
+    }
+
+    setIsScrapingSource(true);
+    try {
+      console.log("Scraping YouTube URL:", url);
+      const { data, error } = await supabase.functions.invoke("scrape-youtube", {
+        body: { url }
+      });
+
+      if (error) throw error;
+
+      console.log("Scrape response:", data);
+
+      if (data.success) {
+        // Auto-fill title if empty
+        if (!title.trim()) {
+          setTitle(data.title);
+        }
+        // Store thumbnail URL
+        if (data.thumbnailUrl) {
+          setSourceThumbnailUrl(data.thumbnailUrl);
+        }
+        // Auto-fill transcript if available and script is empty
+        if (data.transcript) {
+          console.log("Transcript received, length:", data.transcript.length);
+          if (!script.trim()) {
+            setScript(data.transcript);
+            toast.success(`Informations récupérées : ${data.title} (transcript inclus)`);
+          } else {
+            toast.success(`Informations récupérées : ${data.title} (transcript disponible mais script déjà rempli)`);
+          }
+        } else {
+          console.log("No transcript available");
+          toast.success(`Informations récupérées : ${data.title}`);
+        }
+      }
+    } catch (error: any) {
+      console.error("Error scraping YouTube:", error);
+      toast.error(error.message || "Erreur lors de la récupération des informations");
+    } finally {
+      setIsScrapingSource(false);
+    }
+  };
+
   const handleSourceUrlChange = async (url: string) => {
     setSourceUrl(url);
     
@@ -373,41 +422,17 @@ export default function CalendarVideoModal({
       return;
     }
     
-    // Check if it's a YouTube URL
-    const youtubePattern = /(?:youtube\.com\/(?:watch\?v=|embed\/|v\/|shorts\/)|youtu\.be\/|^)([a-zA-Z0-9_-]{11})/;
-    if (youtubePattern.test(url)) {
-      setIsScrapingSource(true);
-      try {
-        const { data, error } = await supabase.functions.invoke("scrape-youtube", {
-          body: { url }
-        });
+    await scrapeYouTubeUrl(url);
+  };
 
-        if (error) throw error;
-
-        if (data.success) {
-          // Auto-fill title if empty
-          if (!title.trim()) {
-            setTitle(data.title);
-          }
-          // Store thumbnail URL
-          if (data.thumbnailUrl) {
-            setSourceThumbnailUrl(data.thumbnailUrl);
-          }
-          // Auto-fill transcript if available and script is empty
-          if (data.transcript && !script.trim()) {
-            setScript(data.transcript);
-            toast.success(`Informations récupérées : ${data.title} (transcript inclus)`);
-          } else {
-            toast.success(`Informations récupérées : ${data.title}${data.transcript ? ' (transcript disponible)' : ''}`);
-          }
-        }
-      } catch (error: any) {
-        console.error("Error scraping YouTube:", error);
-        toast.error(error.message || "Erreur lors de la récupération des informations");
-      } finally {
-        setIsScrapingSource(false);
-      }
+  const handleYoutubeUrlChange = async (url: string) => {
+    setYoutubeUrl(url);
+    
+    if (!url.trim()) {
+      return;
     }
+    
+    await scrapeYouTubeUrl(url);
   };
 
   const handleLaunchProject = () => {
@@ -626,7 +651,7 @@ export default function CalendarVideoModal({
                 <Input
                   id="youtube-url"
                   value={youtubeUrl}
-                  onChange={(e) => setYoutubeUrl(e.target.value)}
+                  onChange={(e) => handleYoutubeUrlChange(e.target.value)}
                   placeholder="https://youtube.com/watch?v=..."
                   className="flex-1"
                 />
