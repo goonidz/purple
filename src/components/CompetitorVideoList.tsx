@@ -132,7 +132,13 @@ export default function CompetitorVideoList({ videos, channels, isLoading, onAdd
       <div className="flex items-center justify-center py-12">
         <div className="text-center text-muted-foreground">
           <p className="text-lg mb-2">Aucune vidéo</p>
-          <p className="text-sm">Ajoutez des concurrents et synchronisez pour voir leurs vidéos</p>
+          <p className="text-sm mb-4">Ajoutez des concurrents et synchronisez pour voir leurs vidéos</p>
+          <p className="text-xs text-muted-foreground/70">
+            Si vous avez déjà synchronisé, vérifiez :
+            <br />- La période sélectionnée (7d, 30d, 90d)
+            <br />- Que les vidéos ne sont pas des shorts (&lt; 2 min)
+            <br />- Que le dossier sélectionné contient des chaînes
+          </p>
         </div>
       </div>
     );
