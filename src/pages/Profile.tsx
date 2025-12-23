@@ -18,17 +18,20 @@ const Profile = () => {
   const [replicateApiKey, setReplicateApiKey] = useState("");
   const [minimaxApiKey, setMinimaxApiKey] = useState("");
   const [elevenLabsApiKey, setElevenLabsApiKey] = useState("");
+  const [anthropicApiKey, setAnthropicApiKey] = useState("");
   
   // Track original values to detect changes
   const [originalKeys, setOriginalKeys] = useState({
     replicate: "",
     eleven_labs: "",
-    minimax: ""
+    minimax: "",
+    anthropic: ""
   });
   const [showKeys, setShowKeys] = useState({
     replicate: false,
     eleven_labs: false,
-    minimax: false
+    minimax: false,
+    anthropic: false
   });
 
   useEffect(() => {
@@ -57,26 +60,30 @@ const Profile = () => {
     setIsLoading(true);
     try {
       // Try to get API keys from Vault
-      const [replicateResult, elevenLabsResult, minimaxResult] = await Promise.all([
+      const [replicateResult, elevenLabsResult, minimaxResult, anthropicResult] = await Promise.all([
         supabase.rpc('get_user_api_key', { key_name: 'replicate' }),
         supabase.rpc('get_user_api_key', { key_name: 'eleven_labs' }),
         supabase.rpc('get_user_api_key', { key_name: 'minimax' }),
+        supabase.rpc('get_user_api_key', { key_name: 'anthropic' }),
       ]);
 
       const replicateValue = replicateResult.data || "";
       const elevenLabsValue = elevenLabsResult.data || "";
       const minimaxValue = minimaxResult.data || "";
+      const anthropicValue = anthropicResult.data || "";
 
       // Set current values
       setReplicateApiKey(replicateValue);
       setElevenLabsApiKey(elevenLabsValue);
       setMinimaxApiKey(minimaxValue);
+      setAnthropicApiKey(anthropicValue);
       
       // Store original values to track changes
       setOriginalKeys({
         replicate: replicateValue,
         eleven_labs: elevenLabsValue,
-        minimax: minimaxValue
+        minimax: minimaxValue,
+        anthropic: anthropicValue
       });
       
       if (replicateResult.error && !replicateResult.error.message?.includes('not found')) {
@@ -110,6 +117,9 @@ const Profile = () => {
     }
     if (minimaxApiKey.trim() !== originalKeys.minimax) {
       changedKeys.push({ key_name: 'minimax', key_value: minimaxApiKey.trim() });
+    }
+    if (anthropicApiKey.trim() !== originalKeys.anthropic) {
+      changedKeys.push({ key_name: 'anthropic', key_value: anthropicApiKey.trim() });
     }
 
     if (changedKeys.length === 0) {
@@ -311,11 +321,47 @@ const Profile = () => {
                       </a>
                     </p>
                   </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="anthropic-key">
+                      Anthropic API Key
+                    </Label>
+                    <div className="relative">
+                      <Input
+                        id="anthropic-key"
+                        type={showKeys.anthropic ? "text" : "password"}
+                        value={anthropicApiKey}
+                        onChange={(e) => setAnthropicApiKey(e.target.value)}
+                        placeholder="sk-ant-..."
+                        className="pr-10"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                        onClick={() => setShowKeys(prev => ({ ...prev, anthropic: !prev.anthropic }))}
+                      >
+                        {showKeys.anthropic ? <EyeOff className="h-4 w-4 text-muted-foreground" /> : <Eye className="h-4 w-4 text-muted-foreground" />}
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Utilisée pour Claude Sonnet 4 avec Extended Thinking (meilleure qualité, moins d'erreurs).{" "}
+                      <a
+                        href="https://console.anthropic.com/settings/keys"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary hover:underline"
+                      >
+                        Obtenir une clé
+                      </a>
+                    </p>
+                  </div>
                 </div>
 
                 <Button
                   onClick={handleSave}
-                  disabled={isSaving || (!replicateApiKey.trim() && !elevenLabsApiKey.trim() && !minimaxApiKey.trim())}
+                  disabled={isSaving || (!replicateApiKey.trim() && !elevenLabsApiKey.trim() && !minimaxApiKey.trim() && !anthropicApiKey.trim())}
                   className="w-full"
                   size="lg"
                 >

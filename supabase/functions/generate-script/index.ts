@@ -79,6 +79,104 @@ serve(async (req) => {
     const selectedModel = scriptModel || "claude";
     console.log(`Generating script with model: ${selectedModel}, useWebhook: ${useWebhook}`);
 
+    // Handle Claude with Extended Thinking via Anthropic API
+    if (selectedModel === "claude-thinking") {
+      console.log("Using Claude Sonnet 4 with Extended Thinking via Anthropic API...");
+
+      // Get user's Anthropic API key from Vault
+      const { data: apiKeyData, error: apiKeyError } = await supabaseAdmin.rpc(
+        'get_user_api_key_for_service',
+        { target_user_id: user.id, key_name: 'anthropic' }
+      );
+
+      if (apiKeyError || !apiKeyData) {
+        console.error("Error fetching Anthropic API key:", apiKeyError);
+        return new Response(
+          JSON.stringify({ error: "Anthropic API key not configured. Please add it in your profile." }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const systemPrompt = `Tu es un assistant d'écriture professionnel. Tu génères exactement ce que l'utilisateur demande, sans commentaires ni explications supplémentaires. Réponds uniquement avec le contenu demandé.
+
+RÈGLE CRITIQUE SUR LA LONGUEUR:
+- Si l'utilisateur demande un certain nombre de mots, tu DOIS atteindre ce nombre MINIMUM
+- Ne t'arrête JAMAIS avant d'avoir atteint le nombre de mots demandé
+- Développe chaque section en profondeur pour atteindre la longueur requise
+- Ajoute des détails, des exemples, des transitions, des descriptions riches
+
+IMPORTANT: Utilise ton extended thinking pour réfléchir en profondeur avant de répondre. Vérifie les faits, structure bien le contenu, et assure-toi de la qualité.`;
+
+      try {
+        // Call Anthropic API with extended thinking
+        const anthropicResponse = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': apiKeyData,
+            'anthropic-version': '2024-10-22', // Required for extended thinking
+          },
+          body: JSON.stringify({
+            model: 'claude-sonnet-4-20250514', // Latest Sonnet 4 with extended thinking
+            max_tokens: 64000,
+            system: systemPrompt,
+            messages: [
+              {
+                role: 'user',
+                content: customPrompt
+              }
+            ],
+            thinking: {
+              type: 'enabled',
+              budget_tokens: 32000 // Allow up to 32k tokens for thinking
+            }
+          })
+        });
+
+        if (!anthropicResponse.ok) {
+          const errorText = await anthropicResponse.text();
+          console.error("Anthropic API error:", errorText);
+          throw new Error(`Anthropic API error: ${anthropicResponse.status} - ${errorText}`);
+        }
+
+        const anthropicData = await anthropicResponse.json();
+        
+        // Extract the script from the response
+        let script = '';
+        if (anthropicData.content && anthropicData.content.length > 0) {
+          // Claude returns content as an array of text blocks
+          script = anthropicData.content
+            .filter((block: any) => block.type === 'text')
+            .map((block: any) => block.text)
+            .join('\n\n');
+        }
+
+        if (!script) {
+          throw new Error('No script content returned from Anthropic API');
+        }
+
+        const finalWordCount = script.split(/\s+/).filter(w => w.length > 0).length;
+        console.log(`Script generated with Claude Sonnet 4 (Extended Thinking), word count: ${finalWordCount}`);
+
+        return new Response(
+          JSON.stringify({ 
+            script,
+            wordCount: finalWordCount,
+            estimatedDuration: Math.round(finalWordCount / 2.5),
+            model: 'claude-sonnet-4-thinking'
+          }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+
+      } catch (error: any) {
+        console.error("Anthropic API error:", error);
+        return new Response(
+          JSON.stringify({ error: `Anthropic API error: ${error.message}` }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+    }
+
     // Extract target word count from prompt
     const targetWordCount = extractTargetWordCount(customPrompt);
     console.log(`Target word count detected: ${targetWordCount}`);

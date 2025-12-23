@@ -226,7 +226,7 @@ const CreateFromScratch = () => {
   const [generationMessage, setGenerationMessage] = useState("");
   const [wordCount, setWordCount] = useState(0);
   const [estimatedDuration, setEstimatedDuration] = useState(0);
-  const [scriptModel, setScriptModel] = useState<"claude" | "gpt5">("claude");
+  const [scriptModel, setScriptModel] = useState<"claude" | "claude-thinking" | "gpt5">("claude");
   
   // Audio step
   const [ttsProvider] = useState<"minimax">("minimax");
@@ -845,6 +845,7 @@ const CreateFromScratch = () => {
   ];
   
   const GENERATION_MESSAGES = scriptModel === "gpt5" ? GENERATION_MESSAGES_GEMINI : GENERATION_MESSAGES_CLAUDE;
+  // Claude-thinking uses same messages as Claude
 
   // Job polling for script generation
   const [scriptJobId, setScriptJobId] = useState<string | null>(null);
@@ -1635,7 +1636,7 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                         </div>
                       )}
                       <p className="text-xs text-muted-foreground">
-                        Ce prompt sera envoyé à {scriptModel === "gpt5" ? "GPT-5.1" : "Claude"} pour générer le script. Incluez tous les détails: sujet, durée, style, langue, etc.
+                        Ce prompt sera envoyé à {scriptModel === "gpt5" ? "GPT-5.1" : scriptModel === "claude-thinking" ? "Claude Sonnet 4 + Extended Thinking" : "Claude"} pour générer le script. Incluez tous les détails: sujet, durée, style, langue, etc.
                         <br />
                         <span className="font-semibold">Variables disponibles:</span> <code className="bg-primary/20 text-primary px-1 rounded font-semibold">{"{{projectName}}"}</code> sera automatiquement remplacé par le nom du projet.
                       </p>
@@ -1645,7 +1646,7 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                   {/* Model selector */}
                   <div className="space-y-2">
                     <Label>Modèle pour le script</Label>
-                    <Select value={scriptModel} onValueChange={(v) => setScriptModel(v as "claude" | "gpt5")}>
+                    <Select value={scriptModel} onValueChange={(v) => setScriptModel(v as "claude" | "claude-thinking" | "gpt5")}>
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
@@ -1654,6 +1655,13 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                           <div className="flex flex-col">
                             <span className="font-medium">Claude Sonnet 4.5</span>
                             <span className="text-xs text-muted-foreground">Via Replicate (nécessite clé API)</span>
+                          </div>
+                        </SelectItem>
+                        <SelectItem value="claude-thinking">
+                          <div className="flex flex-col">
+                            <span className="font-medium">Claude Sonnet 4 + Extended Thinking</span>
+                            <span className="text-xs text-muted-foreground">Via Anthropic API directe (nécessite clé API Anthropic)</span>
+                            <span className="text-xs text-primary mt-1">✨ Réfléchit plus longtemps, moins d'erreurs</span>
                           </div>
                         </SelectItem>
                         <SelectItem value="gpt5">
