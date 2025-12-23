@@ -1065,13 +1065,25 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
     setGenerationMessage("Régénération en cours...");
 
     try {
+      // Get project name for variable replacement
+      const { data: projectData } = await supabase
+        .from("projects")
+        .select("name")
+        .eq("id", projectId)
+        .single();
+      
+      const projectNameValue = projectData?.name || projectName.trim() || "Projet";
+      
+      // Replace variables in prompt before sending
+      const finalPrompt = replacePromptVariables(customPrompt, projectNameValue);
+
       // Start the script generation job via backend
       const { data, error } = await supabase.functions.invoke('start-generation-job', {
         body: {
           projectId,
           jobType: 'script_generation',
           metadata: {
-            customPrompt,
+            customPrompt: finalPrompt,
             scriptModel
           }
         }
