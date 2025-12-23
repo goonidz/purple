@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { YoutubeTranscript } from 'jsr:@fbehrens/youtube-transcript@1.0.2';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -90,53 +91,15 @@ Deno.serve(async (req) => {
     try {
       console.log('Attempting to fetch transcript for video:', videoId);
       
-      // Fetch the YouTube watch page to get transcript data
-      const watchPageUrl = `https://www.youtube.com/watch?v=${videoId}`;
-      const pageResponse = await fetch(watchPageUrl);
-      const pageHtml = await pageResponse.text();
+      // Use the Deno-compatible youtube-transcript library
+      const transcriptData = await YoutubeTranscript.fetchTranscript(videoId);
       
-      // Try to extract transcript from the page
-      // YouTube stores transcript data in a script tag with ytInitialPlayerResponse
-      const ytInitialPlayerResponseMatch = pageHtml.match(/var ytInitialPlayerResponse = ({.+?});/s);
-      
-      if (ytInitialPlayerResponseMatch) {
-        try {
-          const playerResponse = JSON.parse(ytInitialPlayerResponseMatch[1]);
-          const captions = playerResponse?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
-          
-          if (captions && captions.length > 0) {
-            // Get the first available caption track (usually auto-generated)
-            const captionTrack = captions.find((track: any) => track.kind === 'asr') || captions[0];
-            const baseUrl = captionTrack?.baseUrl;
-            
-            if (baseUrl) {
-              console.log('Found caption track, fetching transcript from:', baseUrl);
-              const transcriptResponse = await fetch(baseUrl);
-              const transcriptXml = await transcriptResponse.text();
-              
-              // Parse XML transcript
-              const textMatches = transcriptXml.matchAll(/<text[^>]*>([^<]+)<\/text>/g);
-              const transcriptParts: string[] = [];
-              
-              for (const match of textMatches) {
-                transcriptParts.push(match[1].trim());
-              }
-              
-              if (transcriptParts.length > 0) {
-                transcript = transcriptParts.join(' ');
-                console.log('Transcript extracted, total length:', transcript.length);
-              } else {
-                console.log('No transcript text found in XML');
-              }
-            }
-          } else {
-            console.log('No captions found in player response');
-          }
-        } catch (parseError: any) {
-          console.log('Error parsing player response:', parseError?.message);
-        }
+      if (transcriptData && transcriptData.length > 0) {
+        // Combine all transcript segments into a single text
+        transcript = transcriptData.map((item: any) => item.text).join(' ');
+        console.log('Transcript extracted successfully, total length:', transcript.length, 'segments:', transcriptData.length);
       } else {
-        console.log('Could not find ytInitialPlayerResponse in page HTML');
+        console.log('Transcript data is empty');
       }
     } catch (transcriptError: any) {
       // Transcript not available (video might not have captions)
