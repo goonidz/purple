@@ -207,8 +207,17 @@ export default function Competitors() {
 
   // Sync videos
   const handleSync = async () => {
+    if (channels.length === 0) {
+      toast.error("Aucun concurrent à synchroniser");
+      return;
+    }
+
     setIsSyncing(true);
+    toast.info("Synchronisation en cours...", { duration: 2000 });
+    
     try {
+      console.log("Starting sync with:", { period, folderId: selectedFolderId, channelsCount: channels.length });
+      
       const { data, error } = await supabase.functions.invoke('sync-competitor-videos', {
         body: { 
           period,
@@ -216,19 +225,42 @@ export default function Competitors() {
         }
       });
 
-      if (error) throw error;
+      console.log("Sync response:", { data, error });
 
-      if (data.error) {
+      if (error) {
+        console.error("Supabase function error:", error);
+        throw error;
+      }
+
+      if (data?.error) {
+        console.error("Function returned error:", data.error);
         throw new Error(data.error);
       }
 
-      toast.success(`${data.synced} vidéos synchronisées`);
+      const syncedCount = data?.synced || 0;
+      const errors = data?.errors || [];
       
-      // Reload videos
-      await loadVideos();
+      if (errors.length > 0) {
+        console.warn("Sync completed with errors:", errors);
+        toast.warning(`${syncedCount} vidéos synchronisées, mais ${errors.length} erreur(s)`, {
+          description: errors.slice(0, 2).join(", "),
+          duration: 5000
+        });
+      } else {
+        toast.success(`${syncedCount} vidéos synchronisées`);
+      }
+      
+      // Reload videos after a short delay to ensure DB is updated
+      setTimeout(async () => {
+        await loadVideos();
+      }, 1000);
     } catch (error) {
       console.error("Error syncing:", error);
-      toast.error(error instanceof Error ? error.message : "Erreur lors de la synchronisation");
+      const errorMessage = error instanceof Error ? error.message : "Erreur lors de la synchronisation";
+      toast.error(errorMessage, {
+        description: "Vérifiez la console pour plus de détails",
+        duration: 5000
+      });
     } finally {
       setIsSyncing(false);
     }
