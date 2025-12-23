@@ -1,8 +1,11 @@
 import { useState } from "react";
 import { format } from "date-fns";
+import { fr } from "date-fns/locale";
 import { Plus, Link2, Link2Off, Youtube, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 interface Channel {
   id: string;
@@ -68,6 +71,7 @@ export default function CalendarDayCell({
   onEntryDrop,
 }: CalendarDayCellProps) {
   const [isDragOver, setIsDragOver] = useState(false);
+  const [showAllEntriesDialog, setShowAllEntriesDialog] = useState(false);
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -220,11 +224,124 @@ export default function CalendarDayCell({
           );
         })}
         {entries.length > 3 && (
-          <div className="text-xs text-muted-foreground pl-1">
+          <button
+            className="text-xs text-muted-foreground pl-1 hover:text-primary transition-colors w-full text-left"
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowAllEntriesDialog(true);
+            }}
+          >
             +{entries.length - 3} autres
-          </div>
+          </button>
         )}
       </div>
+
+      {/* Dialog to show all entries */}
+      <Dialog open={showAllEntriesDialog} onOpenChange={setShowAllEntriesDialog}>
+        <DialogContent className="max-w-2xl max-h-[80vh]">
+          <DialogHeader>
+            <DialogTitle>
+              {format(date, "EEEE d MMMM yyyy", { locale: fr })}
+            </DialogTitle>
+          </DialogHeader>
+          <ScrollArea className="max-h-[60vh] pr-4">
+            <div className="space-y-2">
+              {[...entries]
+                .sort((a, b) => {
+                  const aCompleted = a.status === 'completed';
+                  const bCompleted = b.status === 'completed';
+                  
+                  if (aCompleted !== bCompleted) {
+                    return aCompleted ? -1 : 1;
+                  }
+                  
+                  const aColor = a.channel?.color || '#ffffff';
+                  const bColor = b.channel?.color || '#ffffff';
+                  return aColor.localeCompare(bColor);
+                })
+                .map((entry) => {
+                  const hasChannel = !!entry.channel?.name;
+                  const isCompleted = entry.status === 'completed';
+                  const entryStyle = getEntryStyle(entry);
+                  
+                  return (
+                    <div
+                      key={entry.id}
+                      draggable
+                      onDragStart={(e) => handleDragStart(e, entry.id)}
+                      className={cn(
+                        "text-sm p-3 rounded-lg cursor-grab active:cursor-grabbing hover:ring-2 hover:ring-primary transition-all flex items-center gap-2 border",
+                        !hasChannel && (isCompleted ? defaultColors.completed : defaultColors.incomplete)
+                      )}
+                      style={hasChannel ? { ...entryStyle, border: `1px solid ${entry.channel!.color}40` } : undefined}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowAllEntriesDialog(false);
+                        onEntryClick(entry);
+                      }}
+                      title={entry.title}
+                    >
+                      {/* Completed indicator */}
+                      {isCompleted && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Check className="h-4 w-4 flex-shrink-0 text-green-600" />
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>Terminée</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      )}
+                      {entry.youtube_url && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Youtube className="h-4 w-4 flex-shrink-0 text-red-500" />
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>Publiée sur YouTube</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      )}
+                      {entry.project_id ? (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Link2 className="h-4 w-4 flex-shrink-0 text-blue-500" />
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>Lié à un projet</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      ) : (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Link2Off className="h-4 w-4 flex-shrink-0 text-muted-foreground/50" />
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>Pas de projet lié</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      )}
+                      {hasChannel && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <div 
+                              className="h-3 w-3 rounded-full flex-shrink-0" 
+                              style={{ backgroundColor: entry.channel!.color }}
+                            />
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>{entry.channel!.name}</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      )}
+                      <span className="flex-1">{entry.title}</span>
+                    </div>
+                  );
+                })}
+            </div>
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
