@@ -115,11 +115,14 @@ async function downloadYouTubeAudio(url, outputPath) {
   return new Promise((resolve, reject) => {
     console.log(`Downloading YouTube audio: ${url}`);
     
+    // Use %(ext)s template for yt-dlp output
+    const outputTemplate = outputPath + '.%(ext)s';
+    
     const ytdlp = spawn('yt-dlp', [
       '-x',                          // Extract audio
       '--audio-format', 'mp3',       // Convert to MP3
       '--audio-quality', '0',        // Best quality
-      '-o', outputPath,              // Output path
+      '-o', outputTemplate,          // Output path with extension template
       '--no-playlist',               // Single video only
       '--no-warnings',
       url
@@ -139,14 +142,17 @@ async function downloadYouTubeAudio(url, outputPath) {
 
     ytdlp.on('close', (code) => {
       if (code === 0) {
-        // yt-dlp adds extension automatically, find the file
+        // yt-dlp creates file with actual extension, find it
         const dir = path.dirname(outputPath);
-        const base = path.basename(outputPath, path.extname(outputPath));
+        const base = path.basename(outputPath);
         const files = fs.readdirSync(dir).filter(f => f.startsWith(base));
         if (files.length > 0) {
-          resolve(path.join(dir, files[0]));
+          const downloadedFile = path.join(dir, files[0]);
+          console.log(`Downloaded audio file: ${downloadedFile}`);
+          resolve(downloadedFile);
         } else {
-          resolve(outputPath);
+          // Fallback to mp3 extension
+          resolve(outputPath + '.mp3');
         }
       } else {
         reject(new Error(`yt-dlp failed with code ${code}: ${stderr}`));
