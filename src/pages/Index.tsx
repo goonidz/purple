@@ -657,7 +657,17 @@ const Index = () => {
       if (projectData.image_model) setImageModel(projectData.image_model);
       if (projectData.lora_url) setLoraUrl(projectData.lora_url);
       if (projectData.lora_steps) setLoraSteps(projectData.lora_steps);
-      if (projectData.prompt_system_message) setPromptSystemMessage(projectData.prompt_system_message);
+      if (projectData.prompt_system_message) {
+        setPromptSystemMessage(projectData.prompt_system_message);
+      } else if (projectData.prompts && Array.isArray(projectData.prompts) && projectData.prompts.length > 0) {
+        // Project has prompts but no system message - trigger backfill
+        // This will update the project in the background
+        supabase.functions.invoke('backfill-prompt-system', {}).catch(err => {
+          console.log('Backfill already done or failed:', err);
+        });
+        // Set default message for display
+        setPromptSystemMessage('Prompt système par défaut (en cours de récupération...)');
+      }
       
       const parsedUrls = parseStyleReferenceUrls(data.style_reference_url);
       setStyleReferenceUrls(parsedUrls);
@@ -3039,7 +3049,7 @@ const Index = () => {
                     )}
                   </div>
                   
-                  {promptSystemMessage && (
+                  {promptSystemMessage ? (
                     <div>
                       <h2 className="text-xl font-semibold mb-4">Prompt système utilisé</h2>
                       <div className="bg-muted/50 rounded-lg p-6 border">
@@ -3049,6 +3059,18 @@ const Index = () => {
                       </div>
                       <p className="text-xs text-muted-foreground mt-2">
                         Ce prompt système a été utilisé pour générer les prompts d'images à partir de la transcription.
+                      </p>
+                    </div>
+                  ) : generatedPrompts.length > 0 && (
+                    <div>
+                      <h2 className="text-xl font-semibold mb-4">Prompt système utilisé</h2>
+                      <div className="bg-muted/50 rounded-lg p-6 border">
+                        <p className="text-foreground leading-relaxed whitespace-pre-wrap text-sm font-mono">
+                          Prompt système par défaut (récupération en cours...)
+                        </p>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-2">
+                        Ce projet a été créé avant l'enregistrement des prompts système. Le prompt par défaut a été utilisé.
                       </p>
                     </div>
                   )}
