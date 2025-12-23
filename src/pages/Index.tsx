@@ -661,11 +661,21 @@ const Index = () => {
         setPromptSystemMessage(projectData.prompt_system_message);
       } else if (projectData.prompts && Array.isArray(projectData.prompts) && projectData.prompts.length > 0) {
         // Project has prompts but no system message - trigger backfill
-        // This will update the project in the background
-        supabase.functions.invoke('backfill-prompt-system', {}).catch(err => {
-          console.log('Backfill already done or failed:', err);
+        supabase.functions.invoke('backfill-prompt-system', {}).then(async () => {
+          // Reload project to get the updated prompt_system_message
+          const { data: updatedProject } = await supabase
+            .from('projects')
+            .select('prompt_system_message')
+            .eq('id', currentProjectId)
+            .single();
+          
+          if (updatedProject?.prompt_system_message) {
+            setPromptSystemMessage(updatedProject.prompt_system_message);
+          }
+        }).catch(err => {
+          console.log('Backfill failed:', err);
         });
-        // Set default message for display
+        // Set default message for display while backfill is running
         setPromptSystemMessage('Prompt système par défaut (en cours de récupération...)');
       }
       
