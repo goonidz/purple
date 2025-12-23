@@ -152,10 +152,18 @@ export default function Competitors() {
           .filter(cf => cf.folder_id === selectedFolderId)
           .map(cf => cf.channel_id);
         
+        console.log("Filtering by folder:", {
+          selectedFolderId,
+          channelIdsInFolder,
+          allChannels: channels.map(c => ({ id: c.id, channel_id: c.channel_id, name: c.channel_name }))
+        });
+        
         // Also include channels with folder_id for backward compatibility
         channelsToUse = channels.filter(c => 
           channelIdsInFolder.includes(c.id) || c.folder_id === selectedFolderId
         );
+        
+        console.log("Channels after folder filter:", channelsToUse.map(c => ({ id: c.id, channel_id: c.channel_id, name: c.channel_name })));
       }
 
       // Get videos for selected channels
@@ -163,7 +171,14 @@ export default function Competitors() {
         ? selectedChannels.filter(id => channelsToUse.some(c => c.channel_id === id))
         : channelsToUse.map(c => c.channel_id);
 
+      console.log("Channels to fetch videos for:", {
+        channelsToFetch,
+        channelsToUseCount: channelsToUse.length,
+        selectedChannelsCount: selectedChannels.length
+      });
+
       if (channelsToFetch.length === 0) {
+        console.warn("No channels to fetch videos for!");
         setVideos([]);
         setIsLoading(false);
         return;
@@ -176,12 +191,27 @@ export default function Competitors() {
         .gte('published_at', periodDate.toISOString())
         .order('outlier_score', { ascending: false });
 
-      if (error) throw error;
+      if (error) {
+        console.error("Error fetching videos:", error);
+        throw error;
+      }
+
+      console.log("Videos fetched from DB:", {
+        total: data?.length || 0,
+        period: period,
+        periodDate: periodDate.toISOString(),
+        channelsToFetch: channelsToFetch.length
+      });
 
       // Filter out shorts (videos < 2 minutes = 120 seconds)
       const filteredVideos = (data || []).filter(video => {
         // If duration is null or >= 120 seconds (2 minutes), keep it
         return !video.duration_seconds || video.duration_seconds >= 120;
+      });
+
+      console.log("Videos after filtering shorts:", {
+        before: data?.length || 0,
+        after: filteredVideos.length
       });
 
       setVideos(filteredVideos);
