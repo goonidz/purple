@@ -97,14 +97,14 @@ async function main() {
     let oldFiles = 0;
     let recentFiles = 0;
 
-    for (const item of rootItems.slice(0, 10)) { // Limiter à 10 dossiers pour le diagnostic
+    for (const item of rootItems) { // Parcourir tous les dossiers
       console.log(`\n📂 Dossier: ${item.name || item.id}`);
       
       if (item.id) {
         // C'est un dossier, lister son contenu
         const files = await listStorageFiles(item.name || item.id);
         
-        for (const file of files.slice(0, 20)) { // Limiter à 20 fichiers par dossier
+        for (const file of files) { // Parcourir tous les fichiers
           totalFiles++;
           const isThumb = file.name?.includes('thumb_v');
           const createdAt = file.created_at ? new Date(file.created_at) : null;

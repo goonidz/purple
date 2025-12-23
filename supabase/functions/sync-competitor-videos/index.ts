@@ -151,6 +151,7 @@ serve(async (req) => {
         }
 
         // Fetch videos from this channel (exclude shorts: only medium and long videos)
+        // Note: YouTube API max is 50 per request, we'll need to paginate if we want more
         const videosUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&channelId=${channel.channel_id}&type=video&order=date&publishedAfter=${publishedAfter}&videoDuration=medium,long&maxResults=50&key=${YOUTUBE_API_KEY}`;
         const videosResponse = await fetch(videosUrl);
         const videosData = await videosResponse.json();

@@ -355,7 +355,7 @@ const CreateFromScratch = () => {
 
   // Set page title based on project name
   useEffect(() => {
-    document.title = projectName ? `${projectName} | VideoFlow` : "Nouveau projet | VideoFlow";
+    document.title = projectName || "Nouveau projet";
   }, [projectName]);
 
   // Cleanup timeout on unmount
