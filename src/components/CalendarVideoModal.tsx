@@ -18,7 +18,6 @@ import { cn } from "@/lib/utils";
 import { CalendarIcon, Upload, Trash2, Loader2, Play, Pause, Rocket, ExternalLink, FolderOpen, Link2, Mic, PenTool, Plus } from "lucide-react";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import ChannelManager from "@/components/ChannelManager";
-import { fetchYouTubeTranscript, extractVideoId } from "@/lib/youtubeTranscript";
 
 interface Channel {
   id: string;
@@ -367,23 +366,18 @@ export default function CalendarVideoModal({
 
   const scrapeYouTubeUrl = async (url: string) => {
     // Check if it's a YouTube URL
-    const videoId = extractVideoId(url);
-    if (!videoId) {
+    const youtubePattern = /(?:youtube\.com\/(?:watch\?v=|embed\/|v\/|shorts\/)|youtu\.be\/|^)([a-zA-Z0-9_-]{11})/;
+    if (!youtubePattern.test(url)) {
       return;
     }
 
     setIsScrapingSource(true);
     try {
-      console.log("Scraping YouTube URL:", url);
-      
-      // Step 1: Get basic info (title, thumbnail) from Edge Function
       const { data, error } = await supabase.functions.invoke("scrape-youtube", {
         body: { url }
       });
 
       if (error) throw error;
-
-      console.log("Scrape response:", data);
 
       if (data.success) {
         // Auto-fill title if empty
@@ -394,28 +388,7 @@ export default function CalendarVideoModal({
         if (data.thumbnailUrl) {
           setSourceThumbnailUrl(data.thumbnailUrl);
         }
-        
-        // Step 2: Fetch transcript CLIENT-SIDE (from user's browser)
-        console.log("Fetching transcript client-side...");
-        const transcriptResult = await fetchYouTubeTranscript(url);
-        
-        if (transcriptResult && transcriptResult.text) {
-          console.log("✅ Client-side transcript received:", {
-            length: transcriptResult.text.length,
-            source: transcriptResult.source,
-            segments: transcriptResult.segments.length
-          });
-          
-          if (!script.trim()) {
-            setScript(transcriptResult.text);
-            toast.success(`Informations récupérées : ${data.title} (transcript inclus via ${transcriptResult.source})`);
-          } else {
-            toast.success(`Informations récupérées : ${data.title} (transcript disponible mais script déjà rempli)`);
-          }
-        } else {
-          console.log("No transcript available");
-          toast.success(`Informations récupérées : ${data.title} (pas de sous-titres disponibles)`);
-        }
+        toast.success(`Informations récupérées : ${data.title}`);
       }
     } catch (error: any) {
       console.error("Error scraping YouTube:", error);
