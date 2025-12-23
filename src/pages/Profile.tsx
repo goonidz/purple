@@ -228,7 +228,7 @@ const Profile = () => {
                       </Button>
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      Utilisée pour générer les images avec SeedDream 4.{" "}
+                      Utilisée pour générer les images avec SeedDream 4 et pour la transcription audio (Whisper Diarization).{" "}
                       <a
                         href="https://replicate.com/account/api-tokens"
                         target="_blank"
@@ -264,7 +264,7 @@ const Profile = () => {
                       </Button>
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      Utilisée pour la transcription audio et TTS.{" "}
+                      Utilisée pour le TTS (text-to-speech). La transcription utilise maintenant Replicate.{" "}
                       <a
                         href="https://elevenlabs.io/app/settings/api-keys"
                         target="_blank"

@@ -46,20 +46,20 @@ serve(async (req) => {
     const { data: apiKey, error: apiKeyError } = await supabaseService
       .rpc('get_user_api_key_for_service', {
         target_user_id: user.id,
-        key_name: 'eleven_labs'
+        key_name: 'replicate'
       });
 
     if (apiKeyError || !apiKey) {
       console.error('Error retrieving API key:', apiKeyError);
       return new Response(JSON.stringify({ 
-        error: 'Eleven Labs API key not configured. Please add your API key in your profile.' 
+        error: 'Replicate API key not configured. Please add your API key in your profile.' 
       }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    const ELEVEN_LABS_API_KEY = apiKey;
+    const REPLICATE_API_KEY = apiKey;
 
     const { audioUrl } = await req.json();
     
@@ -67,57 +67,93 @@ serve(async (req) => {
       throw new Error("audioUrl is required");
     }
 
-    console.log("Fetching audio from:", audioUrl);
+    console.log("Starting transcription with Replicate Whisper Diarization for:", audioUrl);
 
-    // Download the audio file
-    const audioResponse = await fetch(audioUrl);
-    if (!audioResponse.ok) {
-      throw new Error(`Failed to download audio: ${audioResponse.statusText}`);
-    }
-
-    const audioBlob = await audioResponse.blob();
-    console.log("Audio blob size:", audioBlob.size);
-
-    // Prepare form data for Eleven Labs API
-    const formData = new FormData();
-    formData.append("file", audioBlob, "audio.mp3");
-    formData.append("model_id", "scribe_v1");
-    formData.append("diarize", "true");
-    formData.append("timestamps_granularity", "word");
-
-    console.log("Sending to Eleven Labs API...");
-
-    // Call Eleven Labs Speech to Text API
-    const response = await fetch("https://api.elevenlabs.io/v1/speech-to-text", {
+    // Call Replicate API with thomasmol/whisper-diarization model
+    const replicateResponse = await fetch("https://api.replicate.com/v1/models/thomasmol/whisper-diarization/predictions", {
       method: "POST",
       headers: {
-        "xi-api-key": ELEVEN_LABS_API_KEY,
+        "Authorization": `Token ${REPLICATE_API_KEY}`,
+        "Content-Type": "application/json",
       },
-      body: formData,
+      body: JSON.stringify({
+        input: {
+          file_url: audioUrl,
+          num_speakers: null, // Auto-detect
+          language: null, // Auto-detect
+          group_segments: true,
+          transcript_output_format: "both", // Get both word-level and segment-level
+        },
+      }),
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("Eleven Labs API error:", errorText);
-      throw new Error(`Eleven Labs API error: ${response.status} - ${errorText}`);
+    if (!replicateResponse.ok) {
+      const errorText = await replicateResponse.text();
+      console.error("Replicate API error:", errorText);
+      throw new Error(`Replicate API error: ${replicateResponse.status} - ${errorText}`);
     }
 
-    const transcriptionData = await response.json();
+    const prediction = await replicateResponse.json();
+    console.log("Replicate prediction created:", prediction.id);
+
+    // Poll for completion (Replicate predictions are async)
+    let result = prediction;
+    let attempts = 0;
+    const maxAttempts = 120; // 10 minutes max (5s * 120 = 600s)
+
+    while (result.status === "starting" || result.status === "processing") {
+      if (attempts >= maxAttempts) {
+        throw new Error("Transcription timeout: prediction took too long");
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds
+
+      const statusResponse = await fetch(`https://api.replicate.com/v1/predictions/${prediction.id}`, {
+        headers: {
+          "Authorization": `Token ${REPLICATE_API_KEY}`,
+        },
+      });
+
+      if (!statusResponse.ok) {
+        throw new Error(`Failed to check prediction status: ${statusResponse.status}`);
+      }
+
+      result = await statusResponse.json();
+      attempts++;
+      console.log(`Prediction status (attempt ${attempts}):`, result.status);
+    }
+
+    if (result.status === "failed" || result.status === "canceled") {
+      throw new Error(`Transcription failed: ${result.error || "Unknown error"}`);
+    }
+
+    if (result.status !== "succeeded") {
+      throw new Error(`Unexpected prediction status: ${result.status}`);
+    }
+
+    const transcriptionData = result.output;
     console.log("Transcription successful");
     console.log("Transcription data:", JSON.stringify(transcriptionData, null, 2));
 
-    // Transform Eleven Labs response to match expected format with word-level timestamps
+    // Transform Replicate response to match expected format
+    // Replicate returns segments with speaker, start, end, text
+    // We need: segments with text, start_time, end_time, and full_text
+    const segments = transcriptionData.segments || [];
+    const formattedSegments = segments.map((segment: any) => ({
+      text: segment.text,
+      start_time: segment.start,
+      end_time: segment.end,
+    }));
+
+    const fullText = segments.map((segment: any) => segment.text).join(" ");
+
     const formattedTranscript = {
-      segments: transcriptionData.words?.filter((w: any) => w.type === "word").map((word: any) => ({
-        text: word.text,
-        start_time: word.start,
-        end_time: word.end,
-      })) || [],
-      language_code: transcriptionData.language_code || "en",
-      full_text: transcriptionData.text || "",
+      segments: formattedSegments,
+      language_code: transcriptionData.language || "en",
+      full_text: fullText,
     };
 
-    console.log("Formatted transcript with word-level timestamps:", JSON.stringify(formattedTranscript, null, 2));
+    console.log("Formatted transcript:", JSON.stringify(formattedTranscript, null, 2));
 
     return new Response(JSON.stringify(formattedTranscript), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
