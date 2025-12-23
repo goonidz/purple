@@ -4,11 +4,13 @@ import AppHeader from "@/components/AppHeader";
 import CompetitorVideoList from "@/components/CompetitorVideoList";
 import CompetitorSidebar from "@/components/CompetitorSidebar";
 import AddCompetitorModal from "@/components/AddCompetitorModal";
+import CalendarVideoModal from "@/components/CalendarVideoModal";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { RefreshCw, Users } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import type { User } from "@supabase/supabase-js";
 
 interface Channel {
   id: string;
@@ -50,6 +52,7 @@ interface Video {
 
 export default function Competitors() {
   const navigate = useNavigate();
+  const [user, setUser] = useState<User | null>(null);
   const [channels, setChannels] = useState<Channel[]>([]);
   const [folders, setFolders] = useState<Folder[]>([]);
   const [channelFolders, setChannelFolders] = useState<ChannelFolder[]>([]);
@@ -61,6 +64,8 @@ export default function Competitors() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showCalendarModal, setShowCalendarModal] = useState(false);
+  const [selectedVideoForCalendar, setSelectedVideoForCalendar] = useState<Video | null>(null);
 
   // Check authentication
   useEffect(() => {
@@ -68,6 +73,8 @@ export default function Competitors() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         navigate('/auth');
+      } else {
+        setUser(user);
       }
     };
     checkAuth();
@@ -239,6 +246,24 @@ export default function Competitors() {
     setSelectedChannels(channelIds);
   };
 
+  // Handle add video to calendar
+  const handleAddToCalendar = (video: Video) => {
+    setSelectedVideoForCalendar(video);
+    setShowCalendarModal(true);
+  };
+
+  // Handle calendar modal close
+  const handleCalendarModalClose = () => {
+    setShowCalendarModal(false);
+    setSelectedVideoForCalendar(null);
+  };
+
+  // Handle calendar entry saved
+  const handleCalendarEntrySaved = () => {
+    toast.success("Vidéo ajoutée au calendrier");
+    handleCalendarModalClose();
+  };
+
   // Set page title
   useEffect(() => {
     document.title = "Competitors";
@@ -302,6 +327,7 @@ export default function Competitors() {
               videos={videos}
               channels={channels}
               isLoading={isLoading}
+              onAddToCalendar={handleAddToCalendar}
             />
           </div>
         </div>
@@ -330,6 +356,20 @@ export default function Competitors() {
         onOpenChange={setShowAddModal}
         onSuccess={handleChannelAdded}
       />
+
+      {/* Calendar modal */}
+      {user && (
+        <CalendarVideoModal
+          isOpen={showCalendarModal}
+          onClose={handleCalendarModalClose}
+          entry={null}
+          selectedDate={new Date()}
+          userId={user.id}
+          onSaved={handleCalendarEntrySaved}
+          initialSourceUrl={selectedVideoForCalendar ? `https://youtube.com/watch?v=${selectedVideoForCalendar.video_id}` : undefined}
+          initialSourceThumbnailUrl={selectedVideoForCalendar?.thumbnail_url || undefined}
+        />
+      )}
     </div>
   );
 }

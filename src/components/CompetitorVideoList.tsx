@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { ExternalLink, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
+import { ExternalLink, ArrowUpDown, ArrowUp, ArrowDown, Calendar } from "lucide-react";
 import OutlierBadge from "./OutlierBadge";
 
 interface Video {
@@ -26,6 +26,7 @@ interface CompetitorVideoListProps {
   videos: Video[];
   channels: Channel[];
   isLoading?: boolean;
+  onAddToCalendar?: (video: Video) => void;
 }
 
 type SortField = 'view_count' | 'outlier_score' | 'views_per_hour' | 'published_at';
@@ -72,7 +73,7 @@ function formatTimeAgo(dateString: string): string {
   return `il y a ${Math.floor(diffDays / 365)} ans`;
 }
 
-export default function CompetitorVideoList({ videos, channels, isLoading }: CompetitorVideoListProps) {
+export default function CompetitorVideoList({ videos, channels, isLoading, onAddToCalendar }: CompetitorVideoListProps) {
   const [sortField, setSortField] = useState<SortField>('outlier_score');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
 
@@ -176,7 +177,7 @@ export default function CompetitorVideoList({ videos, channels, isLoading }: Com
                 <SortIcon field="views_per_hour" />
               </Button>
             </TableHead>
-            <TableHead className="w-[50px]"></TableHead>
+            <TableHead className="w-[100px]"></TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -219,20 +220,34 @@ export default function CompetitorVideoList({ videos, channels, isLoading }: Com
                   {formatViewsPerHour(video.views_per_hour)}
                 </TableCell>
                 <TableCell>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8"
-                    asChild
-                  >
-                    <a
-                      href={`https://youtube.com/watch?v=${video.video_id}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                  <div className="flex items-center gap-1">
+                    {onAddToCalendar && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={() => onAddToCalendar(video)}
+                        title="Ajouter au calendrier"
+                      >
+                        <Calendar className="h-4 w-4" />
+                      </Button>
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      asChild
                     >
-                      <ExternalLink className="h-4 w-4" />
-                    </a>
-                  </Button>
+                      <a
+                        href={`https://youtube.com/watch?v=${video.video_id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title="Ouvrir sur YouTube"
+                      >
+                        <ExternalLink className="h-4 w-4" />
+                      </a>
+                    </Button>
+                  </div>
                 </TableCell>
               </TableRow>
             );

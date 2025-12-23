@@ -58,6 +58,8 @@ interface CalendarVideoModalProps {
   selectedDate: Date | null;
   userId: string;
   onSaved: () => void;
+  initialSourceUrl?: string;
+  initialSourceThumbnailUrl?: string;
 }
 
 const statusOptions = [
@@ -75,6 +77,8 @@ export default function CalendarVideoModal({
   selectedDate,
   userId,
   onSaved,
+  initialSourceUrl,
+  initialSourceThumbnailUrl,
 }: CalendarVideoModalProps) {
   const navigate = useNavigate();
   const [title, setTitle] = useState("");
@@ -172,8 +176,8 @@ export default function CalendarVideoModal({
       setNotes("");
       setAudioUrl(null);
       setYoutubeUrl("");
-      setSourceUrl("");
-      setSourceThumbnailUrl(null);
+      setSourceUrl(initialSourceUrl || "");
+      setSourceThumbnailUrl(initialSourceThumbnailUrl || null);
       setProjectId(null);
       setChannelId(null);
     }
