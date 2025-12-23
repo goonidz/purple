@@ -1,6 +1,15 @@
 # Transcription Service
 
-Service Node.js pour la transcription audio/vidéo avec Whisper (OpenAI).
+Service Node.js pour la transcription de vidéos YouTube et fichiers audio avec Whisper (OpenAI).
+
+## Fonctionnalités
+
+- **Transcription YouTube** : Récupère automatiquement le transcript d'une vidéo YouTube
+  - Essaie d'abord les sous-titres YouTube (instantané si disponibles)
+  - Fallback vers Whisper si pas de sous-titres (télécharge l'audio avec yt-dlp)
+- **Transcription audio/vidéo** : Supporte MP3, WAV, MP4, etc.
+- **Plusieurs moteurs** : OpenAI Whisper ou Faster-Whisper
+- **Plusieurs modèles** : tiny, base, small, medium, large, large-v2, large-v3
 
 ## Prérequis
 
@@ -213,6 +222,53 @@ curl http://localhost:3001/status/transcribe_1234567890_abc123
   }
 }
 ```
+
+### POST /transcribe/youtube
+
+Transcription YouTube asynchrone.
+
+```bash
+curl -X POST http://localhost:3001/transcribe/youtube \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://www.youtube.com/watch?v=VIDEO_ID",
+    "language": "auto",
+    "forceWhisper": false
+  }'
+```
+
+**Parameters:**
+- `url` (required): URL YouTube
+- `language` (optional): Code langue ou "auto"
+- `forceWhisper` (optional): Force l'utilisation de Whisper même si des sous-titres existent
+
+### POST /transcribe/youtube/sync
+
+Transcription YouTube synchrone (attend le résultat).
+
+```bash
+curl -X POST http://localhost:3001/transcribe/youtube/sync \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://www.youtube.com/watch?v=VIDEO_ID"
+  }'
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "jobId": "transcribe_xxx",
+  "videoId": "VIDEO_ID",
+  "text": "Bonjour, voici le transcript de la vidéo...",
+  "source": "youtube_captions",
+  "language": "fr"
+}
+```
+
+**Note:** Le champ `source` indique d'où vient le transcript :
+- `youtube_captions` : Sous-titres YouTube (rapide)
+- `whisper` : Transcription Whisper (plus lent mais marche toujours)
 
 ### DELETE /cancel/:jobId
 
