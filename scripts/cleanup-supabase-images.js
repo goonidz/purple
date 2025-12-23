@@ -49,6 +49,15 @@ if (!SUPABASE_SERVICE_ROLE_KEY) {
   console.error('❌ Erreur: SUPABASE_SERVICE_ROLE_KEY non trouvée dans .env.production');
   console.error('📝 Ajoute-la dans .env.production sur le serveur');
   console.error('   Récupère-la depuis: https://supabase.com/dashboard/project/laqgmqyjstisipsbljha/settings/api');
+  console.error('   Valeur actuelle:', SUPABASE_SERVICE_ROLE_KEY ? 'définie' : 'non définie');
+  process.exit(1);
+}
+
+// Vérifier que la clé n'est pas vide et a la bonne longueur
+if (SUPABASE_SERVICE_ROLE_KEY.length < 100) {
+  console.error('❌ Erreur: SUPABASE_SERVICE_ROLE_KEY semble invalide (trop courte)');
+  console.error('   Longueur actuelle:', SUPABASE_SERVICE_ROLE_KEY.length);
+  console.error('   Vérifie que la clé est correctement copiée dans .env.production');
   process.exit(1);
 }
 
