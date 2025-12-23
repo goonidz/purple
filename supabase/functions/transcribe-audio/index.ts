@@ -70,17 +70,19 @@ serve(async (req) => {
     console.log("Starting transcription with Replicate Whisper Diarization for:", audioUrl);
 
     // Call Replicate API with thomasmol/whisper-diarization model
-    const replicateResponse = await fetch("https://api.replicate.com/v1/models/thomasmol/whisper-diarization/predictions", {
+    // Use the latest version: 4e97af019e492ccf3837860c05998523d71c4fdcba15f00a982344779386c9e8
+    const replicateResponse = await fetch("https://api.replicate.com/v1/predictions", {
       method: "POST",
       headers: {
         "Authorization": `Token ${REPLICATE_API_KEY}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
+        version: "4e97af019e492ccf3837860c05998523d71c4fdcba15f00a982344779386c9e8",
         input: {
           file_url: audioUrl,
-          num_speakers: null, // Auto-detect
-          language: null, // Auto-detect
+          // num_speakers: null, // Auto-detect (don't send null, omit the field)
+          // language: null, // Auto-detect (don't send null, omit the field)
           group_segments: true,
           transcript_output_format: "both", // Get both word-level and segment-level
         },
