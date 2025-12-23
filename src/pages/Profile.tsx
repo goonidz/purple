@@ -146,7 +146,8 @@ const Profile = () => {
       setOriginalKeys({
         replicate: replicateApiKey.trim(),
         eleven_labs: elevenLabsApiKey.trim(),
-        minimax: minimaxApiKey.trim()
+        minimax: minimaxApiKey.trim(),
+        anthropic: anthropicApiKey.trim()
       });
 
       toast.success("Clés API sauvegardées avec succès !");
