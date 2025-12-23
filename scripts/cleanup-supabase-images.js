@@ -13,14 +13,24 @@
 
 import https from 'https';
 import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+// Obtenir le répertoire du script
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const projectRoot = path.resolve(__dirname, '..');
 
 // Charger les variables d'environnement depuis .env.production
 function loadEnvFile(filePath) {
-  if (!fs.existsSync(filePath)) {
+  const fullPath = path.isAbsolute(filePath) ? filePath : path.join(projectRoot, filePath);
+  
+  if (!fs.existsSync(fullPath)) {
+    console.error(`⚠️  Fichier .env.production non trouvé: ${fullPath}`);
     return {};
   }
   
-  const content = fs.readFileSync(filePath, 'utf8');
+  const content = fs.readFileSync(fullPath, 'utf8');
   const env = {};
   
   content.split('\n').forEach(line => {
@@ -38,7 +48,7 @@ function loadEnvFile(filePath) {
   return env;
 }
 
-// Charger .env.production
+// Charger .env.production depuis la racine du projet
 const env = loadEnvFile('.env.production');
 Object.assign(process.env, env);
 
@@ -49,7 +59,7 @@ if (!SUPABASE_SERVICE_ROLE_KEY) {
   console.error('❌ Erreur: SUPABASE_SERVICE_ROLE_KEY non trouvée dans .env.production');
   console.error('📝 Ajoute-la dans .env.production sur le serveur');
   console.error('   Récupère-la depuis: https://supabase.com/dashboard/project/laqgmqyjstisipsbljha/settings/api');
-  console.error('   Valeur actuelle:', SUPABASE_SERVICE_ROLE_KEY ? 'définie' : 'non définie');
+  console.error(`   Fichier recherché: ${path.join(projectRoot, '.env.production')}`);
   process.exit(1);
 }
 
@@ -60,6 +70,9 @@ if (SUPABASE_SERVICE_ROLE_KEY.length < 100) {
   console.error('   Vérifie que la clé est correctement copiée dans .env.production');
   process.exit(1);
 }
+
+// Debug: afficher les premiers caractères de la clé (pour vérification)
+console.log(`🔑 Clé service role chargée (${SUPABASE_SERVICE_ROLE_KEY.length} caractères, préfixe: ${SUPABASE_SERVICE_ROLE_KEY.substring(0, 20)}...)`);
 
 const CLEANUP_FUNCTION_URL = `${SUPABASE_URL}/functions/v1/cleanup-old-images`;
 
