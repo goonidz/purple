@@ -181,7 +181,7 @@ export default function CalendarVideoModal({
       setProjectId(null);
       setChannelId(null);
     }
-  }, [entry, selectedDate]);
+  }, [entry, selectedDate, initialSourceUrl, initialSourceThumbnailUrl]);
 
   const handleProjectSelect = (selectedProjectId: string) => {
     if (selectedProjectId === "none") {
