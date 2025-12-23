@@ -108,28 +108,24 @@ RÈGLE CRITIQUE SUR LA LONGUEUR:
 IMPORTANT: Utilise ton extended thinking pour réfléchir en profondeur avant de répondre. Vérifie les faits, structure bien le contenu, et assure-toi de la qualité.`;
 
       try {
-        // Call Anthropic API with extended thinking
+        // Call Anthropic API directly (Claude Sonnet 3.5)
         const anthropicResponse = await fetch('https://api.anthropic.com/v1/messages', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'x-api-key': apiKeyData,
-            'anthropic-version': '2023-06-01', // API version (extended thinking works with this version)
+            'anthropic-version': '2023-06-01',
           },
           body: JSON.stringify({
-            model: 'claude-sonnet-4-5-20250929', // Claude Sonnet 4.5 with extended thinking
-            max_tokens: 64000,
+            model: 'claude-3-5-sonnet-20241022', // Claude 3.5 Sonnet (latest stable)
+            max_tokens: 8192,
             system: systemPrompt,
             messages: [
               {
                 role: 'user',
                 content: customPrompt
               }
-            ],
-            thinking: {
-              type: 'enabled',
-              budget_tokens: 32000 // Allow up to 32k tokens for thinking
-            }
+            ]
           })
         });
 
@@ -156,14 +152,14 @@ IMPORTANT: Utilise ton extended thinking pour réfléchir en profondeur avant de
         }
 
         const finalWordCount = script.split(/\s+/).filter(w => w.length > 0).length;
-        console.log(`Script generated with Claude Sonnet 4.5 (Extended Thinking), word count: ${finalWordCount}`);
+        console.log(`Script generated with Claude 3.5 Sonnet (Anthropic Direct), word count: ${finalWordCount}`);
 
         return new Response(
           JSON.stringify({ 
             script,
             wordCount: finalWordCount,
             estimatedDuration: Math.round(finalWordCount / 2.5),
-            model: 'claude-sonnet-4-5-thinking'
+            model: 'claude-3-5-sonnet-anthropic'
           }),
           { headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
