@@ -392,7 +392,6 @@ const CreateFromScratch = () => {
           
           if (calendarTitle) {
             setProjectName(calendarTitle);
-            setVideoTopic(calendarTitle);
           }
           if (calendarScript) {
             setGeneratedScript(calendarScript);
