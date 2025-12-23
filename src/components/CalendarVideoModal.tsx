@@ -60,6 +60,7 @@ interface CalendarVideoModalProps {
   onSaved: () => void;
   initialSourceUrl?: string;
   initialSourceThumbnailUrl?: string;
+  initialTitle?: string;
 }
 
 const statusOptions = [
@@ -79,6 +80,7 @@ export default function CalendarVideoModal({
   onSaved,
   initialSourceUrl,
   initialSourceThumbnailUrl,
+  initialTitle,
 }: CalendarVideoModalProps) {
   const navigate = useNavigate();
   const [title, setTitle] = useState("");
@@ -169,7 +171,7 @@ export default function CalendarVideoModal({
       setProjectId(entry.project_id);
       setChannelId(entry.channel_id);
     } else if (selectedDate) {
-      setTitle("");
+      setTitle(initialTitle || "");
       setScheduledDate(selectedDate);
       setStatus("planned");
       setScript("");
@@ -181,7 +183,7 @@ export default function CalendarVideoModal({
       setProjectId(null);
       setChannelId(null);
     }
-  }, [entry, selectedDate, initialSourceUrl, initialSourceThumbnailUrl]);
+  }, [entry, selectedDate, initialSourceUrl, initialSourceThumbnailUrl, initialTitle]);
 
   const handleProjectSelect = (selectedProjectId: string) => {
     if (selectedProjectId === "none") {

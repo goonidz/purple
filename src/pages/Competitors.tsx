@@ -430,6 +430,7 @@ export default function Competitors() {
           onSaved={handleCalendarEntrySaved}
           initialSourceUrl={selectedVideoForCalendar ? `https://youtube.com/watch?v=${selectedVideoForCalendar.video_id}` : undefined}
           initialSourceThumbnailUrl={selectedVideoForCalendar?.thumbnail_url || undefined}
+          initialTitle={selectedVideoForCalendar?.title || undefined}
         />
       )}
     </div>
