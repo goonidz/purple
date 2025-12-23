@@ -1615,48 +1615,29 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                           Sauvegarder preset
                         </Button>
                       </div>
-                      <div className="relative">
-                        {/* Highlight overlay - shows all text with colored variables */}
-                        <div 
-                          className="absolute inset-0 pointer-events-none z-0 rounded-md border border-input px-3 py-2 text-sm font-mono whitespace-pre-wrap break-words overflow-auto"
-                          style={{ 
-                            minHeight: '200px',
-                            lineHeight: '1.5',
-                            backgroundColor: 'hsl(var(--background))'
-                          }}
-                          aria-hidden="true"
-                        >
-                          {customPrompt ? (
-                            customPrompt.split(/(\{\{[^}]+\}\})/g).map((part, index) => {
-                              if (part.match(/^\{\{[^}]+\}\}$/)) {
-                                return (
-                                  <span key={index} className="bg-primary/60 text-primary font-semibold rounded px-1 py-0.5">
-                                    {part}
-                                  </span>
-                                );
-                              }
-                              return <span key={index} className="text-foreground">{part}</span>;
-                            })
-                          ) : (
-                            <span className="text-muted-foreground">Instructions pour l'IA...</span>
-                          )}
+                      <Textarea
+                        value={customPrompt}
+                        onChange={(e) => setCustomPrompt(e.target.value)}
+                        className="min-h-[200px] font-mono text-sm"
+                        placeholder="Instructions pour l'IA..."
+                      />
+                      {/* Variables preview */}
+                      {customPrompt && customPrompt.match(/\{\{[^}]+\}\}/g) && (
+                        <div className="mt-2 p-2 bg-muted/50 rounded-md border">
+                          <p className="text-xs text-muted-foreground mb-1 font-semibold">Variables détectées :</p>
+                          <div className="flex flex-wrap gap-1">
+                            {Array.from(new Set(customPrompt.match(/\{\{[^}]+\}\}/g) || [])).map((variable, index) => (
+                              <span key={index} className="bg-primary/20 text-primary text-xs font-mono font-semibold rounded px-2 py-1">
+                                {variable} → <span className="text-foreground">{projectName || "Nom du projet"}</span>
+                              </span>
+                            ))}
+                          </div>
                         </div>
-                        {/* Textarea on top - transparent text so overlay shows through */}
-                        <textarea
-                          value={customPrompt}
-                          onChange={(e) => setCustomPrompt(e.target.value)}
-                          className="min-h-[200px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm font-mono ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 relative z-10 resize-none"
-                          placeholder="Instructions pour l'IA..."
-                          style={{ 
-                            color: 'transparent',
-                            caretColor: 'hsl(var(--foreground))'
-                          }}
-                        />
-                      </div>
+                      )}
                       <p className="text-xs text-muted-foreground">
                         Ce prompt sera envoyé à {scriptModel === "gpt5" ? "GPT-5.1" : "Claude"} pour générer le script. Incluez tous les détails: sujet, durée, style, langue, etc.
                         <br />
-                        <span className="font-semibold">Variables disponibles:</span> <code className="bg-muted px-1 rounded">{"{{projectName}}"}</code> sera automatiquement remplacé par le nom du projet.
+                        <span className="font-semibold">Variables disponibles:</span> <code className="bg-primary/20 text-primary px-1 rounded font-semibold">{"{{projectName}}"}</code> sera automatiquement remplacé par le nom du projet.
                       </p>
                     </CollapsibleContent>
                   </Collapsible>
