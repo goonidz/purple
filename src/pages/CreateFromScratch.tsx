@@ -951,6 +951,15 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
     await generateScriptWithPrompt(enhancedPrompt);
   };
 
+  // Function to replace variables in prompt
+  const replacePromptVariables = (prompt: string, projectNameValue: string): string => {
+    return prompt
+      .replace(/\{\{projectName\}\}/g, projectNameValue)
+      .replace(/\{\{project_name\}\}/g, projectNameValue)
+      .replace(/\{\{title\}\}/g, projectNameValue)
+      .replace(/\{\{videoTitle\}\}/g, projectNameValue);
+  };
+
   const generateScriptWithPrompt = async (promptToUse: string) => {
     setIsGeneratingScript(true);
     setGenerationProgress(0);
@@ -1003,13 +1012,16 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
         }
       }
 
+      // Replace variables in prompt before sending
+      const finalPrompt = replacePromptVariables(promptToUse, tempProjectName);
+
       // Start the script generation job via backend
       const { data, error } = await supabase.functions.invoke('start-generation-job', {
         body: {
           projectId: tempProject.id,
           jobType: 'script_generation',
           metadata: {
-            customPrompt: promptToUse,
+            customPrompt: finalPrompt,
             scriptModel
           }
         }
@@ -1599,6 +1611,8 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                       />
                       <p className="text-xs text-muted-foreground">
                         Ce prompt sera envoyé à {scriptModel === "gpt5" ? "GPT-5.1" : "Claude"} pour générer le script. Incluez tous les détails: sujet, durée, style, langue, etc.
+                        <br />
+                        <span className="font-semibold">Variables disponibles:</span> <code className="bg-muted px-1 rounded">{"{{projectName}}"}</code> sera automatiquement remplacé par le nom du projet.
                       </p>
                     </CollapsibleContent>
                   </Collapsible>
