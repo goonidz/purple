@@ -1065,8 +1065,7 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
             .eq("id", entryIdToLink);
         }
 
-        setScript(result.script);
-        setScriptWordCount(result.wordCount);
+        setGeneratedScript(result.script);
         setGenerationProgress(100);
         setIsGeneratingScript(false);
         setStep("script");
