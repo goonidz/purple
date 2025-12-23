@@ -117,7 +117,7 @@ IMPORTANT: Utilise ton extended thinking pour réfléchir en profondeur avant de
             'anthropic-version': '2024-10-22', // Required for extended thinking
           },
           body: JSON.stringify({
-            model: 'claude-sonnet-4-20250514', // Latest Sonnet 4 with extended thinking
+            model: 'claude-sonnet-4-5-20250929', // Claude Sonnet 4.5 with extended thinking
             max_tokens: 64000,
             system: systemPrompt,
             messages: [
@@ -156,14 +156,14 @@ IMPORTANT: Utilise ton extended thinking pour réfléchir en profondeur avant de
         }
 
         const finalWordCount = script.split(/\s+/).filter(w => w.length > 0).length;
-        console.log(`Script generated with Claude Sonnet 4 (Extended Thinking), word count: ${finalWordCount}`);
+        console.log(`Script generated with Claude Sonnet 4.5 (Extended Thinking), word count: ${finalWordCount}`);
 
         return new Response(
           JSON.stringify({ 
             script,
             wordCount: finalWordCount,
             estimatedDuration: Math.round(finalWordCount / 2.5),
-            model: 'claude-sonnet-4-thinking'
+            model: 'claude-sonnet-4-5-thinking'
           }),
           { headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );

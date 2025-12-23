@@ -1636,7 +1636,7 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                         </div>
                       )}
                       <p className="text-xs text-muted-foreground">
-                        Ce prompt sera envoyé à {scriptModel === "gpt5" ? "GPT-5.1" : scriptModel === "claude-thinking" ? "Claude Sonnet 4 + Extended Thinking" : "Claude"} pour générer le script. Incluez tous les détails: sujet, durée, style, langue, etc.
+                        Ce prompt sera envoyé à {scriptModel === "gpt5" ? "GPT-5.1" : scriptModel === "claude-thinking" ? "Claude Sonnet 4.5 + Extended Thinking" : "Claude"} pour générer le script. Incluez tous les détails: sujet, durée, style, langue, etc.
                         <br />
                         <span className="font-semibold">Variables disponibles:</span> <code className="bg-primary/20 text-primary px-1 rounded font-semibold">{"{{projectName}}"}</code> sera automatiquement remplacé par le nom du projet.
                       </p>
@@ -1659,7 +1659,7 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                         </SelectItem>
                         <SelectItem value="claude-thinking">
                           <div className="flex flex-col">
-                            <span className="font-medium">Claude Sonnet 4 + Extended Thinking</span>
+                            <span className="font-medium">Claude Sonnet 4.5 + Extended Thinking</span>
                             <span className="text-xs text-muted-foreground">Via Anthropic API directe (nécessite clé API Anthropic)</span>
                             <span className="text-xs text-primary mt-1">✨ Réfléchit plus longtemps, moins d'erreurs</span>
                           </div>

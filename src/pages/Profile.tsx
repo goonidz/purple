@@ -346,7 +346,7 @@ const Profile = () => {
                       </Button>
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      Utilisée pour Claude Sonnet 4 avec Extended Thinking (meilleure qualité, moins d'erreurs).{" "}
+                      Utilisée pour Claude Sonnet 4.5 avec Extended Thinking (meilleure qualité, moins d'erreurs).{" "}
                       <a
                         href="https://console.anthropic.com/settings/keys"
                         target="_blank"
