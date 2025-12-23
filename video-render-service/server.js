@@ -958,7 +958,7 @@ RÈGLE CRITIQUE SUR LA LONGUEUR:
         'x-api-key': anthropicApiKey,
         'anthropic-version': '2023-06-01'
       },
-      timeout: 300000 // 5 minutes timeout
+      timeout: 600000 // 10 minutes timeout
     });
     
     const duration = ((Date.now() - startTime) / 1000).toFixed(2);
