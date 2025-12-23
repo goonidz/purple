@@ -1619,8 +1619,9 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                       <Textarea
                         value={customPrompt}
                         onChange={(e) => setCustomPrompt(e.target.value)}
-                        className="min-h-[200px] font-mono text-sm"
+                        className="min-h-[200px] font-mono text-sm break-words overflow-wrap-anywhere"
                         placeholder="Instructions pour l'IA..."
+                        style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}
                       />
                       {/* Variables preview */}
                       {customPrompt && customPrompt.match(/\{\{[^}]+\}\}/g) && (
@@ -1650,7 +1651,7 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
-                      <SelectContent>
+                      <SelectContent className="min-w-[400px]">
                         <SelectItem value="claude">
                           <div className="flex flex-col">
                             <span className="font-medium">Claude Sonnet 4.5</span>
@@ -1658,10 +1659,10 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                           </div>
                         </SelectItem>
                         <SelectItem value="claude-thinking">
-                          <div className="flex flex-col">
+                          <div className="flex flex-col w-full min-w-[300px]">
                             <span className="font-medium">Claude Sonnet 4.5 + Extended Thinking</span>
                             <span className="text-xs text-muted-foreground">Via Anthropic API directe (nécessite clé API Anthropic)</span>
-                            <span className="text-xs text-primary mt-1">✨ Réfléchit plus longtemps, moins d'erreurs</span>
+                            <span className="text-xs text-primary mt-1 whitespace-normal break-words">✨ Réfléchit plus longtemps, moins d'erreurs</span>
                           </div>
                         </SelectItem>
                         <SelectItem value="gpt5">
