@@ -106,20 +106,33 @@ serve(async (req) => {
     let actualChannelId = identifier;
     
     if (type === 'handle') {
-      // Use search API to find channel by handle
-      const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=channel&q=${encodeURIComponent('@' + identifier)}&key=${YOUTUBE_API_KEY}`;
-      const searchResponse = await fetch(searchUrl);
-      const searchData = await searchResponse.json();
+      // Try to get channel by handle using channels.list API (more reliable)
+      // First, try with the handle directly
+      const channelsUrl = `https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&forHandle=${identifier}&key=${YOUTUBE_API_KEY}`;
+      const channelsResponse = await fetch(channelsUrl);
+      const channelsData = await channelsResponse.json();
       
-      if (!searchResponse.ok || !searchData.items?.length) {
-        console.error("Channel search failed:", searchData);
-        return new Response(
-          JSON.stringify({ error: "Chaîne YouTube non trouvée. Vérifiez l'URL ou le handle." }),
-          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+      if (channelsResponse.ok && channelsData.items?.length > 0) {
+        actualChannelId = channelsData.items[0].id;
+        console.log(`Found channel by handle using channels.list: ${actualChannelId}`);
+      } else {
+        // Fallback to search API
+        console.log(`Handle lookup failed, trying search API for: @${identifier}`);
+        const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=channel&q=${encodeURIComponent('@' + identifier)}&key=${YOUTUBE_API_KEY}`;
+        const searchResponse = await fetch(searchUrl);
+        const searchData = await searchResponse.json();
+        
+        if (!searchResponse.ok || !searchData.items?.length) {
+          console.error("Channel search failed:", searchData);
+          return new Response(
+            JSON.stringify({ error: `Chaîne YouTube non trouvée pour le handle @${identifier}. Vérifiez l'URL ou le handle.` }),
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+        
+        actualChannelId = searchData.items[0].snippet.channelId;
+        console.log(`Found channel by search API: ${actualChannelId}`);
       }
-      
-      actualChannelId = searchData.items[0].snippet.channelId;
     } else if (type === 'custom') {
       // Search for custom URL channel
       const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=channel&q=${encodeURIComponent(identifier)}&key=${YOUTUBE_API_KEY}`;
@@ -154,18 +167,7 @@ serve(async (req) => {
       );
     }
 
-    // Check competitor limit (20 max)
-    const { count } = await supabase
-      .from('competitor_channels')
-      .select('id', { count: 'exact', head: true })
-      .eq('user_id', user.id);
-
-    if (count && count >= 20) {
-      return new Response(
-        JSON.stringify({ error: "Maximum of 20 competitors reached. Remove some to add new ones." }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
+    // Limit removed - users can add unlimited competitors
 
     // Fetch channel details
     const channelUrl2 = `https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&id=${actualChannelId}&key=${YOUTUBE_API_KEY}`;
