@@ -12,19 +12,38 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // Verify this is an internal call (service role key)
+    // Get the Authorization header
     const authHeader = req.headers.get('Authorization');
-    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
     
-    if (authHeader !== `Bearer ${serviceRoleKey}`) {
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return new Response(
-        JSON.stringify({ error: 'Unauthorized - service role key required' }),
+        JSON.stringify({ error: 'Unauthorized - Bearer token required' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Extract the token from the header
+    const providedKey = authHeader.replace('Bearer ', '');
+    
+    // Verify it's a valid service role key by checking if it's a JWT with service_role
+    try {
+      const payload = JSON.parse(atob(providedKey.split('.')[1]));
+      if (payload.role !== 'service_role') {
+        return new Response(
+          JSON.stringify({ error: 'Unauthorized - service role key required' }),
+          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+    } catch (e) {
+      return new Response(
+        JSON.stringify({ error: 'Unauthorized - invalid token format' }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
-    const supabase = createClient(supabaseUrl, serviceRoleKey);
+    // Use the provided service role key
+    const supabase = createClient(supabaseUrl, providedKey);
 
     // Calculate date threshold (7 days ago)
     const sevenDaysAgo = new Date();
