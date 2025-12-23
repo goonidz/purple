@@ -6,6 +6,7 @@ const path = require('path');
 const { promisify } = require('util');
 const { spawn, execSync } = require('child_process');
 const multer = require('multer');
+const { YoutubeTranscript } = require('youtube-transcript');
 
 require('dotenv').config();
 
@@ -169,76 +170,30 @@ async function downloadYouTubeAudio(url, outputPath) {
   });
 }
 
-// Try to get YouTube transcript via API first (faster, no Whisper needed)
+// Try to get YouTube transcript via youtube-transcript package (faster, no Whisper needed)
 async function getYouTubeTranscript(videoId) {
   try {
-    // Try to get transcript from YouTube's timedtext API
-    const response = await axios.get(
-      `https://www.youtube.com/watch?v=${videoId}`,
-      { 
-        headers: { 
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
-      }
-    );
+    console.log(`Fetching transcript for video: ${videoId}`);
     
-    const html = response.data;
+    // Use youtube-transcript package
+    const transcriptItems = await YoutubeTranscript.fetchTranscript(videoId);
     
-    // Extract captions data from page
-    const captionMatch = html.match(/"captions":\s*({[^}]+playerCaptionsTracklistRenderer[^}]+})/);
-    if (!captionMatch) {
-      console.log('No captions found in page, will use Whisper');
+    if (!transcriptItems || transcriptItems.length === 0) {
+      console.log('No transcript available from YouTube');
       return null;
     }
     
-    // Try to find caption track URL
-    const trackMatch = html.match(/"baseUrl":"(https:\/\/www\.youtube\.com\/api\/timedtext[^"]+)"/);
-    if (!trackMatch) {
-      console.log('No caption track URL found, will use Whisper');
-      return null;
-    }
+    // Format the transcript
+    const segments = transcriptItems.map((item, index) => ({
+      id: index,
+      start: item.offset / 1000, // Convert ms to seconds
+      end: (item.offset + item.duration) / 1000,
+      text: item.text
+    }));
     
-    const trackUrl = trackMatch[1].replace(/\\u0026/g, '&');
-    console.log('Found caption track:', trackUrl);
+    const fullText = transcriptItems.map(item => item.text).join(' ');
     
-    // Fetch the transcript
-    const transcriptResponse = await axios.get(trackUrl);
-    const transcriptXml = transcriptResponse.data;
-    
-    // Parse XML transcript
-    const segments = [];
-    const textMatches = transcriptXml.matchAll(/<text start="([\d.]+)" dur="([\d.]+)"[^>]*>([^<]*)<\/text>/g);
-    
-    let fullText = '';
-    for (const match of textMatches) {
-      const start = parseFloat(match[1]);
-      const duration = parseFloat(match[2]);
-      const text = match[3]
-        .replace(/&amp;/g, '&')
-        .replace(/&lt;/g, '<')
-        .replace(/&gt;/g, '>')
-        .replace(/&quot;/g, '"')
-        .replace(/&#39;/g, "'")
-        .replace(/\n/g, ' ')
-        .trim();
-      
-      if (text) {
-        segments.push({
-          id: segments.length,
-          start: start,
-          end: start + duration,
-          text: text
-        });
-        fullText += text + ' ';
-      }
-    }
-    
-    if (segments.length === 0) {
-      console.log('No segments parsed from captions, will use Whisper');
-      return null;
-    }
-    
-    console.log(`Got ${segments.length} segments from YouTube captions`);
+    console.log(`Got ${segments.length} segments from YouTube captions (${fullText.length} chars)`);
     
     return {
       text: fullText.trim(),
