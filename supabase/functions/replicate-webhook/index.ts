@@ -655,6 +655,17 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
     console.log(`Job ${jobId}: Processing upscale job completion`);
     const metadata = job.metadata || {};
     
+    // If this is a single image upscale, don't check for remaining images
+    if (metadata.singleImage === true) {
+      console.log(`Job ${jobId}: Single image upscale completed, skipping chunk continuation logic`);
+      // Update project dimensions if needed (for Z-Image 16:9)
+      await adminClient
+        .from('projects')
+        .update({ image_width: 1920, image_height: 1088 })
+        .eq('id', job.project_id);
+      return;
+    }
+    
     // Check if there are more images to upscale (chunk continuation)
     const { data: fullProject } = await adminClient
       .from('projects')
