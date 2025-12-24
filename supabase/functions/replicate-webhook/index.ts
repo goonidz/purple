@@ -281,8 +281,8 @@ async function updateUpscaledImage(adminClient: any, prediction: any, imageUrl: 
     return;
   }
 
-  // Use atomic database function to update scene image with upscaled version
-  const { data: result, error: rpcError } = await adminClient.rpc('update_scene_image_url', {
+  // Use atomic database function to update scene image with upscaled version AND mark as upscaled
+  const { data: result, error: rpcError } = await adminClient.rpc('update_scene_image_url_upscaled', {
     p_project_id: prediction.project_id,
     p_scene_index: sceneIndex,
     p_image_url: imageUrl
@@ -291,7 +291,7 @@ async function updateUpscaledImage(adminClient: any, prediction: any, imageUrl: 
   if (rpcError) {
     console.error(`Failed to update scene ${sceneIndex + 1} with upscaled image via RPC:`, rpcError);
   } else if (result === true) {
-    console.log(`Updated scene ${sceneIndex + 1} with upscaled image (atomic)`);
+    console.log(`Updated scene ${sceneIndex + 1} with upscaled image and marked as isUpscaled=true (atomic)`);
   } else {
     console.error(`Scene ${sceneIndex + 1} not found or project missing`);
   }
@@ -687,10 +687,15 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
       const previouslyUpscaled = metadata.upscaledIndices || [];
       const allUpscaledIndices = [...new Set([...previouslyUpscaled, ...justUpscaledIndices])];
       
-      // Count images that still need upscaling
+      // Count images that still need upscaling (check both isUpscaled flag and job tracking)
       const remainingToUpscale = prompts
         .map((prompt: any, index: number) => ({ prompt, index }))
-        .filter(({ prompt, index }: any) => prompt && prompt.imageUrl && !allUpscaledIndices.includes(index));
+        .filter(({ prompt, index }: any) => {
+          if (!prompt || !prompt.imageUrl) return false;
+          if (prompt.isUpscaled === true) return false; // Already marked as upscaled
+          if (allUpscaledIndices.includes(index)) return false; // Upscaled in this job run
+          return true;
+        });
       
       console.log(`Job ${jobId}: Upscale chunk complete. ${justUpscaledIndices.length} upscaled this chunk, ${remainingToUpscale.length} remaining`);
       

@@ -2201,13 +2201,22 @@ async function processUpscaleJob(
   
   // Get images that need upscaling:
   // - Have imageUrl (generated)
-  // - Are NOT already upscaled (check if URL contains "upscaled" or dimensions indicate upscale)
-  // For simplicity, we track upscaled images by checking if they were processed in this or previous chunks
+  // - Are NOT already upscaled (check isUpscaled flag in prompt OR upscaledIndices from current job run)
   const alreadyUpscaledIndices = new Set(metadata.upscaledIndices || []);
   
   const allImagesToUpscale = prompts
     .map((prompt: any, index: number) => ({ prompt, index }))
-    .filter(({ prompt, index }: any) => prompt && prompt.imageUrl && !alreadyUpscaledIndices.has(index));
+    .filter(({ prompt, index }: any) => {
+      // Must have an image URL
+      if (!prompt || !prompt.imageUrl) return false;
+      // Skip if already marked as upscaled in the prompt
+      if (prompt.isUpscaled === true) return false;
+      // Skip if upscaled in this job run (chunk continuation)
+      if (alreadyUpscaledIndices.has(index)) return false;
+      return true;
+    });
+  
+  console.log(`Found ${allImagesToUpscale.length} images to upscale (excluding ${prompts.filter((p: any) => p?.isUpscaled).length} already upscaled)`);
 
   if (allImagesToUpscale.length === 0) {
     console.log("No images to upscale");
