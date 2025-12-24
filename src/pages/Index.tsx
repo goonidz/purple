@@ -3910,7 +3910,7 @@ Return ONLY the prompt text, no JSON, no title, just the optimized prompt in ENG
 
         {/* Export Dialog */}
         <Dialog open={exportDialogOpen} onOpenChange={setExportDialogOpen}>
-          <DialogContent className="max-w-md">
+          <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
             <div className="space-y-6">
               <div>
                 <h2 className="text-xl font-semibold mb-2">Exporter pour montage vidéo</h2>
