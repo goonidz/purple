@@ -185,19 +185,48 @@ async function updateSceneImage(adminClient: any, prediction: any, imageUrl: str
     return;
   }
 
-  // Use atomic database function to prevent race conditions
+  // Get image dimensions from prediction metadata or project settings
+  const metadata = prediction.metadata || {};
+  const imageWidth = metadata.imageWidth || metadata.width || 0;
+  const imageHeight = metadata.imageHeight || metadata.height || 0;
+
+  // Use atomic database function with dimensions to prevent race conditions
   // This uses FOR UPDATE row locking to ensure only one update at a time
-  const { data: result, error: rpcError } = await adminClient.rpc('update_scene_image_url', {
-    p_project_id: prediction.project_id,
-    p_scene_index: sceneIndex,
-    p_image_url: imageUrl
-  });
+  let result, rpcError;
+  
+  if (imageWidth > 0 && imageHeight > 0) {
+    // Use new function that stores dimensions
+    const response = await adminClient.rpc('update_scene_image_url_with_dimensions', {
+      p_project_id: prediction.project_id,
+      p_scene_index: sceneIndex,
+      p_image_url: imageUrl,
+      p_image_width: imageWidth,
+      p_image_height: imageHeight
+    });
+    result = response.data;
+    rpcError = response.error;
+    
+    if (!rpcError && result === true) {
+      console.log(`Updated scene ${sceneIndex + 1} with image URL and dimensions ${imageWidth}x${imageHeight} (atomic)`);
+    }
+  } else {
+    // Fallback to old function without dimensions
+    const response = await adminClient.rpc('update_scene_image_url', {
+      p_project_id: prediction.project_id,
+      p_scene_index: sceneIndex,
+      p_image_url: imageUrl
+    });
+    result = response.data;
+    rpcError = response.error;
+    
+    if (!rpcError && result === true) {
+      console.log(`Updated scene ${sceneIndex + 1} with image URL (atomic, no dimensions)`);
+    }
+  }
 
   if (rpcError) {
     console.error(`Failed to update scene ${sceneIndex + 1} via RPC:`, rpcError);
-  } else if (result === true) {
-    console.log(`Updated scene ${sceneIndex + 1} with image URL (atomic)`);
-  } else {
+  } else if (result !== true) {
     console.error(`Scene ${sceneIndex + 1} not found or project missing`);
   }
   

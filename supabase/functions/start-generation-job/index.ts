@@ -2202,21 +2202,43 @@ async function processUpscaleJob(
   // Get images that need upscaling:
   // - Have imageUrl (generated)
   // - Are NOT already upscaled (check isUpscaled flag in prompt OR upscaledIndices from current job run)
+  // - Image dimensions are below 1920x1080 (if stored)
   const alreadyUpscaledIndices = new Set(metadata.upscaledIndices || []);
+  
+  let skippedHighRes = 0;
+  let skippedAlreadyUpscaled = 0;
   
   const allImagesToUpscale = prompts
     .map((prompt: any, index: number) => ({ prompt, index }))
     .filter(({ prompt, index }: any) => {
       // Must have an image URL
       if (!prompt || !prompt.imageUrl) return false;
+      
       // Skip if already marked as upscaled in the prompt
-      if (prompt.isUpscaled === true) return false;
+      if (prompt.isUpscaled === true) {
+        skippedAlreadyUpscaled++;
+        return false;
+      }
+      
       // Skip if upscaled in this job run (chunk continuation)
-      if (alreadyUpscaledIndices.has(index)) return false;
+      if (alreadyUpscaledIndices.has(index)) {
+        skippedAlreadyUpscaled++;
+        return false;
+      }
+      
+      // Skip if image dimensions are already >= 1920x1080 (high res)
+      const imgWidth = prompt.imageWidth || 0;
+      const imgHeight = prompt.imageHeight || 0;
+      if (imgWidth >= 1920 && imgHeight >= 1080) {
+        console.log(`Skipping scene ${index + 1}: already high-res (${imgWidth}x${imgHeight})`);
+        skippedHighRes++;
+        return false;
+      }
+      
       return true;
     });
   
-  console.log(`Found ${allImagesToUpscale.length} images to upscale (excluding ${prompts.filter((p: any) => p?.isUpscaled).length} already upscaled)`);
+  console.log(`Found ${allImagesToUpscale.length} images to upscale (skipped: ${skippedAlreadyUpscaled} already upscaled, ${skippedHighRes} high-res)`);
 
   if (allImagesToUpscale.length === 0) {
     console.log("No images to upscale");
