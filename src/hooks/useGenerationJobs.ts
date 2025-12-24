@@ -191,9 +191,32 @@ export function useGenerationJobs({ projectId, onJobComplete, onJobFailed, autoR
     // Periodic re-fetch to catch any jobs we might have missed
     const refetchInterval = setInterval(doInitialFetch, 5000);
 
+    // Check for stuck jobs every 60 seconds
+    const checkStuckInterval = setInterval(async () => {
+      try {
+        // Only check if we have processing jobs
+        const { data: processingJobs } = await supabase
+          .from('generation_jobs')
+          .select('id')
+          .eq('project_id', projectId)
+          .eq('status', 'processing')
+          .limit(1);
+        
+        if (processingJobs && processingJobs.length > 0) {
+          console.log('Checking for stuck jobs...');
+          await supabase.functions.invoke('check-stuck-jobs', {
+            body: { projectId }
+          });
+        }
+      } catch (error) {
+        console.error('Error checking stuck jobs:', error);
+      }
+    }, 60000); // Every 60 seconds
+
     return () => {
       supabase.removeChannel(channel);
       clearInterval(refetchInterval);
+      clearInterval(checkStuckInterval);
     };
   }, [projectId, checkAndRetryMissingImages]);
 

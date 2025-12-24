@@ -87,8 +87,8 @@ serve(async (req) => {
 
       console.log(`Job ${job.id}: ${completedCount} completed, ${failedCount} failed, ${pendingCount} pending out of ${predictions.length}`);
 
-      // Check if any pending predictions are stuck (no webhook received for > 5 minutes)
-      const PREDICTION_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+      // Check if any pending predictions are stuck (no webhook received for > 3 minutes)
+      const PREDICTION_TIMEOUT_MS = 3 * 60 * 1000; // 3 minutes (reduced from 5)
       let timedOutPredictions = 0;
 
       for (const pred of predictions) {
@@ -143,6 +143,87 @@ serve(async (req) => {
           timedOut: timedOutPredictions
         });
 
+        // For images job, check if there are more images to generate (chunk continuation)
+        if (job.job_type === 'images') {
+          const { data: project } = await adminClient
+            .from('projects')
+            .select('prompts')
+            .eq('id', job.project_id)
+            .single();
+          
+          const prompts = (project?.prompts as any[]) || [];
+          const missingCount = prompts.filter((p: any) => p?.prompt && !p?.imageUrl).length;
+          
+          if (missingCount > 0) {
+            console.log(`Job ${job.id}: ${missingCount} images still missing - creating next chunk`);
+            
+            // Check for existing chunk job to prevent duplicates
+            const { data: existingChunkJob } = await adminClient
+              .from('generation_jobs')
+              .select('id')
+              .eq('project_id', job.project_id)
+              .eq('job_type', 'images')
+              .in('status', ['pending', 'processing'])
+              .single();
+
+            if (!existingChunkJob) {
+              // Create next chunk job
+              const { data: nextChunkJob } = await adminClient
+                .from('generation_jobs')
+                .insert({
+                  project_id: job.project_id,
+                  user_id: job.user_id,
+                  job_type: 'images',
+                  status: 'pending',
+                  progress: 0,
+                  total: Math.min(missingCount, 50),
+                  metadata: {
+                    ...job.metadata,
+                    skipExisting: true,
+                    isChunkContinuation: true
+                  }
+                })
+                .select()
+                .single();
+              
+              if (nextChunkJob) {
+                console.log(`Created next chunk job ${nextChunkJob.id} for ${Math.min(missingCount, 50)} images`);
+                
+                // Start the next chunk job
+                const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+                const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+                
+                fetch(`${supabaseUrl}/functions/v1/start-generation-job`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${supabaseServiceKey}`
+                  },
+                  body: JSON.stringify({
+                    jobId: nextChunkJob.id,
+                    projectId: job.project_id,
+                    userId: job.user_id,
+                    jobType: 'images',
+                    metadata: {
+                      ...job.metadata,
+                      skipExisting: true,
+                      isChunkContinuation: true
+                    }
+                  })
+                }).catch(err => console.error("Error starting next chunk:", err));
+                
+                results.push({ 
+                  jobId: job.id, 
+                  action: 'chunk_continued',
+                  nextChunkId: nextChunkJob.id,
+                  missingImages: missingCount
+                });
+                continue; // Don't chain to thumbnails yet
+              }
+            }
+          }
+        }
+        
         // Chain next job if needed - check both semiAutoMode and semiAutonomous for backwards compatibility
         if (finalStatus === 'completed' && (job.metadata?.semiAutoMode || job.metadata?.semiAutonomous)) {
           console.log(`Job ${job.id} completed - attempting to chain next job`);
