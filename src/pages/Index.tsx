@@ -1749,6 +1749,24 @@ const Index = () => {
       }
     }
 
+    // Check for images that need upscaling (Z-Image 16:9 only) - warning only for export
+    const isZImage = imageModel === 'z-image-turbo' || imageModel === 'z-image-turbo-lora';
+    const is16x9 = aspectRatio === '16:9';
+    if (isZImage && is16x9 && exportMode === "with-images") {
+      const imagesNeedingUpscale = generatedPrompts.filter((p: any) => {
+        if (!p || !p.imageUrl) return false;
+        if (p.isUpscaled === true) return false;
+        const imgWidth = p.imageWidth || 0;
+        const imgHeight = p.imageHeight || 0;
+        if (imgWidth >= 1920 && imgHeight >= 1080) return false;
+        return true;
+      });
+      
+      if (imagesNeedingUpscale.length > 0) {
+        toast.warning(`⚠️ ${imagesNeedingUpscale.length} image(s) n'ont pas été upscalées. Les images seront en basse résolution (960x544).`, { duration: 6000 });
+      }
+    }
+
     setIsExporting(true);
 
     try {
@@ -1857,6 +1875,25 @@ const Index = () => {
     if (missingImages.length > 0) {
       toast.error(`${missingImages.length} scène(s) n'ont pas d'images. Générez les images manquantes d'abord.`);
       return;
+    }
+
+    // Check for images that need upscaling (Z-Image 16:9 only)
+    const isZImage = imageModel === 'z-image-turbo' || imageModel === 'z-image-turbo-lora';
+    const is16x9 = aspectRatio === '16:9';
+    if (isZImage && is16x9) {
+      const imagesNeedingUpscale = generatedPrompts.filter((p: any) => {
+        if (!p || !p.imageUrl) return false;
+        if (p.isUpscaled === true) return false;
+        const imgWidth = p.imageWidth || 0;
+        const imgHeight = p.imageHeight || 0;
+        if (imgWidth >= 1920 && imgHeight >= 1080) return false;
+        return true;
+      });
+      
+      if (imagesNeedingUpscale.length > 0) {
+        toast.error(`${imagesNeedingUpscale.length} image(s) n'ont pas été upscalées. Cliquez sur "Vérifier upscale" puis upscalez les images avant le rendu.`);
+        return;
+      }
     }
 
     if (!audioUrl) {
