@@ -18,20 +18,25 @@ export function JobProgressIndicator({ job, onCancel, className }: JobProgressIn
   const metadata = job.metadata || {};
   
   // Total is the global total from metadata, or fallback to job.total
-  const totalItems = metadata.totalImages || metadata.totalPrompts || metadata.totalMissing || job.total;
+  // For upscale jobs, use totalToUpscale or totalGlobal
+  const totalItems = metadata.totalGlobal || metadata.totalToUpscale || metadata.totalImages || metadata.totalPrompts || metadata.totalMissing || job.total || 1;
   
   // For chunked jobs, calculate completed items from remaining
   // remainingAfterChunk tells us how many are left after this chunk's batch was initiated
   // So completed = total - remaining + current chunk progress
-  let globalProgress = job.progress;
+  let globalProgress = job.progress || 0;
   
-  if (metadata.remainingAfterChunk !== undefined) {
-    // Items completed before this chunk = total - remaining
-    const completedBeforeChunk = totalItems - metadata.remainingAfterChunk - (metadata.chunkSize || job.total);
-    globalProgress = Math.max(0, completedBeforeChunk) + job.progress;
+  if (metadata.remainingAfterChunk !== undefined && metadata.remainingAfterChunk >= 0) {
+    // Items completed before this chunk = total - remaining - chunk size
+    const chunkSize = metadata.chunkSize || job.total || 0;
+    const completedBeforeChunk = Math.max(0, totalItems - metadata.remainingAfterChunk - chunkSize);
+    globalProgress = completedBeforeChunk + (job.progress || 0);
   }
   
-  const progressPercent = totalItems > 0 ? (globalProgress / totalItems) * 100 : 0;
+  // Clamp progress to not exceed total
+  globalProgress = Math.min(globalProgress, totalItems);
+  
+  const progressPercent = totalItems > 0 ? Math.min(100, (globalProgress / totalItems) * 100) : 0;
   const isActive = job.status === 'pending' || job.status === 'processing';
 
   const getJobTypeLabel = (type: JobType): string => {
