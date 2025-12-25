@@ -2907,10 +2907,13 @@ const Index = () => {
                                 });
                                 
                                 if (needsUpscale === 0) {
-                                  toast.success(`✅ Toutes les images sont upscalées ! (${alreadyUpscaled} upscalées, ${highRes} haute-résolution)`);
+                                  const total = alreadyUpscaled + highRes;
+                                  toast.success(`✅ Toutes les ${total} images sont en haute résolution !`);
                                 } else {
+                                  const done = alreadyUpscaled + highRes;
+                                  const total = done + needsUpscale;
                                   toast.warning(
-                                    `⚠️ ${needsUpscale} image(s) à upscaler : scènes ${needsUpscaleIndices.join(", ")}`,
+                                    `⚠️ ${needsUpscale}/${total} image(s) à upscaler (scènes ${needsUpscaleIndices.join(", ")})`,
                                     { duration: 8000 }
                                   );
                                 }
