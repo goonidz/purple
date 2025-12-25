@@ -168,6 +168,7 @@ const Index = () => {
     failed: number;
   } | null>(null);
   const [missingImagesInfo, setMissingImagesInfo] = useState<{count: number, indices: number[]} | null>(null);
+  const [upscaleInfo, setUpscaleInfo] = useState<{needsUpscale: number, alreadyUpscaled: number, highRes: number, indices: number[]} | null>(null);
   const [isEditingProjectName, setIsEditingProjectName] = useState(false);
   const [editingProjectNameValue, setEditingProjectNameValue] = useState("");
   const [showScrollTop, setShowScrollTop] = useState(false);
@@ -2866,6 +2867,61 @@ const Index = () => {
                               Vérifier images
                             </Button>
                           )}
+                          {generatedPrompts.length > 0 && !isGeneratingImages && (imageModel === 'z-image-turbo' || imageModel === 'z-image-turbo-lora') && aspectRatio === '16:9' && (
+                            <Button
+                              onClick={() => {
+                                const imagesWithUrl = generatedPrompts.filter((p: any) => p && p.imageUrl);
+                                
+                                let needsUpscale = 0;
+                                let alreadyUpscaled = 0;
+                                let highRes = 0;
+                                const needsUpscaleIndices: number[] = [];
+                                
+                                imagesWithUrl.forEach((p: any, idx: number) => {
+                                  const originalIndex = generatedPrompts.findIndex((gp: any) => gp === p);
+                                  
+                                  // Check if already marked as upscaled
+                                  if (p.isUpscaled === true) {
+                                    alreadyUpscaled++;
+                                    return;
+                                  }
+                                  
+                                  // Check if already high-res (>= 1920x1080)
+                                  const imgWidth = p.imageWidth || 0;
+                                  const imgHeight = p.imageHeight || 0;
+                                  if (imgWidth >= 1920 && imgHeight >= 1080) {
+                                    highRes++;
+                                    return;
+                                  }
+                                  
+                                  // Needs upscaling
+                                  needsUpscale++;
+                                  needsUpscaleIndices.push(originalIndex + 1);
+                                });
+                                
+                                setUpscaleInfo({
+                                  needsUpscale,
+                                  alreadyUpscaled,
+                                  highRes,
+                                  indices: needsUpscaleIndices
+                                });
+                                
+                                if (needsUpscale === 0) {
+                                  toast.success(`✅ Toutes les images sont upscalées ! (${alreadyUpscaled} upscalées, ${highRes} haute-résolution)`);
+                                } else {
+                                  toast.warning(
+                                    `⚠️ ${needsUpscale} image(s) à upscaler : scènes ${needsUpscaleIndices.join(", ")}`,
+                                    { duration: 8000 }
+                                  );
+                                }
+                              }}
+                              variant="outline"
+                              size="sm"
+                            >
+                              <Maximize2 className="mr-2 h-4 w-4" />
+                              Vérifier upscale
+                            </Button>
+                          )}
                           {isGeneratingPrompts && getJobByType('prompts') && (
                             <Button
                               onClick={() => {
@@ -3022,6 +3078,46 @@ const Index = () => {
                             >
                               <RefreshCw className="mr-2 h-4 w-4" />
                               Récupérer / Regénérer les images manquantes
+                            </Button>
+                          </div>
+                        </Card>
+                      )}
+                      
+                      {/* Card statut upscale */}
+                      {upscaleInfo && upscaleInfo.needsUpscale > 0 && !hasActiveJob('upscale') && (
+                        <Card className="p-4 bg-amber-500/10 border-amber-500/20">
+                          <div className="space-y-3">
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-2">
+                                <Maximize2 className="h-5 w-5 text-amber-600 flex-shrink-0" />
+                                <span className="font-medium text-amber-600">
+                                  {upscaleInfo.needsUpscale} image(s) à upscaler
+                                </span>
+                              </div>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => setUpscaleInfo(null)}
+                              >
+                                <X className="h-4 w-4" />
+                              </Button>
+                            </div>
+                            <p className="text-sm text-muted-foreground">
+                              Scènes concernées : {upscaleInfo.indices.join(", ")}
+                              {upscaleInfo.alreadyUpscaled > 0 && ` • ${upscaleInfo.alreadyUpscaled} déjà upscalée(s)`}
+                              {upscaleInfo.highRes > 0 && ` • ${upscaleInfo.highRes} haute-résolution`}
+                            </p>
+                            <Button
+                              onClick={() => {
+                                setUpscaleInfo(null);
+                                generateUpscale();
+                              }}
+                              className="w-full"
+                              variant="default"
+                              size="sm"
+                            >
+                              <Maximize2 className="mr-2 h-4 w-4" />
+                              Upscaler les {upscaleInfo.needsUpscale} image(s) manquante(s)
                             </Button>
                           </div>
                         </Card>
