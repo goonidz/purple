@@ -152,15 +152,16 @@ serve(async (req) => {
 
     console.log(`Resolved channel ID: ${actualChannelId}`);
 
-    // Check if already tracking this channel
+    // Check if already tracking this channel (active or inactive)
     const { data: existing } = await supabase
       .from('competitor_channels')
-      .select('id')
+      .select('id, is_active')
       .eq('user_id', user.id)
       .eq('channel_id', actualChannelId)
       .single();
 
-    if (existing) {
+    // If channel exists and is active, return error
+    if (existing && existing.is_active) {
       return new Response(
         JSON.stringify({ error: "You are already tracking this channel" }),
         { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -214,20 +215,47 @@ serve(async (req) => {
 
     console.log(`Channel ${channelInfo.channel_name}: avg views = ${avgViewsPerVideo}`);
 
-    // Insert into database
-    const { data: insertedChannel, error: insertError } = await supabase
-      .from('competitor_channels')
-      .insert({
-        user_id: user.id,
-        ...channelInfo,
-        avg_views_per_video: avgViewsPerVideo,
-      })
-      .select()
-      .single();
+    let insertedChannel;
 
-    if (insertError) {
-      console.error("Insert error:", insertError);
-      throw new Error("Failed to add competitor");
+    // If channel exists but is inactive, reactivate it instead of creating duplicate
+    if (existing && !existing.is_active) {
+      console.log(`Reactivating previously deleted channel: ${actualChannelId}`);
+      const { data: updatedChannel, error: updateError } = await supabase
+        .from('competitor_channels')
+        .update({
+          ...channelInfo,
+          avg_views_per_video: avgViewsPerVideo,
+          is_active: true,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', existing.id)
+        .select()
+        .single();
+
+      if (updateError) {
+        console.error("Update error:", updateError);
+        throw new Error("Failed to reactivate competitor");
+      }
+
+      insertedChannel = updatedChannel;
+    } else {
+      // Insert new channel
+      const { data: newChannel, error: insertError } = await supabase
+        .from('competitor_channels')
+        .insert({
+          user_id: user.id,
+          ...channelInfo,
+          avg_views_per_video: avgViewsPerVideo,
+        })
+        .select()
+        .single();
+
+      if (insertError) {
+        console.error("Insert error:", insertError);
+        throw new Error("Failed to add competitor");
+      }
+
+      insertedChannel = newChannel;
     }
 
     return new Response(
