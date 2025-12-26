@@ -169,6 +169,7 @@ const Index = () => {
   } | null>(null);
   const [missingImagesInfo, setMissingImagesInfo] = useState<{count: number, indices: number[]} | null>(null);
   const [upscaleInfo, setUpscaleInfo] = useState<{needsUpscale: number, alreadyUpscaled: number, highRes: number, indices: number[]} | null>(null);
+  const [selectedScenes, setSelectedScenes] = useState<Set<number>>(new Set());
   const [isEditingProjectName, setIsEditingProjectName] = useState(false);
   const [editingProjectNameValue, setEditingProjectNameValue] = useState("");
   const [showScrollTop, setShowScrollTop] = useState(false);
@@ -1723,6 +1724,72 @@ const Index = () => {
     }
   };
 
+  const exportSelectedScenes = async () => {
+    if (selectedScenes.size === 0) {
+      toast.error("Aucune scène sélectionnée");
+      return;
+    }
+
+    const sortedIndices = Array.from(selectedScenes).sort((a, b) => a - b);
+    let successCount = 0;
+    let errorCount = 0;
+
+    for (const index of sortedIndices) {
+      const scene = generatedPrompts[index];
+      if (!scene) continue;
+
+      const baseName = `scene_${index + 1}`;
+
+      try {
+        // Export image if available
+        if (scene.imageUrl) {
+          const imageResponse = await fetch(scene.imageUrl);
+          if (!imageResponse.ok) throw new Error(`Failed to fetch image: ${imageResponse.status}`);
+          
+          const imageBlob = await imageResponse.blob();
+          const imageUrl = URL.createObjectURL(imageBlob);
+          const link = document.createElement('a');
+          link.href = imageUrl;
+          link.download = `${baseName}.jpg`;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          
+          // Clean up URL after a delay
+          setTimeout(() => URL.revokeObjectURL(imageUrl), 100);
+        }
+
+        // Export prompt as text file
+        if (scene.prompt) {
+          const promptBlob = new Blob([scene.prompt], { type: 'text/plain' });
+          const promptUrl = URL.createObjectURL(promptBlob);
+          const promptLink = document.createElement('a');
+          promptLink.href = promptUrl;
+          promptLink.download = `${baseName}.txt`;
+          document.body.appendChild(promptLink);
+          promptLink.click();
+          document.body.removeChild(promptLink);
+          
+          setTimeout(() => URL.revokeObjectURL(promptUrl), 100);
+        }
+
+        successCount++;
+        
+        // Small delay between downloads to avoid browser blocking
+        await new Promise(resolve => setTimeout(resolve, 100));
+      } catch (error) {
+        console.error(`Error exporting scene ${index + 1}:`, error);
+        errorCount++;
+      }
+    }
+
+    if (errorCount > 0) {
+      toast.warning(`${successCount} scène(s) exportée(s), ${errorCount} erreur(s)`);
+    } else {
+      toast.success(`${successCount} scène(s) exportée(s) !`);
+    }
+  };
+
   const handleExport = async () => {
     console.log("handleExport called");
     if (generatedPrompts.length === 0) {
@@ -2962,6 +3029,16 @@ const Index = () => {
                               Vérifier upscale
                             </Button>
                           )}
+                          {generatedPrompts.length > 0 && selectedScenes.size > 0 && (
+                            <Button
+                              onClick={exportSelectedScenes}
+                              variant="outline"
+                              size="sm"
+                            >
+                              <Download className="mr-2 h-4 w-4" />
+                              Exporter sélection ({selectedScenes.size})
+                            </Button>
+                          )}
                           {isGeneratingPrompts && getJobByType('prompts') && (
                             <Button
                               onClick={() => {
@@ -3200,6 +3277,18 @@ const Index = () => {
                       uploadManualImage={uploadManualImage}
                       copyToClipboard={copyToClipboard}
                       setImagePreviewUrl={setImagePreviewUrl}
+                      selectedScenes={selectedScenes}
+                      onToggleSceneSelection={(index) => {
+                        setSelectedScenes(prev => {
+                          const next = new Set(prev);
+                          if (next.has(index)) {
+                            next.delete(index);
+                          } else {
+                            next.add(index);
+                          }
+                          return next;
+                        });
+                      }}
                     />
                   </Card>
                 )}

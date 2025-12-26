@@ -1,6 +1,7 @@
 import React from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Check,
   Copy,
@@ -46,6 +47,8 @@ interface SceneGridProps {
   uploadManualImage: (file: File, index: number) => void;
   copyToClipboard: (text: string | undefined, index: number) => void;
   setImagePreviewUrl: (url: string | null) => void;
+  selectedScenes?: Set<number>;
+  onToggleSceneSelection?: (index: number) => void;
 }
 
 export function SceneGrid({
@@ -67,6 +70,8 @@ export function SceneGrid({
   uploadManualImage,
   copyToClipboard,
   setImagePreviewUrl,
+  selectedScenes = new Set(),
+  onToggleSceneSelection,
 }: SceneGridProps) {
   const items = scenes.length > 0 ? scenes : generatedPrompts;
 
@@ -84,7 +89,8 @@ export function SceneGrid({
   return (
     <div className="space-y-4">
       {/* Desktop headers */}
-      <div className="hidden md:grid md:grid-cols-[auto_1fr_1fr_300px_auto] md:items-center gap-4 px-3 py-2 text-xs font-medium text-muted-foreground border-b">
+      <div className={`hidden md:grid md:items-center gap-4 px-3 py-2 text-xs font-medium text-muted-foreground border-b ${onToggleSceneSelection ? 'md:grid-cols-[auto_auto_1fr_1fr_300px_auto]' : 'md:grid-cols-[auto_1fr_1fr_300px_auto]'}`}>
+        {onToggleSceneSelection && <span className="w-8"></span>}
         <span className="w-16">Scène</span>
         <span>Texte</span>
         <span>Prompt</span>
@@ -105,8 +111,17 @@ export function SceneGrid({
         return (
           <Card
             key={index}
-            className="p-4 grid gap-4 grid-cols-1 md:grid-cols-[auto_1fr_1fr_300px_auto] md:items-start"
+            className={`p-4 grid gap-4 grid-cols-1 md:items-start ${onToggleSceneSelection ? 'md:grid-cols-[auto_auto_1fr_1fr_300px_auto]' : 'md:grid-cols-[auto_1fr_1fr_300px_auto]'}`}
           >
+            {/* Checkbox for selection */}
+            {onToggleSceneSelection && (
+              <div className="flex items-start pt-1">
+                <Checkbox
+                  checked={selectedScenes.has(index)}
+                  onCheckedChange={() => onToggleSceneSelection(index)}
+                />
+              </div>
+            )}
             {/* Header: Number + Timing (always visible) */}
             <div className="flex items-center gap-3 md:flex-col md:items-start md:gap-1">
               <span className="font-bold text-lg text-primary">#{index + 1}</span>
