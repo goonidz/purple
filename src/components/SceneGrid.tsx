@@ -115,10 +115,11 @@ export function SceneGrid({
           >
             {/* Checkbox for selection */}
             {onToggleSceneSelection && (
-              <div className="flex items-start pt-1">
+              <div className="flex items-start pt-1 md:pt-0">
                 <Checkbox
                   checked={selectedScenes.has(index)}
                   onCheckedChange={() => onToggleSceneSelection(index)}
+                  className="h-5 w-5"
                 />
               </div>
             )}

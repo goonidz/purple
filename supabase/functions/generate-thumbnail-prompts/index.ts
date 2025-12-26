@@ -260,21 +260,30 @@ Think: "What aspects of the script have NOT been explored yet?"`;
     if (userIdea && userIdea.trim()) {
       systemPrompt += `
 
-💡 USER'S IDEA (optional guidance):
-The user suggests this direction: "${userIdea.trim()}"
+💡 USER'S IDEA - MANDATORY DIRECTION:
+The user wants ALL 3 thumbnails to be variations of this specific idea: "${userIdea.trim()}"
 
-Consider this as a hint for the SCENE or ANGLE to explore, while still following ALL the rules above (style from examples, content from script, simplicity, etc.).`;
+CRITICAL REQUIREMENT:
+- ALL 3 prompts MUST be variations/interpretations of the user's idea above
+- Each prompt should explore a different angle or visual approach to the same concept
+- The user's idea is the PRIMARY direction - adapt it to fit the video script content
+- Still follow ALL the rules above (style from examples, content from script, simplicity, etc.)
+- Create 3 distinct variations that all relate to the user's idea but with different visual compositions, angles, or emphasis`;
     }
 
     // Always append the JSON format instruction
+    const variationInstruction = userIdea && userIdea.trim() 
+      ? " (tous les 3 doivent être des variations de l'idée de l'utilisateur)"
+      : "";
+    
     systemPrompt += `
 
 Retourne UNIQUEMENT un JSON avec ce format exact:
 {
   "prompts": [
-    "premier prompt détaillé reprenant le style des exemples...",
-    "deuxième prompt avec même style mais contenu différent...",
-    "troisième prompt toujours dans le même style..."
+    "premier prompt détaillé reprenant le style des exemples${variationInstruction}...",
+    "deuxième prompt avec même style mais variation différente${variationInstruction}...",
+    "troisième prompt toujours dans le même style, autre variation${variationInstruction}..."
   ]
 }`;
 
