@@ -112,7 +112,16 @@ serve(async (req) => {
       const channelsResponse = await fetch(channelsUrl);
       const channelsData = await channelsResponse.json();
       
-      if (channelsResponse.ok && channelsData.items?.length > 0) {
+      if (!channelsResponse.ok) {
+        console.error("YouTube API error (channels.list):", channelsData);
+        const errorMsg = channelsData?.error?.message || `Erreur YouTube API: ${channelsResponse.status}`;
+        return new Response(
+          JSON.stringify({ error: errorMsg }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      
+      if (channelsData.items?.length > 0) {
         actualChannelId = channelsData.items[0].id;
         console.log(`Found channel by handle using channels.list: ${actualChannelId}`);
       } else {
@@ -122,8 +131,17 @@ serve(async (req) => {
         const searchResponse = await fetch(searchUrl);
         const searchData = await searchResponse.json();
         
-        if (!searchResponse.ok || !searchData.items?.length) {
-          console.error("Channel search failed:", searchData);
+        if (!searchResponse.ok) {
+          console.error("YouTube API error (search):", searchData);
+          const errorMsg = searchData?.error?.message || `Erreur YouTube API: ${searchResponse.status}`;
+          return new Response(
+            JSON.stringify({ error: errorMsg }),
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+        
+        if (!searchData.items?.length) {
+          console.error("Channel search returned no results:", searchData);
           return new Response(
             JSON.stringify({ error: `Chaîne YouTube non trouvée pour le handle @${identifier}. Vérifiez l'URL ou le handle.` }),
             { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -139,8 +157,17 @@ serve(async (req) => {
       const searchResponse = await fetch(searchUrl);
       const searchData = await searchResponse.json();
       
-      if (!searchResponse.ok || !searchData.items?.length) {
-        console.error("Channel search failed:", searchData);
+      if (!searchResponse.ok) {
+        console.error("YouTube API error (search custom):", searchData);
+        const errorMsg = searchData?.error?.message || `Erreur YouTube API: ${searchResponse.status}`;
+        return new Response(
+          JSON.stringify({ error: errorMsg }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      
+      if (!searchData.items?.length) {
+        console.error("Channel search returned no results:", searchData);
         return new Response(
           JSON.stringify({ error: "Chaîne YouTube non trouvée. Vérifiez l'URL ou le handle." }),
           { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -175,11 +202,20 @@ serve(async (req) => {
     const channelResponse = await fetch(channelUrl2);
     const channelData = await channelResponse.json();
 
-    if (!channelResponse.ok || !channelData.items?.length) {
-      console.error("Channel fetch failed:", channelData);
+    if (!channelResponse.ok) {
+      console.error("YouTube API error (channels.get):", channelData);
+      const errorMsg = channelData?.error?.message || `Erreur YouTube API: ${channelResponse.status}`;
       return new Response(
-        JSON.stringify({ error: "Failed to fetch channel details" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        JSON.stringify({ error: `Échec de récupération des détails: ${errorMsg}` }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    if (!channelData.items?.length) {
+      console.error("Channel not found:", channelData);
+      return new Response(
+        JSON.stringify({ error: "Chaîne YouTube non trouvée avec cet ID" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
@@ -269,6 +305,7 @@ serve(async (req) => {
   } catch (error: unknown) {
     console.error("Error in add-competitor:", error);
     const errorMessage = error instanceof Error ? error.message : "Failed to add competitor";
+    console.error("Full error details:", JSON.stringify(error, Object.getOwnPropertyNames(error)));
     return new Response(
       JSON.stringify({ error: errorMessage }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
