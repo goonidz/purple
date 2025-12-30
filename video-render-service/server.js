@@ -87,6 +87,7 @@ function formatSRTTime(seconds) {
 }
 
 // Helper function to create concat file for ffmpeg (video segments)
+// Simple format - let FFmpeg read duration from each file's metadata
 function createConcatFileForVideos(scenes, workDir) {
   let concat = '';
   scenes.forEach((scene, index) => {
@@ -433,6 +434,19 @@ async function processRenderJob(jobId, renderData) {
       throw new Error('No audio URL provided');
     }
 
+    // Debug: Calculate total video duration from scenes
+    const totalVideoDuration = scenes.reduce((total, scene) => {
+      const sceneDuration = scene.endTime - scene.startTime;
+      return total + sceneDuration;
+    }, 0);
+    const lastScene = scenes[scenes.length - 1];
+    console.log(`[${jobId}] DURATION DEBUG:`);
+    console.log(`[${jobId}]   Total scenes: ${scenes.length}`);
+    console.log(`[${jobId}]   First scene: ${scenes[0].startTime}s - ${scenes[0].endTime}s`);
+    console.log(`[${jobId}]   Last scene: ${lastScene.startTime}s - ${lastScene.endTime}s`);
+    console.log(`[${jobId}]   Sum of scene durations: ${totalVideoDuration.toFixed(3)}s`);
+    console.log(`[${jobId}]   Last scene endTime (expected video end): ${lastScene.endTime}s`);
+
     const {
       width = 1920,
       height = 1080,
@@ -448,6 +462,30 @@ async function processRenderJob(jobId, renderData) {
     addStep('Téléchargement de l\'audio...', 10, true);
     const audioPath = path.join(workDir, 'audio.mp3');
     await downloadFile(audioUrl, audioPath);
+    
+    // Get audio duration using ffprobe
+    const audioDuration = await new Promise((resolve) => {
+      ffmpeg.ffprobe(audioPath, (err, metadata) => {
+        if (err) {
+          console.error(`[${jobId}] Error getting audio duration:`, err);
+          resolve(null);
+        } else {
+          const duration = metadata?.format?.duration;
+          console.log(`[${jobId}]   Audio duration (ffprobe): ${duration}s`);
+          resolve(duration);
+        }
+      });
+    });
+    
+    // Compare audio duration with video duration
+    if (audioDuration) {
+      const diff = audioDuration - lastScene.endTime;
+      console.log(`[${jobId}]   Duration difference (audio - video): ${diff.toFixed(3)}s`);
+      if (Math.abs(diff) > 0.5) {
+        console.warn(`[${jobId}]   WARNING: Audio and video durations differ by more than 0.5s!`);
+      }
+    }
+    
     addStep('Audio téléchargé', 15);
 
     // Step 2: Download all images
@@ -483,11 +521,18 @@ async function processRenderJob(jobId, renderData) {
     const effectLabel = effectType === 'pan' ? 'pan' : 'Ken Burns';
     addStep(`Application de l'effet ${effectLabel} sur les scènes...`, 35);
     
+    let totalRenderedDuration = 0;
     for (let i = 0; i < scenes.length; i++) {
       const scene = scenes[i];
       const imagePath = path.join(imagesDir, `scene_${i}.jpg`);
       const segmentPath = path.join(segmentsDir, `segment_${i}.mp4`);
       const duration = scene.endTime - scene.startTime;
+      totalRenderedDuration += duration;
+      
+      // Log each scene's timing
+      if (i === 0 || i === scenes.length - 1 || i % 20 === 0) {
+        console.log(`[${jobId}] Scene ${i}: ${scene.startTime.toFixed(3)}s - ${scene.endTime.toFixed(3)}s (duration: ${duration.toFixed(3)}s)`);
+      }
       
       // Show current scene being processed (updates the same line)
       const job = jobs.get(jobId);
@@ -528,6 +573,33 @@ async function processRenderJob(jobId, renderData) {
     }
     
     // Keep the last "Scène X/9 terminée" visible until we start the next phase
+    console.log(`[${jobId}] Total rendered video duration (expected): ${totalRenderedDuration.toFixed(3)}s`);
+    
+    // Verify actual segment durations
+    let actualTotalDuration = 0;
+    for (let i = 0; i < scenes.length; i++) {
+      const segmentPath = path.join(segmentsDir, `segment_${i}.mp4`);
+      const segmentDuration = await new Promise((resolve) => {
+        ffmpeg.ffprobe(segmentPath, (err, metadata) => {
+          if (err) {
+            console.error(`[${jobId}] Error probing segment ${i}:`, err.message);
+            resolve(0);
+          } else {
+            resolve(parseFloat(metadata?.format?.duration) || 0);
+          }
+        });
+      });
+      actualTotalDuration += segmentDuration;
+      
+      // Log first, last, and any segment with duration mismatch
+      const expectedDuration = scenes[i].endTime - scenes[i].startTime;
+      const diff = segmentDuration - expectedDuration;
+      if (i === 0 || i === scenes.length - 1 || Math.abs(diff) > 0.1) {
+        console.log(`[${jobId}] Segment ${i}: expected ${expectedDuration.toFixed(3)}s, actual ${segmentDuration.toFixed(3)}s (diff: ${diff.toFixed(3)}s)`);
+      }
+    }
+    console.log(`[${jobId}] Actual total from segments: ${actualTotalDuration.toFixed(3)}s`);
+    
     addStep(`Toutes les scènes rendues avec effet ${effectLabel}`, 60);
 
     // Step 5: Create concat file for video segments
@@ -547,6 +619,11 @@ async function processRenderJob(jobId, renderData) {
     addStep('Concaténation des segments et ajout de l\'audio...', 70, true);
     const outputPath = path.join(workDir, `output.${format}`);
     
+    // Log concat file content for debugging
+    const concatFileContent = fs.readFileSync(concatPath, 'utf8');
+    console.log(`[${jobId}] Concat file (first 500 chars): ${concatFileContent.substring(0, 500)}`);
+    console.log(`[${jobId}] Concat file has ${concatFileContent.split('\n').filter(l => l.startsWith('file')).length} files`);
+    
     return new Promise((resolve, reject) => {
       let ffmpegCommand = ffmpeg()
         .input(concatPath)
@@ -555,13 +632,15 @@ async function processRenderJob(jobId, renderData) {
         .videoCodec('libx264')
         .audioCodec('aac')
         .outputOptions([
-          '-preset', 'ultrafast',  // Fastest encoding for concatenation (files will be slightly larger)
-          '-crf', '28',  // Higher CRF = smaller file size (28 is good balance for storage)
+          '-map', '0:v',  // Map video from first input (concat)
+          '-map', '1:a',  // Map audio from second input (audio file)
+          '-preset', 'ultrafast',
+          '-crf', '28',
           '-pix_fmt', 'yuv420p',
           '-movflags', '+faststart',
-          '-threads', '0', // Use all available cores
-          '-shortest', // End when shortest stream ends
-          '-stats_period', '0.5' // Force FFmpeg to emit stats every 0.5 seconds
+          '-threads', '0',
+          '-stats_period', '0.5'
+          // No -shortest flag - let both streams play to completion
         ])
         .output(outputPath);
 
@@ -637,6 +716,33 @@ async function processRenderJob(jobId, renderData) {
           addStep('Encodage terminé', 95);
           
           try {
+            // Verify final video duration
+            const finalDuration = await new Promise((resolve) => {
+              ffmpeg.ffprobe(outputPath, (err, metadata) => {
+                if (err) {
+                  console.error(`[${jobId}] Error getting final video duration:`, err);
+                  resolve(null);
+                } else {
+                  const videoDuration = metadata?.format?.duration;
+                  const videoStream = metadata?.streams?.find(s => s.codec_type === 'video');
+                  const audioStream = metadata?.streams?.find(s => s.codec_type === 'audio');
+                  console.log(`[${jobId}] FINAL OUTPUT DURATION:`);
+                  console.log(`[${jobId}]   Container duration: ${videoDuration}s`);
+                  console.log(`[${jobId}]   Video stream: ${videoStream?.duration || 'N/A'}s, ${videoStream?.nb_frames || 'N/A'} frames`);
+                  console.log(`[${jobId}]   Audio stream: ${audioStream?.duration || 'N/A'}s`);
+                  console.log(`[${jobId}]   Expected (from scenes): ${lastScene.endTime}s`);
+                  if (videoDuration && lastScene.endTime) {
+                    const diff = videoDuration - lastScene.endTime;
+                    console.log(`[${jobId}]   Difference: ${diff.toFixed(3)}s`);
+                    if (diff < -1) {
+                      console.error(`[${jobId}]   ERROR: Final video is ${Math.abs(diff).toFixed(1)}s shorter than expected!`);
+                    }
+                  }
+                  resolve(videoDuration);
+                }
+              });
+            });
+            
             // Step 6: Generate VPS URL instead of uploading to Supabase
             // Files are served directly from VPS and cleaned up after 3 days
             const fileSize = fs.statSync(outputPath).size;

@@ -2264,7 +2264,7 @@ async function processUpscaleJob(
     : allImagesToUpscale.length;
   
   // Update job metadata with chunk info - keep total global, don't change it
-  await adminClient
+  const { error: updateError } = await adminClient
     .from('generation_jobs')
     .update({
       total: totalGlobal, // Keep total global, not chunk size
@@ -2278,6 +2278,12 @@ async function processUpscaleJob(
       }
     })
     .eq('id', jobId);
+  
+  if (updateError) {
+    console.error(`Failed to update job ${jobId} with chunk info:`, updateError);
+  } else {
+    console.log(`Job ${jobId}: Updated total=${totalGlobal}, chunkSize=${imagesToUpscale.length}, remaining=${remainingAfterChunk}`)
+  }
 
   // Build webhook URL
   const webhookUrl = `${supabaseUrl}/functions/v1/replicate-webhook`;

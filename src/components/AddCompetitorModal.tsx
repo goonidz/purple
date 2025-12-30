@@ -28,16 +28,57 @@ export default function AddCompetitorModal({ open, onOpenChange, onSuccess }: Ad
     setIsLoading(true);
 
     try {
-      const { data, error } = await supabase.functions.invoke('add-competitor', {
+      const response = await supabase.functions.invoke('add-competitor', {
         body: { channelUrl: channelUrl.trim() }
       });
 
-      if (error) {
-        throw new Error(error.message || "Failed to add competitor");
+      const { data, error } = response;
+      
+      console.log("Add competitor response:", { data, error, response });
+
+      // Extract error message - check multiple sources
+      let errorMsg: string | null = null;
+      
+      // Check data.error first (Edge Function returns JSON with error field)
+      if (data?.error) {
+        errorMsg = data.error;
+      }
+      
+      // Check if there's a FunctionsHttpError with context
+      if (!errorMsg && error) {
+        // Try to get the response body from the error
+        if ((error as any).context) {
+          try {
+            // context might have the response
+            const ctx = (error as any).context;
+            if (typeof ctx === 'object' && ctx.json) {
+              const jsonBody = await ctx.json();
+              if (jsonBody?.error) errorMsg = jsonBody.error;
+            } else if (typeof ctx === 'string') {
+              const parsed = JSON.parse(ctx);
+              if (parsed?.error) errorMsg = parsed.error;
+            }
+          } catch {
+            // Ignore parsing errors
+          }
+        }
+        
+        // If still no message, use the error message if it's not the generic one
+        if (!errorMsg && error.message && !error.message.includes("non-2xx")) {
+          errorMsg = error.message;
+        }
       }
 
-      if (data.error) {
-        throw new Error(data.error);
+      if (error && !errorMsg) {
+        errorMsg = "Erreur lors de l'ajout du concurrent";
+      }
+
+      if (errorMsg) {
+        throw new Error(errorMsg);
+      }
+
+      if (!data?.channel) {
+        throw new Error("Réponse invalide du serveur");
       }
 
       toast.success(`${data.channel.channel_name} ajouté aux concurrents`);

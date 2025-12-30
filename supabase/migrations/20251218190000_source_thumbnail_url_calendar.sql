@@ -8,3 +8,6 @@ ADD COLUMN IF NOT EXISTS source_thumbnail_url TEXT DEFAULT NULL;
 
 
 
+
+
+

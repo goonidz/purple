@@ -267,6 +267,8 @@ const CreateFromScratch = () => {
   const [selectedAxe, setSelectedAxe] = useState<VideoAxe | null>(null);
   const [projectId, setProjectId] = useState<string | null>(null);
   const [calendarEntryId, setCalendarEntryId] = useState<string | null>(null);
+  const [calendarChannelName, setCalendarChannelName] = useState<string | null>(null);
+  const [calendarChannelColor, setCalendarChannelColor] = useState<string | null>(null);
   
   // Script saving
   const [isSavingScript, setIsSavingScript] = useState(false);
@@ -405,10 +407,20 @@ const CreateFromScratch = () => {
             setCalendarEntryId(calendarEntryIdValue);
           }
           
+          // Load channel info
+          const channelName = sessionStorage.getItem("calendar_channel_name");
+          const channelColor = sessionStorage.getItem("calendar_channel_color");
+          if (channelName) {
+            setCalendarChannelName(channelName);
+            setCalendarChannelColor(channelColor);
+          }
+          
           // Clean up sessionStorage
           sessionStorage.removeItem("calendar_title");
           sessionStorage.removeItem("calendar_script");
           sessionStorage.removeItem("calendar_entry_id");
+          sessionStorage.removeItem("calendar_channel_name");
+          sessionStorage.removeItem("calendar_channel_color");
         }
       }
     });
@@ -1861,7 +1873,17 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
             <Card className="p-8">
               <div className="space-y-6">
                 {projectName && (
-                  <p className="text-sm text-muted-foreground mb-2">{projectName}</p>
+                  <div className="flex items-center gap-3 mb-2">
+                    <p className="text-sm text-muted-foreground">{projectName}</p>
+                    {calendarChannelName && (
+                      <span 
+                        className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium text-white"
+                        style={{ backgroundColor: calendarChannelColor || '#6b7280' }}
+                      >
+                        📺 {calendarChannelName}
+                      </span>
+                    )}
+                  </div>
                 )}
                 <div className="flex items-start justify-between">
                   <div>

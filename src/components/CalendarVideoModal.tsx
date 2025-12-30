@@ -431,6 +431,17 @@ export default function CalendarVideoModal({
     if (script) {
       sessionStorage.setItem("calendar_script", script);
     }
+    // Store channel info if selected
+    if (channelId) {
+      const selectedChannel = channels.find(c => c.id === channelId);
+      if (selectedChannel) {
+        sessionStorage.setItem("calendar_channel_name", selectedChannel.name);
+        sessionStorage.setItem("calendar_channel_color", selectedChannel.color);
+      }
+    } else {
+      sessionStorage.removeItem("calendar_channel_name");
+      sessionStorage.removeItem("calendar_channel_color");
+    }
     onClose();
     window.location.href = "/create-from-scratch?from_calendar=true";
   };
@@ -442,6 +453,17 @@ export default function CalendarVideoModal({
       sessionStorage.setItem("calendar_audio_url", audioUrl);
       sessionStorage.setItem("calendar_title", title);
       sessionStorage.setItem("calendar_entry_id", entry?.id || "");
+      // Store channel info if selected
+      if (channelId) {
+        const selectedChannel = channels.find(c => c.id === channelId);
+        if (selectedChannel) {
+          sessionStorage.setItem("calendar_channel_name", selectedChannel.name);
+          sessionStorage.setItem("calendar_channel_color", selectedChannel.color);
+        }
+      } else {
+        sessionStorage.removeItem("calendar_channel_name");
+        sessionStorage.removeItem("calendar_channel_color");
+      }
       onClose();
       window.location.href = "/projects?from_calendar=true";
     } else {

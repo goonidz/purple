@@ -94,6 +94,8 @@ const Index = () => {
   const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
   const [projectName, setProjectName] = useState<string>("");
   const [calendarDate, setCalendarDate] = useState<string | null>(null);
+  const [calendarChannelName, setCalendarChannelName] = useState<string | null>(null);
+  const [calendarChannelColor, setCalendarChannelColor] = useState<string | null>(null);
   const [transcriptFile, setTranscriptFile] = useState<File | null>(null);
   const [transcriptData, setTranscriptData] = useState<TranscriptData | null>(null);
   const [examplePrompts, setExamplePrompts] = useState<string[]>(["", "", ""]);
@@ -479,7 +481,7 @@ const Index = () => {
           table: 'content_calendar',
           filter: `project_id=eq.${currentProjectId}`
         },
-        (payload) => {
+        async (payload) => {
           console.log('Calendar entry updated for this project:', payload);
           const updatedEntry = payload.new as any;
           // If calendar entry title changed, update project name
@@ -490,6 +492,21 @@ const Index = () => {
           // Update calendar date if it changed
           if (updatedEntry.scheduled_date) {
             setCalendarDate(updatedEntry.scheduled_date);
+          }
+          // Update channel info if channel_id changed
+          if (updatedEntry.channel_id) {
+            const { data: channelData } = await supabase
+              .from('channels')
+              .select('name, color')
+              .eq('id', updatedEntry.channel_id)
+              .single();
+            if (channelData) {
+              setCalendarChannelName(channelData.name);
+              setCalendarChannelColor(channelData.color);
+            }
+          } else {
+            setCalendarChannelName(null);
+            setCalendarChannelColor(null);
           }
         }
       )
@@ -770,15 +787,17 @@ const Index = () => {
         thumbnailPresetIdRef.current = projectData.thumbnail_preset_id;
       }
       
-      // Load calendar date if project is linked to calendar
+      // Load calendar date and channel if project is linked to calendar
       const { data: calendarEntries, error: calendarError } = await supabase
         .from("content_calendar")
-        .select("scheduled_date, id")
+        .select("scheduled_date, id, channel_id, channels(name, color)")
         .eq("project_id", projectId);
       
       if (calendarError) {
         console.error("Error loading calendar date:", calendarError);
         setCalendarDate(null);
+        setCalendarChannelName(null);
+        setCalendarChannelColor(null);
       } else {
         console.log("Calendar entries for project:", calendarEntries);
         // Get the first entry with a scheduled_date
@@ -786,6 +805,17 @@ const Index = () => {
         const scheduledDate = entryWithDate?.scheduled_date || null;
         console.log("Setting calendar date:", scheduledDate, "from entry:", entryWithDate);
         setCalendarDate(scheduledDate);
+        
+        // Get channel info from calendar entry
+        const entryWithChannel = calendarEntries?.find(entry => entry.channel_id && entry.channels);
+        if (entryWithChannel && entryWithChannel.channels) {
+          const channelData = entryWithChannel.channels as { name: string; color: string };
+          setCalendarChannelName(channelData.name);
+          setCalendarChannelColor(channelData.color);
+        } else {
+          setCalendarChannelName(null);
+          setCalendarChannelColor(null);
+        }
       }
       
       // Mark that project data has been loaded
@@ -2261,16 +2291,28 @@ const Index = () => {
                     <Pencil className="h-3.5 w-3.5" />
                   </Button>
                 </div>
-                {calendarDate && (
-                  <div className="flex items-center gap-1.5 text-primary text-xs mt-0.5">
-                    <Calendar className="h-3 w-3" />
-                    <span>
-                      Prévu le {new Date(calendarDate).toLocaleDateString("fr-FR", {
-                        day: "numeric",
-                        month: "short",
-                        year: "numeric"
-                      })}
-                    </span>
+                {(calendarDate || calendarChannelName) && (
+                  <div className="flex items-center gap-3 text-xs mt-0.5">
+                    {calendarDate && (
+                      <div className="flex items-center gap-1.5 text-primary">
+                        <Calendar className="h-3 w-3" />
+                        <span>
+                          Prévu le {new Date(calendarDate).toLocaleDateString("fr-FR", {
+                            day: "numeric",
+                            month: "short",
+                            year: "numeric"
+                          })}
+                        </span>
+                      </div>
+                    )}
+                    {calendarChannelName && (
+                      <span 
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium text-white"
+                        style={{ backgroundColor: calendarChannelColor || '#6b7280' }}
+                      >
+                        📺 {calendarChannelName}
+                      </span>
+                    )}
                   </div>
                 )}
               </div>

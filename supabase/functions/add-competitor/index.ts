@@ -107,33 +107,57 @@ serve(async (req) => {
     
     if (type === 'handle') {
       // Try to get channel by handle using channels.list API (more reliable)
-      // First, try with the handle directly
-      const channelsUrl = `https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&forHandle=${identifier}&key=${YOUTUBE_API_KEY}`;
+      // The forHandle parameter should NOT include the @ symbol
+      const handleWithoutAt = identifier.replace(/^@/, '');
+      console.log(`Trying forHandle API with: ${handleWithoutAt}`);
+      
+      const channelsUrl = `https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&forHandle=${encodeURIComponent(handleWithoutAt)}&key=${YOUTUBE_API_KEY}`;
       const channelsResponse = await fetch(channelsUrl);
       const channelsData = await channelsResponse.json();
       
+      console.log(`forHandle API response status: ${channelsResponse.status}, items: ${channelsData.items?.length || 0}`);
+      
+      // Check for API errors first (quota, auth, etc.)
       if (!channelsResponse.ok) {
-        console.error("YouTube API error (channels.list):", channelsData);
-        const errorMsg = channelsData?.error?.message || `Erreur YouTube API: ${channelsResponse.status}`;
-        return new Response(
-          JSON.stringify({ error: errorMsg }),
-          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+        console.error("YouTube API error (channels.list):", JSON.stringify(channelsData));
+        const ytError = channelsData?.error;
+        if (ytError) {
+          // Return user-friendly error message
+          let errorMsg = ytError.message || `Erreur YouTube API: ${channelsResponse.status}`;
+          
+          // Make quota error more user-friendly
+          if (ytError.errors?.[0]?.reason === 'quotaExceeded') {
+            errorMsg = "Quota YouTube API dépassé. Le quota se réinitialise à 9h (heure de Paris). Réessayez plus tard.";
+          }
+          
+          return new Response(
+            JSON.stringify({ error: errorMsg }),
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
       }
       
-      if (channelsData.items?.length > 0) {
+      if (channelsResponse.ok && channelsData.items?.length > 0) {
         actualChannelId = channelsData.items[0].id;
         console.log(`Found channel by handle using channels.list: ${actualChannelId}`);
       } else {
-        // Fallback to search API
-        console.log(`Handle lookup failed, trying search API for: @${identifier}`);
-        const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=channel&q=${encodeURIComponent('@' + identifier)}&key=${YOUTUBE_API_KEY}`;
+        // Fallback to search API - this is more reliable for some handles
+        console.log(`Handle lookup via forHandle failed (no items), trying search API for: @${handleWithoutAt}`);
+        const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=channel&q=${encodeURIComponent('@' + handleWithoutAt)}&key=${YOUTUBE_API_KEY}`;
         const searchResponse = await fetch(searchUrl);
         const searchData = await searchResponse.json();
         
+        console.log(`Search API response status: ${searchResponse.status}, items: ${searchData.items?.length || 0}`);
+        
         if (!searchResponse.ok) {
-          console.error("YouTube API error (search):", searchData);
-          const errorMsg = searchData?.error?.message || `Erreur YouTube API: ${searchResponse.status}`;
+          console.error("YouTube API error (search):", JSON.stringify(searchData));
+          const ytError = searchData?.error;
+          let errorMsg = ytError?.message || `Erreur YouTube API: ${searchResponse.status}`;
+          
+          if (ytError?.errors?.[0]?.reason === 'quotaExceeded') {
+            errorMsg = "Quota YouTube API dépassé. Le quota se réinitialise à 9h (heure de Paris). Réessayez plus tard.";
+          }
+          
           return new Response(
             JSON.stringify({ error: errorMsg }),
             { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -141,15 +165,27 @@ serve(async (req) => {
         }
         
         if (!searchData.items?.length) {
-          console.error("Channel search returned no results:", searchData);
-          return new Response(
-            JSON.stringify({ error: `Chaîne YouTube non trouvée pour le handle @${identifier}. Vérifiez l'URL ou le handle.` }),
-            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-          );
+          console.error("Channel search returned no results for:", handleWithoutAt);
+          
+          // Try one more time with just the handle name without @
+          console.log(`Trying search API without @ prefix: ${handleWithoutAt}`);
+          const searchUrl2 = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=channel&q=${encodeURIComponent(handleWithoutAt)}&key=${YOUTUBE_API_KEY}`;
+          const searchResponse2 = await fetch(searchUrl2);
+          const searchData2 = await searchResponse2.json();
+          
+          if (searchResponse2.ok && searchData2.items?.length > 0) {
+            actualChannelId = searchData2.items[0].snippet.channelId;
+            console.log(`Found channel by search API (without @): ${actualChannelId}`);
+          } else {
+            return new Response(
+              JSON.stringify({ error: `Chaîne YouTube non trouvée pour @${handleWithoutAt}. Vérifiez que le handle existe.` }),
+              { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+            );
+          }
+        } else {
+          actualChannelId = searchData.items[0].snippet.channelId;
+          console.log(`Found channel by search API: ${actualChannelId}`);
         }
-        
-        actualChannelId = searchData.items[0].snippet.channelId;
-        console.log(`Found channel by search API: ${actualChannelId}`);
       }
     } else if (type === 'custom') {
       // Search for custom URL channel
@@ -228,15 +264,17 @@ serve(async (req) => {
     };
 
     // Fetch recent videos to calculate average views (10 latest)
-    const videosUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&channelId=${actualChannelId}&type=video&order=date&maxResults=10&key=${YOUTUBE_API_KEY}`;
-    const videosResponse = await fetch(videosUrl);
-    const videosData = await videosResponse.json();
+    // Use playlistItems API (1 unit) instead of search API (100 units!)
+    const uploadsPlaylistId = 'UU' + actualChannelId.substring(2);
+    const playlistUrl = `https://www.googleapis.com/youtube/v3/playlistItems?part=contentDetails&playlistId=${uploadsPlaylistId}&maxResults=10&key=${YOUTUBE_API_KEY}`;
+    const playlistResponse = await fetch(playlistUrl);
+    const playlistData = await playlistResponse.json();
 
     let avgViewsPerVideo = 0;
 
-    if (videosResponse.ok && videosData.items?.length > 0) {
+    if (playlistResponse.ok && playlistData.items?.length > 0) {
       // Get video IDs to fetch statistics
-      const videoIds = videosData.items.map((v: any) => v.id.videoId).join(',');
+      const videoIds = playlistData.items.map((v: any) => v.contentDetails.videoId).join(',');
       const statsUrl = `https://www.googleapis.com/youtube/v3/videos?part=statistics&id=${videoIds}&key=${YOUTUBE_API_KEY}`;
       const statsResponse = await fetch(statsUrl);
       const statsData = await statsResponse.json();
@@ -304,8 +342,7 @@ serve(async (req) => {
 
   } catch (error: unknown) {
     console.error("Error in add-competitor:", error);
-    const errorMessage = error instanceof Error ? error.message : "Failed to add competitor";
-    console.error("Full error details:", JSON.stringify(error, Object.getOwnPropertyNames(error)));
+    const errorMessage = error instanceof Error ? error.message : "Erreur lors de l'ajout du concurrent";
     return new Response(
       JSON.stringify({ error: errorMessage }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }

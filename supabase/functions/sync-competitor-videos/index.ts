@@ -150,37 +150,57 @@ serve(async (req) => {
           await new Promise(resolve => setTimeout(resolve, 100));
         }
 
-        // Fetch videos from this channel (exclude shorts: only medium and long videos)
-        // Note: YouTube API only accepts one videoDuration value at a time, so we need two separate calls
-        const fetchVideosByDuration = async (duration: 'medium' | 'long') => {
-          const videosUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&channelId=${channel.channel_id}&type=video&order=date&publishedAfter=${publishedAfter}&videoDuration=${duration}&maxResults=50&key=${YOUTUBE_API_KEY}`;
-          const videosResponse = await fetch(videosUrl);
-          const videosData = await videosResponse.json();
-          
-          if (!videosResponse.ok) {
-            if (videosResponse.status === 429) {
-              throw new Error('RATE_LIMIT');
-            }
-            const errorMessage = videosData?.error?.message || videosData?.message || 'Unknown error';
-            const errorReason = videosData?.error?.errors?.[0]?.reason || 'unknown';
-            throw new Error(`${errorMessage} (${errorReason})`);
-          }
-          
-          return videosData.items || [];
-        };
-
-        // Fetch both medium and long videos, then combine
+        // Fetch videos using playlistItems API (1 unit) instead of search API (100 units!)
+        // Each channel has an "Uploads" playlist with ID: UU{channelId without UC prefix}
+        const uploadsPlaylistId = 'UU' + channel.channel_id.substring(2);
+        
         let allVideoItems: any[] = [];
+        let nextPageToken: string | undefined;
+        
         try {
-          const [mediumVideos, longVideos] = await Promise.all([
-            fetchVideosByDuration('medium'),
-            fetchVideosByDuration('long')
-          ]);
-          allVideoItems = [...mediumVideos, ...longVideos];
+          // Fetch up to 150 videos (3 pages of 50) to ensure we get enough recent ones
+          for (let page = 0; page < 3; page++) {
+            const playlistUrl = `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet,contentDetails&playlistId=${uploadsPlaylistId}&maxResults=50${nextPageToken ? `&pageToken=${nextPageToken}` : ''}&key=${YOUTUBE_API_KEY}`;
+            const playlistResponse = await fetch(playlistUrl);
+            const playlistData = await playlistResponse.json();
+            
+            if (!playlistResponse.ok) {
+              if (playlistResponse.status === 429 || playlistData?.error?.errors?.[0]?.reason === 'quotaExceeded') {
+                throw new Error('QUOTA_EXCEEDED');
+              }
+              const errorMessage = playlistData?.error?.message || playlistData?.message || 'Unknown error';
+              const errorReason = playlistData?.error?.errors?.[0]?.reason || 'unknown';
+              throw new Error(`${errorMessage} (${errorReason})`);
+            }
+            
+            const items = playlistData.items || [];
+            
+            // Filter by publish date and add to results
+            for (const item of items) {
+              const publishedAt = new Date(item.contentDetails?.videoPublishedAt || item.snippet?.publishedAt);
+              if (publishedAt >= periodDate) {
+                allVideoItems.push({
+                  id: { videoId: item.contentDetails?.videoId || item.snippet?.resourceId?.videoId },
+                  snippet: item.snippet
+                });
+              }
+            }
+            
+            // Check if we should continue fetching
+            nextPageToken = playlistData.nextPageToken;
+            if (!nextPageToken) break;
+            
+            // If oldest video on this page is older than our period, stop fetching
+            const oldestOnPage = items[items.length - 1];
+            if (oldestOnPage) {
+              const oldestDate = new Date(oldestOnPage.contentDetails?.videoPublishedAt || oldestOnPage.snippet?.publishedAt);
+              if (oldestDate < periodDate) break;
+            }
+          }
         } catch (fetchError: any) {
-          if (fetchError.message === 'RATE_LIMIT') {
-            console.error(`Rate limit reached for ${channel.channel_name}`);
-            errors.push(`${channel.channel_name}: Rate limit atteint. Réessayez plus tard.`);
+          if (fetchError.message === 'QUOTA_EXCEEDED') {
+            console.error(`Quota exceeded for ${channel.channel_name}`);
+            errors.push(`Quota YouTube API dépassé. Réessayez demain à 9h.`);
             break;
           }
           console.error(`Failed to fetch videos for ${channel.channel_name} (${channel.channel_id}):`, fetchError.message);
@@ -212,13 +232,13 @@ serve(async (req) => {
         const statsData = await statsResponse.json();
 
         if (!statsResponse.ok) {
-          if (statsResponse.status === 429) {
-            console.error(`Rate limit reached for ${channel.channel_name} stats`);
-            errors.push(`${channel.channel_name}: Rate limit atteint. Réessayez plus tard.`);
+          const errorReason = statsData?.error?.errors?.[0]?.reason || 'unknown';
+          if (statsResponse.status === 429 || errorReason === 'quotaExceeded') {
+            console.error(`Quota exceeded for ${channel.channel_name} stats`);
+            errors.push(`Quota YouTube API dépassé. Réessayez demain à 9h.`);
             break;
           }
           const errorMessage = statsData?.error?.message || statsData?.message || 'Unknown error';
-          const errorReason = statsData?.error?.errors?.[0]?.reason || 'unknown';
           console.error(`Failed to fetch stats for ${channel.channel_name}:`, {
             status: statsResponse.status,
             error: errorMessage,

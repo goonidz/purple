@@ -17,20 +17,31 @@ export function JobProgressIndicator({ job, onCancel, className }: JobProgressIn
   // For chunked jobs, calculate global progress using metadata
   const metadata = job.metadata || {};
   
-  // Total is the global total from metadata, or fallback to job.total
-  // For upscale jobs, use totalToUpscale or totalGlobal
-  const totalItems = metadata.totalGlobal || metadata.totalToUpscale || metadata.totalImages || metadata.totalPrompts || metadata.totalMissing || job.total || 1;
+  // For upscale jobs specifically, ensure we use the correct total
+  let totalItems: number;
+  let globalProgress: number;
   
-  // For chunked jobs, calculate completed items from remaining
-  // remainingAfterChunk tells us how many are left after this chunk's batch was initiated
-  // So completed = total - remaining + current chunk progress
-  let globalProgress = job.progress || 0;
-  
-  if (metadata.remainingAfterChunk !== undefined && metadata.remainingAfterChunk >= 0) {
-    // Items completed before this chunk = total - remaining - chunk size
-    const chunkSize = metadata.chunkSize || job.total || 0;
-    const completedBeforeChunk = Math.max(0, totalItems - metadata.remainingAfterChunk - chunkSize);
-    globalProgress = completedBeforeChunk + (job.progress || 0);
+  if (job.job_type === 'upscale') {
+    // For upscale jobs:
+    // - totalGlobal is the ORIGINAL total of all images to upscale (set in processUpscaleJob)
+    // - totalToUpscale is the count of images needing upscale when this chunk started
+    // - job.total should be set to totalGlobal but may not be updated yet
+    // Prefer totalGlobal from metadata, then job.total, then totalToUpscale
+    totalItems = metadata.totalGlobal || job.total || metadata.totalToUpscale || 1;
+    
+    // For upscale, job.progress is already calculated as global progress in the webhook
+    globalProgress = job.progress || 0;
+  } else {
+    // For other job types
+    totalItems = metadata.totalGlobal || metadata.totalImages || metadata.totalPrompts || metadata.totalMissing || job.total || 1;
+    globalProgress = job.progress || 0;
+    
+    // For other chunked jobs, calculate from remainingAfterChunk
+    if (metadata.remainingAfterChunk !== undefined && metadata.remainingAfterChunk >= 0) {
+      const chunkSize = metadata.chunkSize || job.total || 0;
+      const completedBeforeChunk = Math.max(0, totalItems - metadata.remainingAfterChunk - chunkSize);
+      globalProgress = completedBeforeChunk + (job.progress || 0);
+    }
   }
   
   // Clamp progress to not exceed total

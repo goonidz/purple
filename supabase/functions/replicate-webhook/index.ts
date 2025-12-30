@@ -593,16 +593,20 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
     
     // Check if upscaling is needed (Z-Image 16:9) - works in both manual and semi-auto mode
     if (isZImage && is16x9) {
-      // Check if there's already an upscale job
-      const { data: existingUpscaleJob } = await adminClient
+      // Check if there's already an upscale job (use limit(1) instead of single() to avoid error on multiple results)
+      const { data: existingUpscaleJobs } = await adminClient
         .from('generation_jobs')
-        .select('id')
+        .select('id, status')
         .eq('project_id', job.project_id)
         .eq('job_type', 'upscale')
         .in('status', ['pending', 'processing', 'completed'])
-        .single();
+        .limit(1);
       
-      if (!existingUpscaleJob) {
+      const existingUpscaleJob = existingUpscaleJobs?.[0];
+      
+      if (existingUpscaleJob) {
+        console.log(`Job ${jobId}: Upscale job already exists (${existingUpscaleJob.id}, status: ${existingUpscaleJob.status}), skipping creation`);
+      } else {
         // Create upscale job
         const projectPrompts = (fullProject?.prompts as any[]) || [];
         const imagesWithUrl = projectPrompts.filter((p: any) => p && p.imageUrl).length;
@@ -670,8 +674,6 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
           
           return; // Don't proceed to thumbnails yet - wait for upscale to complete
         }
-      } else {
-        console.log(`Job ${jobId}: Upscale job already exists (${existingUpscaleJob.id}), skipping`);
       }
     }
     
@@ -732,20 +734,25 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
         // More images to upscale - create next chunk job
         console.log(`Job ${jobId}: Creating next upscale chunk for ${remainingToUpscale.length} images`);
         
-        // Check for existing upscale chunk job to prevent duplicates
-        const { data: existingChunkJob } = await adminClient
+        // Check for existing upscale chunk job to prevent duplicates (use limit(1) to avoid error on multiple results)
+        const { data: existingChunkJobs } = await adminClient
           .from('generation_jobs')
-          .select('id')
+          .select('id, status')
           .eq('project_id', job.project_id)
           .eq('job_type', 'upscale')
           .in('status', ['pending', 'processing'])
-          .single();
+          .limit(1);
+        
+        const existingChunkJob = existingChunkJobs?.[0];
 
         if (existingChunkJob) {
-          console.log(`Job ${jobId}: Next upscale chunk job ${existingChunkJob.id} already exists, skipping`);
+          console.log(`Job ${jobId}: Upscale chunk job ${existingChunkJob.id} (status: ${existingChunkJob.status}) already exists, skipping`);
         } else {
-          // Calculate total global: original total from first job or sum of all images
-          const totalGlobal = job.total || (allUpscaledIndices.length + remainingToUpscale.length);
+          // Calculate total global: prefer metadata.totalGlobal, then calculate from actual counts
+          // This ensures we always have the correct total even if job.total was not updated properly
+          const calculatedTotal = allUpscaledIndices.length + remainingToUpscale.length;
+          const totalGlobal = metadata.totalGlobal || job.total || calculatedTotal;
+          console.log(`Job ${jobId}: Creating next chunk with totalGlobal=${totalGlobal} (metadata.totalGlobal=${metadata.totalGlobal}, job.total=${job.total}, calculated=${calculatedTotal})`);
           
           const { data: nextChunkJob, error: chunkError } = await adminClient
             .from('generation_jobs')
