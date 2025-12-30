@@ -410,14 +410,14 @@ export default function CalendarVideoModal({
     await scrapeYouTubeUrl(url);
   };
 
-  const handleYoutubeUrlChange = async (url: string) => {
+  const handleYoutubeUrlChange = (url: string) => {
     setYoutubeUrl(url);
     
-    if (!url.trim()) {
-      return;
+    // When YouTube URL is filled, set status to "completed" (terminé)
+    if (url.trim()) {
+      setStatus('completed');
     }
-    
-    await scrapeYouTubeUrl(url);
+    // No API call - just update the status
   };
 
   const handleLaunchProject = () => {
@@ -653,7 +653,7 @@ export default function CalendarVideoModal({
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="youtube-url">URL YouTube</Label>
+              <Label htmlFor="youtube-url">URL YouTube de votre vidéo</Label>
               <div className="flex gap-2">
                 <Input
                   id="youtube-url"

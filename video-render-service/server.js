@@ -99,7 +99,7 @@ function createConcatFileForVideos(scenes, workDir) {
 
 // Generate Pan effect parameters for a scene (no zoom, just movement)
 function getPanEffect(sceneIndex, duration, width, height, framerate) {
-  const totalFrames = Math.ceil(duration * framerate);
+  const totalFrames = Math.max(1, Math.ceil(duration * framerate)); // Ensure at least 1 frame
   
   // Log pan parameters for debugging (only for long scenes to avoid spam)
   if (duration >= 9) {
@@ -225,7 +225,7 @@ function getKenBurnsEffect(sceneIndex, duration, width, height, framerate, rende
   const effects = ['zoom_in', 'zoom_out', 'zoom_in_left', 'zoom_out_right', 'zoom_in_top', 'zoom_out_bottom'];
   const effect = effects[sceneIndex % effects.length]; // Deterministic but varied
   
-  const totalFrames = Math.ceil(duration * framerate);
+  const totalFrames = Math.max(1, Math.ceil(duration * framerate)); // Ensure at least 1 frame
   const zoomAmount = 0.08; // 8% zoom - subtle but visible
   
   // Choose rendering method
@@ -310,62 +310,108 @@ async function renderSceneWithEffect(imagePath, outputPath, duration, width, hei
     console.log(`[${jobId}] Is pan effect? ${isPan}`);
     console.log(`[${jobId}] Comparison: "${String(effectType).toLowerCase().trim()}" === "pan" ? ${isPan}`);
     
-    const { filter, effect } = isPan
-      ? getPanEffect(sceneIndex, duration, width, height, framerate)
-      : getKenBurnsEffect(sceneIndex, duration, width, height, framerate, renderMethod);
-    
-    console.log(`[${jobId}] Scene ${sceneIndex}: ${effect} effect (effectType: "${effectType}", isPan: ${isPan}), ${duration.toFixed(2)}s`);
-    console.log(`[${jobId}] Filter: ${filter}`);
-    console.log(`[${jobId}] Target dimensions: ${width}x${height}`);
-    console.log(`[${jobId}] Image path: ${imagePath}`);
-    
-    // Preprocessing: Resize image to fit target dimensions, then crop minimally to avoid black bars
-    // Strategy: First downscale/upscale to fit within target dimensions (maintains aspect ratio)
-    // Then crop only the minimum necessary to reach exact dimensions and avoid black bars
-    // This minimizes content loss while ensuring the frame is filled
-    const preprocessFilter = `scale=${width}:${height}:force_original_aspect_ratio=decrease,crop=${width}:${height}`;
-    
-    // Combine preprocessing with the effect filter
-    const finalFilter = isPan 
-      ? `${preprocessFilter},${filter}` // For pan: preprocess then apply pan effect
-      : `${preprocessFilter},${filter}`; // For zoom: preprocess then apply zoom effect
-    
-    // Use zoompan filter directly on the image - it generates frames from a single image
-    // The filter chain handles format conversion (yuv444p -> zoompan -> yuv420p)
-    const sceneFfmpegCommand = ffmpeg()
-      .input(imagePath)
-      .inputOptions(['-loop', '1']) // Loop the single image
-      .videoCodec('libx264')
-      .outputOptions([
-        '-preset', 'ultrafast',  // Much faster encoding (trades some quality for speed)
-        '-crf', '23',
-        '-t', duration.toString() // Duration of the output
-      ])
-      .videoFilters([finalFilter])
-      .output(outputPath)
-      .on('start', (cmd) => {
-        console.log(`[${jobId}] Scene ${sceneIndex} FFmpeg: ${cmd}`);
-      })
-      .on('end', () => {
-        console.log(`[${jobId}] Scene ${sceneIndex} completed`);
-        resolve();
-      })
-      .on('error', (err) => {
-        console.error(`[${jobId}] Scene ${sceneIndex} error:`, err.message);
-        reject(err);
-      });
-    
-    // Store scene FFmpeg command in job for cancellation
-    const job = jobs.get(jobId);
-    if (job) {
-      if (!job.sceneCommands) {
-        job.sceneCommands = [];
-      }
-      job.sceneCommands.push(sceneFfmpegCommand);
-      jobs.set(jobId, job);
+    // Verify image exists and get its dimensions
+    if (!fs.existsSync(imagePath)) {
+      return reject(new Error(`Image file not found: ${imagePath}`));
     }
     
-    sceneFfmpegCommand.run();
+    // Get actual image dimensions using ffprobe
+    ffmpeg.ffprobe(imagePath, (err, metadata) => {
+      if (err) {
+        console.error(`[${jobId}] Error probing image ${sceneIndex}:`, err);
+        return reject(new Error(`Failed to probe image: ${err.message}`));
+      }
+      
+      const imageStream = metadata?.streams?.find(s => s.codec_type === 'video');
+      const actualWidth = imageStream?.width || 0;
+      const actualHeight = imageStream?.height || 0;
+      const imageSize = fs.statSync(imagePath).size;
+      
+      console.log(`[${jobId}] Scene ${sceneIndex} image info:`);
+      console.log(`[${jobId}]   File: ${imagePath}`);
+      console.log(`[${jobId}]   Dimensions: ${actualWidth}x${actualHeight}`);
+      console.log(`[${jobId}]   File size: ${(imageSize / 1024).toFixed(2)} KB`);
+      console.log(`[${jobId}]   Target dimensions: ${width}x${height}`);
+      
+      if (actualWidth === 0 || actualHeight === 0) {
+        return reject(new Error(`Invalid image dimensions: ${actualWidth}x${actualHeight}`));
+      }
+      
+      // Validate duration and dimensions
+      if (duration <= 0 || duration > 300) {
+        return reject(new Error(`Invalid duration: ${duration}s (must be > 0 and <= 300)`));
+      }
+      if (width <= 0 || height <= 0 || width > 7680 || height > 4320) {
+        return reject(new Error(`Invalid target dimensions: ${width}x${height}`));
+      }
+      if (framerate <= 0 || framerate > 120) {
+        return reject(new Error(`Invalid framerate: ${framerate} (must be > 0 and <= 120)`));
+      }
+      
+      const { filter, effect } = isPan
+        ? getPanEffect(sceneIndex, duration, width, height, framerate)
+        : getKenBurnsEffect(sceneIndex, duration, width, height, framerate, renderMethod);
+      
+      // Validate filter string is not empty
+      if (!filter || filter.trim().length === 0) {
+        return reject(new Error(`Empty filter generated for scene ${sceneIndex}`));
+      }
+      
+      console.log(`[${jobId}] Scene ${sceneIndex}: ${effect} effect (effectType: "${effectType}", isPan: ${isPan}), ${duration.toFixed(2)}s`);
+      console.log(`[${jobId}] Filter: ${filter}`);
+      
+      // Preprocessing: Resize image to fit target dimensions, then crop minimally to avoid black bars
+      // Strategy: First downscale/upscale to fit within target dimensions (maintains aspect ratio)
+      // Then crop only the minimum necessary to reach exact dimensions and avoid black bars
+      // This minimizes content loss while ensuring the frame is filled
+      const preprocessFilter = `scale=${width}:${height}:force_original_aspect_ratio=decrease,crop=${width}:${height}`;
+      
+      // Combine preprocessing with the effect filter
+      const finalFilter = isPan 
+        ? `${preprocessFilter},${filter}` // For pan: preprocess then apply pan effect
+        : `${preprocessFilter},${filter}`; // For zoom: preprocess then apply zoom effect
+      
+      console.log(`[${jobId}] Final filter chain: ${finalFilter}`);
+      
+      // Use zoompan filter directly on the image - it generates frames from a single image
+      // The filter chain handles format conversion (yuv444p -> zoompan -> yuv420p)
+      const sceneFfmpegCommand = ffmpeg()
+        .input(imagePath)
+        .inputOptions(['-loop', '1']) // Loop the single image
+        .videoCodec('libx264')
+        .outputOptions([
+          '-preset', 'ultrafast',
+          '-crf', '23',
+          '-vsync', 'cfr',  // Constant frame rate
+          '-t', duration.toFixed(6)  // Precise duration
+        ])
+        .videoFilters([finalFilter])
+        .output(outputPath)
+        .on('start', (cmd) => {
+          console.log(`[${jobId}] Scene ${sceneIndex} FFmpeg: ${cmd}`);
+        })
+        .on('end', () => {
+          console.log(`[${jobId}] Scene ${sceneIndex} completed`);
+          resolve();
+        })
+        .on('error', (err) => {
+          console.error(`[${jobId}] Scene ${sceneIndex} error:`, err.message);
+          console.error(`[${jobId}] Scene ${sceneIndex} error details:`, err);
+          reject(err);
+        });
+      
+      // Store scene FFmpeg command in job for cancellation
+      const job = jobs.get(jobId);
+      if (job) {
+        if (!job.sceneCommands) {
+          job.sceneCommands = [];
+        }
+        job.sceneCommands.push(sceneFfmpegCommand);
+        jobs.set(jobId, job);
+      }
+      
+      sceneFfmpegCommand.run();
+    });
   });
 }
 
@@ -625,9 +671,20 @@ async function processRenderJob(jobId, renderData) {
     console.log(`[${jobId}] Concat file has ${concatFileContent.split('\n').filter(l => l.startsWith('file')).length} files`);
     
     return new Promise((resolve, reject) => {
+      console.log(`[${jobId}] Starting final concatenation with ${scenes.length} segments + audio`);
+      
+      // Calculate expected output duration (use audio duration as reference, add small buffer)
+      const expectedDuration = audioDuration ? parseFloat(audioDuration) + 0.5 : lastScene.endTime + 0.5;
+      console.log(`[${jobId}] Expected output duration: ${expectedDuration.toFixed(3)}s (audio: ${audioDuration}s, lastScene.endTime: ${lastScene.endTime}s)`);
+      
       let ffmpegCommand = ffmpeg()
         .input(concatPath)
-        .inputOptions(['-f', 'concat', '-safe', '0'])
+        .inputOptions([
+          '-f', 'concat', 
+          '-safe', '0',
+          '-fflags', '+genpts+igndts',  // Regenerate timestamps, ignore DTS
+          '-avoid_negative_ts', 'make_zero'  // Fix any negative timestamps
+        ])
         .input(audioPath)
         .videoCodec('libx264')
         .audioCodec('aac')
@@ -639,6 +696,7 @@ async function processRenderJob(jobId, renderData) {
           '-pix_fmt', 'yuv420p',
           '-movflags', '+faststart',
           '-threads', '0',
+          '-vsync', 'cfr',  // Constant frame rate - ensures all frames are written
           '-stats_period', '0.5'
           // No -shortest flag - let both streams play to completion
         ])
