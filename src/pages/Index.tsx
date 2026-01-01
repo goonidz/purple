@@ -24,6 +24,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { SceneGrid } from "@/components/SceneGrid";
+import ImageSearchModal from "@/components/ImageSearchModal";
 import {
   Select,
   SelectContent,
@@ -137,6 +138,9 @@ const Index = () => {
   const [confirmRegeneratePrompt, setConfirmRegeneratePrompt] = useState<number | null>(null);
   const [confirmRegenerateImage, setConfirmRegenerateImage] = useState<number | null>(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
+  const [imageSearchOpen, setImageSearchOpen] = useState(false);
+  const [imageSearchSceneIndex, setImageSearchSceneIndex] = useState<number>(0);
+  const [imageSearchSceneText, setImageSearchSceneText] = useState<string>("");
   const [imageSettingsOpen, setImageSettingsOpen] = useState(false);
   const [sceneSettingsOpen, setSceneSettingsOpen] = useState(false);
   const [promptSettingsOpen, setPromptSettingsOpen] = useState(false);
@@ -1333,6 +1337,76 @@ const Index = () => {
     } catch (error: any) {
       console.error("Error uploading manual image:", error);
       toast.error(error.message || "Erreur lors de l'import de l'image");
+    } finally {
+      setGeneratingImageIndex(null);
+    }
+  };
+
+  // Handler to open web image search modal
+  const handleSearchWebImage = (sceneIndex: number, sceneText: string) => {
+    setImageSearchSceneIndex(sceneIndex);
+    setImageSearchSceneText(sceneText);
+    setImageSearchOpen(true);
+  };
+
+  // Handler to select an image from web search results
+  const handleSelectWebImage = async (imageUrl: string) => {
+    const sceneIndex = imageSearchSceneIndex;
+    
+    try {
+      setGeneratingImageIndex(sceneIndex);
+      
+      // Download the image from the web URL
+      const response = await fetch(imageUrl);
+      if (!response.ok) throw new Error("Impossible de télécharger l'image");
+      
+      const blob = await response.blob();
+      const fileExt = imageUrl.split('.').pop()?.split('?')[0] || 'jpg';
+      const filename = `${currentProjectId || 'temp'}/scene_${sceneIndex + 1}_web_${Date.now()}.${fileExt}`;
+
+      // Upload to Supabase Storage
+      const { error: uploadError } = await supabase.storage
+        .from('generated-images')
+        .upload(filename, blob, {
+          cacheControl: '3600',
+          upsert: true,
+          contentType: blob.type || 'image/jpeg'
+        });
+
+      if (uploadError) throw uploadError;
+
+      // Get public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('generated-images')
+        .getPublicUrl(filename);
+
+      // Update the state
+      setGeneratedPrompts(prev => {
+        const updated = [...prev];
+        updated[sceneIndex] = {
+          ...updated[sceneIndex],
+          imageUrl: publicUrl
+        };
+        return updated;
+      });
+
+      // Persist to database if we have a project
+      if (currentProjectId) {
+        const updatedPrompts = [...generatedPrompts];
+        updatedPrompts[sceneIndex] = {
+          ...updatedPrompts[sceneIndex],
+          imageUrl: publicUrl
+        };
+        
+        await supabase
+          .from('projects')
+          .update({ prompts: updatedPrompts as any })
+          .eq('id', currentProjectId);
+      }
+
+    } catch (error: any) {
+      console.error("Error downloading web image:", error);
+      toast.error(error.message || "Erreur lors du téléchargement de l'image");
     } finally {
       setGeneratingImageIndex(null);
     }
@@ -3331,6 +3405,7 @@ const Index = () => {
                           return next;
                         });
                       }}
+                      onSearchWeb={handleSearchWebImage}
                     />
                   </Card>
                 )}
@@ -3646,15 +3721,23 @@ const Index = () => {
         <Dialog open={imagePreviewUrl !== null} onOpenChange={(open) => !open && setImagePreviewUrl(null)}>
           <DialogContent className="max-w-4xl max-h-[85vh] p-4">
             {imagePreviewUrl && (
-              <img 
-                src={imagePreviewUrl} 
-                alt="Aperçu" 
+              <img
+                src={imagePreviewUrl}
+                alt="Aperçu"
                 className="w-full h-auto max-h-[75vh] object-contain rounded-lg"
               />
             )}
           </DialogContent>
         </Dialog>
 
+        {/* Web image search modal */}
+        <ImageSearchModal
+          open={imageSearchOpen}
+          onOpenChange={setImageSearchOpen}
+          sceneIndex={imageSearchSceneIndex}
+          sceneText={imageSearchSceneText}
+          onSelectImage={handleSelectWebImage}
+        />
 
         {/* Scene settings dialog */}
         <Dialog open={sceneSettingsOpen} onOpenChange={async (open) => {

@@ -12,6 +12,7 @@ import {
   Sparkles,
   Upload,
   Clock,
+  Search,
 } from "lucide-react";
 
 interface Scene {
@@ -49,6 +50,7 @@ interface SceneGridProps {
   setImagePreviewUrl: (url: string | null) => void;
   selectedScenes?: Set<number>;
   onToggleSceneSelection?: (index: number) => void;
+  onSearchWeb?: (index: number, sceneText: string) => void;
 }
 
 export function SceneGrid({
@@ -72,6 +74,7 @@ export function SceneGrid({
   setImagePreviewUrl,
   selectedScenes = new Set(),
   onToggleSceneSelection,
+  onSearchWeb,
 }: SceneGridProps) {
   const items = scenes.length > 0 ? scenes : generatedPrompts;
 
@@ -272,6 +275,18 @@ export function SceneGrid({
                         <RefreshCw className="h-3.5 w-3.5" />
                       )}
                     </Button>
+                    {onSearchWeb && (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        className="h-7 w-7 p-0"
+                        onClick={() => onSearchWeb(index, text)}
+                        disabled={generatingImageIndex === index}
+                        title="Chercher une image sur le web"
+                      >
+                        <Search className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
                   </div>
                 </div>
               ) : prompt?.prompt ? (
@@ -305,6 +320,18 @@ export function SceneGrid({
                       </>
                     )}
                   </Button>
+                  {onSearchWeb && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => onSearchWeb(index, text)}
+                      disabled={generatingImageIndex === index}
+                      title="Chercher une image sur le web"
+                    >
+                      <Search className="h-4 w-4 mr-1" />
+                      <span className="text-xs">Web</span>
+                    </Button>
+                  )}
                 </div>
               ) : null}
             </div>

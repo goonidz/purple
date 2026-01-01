@@ -19,19 +19,22 @@ const Profile = () => {
   const [minimaxApiKey, setMinimaxApiKey] = useState("");
   const [elevenLabsApiKey, setElevenLabsApiKey] = useState("");
   const [anthropicApiKey, setAnthropicApiKey] = useState("");
+  const [braveApiKey, setBraveApiKey] = useState("");
   
   // Track original values to detect changes
   const [originalKeys, setOriginalKeys] = useState({
     replicate: "",
     eleven_labs: "",
     minimax: "",
-    anthropic: ""
+    anthropic: "",
+    brave: ""
   });
   const [showKeys, setShowKeys] = useState({
     replicate: false,
     eleven_labs: false,
     minimax: false,
-    anthropic: false
+    anthropic: false,
+    brave: false
   });
 
   useEffect(() => {
@@ -60,30 +63,34 @@ const Profile = () => {
     setIsLoading(true);
     try {
       // Try to get API keys from Vault
-      const [replicateResult, elevenLabsResult, minimaxResult, anthropicResult] = await Promise.all([
+      const [replicateResult, elevenLabsResult, minimaxResult, anthropicResult, braveResult] = await Promise.all([
         supabase.rpc('get_user_api_key', { key_name: 'replicate' }),
         supabase.rpc('get_user_api_key', { key_name: 'eleven_labs' }),
         supabase.rpc('get_user_api_key', { key_name: 'minimax' }),
         supabase.rpc('get_user_api_key', { key_name: 'anthropic' }),
+        supabase.rpc('get_user_api_key', { key_name: 'brave' }),
       ]);
 
       const replicateValue = replicateResult.data || "";
       const elevenLabsValue = elevenLabsResult.data || "";
       const minimaxValue = minimaxResult.data || "";
       const anthropicValue = anthropicResult.data || "";
+      const braveValue = braveResult.data || "";
 
       // Set current values
       setReplicateApiKey(replicateValue);
       setElevenLabsApiKey(elevenLabsValue);
       setMinimaxApiKey(minimaxValue);
       setAnthropicApiKey(anthropicValue);
+      setBraveApiKey(braveValue);
       
       // Store original values to track changes
       setOriginalKeys({
         replicate: replicateValue,
         eleven_labs: elevenLabsValue,
         minimax: minimaxValue,
-        anthropic: anthropicValue
+        anthropic: anthropicValue,
+        brave: braveValue
       });
       
       if (replicateResult.error && !replicateResult.error.message?.includes('not found')) {
@@ -121,6 +128,9 @@ const Profile = () => {
     if (anthropicApiKey.trim() !== originalKeys.anthropic) {
       changedKeys.push({ key_name: 'anthropic', key_value: anthropicApiKey.trim() });
     }
+    if (braveApiKey.trim() !== originalKeys.brave) {
+      changedKeys.push({ key_name: 'brave', key_value: braveApiKey.trim() });
+    }
 
     if (changedKeys.length === 0) {
       toast.info("Aucune modification détectée");
@@ -147,7 +157,8 @@ const Profile = () => {
         replicate: replicateApiKey.trim(),
         eleven_labs: elevenLabsApiKey.trim(),
         minimax: minimaxApiKey.trim(),
-        anthropic: anthropicApiKey.trim()
+        anthropic: anthropicApiKey.trim(),
+        brave: braveApiKey.trim()
       });
 
       toast.success("Clés API sauvegardées avec succès !");
@@ -358,11 +369,47 @@ const Profile = () => {
                       </a>
                     </p>
                   </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="brave-key">
+                      Brave Search API Key
+                    </Label>
+                    <div className="relative">
+                      <Input
+                        id="brave-key"
+                        type={showKeys.brave ? "text" : "password"}
+                        value={braveApiKey}
+                        onChange={(e) => setBraveApiKey(e.target.value)}
+                        placeholder="BSA..."
+                        className="pr-10"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                        onClick={() => setShowKeys(prev => ({ ...prev, brave: !prev.brave }))}
+                      >
+                        {showKeys.brave ? <EyeOff className="h-4 w-4 text-muted-foreground" /> : <Eye className="h-4 w-4 text-muted-foreground" />}
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Utilisée pour rechercher des images sur le web (alternative à la génération IA).{" "}
+                      <a
+                        href="https://brave.com/search/api/"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary hover:underline"
+                      >
+                        Obtenir une clé
+                      </a>
+                    </p>
+                  </div>
                 </div>
 
                 <Button
                   onClick={handleSave}
-                  disabled={isSaving || (!replicateApiKey.trim() && !elevenLabsApiKey.trim() && !minimaxApiKey.trim() && !anthropicApiKey.trim())}
+                  disabled={isSaving || (!replicateApiKey.trim() && !elevenLabsApiKey.trim() && !minimaxApiKey.trim() && !anthropicApiKey.trim() && !braveApiKey.trim())}
                   className="w-full"
                   size="lg"
                 >
