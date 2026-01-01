@@ -143,25 +143,44 @@ serve(async (req) => {
 async function generateSearchQuery(sceneText: string, summary: string | null, projectName: string | null, apiKey: string): Promise<string> {
   let contextSection = '';
   if (summary) {
-    contextSection = `\n\nGLOBAL CONTEXT (video topic):\n"${summary}"`;
+    contextSection = `\n\nGLOBAL CONTEXT (video topic/theme):\n"${summary}"`;
   }
   if (projectName) {
     contextSection += `\n\nVIDEO TITLE: "${projectName}"`;
   }
 
-  const prompt = `You are an expert at generating image search queries. Given a scene description from a video script, generate a SHORT and EFFECTIVE image search query (2-5 words in English) that will find relevant, high-quality stock images or photographs.
+  const prompt = `You are an expert at generating image search queries for video production. Your task is to analyze the scene text and generate a search query that captures the ESSENCE of what's happening, not just the first words.
 
-RULES:
-1. Output ONLY the search query, nothing else
-2. Use English keywords only
-3. Be specific but concise (2-5 words maximum)
-4. Focus on the main visual subject/concept
-5. Avoid abstract concepts - prefer concrete, visual terms
-6. Think about what image would best illustrate this scene
-7. Consider the global context of the video to ensure visual coherence${contextSection ? '' : ''}
+ANALYSIS PROCESS:
+1. Read the ENTIRE scene text carefully
+2. Identify: What is the MAIN EVENT? (fire, accident, announcement, discovery, etc.)
+3. Identify: What are the KEY VISUAL ELEMENTS? (flames, smoke, building, people, etc.)
+4. Identify: What is the EMOTIONAL TONE? (tragedy, celebration, conflict, etc.)
+5. The query should represent what you would SEE in an image, not just where/when it happened
+
+CRITICAL RULES:
+- Output ONLY the search query, nothing else
+- Use English keywords only
+- 2-6 words maximum
+- PRIORITIZE the main event/subject over location or time
+- If there's drama (fire, accident, tragedy), that's MORE important than the location
+- Think: "What image would best show what happened?" not "What are the first words?"
+
+EXAMPLES:
+Scene: "Last night in Switzerland, a New Year's party turned tragic when a bar caught fire"
+❌ WRONG: "New Years Switzerland" (just extracts first words)
+✅ CORRECT: "bar fire tragedy" or "burning bar fire" (captures the event)
+
+Scene: "The company announced record profits this quarter"
+✅ Query: "business success celebration" or "corporate profit"
+
+Scene: "Scientists discovered a new species in the Amazon rainforest"
+✅ Query: "Amazon rainforest discovery" or "rainforest new species"
 
 SCENE TEXT:
 "${sceneText}"${contextSection}
+
+Remember: Focus on WHAT HAPPENED, not just WHERE or WHEN. What would the image show?
 
 SEARCH QUERY:`;
 
@@ -173,8 +192,8 @@ SEARCH QUERY:`;
       body: JSON.stringify({
         contents: [{ parts: [{ text: prompt }] }],
         generationConfig: {
-          temperature: 0.3,
-          maxOutputTokens: 50,
+          temperature: 0.5, // Slightly higher for better understanding
+          maxOutputTokens: 30, // Still short but enough for analysis
         },
       }),
     }
