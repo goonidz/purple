@@ -2849,14 +2849,12 @@ const Index = () => {
                   {/* Configuration des prompts d'images */}
                   <Card className="p-4 bg-muted/30 border-primary/20">
                     <Collapsible open={!isImagePromptsCollapsed} onOpenChange={(open) => setIsImagePromptsCollapsed(!open)}>
-                      <CollapsibleTrigger className="w-full">
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="flex items-center gap-2">
-                            <ImageIcon className="h-4 w-4 text-primary" />
-                            <span className="font-medium text-sm">Prompts d'images</span>
-                          </div>
-                          {isImagePromptsCollapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
+                      <CollapsibleTrigger className="w-full flex items-center justify-between cursor-pointer hover:bg-muted/50 rounded-md p-2 -m-2 transition-colors">
+                        <div className="flex items-center gap-2">
+                          <ImageIcon className="h-4 w-4 text-primary" />
+                          <span className="font-medium text-sm">Prompts d'images</span>
                         </div>
+                        {isImagePromptsCollapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
                       </CollapsibleTrigger>
                       <CollapsibleContent className="space-y-4 mt-4">
                         <div>
@@ -4364,9 +4362,11 @@ Remember: Use temporal context to understand the topic, but the query must be PR
         {/* Export Dialog */}
         <Dialog open={exportDialogOpen} onOpenChange={setExportDialogOpen}>
           <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Exporter pour montage vidéo</DialogTitle>
+            </DialogHeader>
             <div className="space-y-6">
               <div>
-                <h2 className="text-xl font-semibold mb-2">Exporter pour montage vidéo</h2>
                 <p className="text-sm text-muted-foreground">
                   Exportez vos scènes et images dans un format compatible avec votre logiciel de montage.
                 </p>
