@@ -32,7 +32,9 @@ serve(async (req) => {
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
     const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
 
+    // Client for user auth
     const supabase = createClient(supabaseUrl, supabaseAnonKey, {
       global: { headers: { Authorization: authHeader } }
     });
@@ -54,10 +56,14 @@ serve(async (req) => {
       );
     }
 
-    // Get user's Brave API key from Vault
-    const { data: braveKeyData, error: braveKeyError } = await supabase.rpc('get_user_api_key', {
-      key_name: 'brave'
-    });
+    // Get user's Brave API key from Vault using service role
+    const supabaseService = createClient(supabaseUrl, supabaseServiceKey);
+
+    const { data: braveKeyData, error: braveKeyError } = await supabaseService
+      .rpc('get_user_api_key_for_service', {
+        target_user_id: user.id,
+        key_name: 'brave'
+      });
 
     if (braveKeyError || !braveKeyData) {
       console.error("Error getting Brave API key:", braveKeyError);
