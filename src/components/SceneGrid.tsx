@@ -275,19 +275,22 @@ export function SceneGrid({
                         <RefreshCw className="h-3.5 w-3.5" />
                       )}
                     </Button>
-                    {onSearchWeb && (
+                  </div>
+                  {/* Web search button - always visible */}
+                  {onSearchWeb && (
+                    <div className="absolute bottom-2 right-2">
                       <Button
                         variant="secondary"
                         size="sm"
-                        className="h-7 w-7 p-0"
+                        className="h-7 w-7 p-0 shadow-md"
                         onClick={() => onSearchWeb(index, text)}
                         disabled={generatingImageIndex === index}
                         title="Chercher une image sur le web"
                       >
                         <Search className="h-3.5 w-3.5" />
                       </Button>
-                    )}
-                  </div>
+                    </div>
+                  )}
                 </div>
               ) : prompt?.prompt ? (
                 <div className="flex gap-2 flex-wrap">
