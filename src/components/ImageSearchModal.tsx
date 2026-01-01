@@ -194,7 +194,6 @@ export default function ImageSearchModal({
           {(!hasSearched || images.length === 0) && (
             <Button
               onClick={handleSearch}
-              disabled={isSearching}
               className="w-full"
               size="lg"
             >
@@ -253,7 +252,7 @@ export default function ImageSearchModal({
               />
               <Button
                 onClick={() => handleSearchWithQuery(manualQuery)}
-                disabled={!manualQuery.trim() || isSearching}
+                disabled={!manualQuery.trim()}
                 size="sm"
               >
                 Rechercher
@@ -362,7 +361,6 @@ export default function ImageSearchModal({
                         key={idx}
                         variant="outline"
                         onClick={() => handleSearchWithQuery(altQuery)}
-                        disabled={isSearching}
                         className="w-full justify-start text-left"
                       >
                         <Search className="mr-2 h-4 w-4" />
@@ -393,7 +391,7 @@ export default function ImageSearchModal({
         {/* Footer with actions */}
         {hasSearched && images.length > 0 && (
           <div className="flex justify-between items-center pt-4 border-t">
-            <Button variant="outline" onClick={handleSearch} disabled={isSearching}>
+            <Button variant="outline" onClick={handleSearch}>
               <Search className="mr-2 h-4 w-4" />
               Nouvelle recherche
             </Button>
