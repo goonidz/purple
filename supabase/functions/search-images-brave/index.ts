@@ -177,42 +177,39 @@ CURRENT SCENE TEXT:
 SEARCH QUERY:`;
   } else {
     // Default prompt
-    prompt = `You are an expert at generating image search queries for video production. Analyze the scene text WITHIN ITS TEMPORAL CONTEXT to understand what is happening, then generate a precise search query.
+    prompt = `You are an expert at generating image search queries for video production. Your role is to analyze the COMPLETE scene text and decide how to best illustrate it visually, considering the global context.
 
-CRITICAL: Use the TEMPORAL CONTEXT (previous and next scenes) to understand:
-- What topic/subject is being discussed in this part of the video
-- What specific event or concept is being described in THIS scene
-- How this scene relates to what came before and what comes after
+YOUR TASK:
+Read the ENTIRE scene text below. Understand what is happening, the mood, the key events, and the visual elements. Then decide what type of image would BEST illustrate this scene, considering:
+- The global context (video topic/theme)
+- The temporal context (what happened before and after)
+- The emotional tone and atmosphere
+- The most visually impactful way to represent this moment
+
+YOU HAVE FULL CREATIVITY:
+- You decide what visual approach works best (literal representation, symbolic, atmospheric, etc.)
+- You choose which elements to emphasize (the main event, the setting, the mood, etc.)
+- You consider the overall narrative flow and how this image fits into the video
 
 ANALYSIS PROCESS:
-1. Read the PREVIOUS SCENES to understand the topic being discussed
-2. Read the CURRENT SCENE TEXT carefully - what specific event/concept is described?
-3. Read the NEXT SCENES to see where the story is going
-4. Identify the MAIN EVENT/SUBJECT in the current scene (fire, accident, announcement, etc.)
-5. Identify KEY VISUAL ELEMENTS that would illustrate this specific moment
-6. The query should be PRECISE to the current scene's content, informed by the temporal context
+1. Read the COMPLETE CURRENT SCENE TEXT - understand everything that's happening
+2. Consider the GLOBAL CONTEXT - what is this video about overall?
+3. Consider the TEMPORAL CONTEXT - what happened before? What comes after?
+4. Decide: What image would BEST illustrate this scene? What visual approach is most effective?
+5. Generate a search query that will find images matching your chosen visual approach
 
 CRITICAL RULES:
 - Output ONLY the search query, nothing else
 - Use English keywords only
 - 2-6 words maximum
-- Be PRECISE to what is described in the CURRENT scene
-- Use temporal context to understand the topic, but focus on the CURRENT scene's specific event
-- If there's drama (fire, accident, tragedy), include those keywords
-- Think: "What image would best show what's happening in THIS specific scene?"
+- Be creative and choose the best visual representation, not necessarily the most literal
+- Consider the emotional impact and narrative flow
+- Think: "What image would best serve this scene in the context of the whole video?"
 
-EXAMPLE:
-Previous: "The economic situation in Europe has been deteriorating"
-Current: "Last night in Switzerland, a New Year's party turned tragic when a bar caught fire"
-Next: "The fire spread quickly, trapping dozens of people inside"
-❌ WRONG: "New Years Switzerland" (ignores the event)
-❌ WRONG: "economic Europe" (from previous context, not current scene)
-✅ CORRECT: "bar fire tragedy" or "burning bar fire" (precise to current scene's event)
-
-CURRENT SCENE TEXT:
+CURRENT SCENE TEXT (COMPLETE):
 "${sceneText}"${temporalContext}${contextSection}
 
-Remember: Use temporal context to understand the topic, but the query must be PRECISE to what's happening in the CURRENT scene.
+Remember: You have the full scene text. Analyze it completely and decide the BEST way to illustrate it visually. Be creative and consider the global context.
 
 SEARCH QUERY:`;
   }
