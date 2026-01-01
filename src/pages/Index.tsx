@@ -119,6 +119,7 @@ const Index = () => {
   const [scriptGenerationPrompt, setScriptGenerationPrompt] = useState<string | null>(null);
   const [isScriptCollapsed, setIsScriptCollapsed] = useState(false);
   const [isPromptCollapsed, setIsPromptCollapsed] = useState(false);
+  const [isImagePromptsCollapsed, setIsImagePromptsCollapsed] = useState(true); // Replié par défaut
   const cancelGenerationRef = useRef(false);
   const cancelImageGenerationRef = useRef(false);
   const [imageWidth, setImageWidth] = useState<number>(1920);
@@ -2845,6 +2846,113 @@ const Index = () => {
                     </div>
                   </Card>
 
+                  {/* Configuration des prompts d'images */}
+                  <Card className="p-4 bg-muted/30 border-primary/20">
+                    <Collapsible open={!isImagePromptsCollapsed} onOpenChange={(open) => setIsImagePromptsCollapsed(!open)}>
+                      <CollapsibleTrigger className="w-full">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            <ImageIcon className="h-4 w-4 text-primary" />
+                            <span className="font-medium text-sm">Prompts d'images</span>
+                          </div>
+                          {isImagePromptsCollapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
+                        </div>
+                      </CollapsibleTrigger>
+                      <CollapsibleContent className="space-y-4 mt-4">
+                        <div>
+                          <label className="text-sm font-medium mb-2 block">
+                            Prompt système personnalisé
+                          </label>
+                          <p className="text-xs text-muted-foreground mb-3">
+                            Personnalisez les instructions données à l'IA pour générer les prompts d'images.
+                          </p>
+                          <Textarea
+                            placeholder="Entrez votre prompt système personnalisé..."
+                            value={promptSystemMessage}
+                            onChange={(e) => setPromptSystemMessage(e.target.value)}
+                            rows={10}
+                            className="resize-none font-mono text-xs"
+                          />
+                          <div className="mt-2 flex gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setPromptSystemMessage(`You are an expert at generating prompts for AI image creation (like Midjourney, Stable Diffusion, DALL-E).
+
+STRICT RULES FOR GENERATING CONSISTENT PROMPTS:
+1. Follow EXACTLY the structure and style of the examples below
+2. Use the same tone, vocabulary, and format
+3. Respect the same approximate length (50-100 words)
+4. Include the same types of elements: main subject, visual style, composition, lighting, mood
+5. NEVER deviate from the format established by the examples
+6. Generate prompts in ENGLISH only
+7. NEVER use the word "dead" in the prompt (rephrase with other words instead)
+
+CONTENT SAFETY - STRICTLY FORBIDDEN:
+- No nudity, partial nudity, or suggestive/intimate content
+- No violence, gore, blood, weapons pointed at people, or graphic injuries
+- No sexual or romantic physical contact
+- No drug use or drug paraphernalia
+- No hate symbols, extremist imagery, or discriminatory content
+- No realistic depictions of real public figures or celebrities
+- Instead of violent scenes, describe tension through expressions, postures, and atmosphere
+- Instead of intimate scenes, describe emotional connection through eye contact and gestures
+
+Your role is to create ONE detailed visual prompt for a specific scene from a video/audio.
+
+For this scene, you must:
+1. Identify key visual elements from the text
+2. Create a descriptive and detailed prompt
+3. Include style, mood, composition, lighting
+4. Optimize for high-quality image generation
+5. Think about visual coherence with the global story context
+
+Return ONLY the prompt text, no JSON, no title, just the optimized prompt in ENGLISH.`)}
+                            >
+                              Charger prompt par défaut
+                            </Button>
+                            {promptSystemMessage && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setPromptSystemMessage("")}
+                              >
+                                Effacer
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="text-sm font-medium mb-2 block">
+                            Exemples de prompts (2-3 recommandés pour la consistance)
+                          </label>
+                          <p className="text-xs text-muted-foreground mb-3">
+                            Entrez 2-3 exemples de prompts que vous avez déjà créés pour montrer le style et la structure désirée
+                          </p>
+                          {[0, 1, 2].map((index) => (
+                            <div key={index} className="mb-3">
+                              <label className="text-xs text-muted-foreground mb-1 block">
+                                {index === 0 ? "Exemple 1 (recommandé)" : `Exemple ${index + 1} (optionnel)`}
+                              </label>
+                              <Textarea
+                                placeholder={`Exemple de prompt ${index + 1}...`}
+                                value={examplePrompts[index] || ""}
+                                onChange={(e) => {
+                                  const newPrompts = [...examplePrompts];
+                                  newPrompts[index] = e.target.value;
+                                  setExamplePrompts(newPrompts);
+                                }}
+                                rows={3}
+                                className="resize-none"
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      </CollapsibleContent>
+                    </Collapsible>
+                  </Card>
+
                   {/* Configuration des images */}
                   <Card className="p-4 bg-muted/30 border-primary/20">
                     <div className="flex items-center justify-between mb-2">
@@ -3926,136 +4034,34 @@ const Index = () => {
           </DialogContent>
         </Dialog>
 
-        {/* Prompt settings dialog */}
+        {/* Prompt settings dialog - Recherche d'images uniquement */}
         <Dialog open={promptSettingsOpen} onOpenChange={setPromptSettingsOpen}>
           <DialogContent className="max-w-2xl max-h-[90vh] w-[95vw] sm:w-full p-6 flex flex-col">
             <DialogHeader className="flex-shrink-0 mb-4">
-              <DialogTitle>Paramètres de prompts</DialogTitle>
+              <DialogTitle>Recherche d'images (Brave Search)</DialogTitle>
             </DialogHeader>
-            <Tabs defaultValue="image-prompts" className="w-full flex flex-col flex-1 min-h-0">
-              <TabsList className="w-full mb-4">
-                <TabsTrigger value="image-prompts" className="flex-1">Prompts d'images</TabsTrigger>
-                <TabsTrigger value="search-prompts" className="flex-1">Recherche d'images</TabsTrigger>
-              </TabsList>
-              
-              <TabsContent value="image-prompts" className="flex-1 overflow-y-auto space-y-6 mt-4">
+            <div className="flex-1 overflow-y-auto space-y-6">
               <div className="space-y-4">
                 <div>
                   <label className="text-sm font-medium mb-2 block">
-                    Prompt système personnalisé
+                    Prompt système pour la recherche d'images (Brave Search)
                   </label>
                   <p className="text-xs text-muted-foreground mb-3">
-                    Personnalisez les instructions données à l'IA pour générer les prompts d'images.
+                    Personnalisez les instructions données à l'IA pour générer les requêtes de recherche d'images sur le web. Ce prompt détermine comment l'IA analyse le texte de la scène et génère les mots-clés de recherche.
                   </p>
                   <Textarea
-                    placeholder="Entrez votre prompt système personnalisé..."
-                    value={promptSystemMessage}
-                    onChange={(e) => setPromptSystemMessage(e.target.value)}
-                    rows={10}
+                    placeholder="Entrez votre prompt système personnalisé pour la recherche d'images..."
+                    value={imageSearchPromptSystem}
+                    onChange={(e) => setImageSearchPromptSystem(e.target.value)}
+                    rows={15}
                     className="resize-none font-mono text-xs"
                   />
                   <div className="mt-2 flex gap-2">
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => setPromptSystemMessage(`You are an expert at generating prompts for AI image creation (like Midjourney, Stable Diffusion, DALL-E).
-
-STRICT RULES FOR GENERATING CONSISTENT PROMPTS:
-1. Follow EXACTLY the structure and style of the examples below
-2. Use the same tone, vocabulary, and format
-3. Respect the same approximate length (50-100 words)
-4. Include the same types of elements: main subject, visual style, composition, lighting, mood
-5. NEVER deviate from the format established by the examples
-6. Generate prompts in ENGLISH only
-7. NEVER use the word "dead" in the prompt (rephrase with other words instead)
-
-CONTENT SAFETY - STRICTLY FORBIDDEN:
-- No nudity, partial nudity, or suggestive/intimate content
-- No violence, gore, blood, weapons pointed at people, or graphic injuries
-- No sexual or romantic physical contact
-- No drug use or drug paraphernalia
-- No hate symbols, extremist imagery, or discriminatory content
-- No realistic depictions of real public figures or celebrities
-- Instead of violent scenes, describe tension through expressions, postures, and atmosphere
-- Instead of intimate scenes, describe emotional connection through eye contact and gestures
-
-Your role is to create ONE detailed visual prompt for a specific scene from a video/audio.
-
-For this scene, you must:
-1. Identify key visual elements from the text
-2. Create a descriptive and detailed prompt
-3. Include style, mood, composition, lighting
-4. Optimize for high-quality image generation
-5. Think about visual coherence with the global story context
-
-Return ONLY the prompt text, no JSON, no title, just the optimized prompt in ENGLISH.`)}
-                    >
-                      Charger prompt par défaut
-                    </Button>
-                    {promptSystemMessage && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setPromptSystemMessage("")}
-                      >
-                        Effacer
-                      </Button>
-                    )}
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-sm font-medium mb-2 block">
-                    Exemples de prompts (2-3 recommandés pour la consistance)
-                  </label>
-                  <p className="text-xs text-muted-foreground mb-3">
-                    Entrez 2-3 exemples de prompts que vous avez déjà créés pour montrer le style et la structure désirée
-                  </p>
-                </div>
-                
-                {[0, 1, 2].map((index) => (
-                  <div key={index}>
-                    <label className="text-xs text-muted-foreground block mb-1">
-                      Exemple {index + 1} {index === 0 ? "(recommandé)" : "(optionnel)"}
-                    </label>
-                    <Textarea
-                      placeholder={`Ex: "A cinematic scene showing... [your style]"`}
-                      value={examplePrompts[index]}
-                      onChange={(e) => {
-                        const newPrompts = [...examplePrompts];
-                        newPrompts[index] = e.target.value;
-                        setExamplePrompts(newPrompts);
-                      }}
-                      rows={3}
-                      className="resize-none"
-                    />
-                  </div>
-                ))}
-              </div>
-              </TabsContent>
-              
-              <TabsContent value="search-prompts" className="flex-1 overflow-y-auto space-y-6 mt-4">
-                <div className="space-y-4">
-                  <div>
-                    <label className="text-sm font-medium mb-2 block">
-                      Prompt système pour la recherche d'images (Brave Search)
-                    </label>
-                    <p className="text-xs text-muted-foreground mb-3">
-                      Personnalisez les instructions données à l'IA pour générer les requêtes de recherche d'images sur le web. Ce prompt détermine comment l'IA analyse le texte de la scène et génère les mots-clés de recherche.
-                    </p>
-                    <Textarea
-                      placeholder="Entrez votre prompt système personnalisé pour la recherche d'images..."
-                      value={imageSearchPromptSystem}
-                      onChange={(e) => setImageSearchPromptSystem(e.target.value)}
-                      rows={15}
-                      className="resize-none font-mono text-xs"
-                    />
-                    <div className="mt-2 flex gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          const defaultPrompt = `You are an expert at generating image search queries for video production. Analyze the scene text WITHIN ITS TEMPORAL CONTEXT to understand what is happening, then generate a precise search query.
+                      onClick={() => {
+                        const defaultPrompt = `You are an expert at generating image search queries for video production. Analyze the scene text WITHIN ITS TEMPORAL CONTEXT to understand what is happening, then generate a precise search query.
 
 CRITICAL: Use the TEMPORAL CONTEXT (previous and next scenes) to understand:
 - What topic/subject is being discussed in this part of the video
@@ -4080,25 +4086,24 @@ CRITICAL RULES:
 - Think: "What image would best show what's happening in THIS specific scene?"
 
 Remember: Use temporal context to understand the topic, but the query must be PRECISE to what's happening in the CURRENT scene.`;
-                          setImageSearchPromptSystem(defaultPrompt);
-                        }}
+                        setImageSearchPromptSystem(defaultPrompt);
+                      }}
+                    >
+                      Charger prompt par défaut
+                    </Button>
+                    {imageSearchPromptSystem && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setImageSearchPromptSystem("")}
                       >
-                        Charger prompt par défaut
+                        Effacer
                       </Button>
-                      {imageSearchPromptSystem && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setImageSearchPromptSystem("")}
-                        >
-                          Effacer
-                        </Button>
-                      )}
-                    </div>
+                    )}
                   </div>
                 </div>
-              </TabsContent>
-            </Tabs>
+              </div>
+            </div>
             <DialogFooter className="flex-shrink-0 mt-4">
               <Button variant="outline" onClick={() => setPromptSettingsOpen(false)}>
                 Fermer
@@ -4106,7 +4111,7 @@ Remember: Use temporal context to understand the topic, but the query must be PR
               <Button onClick={async () => {
                 if (currentProjectId) {
                   await saveProjectData();
-                  toast.success("Paramètres de prompts sauvegardés");
+                  toast.success("Paramètres de recherche d'images sauvegardés");
                 }
                 setPromptSettingsOpen(false);
               }}>
