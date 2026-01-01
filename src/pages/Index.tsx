@@ -3928,11 +3928,11 @@ const Index = () => {
 
         {/* Prompt settings dialog */}
         <Dialog open={promptSettingsOpen} onOpenChange={setPromptSettingsOpen}>
-          <DialogContent className="max-w-2xl max-h-[90vh] w-[95vw] sm:w-full p-6 flex flex-col">
+          <DialogContent className="max-w-2xl max-h-[90vh] w-[95vw] sm:w-full p-6 flex flex-col overflow-hidden">
             <DialogHeader className="flex-shrink-0 mb-4">
               <DialogTitle>Paramètres de prompts</DialogTitle>
             </DialogHeader>
-            <div className="flex-1 overflow-y-auto space-y-6 pr-2">
+            <div className="flex-1 min-h-0 overflow-y-auto space-y-6 pr-2" style={{ maxHeight: 'calc(90vh - 150px)' }}>
               {/* Section 1: Prompts d'images */}
               <div className="space-y-4 border-b pb-6">
                 <h3 className="font-semibold text-base flex items-center gap-2">
