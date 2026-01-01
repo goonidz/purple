@@ -716,8 +716,6 @@ const Index = () => {
       if (projectData.image_search_prompt_system) {
         setImageSearchPromptSystem(projectData.image_search_prompt_system);
       }
-        setPromptSystemMessage('Prompt système par défaut (en cours de récupération...)');
-      }
 
       // Try to find script generation prompt from generation_jobs or pending_predictions
       if (currentProjectId) {
@@ -3503,10 +3501,10 @@ const Index = () => {
                                     {((transcriptData as { segments?: Array<{ text: string }> }).segments || []).map(s => s.text).join(' ')}
                                   </p>
                                 </div>
-                              ) : projectData?.summary ? (
+                              ) : projectSummary ? (
                                 <div className="bg-card rounded-lg border p-3">
                                   <p className="text-foreground leading-relaxed whitespace-pre-wrap text-xs">
-                                    {projectData.summary}
+                                    {projectSummary}
                                   </p>
                                 </div>
                               ) : (
@@ -3559,10 +3557,10 @@ const Index = () => {
                               {((transcriptData as { segments?: Array<{ text: string }> }).segments || []).map(s => s.text).join(' ')}
                             </p>
                           </div>
-                        ) : projectData?.summary ? (
+                        ) : projectSummary ? (
                           <div className="bg-card rounded-lg border p-3">
                             <p className="text-foreground leading-relaxed whitespace-pre-wrap text-xs">
-                              {projectData.summary}
+                              {projectSummary}
                             </p>
                           </div>
                         ) : (
