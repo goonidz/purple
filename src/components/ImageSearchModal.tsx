@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -81,7 +81,10 @@ export default function ImageSearchModal({
     }
   }, [open, sceneIndex]);
 
-  const handleSearch = async (customQuery?: string) => {
+  const handleSearch = async (customQuery?: string | React.MouseEvent) => {
+    // Ignore if customQuery is an event (from onClick)
+    const queryString = typeof customQuery === 'string' ? customQuery : undefined;
+    
     if (!sceneText.trim()) {
       toast.error("Le texte de la scène est vide");
       return;
@@ -104,7 +107,7 @@ export default function ImageSearchModal({
           summary, 
           projectName,
           customSearchPrompt, // Custom prompt system if provided
-          manualQuery: customQuery // If user provided a manual query
+          manualQuery: queryString // If user provided a manual query (not event)
         }
       });
 
@@ -116,7 +119,7 @@ export default function ImageSearchModal({
         throw new Error(data.error);
       }
 
-      setSearchQuery(data.query || customQuery || "");
+      setSearchQuery(data.query || queryString || "");
       setImages(data.images || []);
       setHasSearched(true);
       
@@ -128,7 +131,7 @@ export default function ImageSearchModal({
       // Save results to localStorage for this scene
       const storageKey = `${STORAGE_KEY_PREFIX}${sceneIndex}`;
       localStorage.setItem(storageKey, JSON.stringify({
-        query: data.query || customQuery || "",
+        query: data.query || queryString || "",
         images: data.images || [],
         alternativeQueries: data.alternativeQueries || [],
         timestamp: Date.now()
