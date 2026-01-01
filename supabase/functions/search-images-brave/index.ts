@@ -47,7 +47,7 @@ serve(async (req) => {
       });
     }
 
-    const { sceneText, sceneIndex } = await req.json();
+    const { sceneText, sceneIndex, summary, projectName } = await req.json();
 
     if (!sceneText) {
       return new Response(
@@ -99,7 +99,7 @@ serve(async (req) => {
     // Step 1: Use Gemini to generate an optimized search query
     let searchQuery: string;
     try {
-      searchQuery = await generateSearchQuery(sceneText, GOOGLE_AI_API_KEY);
+      searchQuery = await generateSearchQuery(sceneText, summary, projectName, GOOGLE_AI_API_KEY);
       console.log(`[search-images-brave] Scene ${sceneIndex}: Generated search query: "${searchQuery}"`);
     } catch (error: any) {
       console.error(`[search-images-brave] Error generating search query:`, error);
@@ -140,7 +140,15 @@ serve(async (req) => {
 });
 
 // Generate an optimized search query using Gemini
-async function generateSearchQuery(sceneText: string, apiKey: string): Promise<string> {
+async function generateSearchQuery(sceneText: string, summary: string | null, projectName: string | null, apiKey: string): Promise<string> {
+  let contextSection = '';
+  if (summary) {
+    contextSection = `\n\nGLOBAL CONTEXT (video topic):\n"${summary}"`;
+  }
+  if (projectName) {
+    contextSection += `\n\nVIDEO TITLE: "${projectName}"`;
+  }
+
   const prompt = `You are an expert at generating image search queries. Given a scene description from a video script, generate a SHORT and EFFECTIVE image search query (2-5 words in English) that will find relevant, high-quality stock images or photographs.
 
 RULES:
@@ -150,9 +158,10 @@ RULES:
 4. Focus on the main visual subject/concept
 5. Avoid abstract concepts - prefer concrete, visual terms
 6. Think about what image would best illustrate this scene
+7. Consider the global context of the video to ensure visual coherence${contextSection ? '' : ''}
 
 SCENE TEXT:
-"${sceneText}"
+"${sceneText}"${contextSection}
 
 SEARCH QUERY:`;
 
@@ -199,7 +208,7 @@ SEARCH QUERY:`;
 async function searchBraveImages(query: string, apiKey: string): Promise<BraveImageResult[]> {
   const searchUrl = new URL('https://api.search.brave.com/res/v1/images/search');
   searchUrl.searchParams.set('q', query);
-  searchUrl.searchParams.set('count', '20'); // Get more results for better filtering
+  searchUrl.searchParams.set('count', '30'); // Get 30 results - no filtering, user chooses
   searchUrl.searchParams.set('safesearch', 'strict');
   searchUrl.searchParams.set('search_lang', 'en');
 
@@ -233,23 +242,8 @@ async function searchBraveImages(query: string, apiKey: string): Promise<BraveIm
   const results = data.results || [];
   console.log(`[search-images-brave] Brave API returned ${results.length} raw results`);
 
-  // Filter and transform results
-  const filteredImages: BraveImageResult[] = results
-    .filter((img: any) => {
-      // Filter by size (minimum 800px width for quality)
-      const width = img.properties?.width || img.width || 0;
-      const height = img.properties?.height || img.height || 0;
-      if (width < 800 || height < 400) return false;
-
-      // Filter by format (only common image formats)
-      const url = img.properties?.url || img.url || '';
-      const validFormats = ['.jpg', '.jpeg', '.png', '.webp'];
-      const hasValidFormat = validFormats.some(fmt => url.toLowerCase().includes(fmt));
-      if (!hasValidFormat) return false;
-
-      return true;
-    })
-    .slice(0, 8) // Return max 8 images
+  // Transform all results - no filtering, let user choose
+  const images: BraveImageResult[] = results
     .map((img: any) => ({
       url: img.properties?.url || img.url || '',
       thumbnail: img.thumbnail?.src || img.properties?.url || img.url || '',
@@ -259,5 +253,5 @@ async function searchBraveImages(query: string, apiKey: string): Promise<BraveIm
       height: img.properties?.height || img.height || 0,
     }));
 
-  return filteredImages;
+  return images;
 }

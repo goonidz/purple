@@ -19,6 +19,8 @@ interface ImageSearchModalProps {
   onOpenChange: (open: boolean) => void;
   sceneIndex: number;
   sceneText: string;
+  summary?: string | null;
+  projectName?: string | null;
   onSelectImage: (imageUrl: string) => void;
 }
 
@@ -27,6 +29,8 @@ export default function ImageSearchModal({
   onOpenChange,
   sceneIndex,
   sceneText,
+  summary,
+  projectName,
   onSelectImage,
 }: ImageSearchModalProps) {
   const [isSearching, setIsSearching] = useState(false);
@@ -48,7 +52,7 @@ export default function ImageSearchModal({
 
     try {
       const { data, error } = await supabase.functions.invoke('search-images-brave', {
-        body: { sceneText, sceneIndex }
+        body: { sceneText, sceneIndex, summary, projectName }
       });
 
       if (error) {
@@ -155,7 +159,10 @@ export default function ImageSearchModal({
           {/* Results grid */}
           {!isSearching && images.length > 0 && (
             <div className="flex-1 overflow-y-auto">
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="text-sm text-muted-foreground mb-2">
+                {images.length} image{images.length > 1 ? 's' : ''} trouvée{images.length > 1 ? 's' : ''}
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3">
                 {images.map((image, idx) => (
                   <div
                     key={idx}

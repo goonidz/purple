@@ -141,6 +141,7 @@ const Index = () => {
   const [imageSearchOpen, setImageSearchOpen] = useState(false);
   const [imageSearchSceneIndex, setImageSearchSceneIndex] = useState<number>(0);
   const [imageSearchSceneText, setImageSearchSceneText] = useState<string>("");
+  const [projectSummary, setProjectSummary] = useState<string | null>(null);
   const [imageSettingsOpen, setImageSettingsOpen] = useState(false);
   const [sceneSettingsOpen, setSceneSettingsOpen] = useState(false);
   const [promptSettingsOpen, setPromptSettingsOpen] = useState(false);
@@ -3736,6 +3737,8 @@ const Index = () => {
           onOpenChange={setImageSearchOpen}
           sceneIndex={imageSearchSceneIndex}
           sceneText={imageSearchSceneText}
+          summary={projectSummary}
+          projectName={projectName}
           onSelectImage={handleSelectWebImage}
         />
 
