@@ -213,18 +213,39 @@ CURRENT SCENE TEXT:
 
 Think carefully about the best way to illustrate this scene, then output ONLY the search query (2-6 words, English).`;
   } else {
-    prompt = `You are an expert at generating image search queries for video production. Analyze this scene and decide the BEST way to illustrate it visually.
+    prompt = `You are an expert at generating image search queries for video production. Analyze the scene text WITHIN ITS TEMPORAL CONTEXT to understand what is happening, then generate a precise search query.
+
+Use video topic in all you search:
+
+Example: keywords + full video topic.
+Example: Paris road - Fashion week 2025
+
+If scene is too specific, use video topic overall illustration.
+
+CRITICAL: Use the TEMPORAL CONTEXT (previous and next scenes) to understand:
+- What topic/subject is being discussed in this part of the video
+- What specific event or concept is being described in THIS scene
+- How this scene relates to what came before and what comes after
+
+ANALYSIS PROCESS:
+1. Read the PREVIOUS SCENES to understand the topic being discussed
+2. Read the CURRENT SCENE TEXT carefully - what specific event/concept is described?
+3. Read the NEXT SCENES to see where the story is going
+
+CRITICAL RULES:
+- Output ONLY the search query, nothing else
+- Use English keywords only
+- Be PRECISE to what is described in the CURRENT scene
+- Use temporal context to understand the topic, but focus on the CURRENT scene's specific event
+- If there's drama (fire, accident, tragedy), include those keywords related
+- Think: "What image would best show what's happening in THIS specific scene?"
 
 CURRENT SCENE TEXT:
 "${sceneText}"${temporalContext}${contextSection}
 
-YOUR TASK:
-1. Understand what is happening in this scene (the event, mood, visual elements)
-2. Consider the global context (video topic/theme) and temporal context (what happened before/after)
-3. Decide: What image would BEST illustrate this scene? Think creatively - literal, symbolic, atmospheric?
-4. Generate a search query that will find the perfect image
+Remember: Use temporal context to understand the topic, but the query must be PRECISE to the topic.
 
-CRITICAL: Output ONLY the search query. 2-6 words, English only. No explanation, just the query.`;
+SEARCH QUERY:`;
   }
 
   console.log(`[DeepSeek R1] Starting prediction...`);
