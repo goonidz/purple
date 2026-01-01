@@ -568,7 +568,7 @@ const Index = () => {
 
       return () => clearTimeout(timeoutId);
     }
-  }, [currentProjectId, transcriptData, examplePrompts, scenes, durationRanges, styleReferenceUrls, audioUrl, imageWidth, imageHeight, aspectRatio, imageModel, loraUrl, loraSteps, promptSystemMessage]);
+  }, [currentProjectId, transcriptData, examplePrompts, scenes, durationRanges, styleReferenceUrls, audioUrl, imageWidth, imageHeight, aspectRatio, imageModel, loraUrl, loraSteps, promptSystemMessage, imageSearchPromptSystem]);
 
   // Track if we've already shown the config modal for this session
   const hasShownConfigModalRef = useRef(false);
