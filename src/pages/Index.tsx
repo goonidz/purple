@@ -3929,11 +3929,11 @@ const Index = () => {
         {/* Prompt settings dialog */}
         <Dialog open={promptSettingsOpen} onOpenChange={setPromptSettingsOpen}>
           <DialogContent className="max-w-2xl max-h-[90vh] w-[95vw] sm:w-full flex flex-col p-6">
-            <DialogHeader className="flex-shrink-0">
+            <DialogHeader className="flex-shrink-0 mb-4">
               <DialogTitle>Paramètres de prompts</DialogTitle>
             </DialogHeader>
-            <Tabs defaultValue="image-prompts" className="flex-1 flex flex-col min-h-0">
-              <TabsList className="flex-shrink-0">
+            <Tabs defaultValue="image-prompts" className="flex-1 flex flex-col min-h-0 overflow-hidden">
+              <TabsList className="flex-shrink-0 mb-4">
                 <TabsTrigger value="image-prompts">Prompts d'images</TabsTrigger>
                 <TabsTrigger value="search-prompts">Recherche d'images</TabsTrigger>
               </TabsList>
