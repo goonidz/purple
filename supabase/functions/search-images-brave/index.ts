@@ -59,14 +59,23 @@ serve(async (req) => {
     // Get user's Brave API key from Vault using service role
     const supabaseService = createClient(supabaseUrl, supabaseServiceKey);
 
+    console.log(`[search-images-brave] Fetching Brave API key for user: ${user.id}`);
     const { data: braveKeyData, error: braveKeyError } = await supabaseService
       .rpc('get_user_api_key_for_service', {
         target_user_id: user.id,
         key_name: 'brave'
       });
 
-    if (braveKeyError || !braveKeyData) {
-      console.error("Error getting Brave API key:", braveKeyError);
+    if (braveKeyError) {
+      console.error("Error getting Brave API key:", JSON.stringify(braveKeyError));
+      return new Response(
+        JSON.stringify({ error: `Erreur lors de la récupération de la clé: ${braveKeyError.message || 'Clé non trouvée'}` }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    if (!braveKeyData || braveKeyData.trim() === '') {
+      console.error("Brave API key is empty or null");
       return new Response(
         JSON.stringify({ error: "Clé API Brave non configurée. Ajoutez-la dans votre profil." }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -74,6 +83,7 @@ serve(async (req) => {
     }
 
     const BRAVE_API_KEY = braveKeyData;
+    console.log(`[search-images-brave] Brave API key retrieved (length: ${BRAVE_API_KEY.length})`);
     const GOOGLE_AI_API_KEY = Deno.env.get("GOOGLE_AI_API_KEY");
 
     if (!GOOGLE_AI_API_KEY) {
@@ -87,12 +97,24 @@ serve(async (req) => {
     console.log(`[search-images-brave] Scene ${sceneIndex}: Generating search query for text: "${sceneText.substring(0, 100)}..."`);
 
     // Step 1: Use Gemini to generate an optimized search query
-    const searchQuery = await generateSearchQuery(sceneText, GOOGLE_AI_API_KEY);
-    console.log(`[search-images-brave] Scene ${sceneIndex}: Generated search query: "${searchQuery}"`);
+    let searchQuery: string;
+    try {
+      searchQuery = await generateSearchQuery(sceneText, GOOGLE_AI_API_KEY);
+      console.log(`[search-images-brave] Scene ${sceneIndex}: Generated search query: "${searchQuery}"`);
+    } catch (error: any) {
+      console.error(`[search-images-brave] Error generating search query:`, error);
+      throw new Error(`Erreur lors de la génération de la requête: ${error.message || 'Erreur inconnue'}`);
+    }
 
     // Step 2: Search images using Brave Search API
-    const images = await searchBraveImages(searchQuery, BRAVE_API_KEY);
-    console.log(`[search-images-brave] Scene ${sceneIndex}: Found ${images.length} images`);
+    let images: BraveImageResult[];
+    try {
+      images = await searchBraveImages(searchQuery, BRAVE_API_KEY);
+      console.log(`[search-images-brave] Scene ${sceneIndex}: Found ${images.length} images`);
+    } catch (error: any) {
+      console.error(`[search-images-brave] Error searching images:`, error);
+      throw new Error(`Erreur lors de la recherche d'images: ${error.message || 'Erreur inconnue'}`);
+    }
 
     return new Response(
       JSON.stringify({ 
@@ -105,9 +127,13 @@ serve(async (req) => {
 
   } catch (error: unknown) {
     console.error("Error in search-images-brave:", error);
+    console.error("Error details:", JSON.stringify(error, Object.getOwnPropertyNames(error)));
     const errorMessage = error instanceof Error ? error.message : "Une erreur est survenue";
     return new Response(
-      JSON.stringify({ error: errorMessage }),
+      JSON.stringify({ 
+        error: errorMessage,
+        details: error instanceof Error ? error.stack : undefined
+      }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
@@ -154,8 +180,19 @@ SEARCH QUERY:`;
   const data = await response.json();
   const query = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
   
+  if (!query || query.length === 0) {
+    console.error("Gemini returned empty query:", JSON.stringify(data));
+    throw new Error("La génération de la requête de recherche a échoué");
+  }
+  
   // Clean up the query (remove quotes, extra punctuation)
-  return query.replace(/['"]/g, '').trim();
+  const cleanedQuery = query.replace(/['"]/g, '').trim();
+  
+  if (!cleanedQuery || cleanedQuery.length === 0) {
+    throw new Error("La requête de recherche générée est vide");
+  }
+  
+  return cleanedQuery;
 }
 
 // Search images using Brave Search API
@@ -185,8 +222,16 @@ async function searchBraveImages(query: string, apiKey: string): Promise<BraveIm
     throw new Error("Erreur lors de la recherche d'images");
   }
 
-  const data = await response.json();
+  let data: any;
+  try {
+    data = await response.json();
+  } catch (parseError) {
+    console.error("Failed to parse Brave API response:", parseError);
+    throw new Error("Réponse invalide de l'API Brave Search");
+  }
+  
   const results = data.results || [];
+  console.log(`[search-images-brave] Brave API returned ${results.length} raw results`);
 
   // Filter and transform results
   const filteredImages: BraveImageResult[] = results
