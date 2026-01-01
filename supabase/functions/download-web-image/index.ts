@@ -25,6 +25,7 @@ serve(async (req) => {
     const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
 
+    // Client for user auth
     const supabase = createClient(supabaseUrl, supabaseAnonKey, {
       global: { headers: { Authorization: authHeader } }
     });
@@ -48,16 +49,16 @@ serve(async (req) => {
 
     console.log(`[download-web-image] Downloading image from: ${imageUrl}`);
 
-    // Download image from web (server-side, no CORS issues)
+    // Download image server-side (no CORS issues)
     const imageResponse = await fetch(imageUrl, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Accept': 'image/*',
+        'User-Agent': 'Mozilla/5.0 (compatible; VideoFlow/1.0)',
+        'Referer': 'https://brave.com/',
       },
     });
 
     if (!imageResponse.ok) {
-      console.error(`[download-web-image] Failed to fetch image: ${imageResponse.status} ${imageResponse.statusText}`);
+      console.error(`[download-web-image] Failed to download image: ${imageResponse.status} ${imageResponse.statusText}`);
       throw new Error(`Impossible de télécharger l'image: ${imageResponse.status} ${imageResponse.statusText}`);
     }
 
@@ -65,29 +66,28 @@ serve(async (req) => {
     const imageArrayBuffer = await imageBlob.arrayBuffer();
     const imageBytes = new Uint8Array(imageArrayBuffer);
 
-    // Determine file extension from URL or Content-Type
-    let fileExt = 'jpg';
-    const urlExt = imageUrl.split('.').pop()?.split('?')[0]?.toLowerCase();
-    if (urlExt && ['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(urlExt)) {
-      fileExt = urlExt === 'jpeg' ? 'jpg' : urlExt;
-    } else {
-      const contentType = imageResponse.headers.get('content-type');
-      if (contentType?.includes('png')) fileExt = 'png';
-      else if (contentType?.includes('webp')) fileExt = 'webp';
-      else if (contentType?.includes('gif')) fileExt = 'gif';
-    }
-
+    // Determine file extension from URL or content type
+    const urlPath = new URL(imageUrl).pathname;
+    const urlExt = urlPath.split('.').pop()?.split('?')[0] || 'jpg';
+    const contentType = imageResponse.headers.get('content-type') || 'image/jpeg';
+    
+    // Validate extension
+    const validExts = ['jpg', 'jpeg', 'png', 'webp'];
+    const fileExt = validExts.includes(urlExt.toLowerCase()) ? urlExt.toLowerCase() : 'jpg';
+    
     const filename = `${projectId || 'temp'}/scene_${sceneIndex + 1}_web_${Date.now()}.${fileExt}`;
+
+    console.log(`[download-web-image] Uploading to storage: ${filename}`);
 
     // Upload to Supabase Storage using service role
     const supabaseService = createClient(supabaseUrl, supabaseServiceKey);
-
+    
     const { data: uploadData, error: uploadError } = await supabaseService.storage
       .from('generated-images')
       .upload(filename, imageBytes, {
         cacheControl: '3600',
         upsert: true,
-        contentType: imageBlob.type || `image/${fileExt}`,
+        contentType: contentType,
       });
 
     if (uploadError) {
@@ -100,13 +100,12 @@ serve(async (req) => {
       .from('generated-images')
       .getPublicUrl(filename);
 
-    console.log(`[download-web-image] Image uploaded successfully: ${publicUrl}`);
+    console.log(`[download-web-image] Successfully uploaded: ${publicUrl}`);
 
     return new Response(
       JSON.stringify({ 
         success: true,
-        imageUrl: publicUrl,
-        filename
+        imageUrl: publicUrl
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );

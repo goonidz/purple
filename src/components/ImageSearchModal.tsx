@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Loader2, Search, ExternalLink, Check } from "lucide-react";
@@ -24,6 +24,9 @@ interface ImageSearchModalProps {
   onSelectImage: (imageUrl: string) => void;
 }
 
+// Store search results in localStorage keyed by scene index
+const STORAGE_KEY_PREFIX = 'image_search_results_';
+
 export default function ImageSearchModal({
   open,
   onOpenChange,
@@ -38,6 +41,27 @@ export default function ImageSearchModal({
   const [images, setImages] = useState<SearchImage[]>([]);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
+
+  // Load previous search results when modal opens
+  useEffect(() => {
+    if (open) {
+      const storageKey = `${STORAGE_KEY_PREFIX}${sceneIndex}`;
+      const saved = localStorage.getItem(storageKey);
+      if (saved) {
+        try {
+          const savedData = JSON.parse(saved);
+          if (savedData.images && savedData.images.length > 0) {
+            setImages(savedData.images);
+            setSearchQuery(savedData.query || "");
+            setHasSearched(true);
+            console.log(`[ImageSearchModal] Loaded ${savedData.images.length} previous results for scene ${sceneIndex}`);
+          }
+        } catch (e) {
+          console.error("Error loading saved search results:", e);
+        }
+      }
+    }
+  }, [open, sceneIndex]);
 
   const handleSearch = async () => {
     if (!sceneText.trim()) {
@@ -67,6 +91,14 @@ export default function ImageSearchModal({
       setImages(data.images || []);
       setHasSearched(true);
 
+      // Save results to localStorage for this scene
+      const storageKey = `${STORAGE_KEY_PREFIX}${sceneIndex}`;
+      localStorage.setItem(storageKey, JSON.stringify({
+        query: data.query || "",
+        images: data.images || [],
+        timestamp: Date.now()
+      }));
+
       if (data.images?.length === 0) {
         toast.info("Aucune image trouvée pour cette scène");
       }
@@ -93,11 +125,9 @@ export default function ImageSearchModal({
 
   const handleClose = () => {
     onOpenChange(false);
-    // Reset state on close
-    setImages([]);
+    // Don't reset images - keep them for next time
     setSelectedImage(null);
-    setHasSearched(false);
-    setSearchQuery("");
+    // Keep hasSearched and searchQuery so results show on next open
   };
 
   return (
@@ -117,8 +147,8 @@ export default function ImageSearchModal({
             <p className="text-sm line-clamp-3">{sceneText}</p>
           </div>
 
-          {/* Search button */}
-          {!hasSearched && (
+          {/* Search button - show if no results OR allow new search */}
+          {(!hasSearched || images.length === 0) && (
             <Button
               onClick={handleSearch}
               disabled={isSearching}
@@ -133,7 +163,7 @@ export default function ImageSearchModal({
               ) : (
                 <>
                   <Search className="mr-2 h-4 w-4" />
-                  Rechercher des images
+                  {hasSearched ? "Nouvelle recherche" : "Rechercher des images"}
                 </>
               )}
             </Button>
@@ -252,6 +282,15 @@ export default function ImageSearchModal({
                 Utiliser cette image
               </Button>
             </div>
+          </div>
+        )}
+        
+        {/* Footer when no results but has searched */}
+        {hasSearched && images.length === 0 && (
+          <div className="flex justify-end pt-4 border-t">
+            <Button variant="outline" onClick={handleClose}>
+              Fermer
+            </Button>
           </div>
         )}
       </DialogContent>
