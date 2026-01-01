@@ -3928,17 +3928,17 @@ const Index = () => {
 
         {/* Prompt settings dialog */}
         <Dialog open={promptSettingsOpen} onOpenChange={setPromptSettingsOpen}>
-          <DialogContent className="max-w-2xl max-h-[90vh] w-[95vw] sm:w-full flex flex-col p-6">
+          <DialogContent className="max-w-2xl max-h-[90vh] w-[95vw] sm:w-full p-6">
             <DialogHeader className="flex-shrink-0 mb-4">
               <DialogTitle>Paramètres de prompts</DialogTitle>
             </DialogHeader>
-            <Tabs defaultValue="image-prompts" className="flex-1 flex flex-col min-h-0 overflow-hidden">
-              <TabsList className="flex-shrink-0 mb-4">
+            <Tabs defaultValue="image-prompts" className="w-full">
+              <TabsList className="grid w-full grid-cols-2 mb-4">
                 <TabsTrigger value="image-prompts">Prompts d'images</TabsTrigger>
                 <TabsTrigger value="search-prompts">Recherche d'images</TabsTrigger>
               </TabsList>
               
-              <TabsContent value="image-prompts" className="flex-1 overflow-y-auto min-h-0 space-y-6 pr-2 -mr-2 mt-4">
+              <TabsContent value="image-prompts" className="space-y-6 mt-4 max-h-[60vh] overflow-y-auto">
               <div className="space-y-4">
                 <div>
                   <label className="text-sm font-medium mb-2 block">
@@ -4034,7 +4034,7 @@ Return ONLY the prompt text, no JSON, no title, just the optimized prompt in ENG
               </div>
               </TabsContent>
               
-              <TabsContent value="search-prompts" className="flex-1 overflow-y-auto min-h-0 space-y-6 pr-2 -mr-2 mt-4">
+              <TabsContent value="search-prompts" className="space-y-6 mt-4 max-h-[60vh] overflow-y-auto">
                 <div className="space-y-4">
                   <div>
                     <label className="text-sm font-medium mb-2 block">
