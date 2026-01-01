@@ -229,58 +229,65 @@ CRITICAL: Output ONLY the search query. 2-6 words, English only. No explanation,
 
   console.log(`[DeepSeek R1] Starting prediction...`);
   
-  // Start prediction with DeepSeek R1 via Replicate
-  const createResponse = await fetch('https://api.replicate.com/v1/predictions', {
+  // Start prediction with DeepSeek R1 via Replicate using the model endpoint
+  const createResponse = await fetch('https://api.replicate.com/v1/models/deepseek-ai/deepseek-r1/predictions', {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${replicateApiKey}`,
       'Content-Type': 'application/json',
+      'Prefer': 'wait', // Wait for result instead of polling
     },
     body: JSON.stringify({
-      model: 'deepseek-ai/deepseek-r1',
       input: {
         prompt: prompt,
-        max_tokens: 50,
+        max_new_tokens: 100,
         temperature: 0.5,
+        top_p: 0.9,
       },
     }),
   });
 
   if (!createResponse.ok) {
-    const errorData = await createResponse.json();
-    console.error("DeepSeek R1 API error:", errorData);
-    throw new Error("Erreur lors de la création de la prédiction DeepSeek R1");
+    const errorText = await createResponse.text();
+    console.error("DeepSeek R1 API error:", createResponse.status, errorText);
+    throw new Error(`Erreur DeepSeek R1: ${createResponse.status}`);
   }
 
   const prediction = await createResponse.json();
-  console.log(`[DeepSeek R1] Prediction created: ${prediction.id}`);
+  console.log(`[DeepSeek R1] Prediction response:`, JSON.stringify(prediction).substring(0, 500));
 
-  // Poll for result (max 60 seconds)
+  // With 'Prefer: wait', the response might already have the result
   let result = prediction;
-  const maxAttempts = 30;
-  let attempts = 0;
+  
+  // If not completed, poll for result (max 120 seconds for DeepSeek R1 which can be slow)
+  if (result.status !== 'succeeded' && result.status !== 'failed') {
+    const maxAttempts = 60; // 60 * 2s = 120s max
+    let attempts = 0;
 
-  while (result.status !== 'succeeded' && result.status !== 'failed' && attempts < maxAttempts) {
-    await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
-    
-    const pollResponse = await fetch(`https://api.replicate.com/v1/predictions/${prediction.id}`, {
-      headers: {
-        'Authorization': `Bearer ${replicateApiKey}`,
-      },
-    });
-    
-    if (!pollResponse.ok) {
-      throw new Error("Erreur lors de la vérification de la prédiction");
+    while (result.status !== 'succeeded' && result.status !== 'failed' && attempts < maxAttempts) {
+      await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
+      
+      const pollResponse = await fetch(`https://api.replicate.com/v1/predictions/${prediction.id}`, {
+        headers: {
+          'Authorization': `Bearer ${replicateApiKey}`,
+        },
+      });
+      
+      if (!pollResponse.ok) {
+        const pollError = await pollResponse.text();
+        console.error(`[DeepSeek R1] Poll error:`, pollError);
+        throw new Error("Erreur lors de la vérification de la prédiction");
+      }
+      
+      result = await pollResponse.json();
+      attempts++;
+      console.log(`[DeepSeek R1] Status: ${result.status} (attempt ${attempts})`);
     }
-    
-    result = await pollResponse.json();
-    attempts++;
-    console.log(`[DeepSeek R1] Status: ${result.status} (attempt ${attempts})`);
   }
 
   if (result.status === 'failed') {
     console.error("DeepSeek R1 prediction failed:", result.error);
-    throw new Error("La prédiction DeepSeek R1 a échoué");
+    throw new Error(`DeepSeek R1 a échoué: ${result.error || 'Erreur inconnue'}`);
   }
 
   if (result.status !== 'succeeded') {
@@ -366,45 +373,49 @@ Output ONLY the 3 queries, one per line, 2-6 words each, English only:`;
 
   console.log(`[DeepSeek R1] Generating alternative queries...`);
   
-  const createResponse = await fetch('https://api.replicate.com/v1/predictions', {
+  const createResponse = await fetch('https://api.replicate.com/v1/models/deepseek-ai/deepseek-r1/predictions', {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${replicateApiKey}`,
       'Content-Type': 'application/json',
+      'Prefer': 'wait',
     },
     body: JSON.stringify({
-      model: 'deepseek-ai/deepseek-r1',
       input: {
         prompt: prompt,
-        max_tokens: 100,
+        max_new_tokens: 150,
         temperature: 0.7,
+        top_p: 0.9,
       },
     }),
   });
 
   if (!createResponse.ok) {
-    console.error("DeepSeek R1 API error for alternatives:", await createResponse.json());
+    const errorText = await createResponse.text();
+    console.error("DeepSeek R1 API error for alternatives:", createResponse.status, errorText);
     return [];
   }
 
   const prediction = await createResponse.json();
   
-  // Poll for result
+  // Poll for result if not already completed
   let result = prediction;
-  const maxAttempts = 30;
-  let attempts = 0;
+  if (result.status !== 'succeeded' && result.status !== 'failed') {
+    const maxAttempts = 60;
+    let attempts = 0;
 
-  while (result.status !== 'succeeded' && result.status !== 'failed' && attempts < maxAttempts) {
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
-    const pollResponse = await fetch(`https://api.replicate.com/v1/predictions/${prediction.id}`, {
-      headers: { 'Authorization': `Bearer ${replicateApiKey}` },
-    });
-    
-    if (!pollResponse.ok) return [];
-    
-    result = await pollResponse.json();
-    attempts++;
+    while (result.status !== 'succeeded' && result.status !== 'failed' && attempts < maxAttempts) {
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      const pollResponse = await fetch(`https://api.replicate.com/v1/predictions/${prediction.id}`, {
+        headers: { 'Authorization': `Bearer ${replicateApiKey}` },
+      });
+      
+      if (!pollResponse.ok) return [];
+      
+      result = await pollResponse.json();
+      attempts++;
+    }
   }
 
   if (result.status !== 'succeeded') {
