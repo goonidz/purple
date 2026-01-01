@@ -19,8 +19,11 @@ interface ImageSearchModalProps {
   onOpenChange: (open: boolean) => void;
   sceneIndex: number;
   sceneText: string;
+  previousScenes?: string[];
+  nextScenes?: string[];
   summary?: string | null;
   projectName?: string | null;
+  customSearchPrompt?: string | null;
   onSelectImage: (imageUrl: string) => void;
 }
 
@@ -32,8 +35,11 @@ export default function ImageSearchModal({
   onOpenChange,
   sceneIndex,
   sceneText,
+  previousScenes = [],
+  nextScenes = [],
   summary,
   projectName,
+  customSearchPrompt,
   onSelectImage,
 }: ImageSearchModalProps) {
   const [isSearching, setIsSearching] = useState(false);
@@ -76,7 +82,15 @@ export default function ImageSearchModal({
 
     try {
       const { data, error } = await supabase.functions.invoke('search-images-brave', {
-        body: { sceneText, sceneIndex, summary, projectName }
+        body: { 
+          sceneText, 
+          sceneIndex, 
+          previousScenes: previousScenes.slice(-3), // Last 3 previous scenes
+          nextScenes: nextScenes.slice(0, 3), // First 3 next scenes
+          summary, 
+          projectName,
+          customSearchPrompt // Custom prompt system if provided
+        }
       });
 
       if (error) {

@@ -141,10 +141,13 @@ const Index = () => {
   const [imageSearchOpen, setImageSearchOpen] = useState(false);
   const [imageSearchSceneIndex, setImageSearchSceneIndex] = useState<number>(0);
   const [imageSearchSceneText, setImageSearchSceneText] = useState<string>("");
+  const [imageSearchPreviousScenes, setImageSearchPreviousScenes] = useState<string[]>([]);
+  const [imageSearchNextScenes, setImageSearchNextScenes] = useState<string[]>([]);
   const [projectSummary, setProjectSummary] = useState<string | null>(null);
   const [imageSettingsOpen, setImageSettingsOpen] = useState(false);
   const [sceneSettingsOpen, setSceneSettingsOpen] = useState(false);
   const [promptSettingsOpen, setPromptSettingsOpen] = useState(false);
+  const [imageSearchPromptSystem, setImageSearchPromptSystem] = useState<string>("");
   const [confirmGenerateImages, setConfirmGenerateImages] = useState(false);
   const [editingPromptIndex, setEditingPromptIndex] = useState<number | null>(null);
   const [editingPromptText, setEditingPromptText] = useState<string>("");
@@ -699,7 +702,7 @@ const Index = () => {
             .select('prompt_system_message')
             .eq('id', currentProjectId)
             .single();
-          
+
           if (updatedProject?.prompt_system_message) {
             setPromptSystemMessage(updatedProject.prompt_system_message);
           }
@@ -707,6 +710,12 @@ const Index = () => {
           console.log('Backfill failed:', err);
         });
         // Set default message for display while backfill is running
+      }
+      
+      // Load image search prompt system
+      if (projectData.image_search_prompt_system) {
+        setImageSearchPromptSystem(projectData.image_search_prompt_system);
+      }
         setPromptSystemMessage('Prompt système par défaut (en cours de récupération...)');
       }
 
@@ -861,6 +870,7 @@ const Index = () => {
           style_reference_url: serializeStyleReferenceUrls(styleReferenceUrls),
           audio_url: audioUrl || null,
           prompt_system_message: promptSystemMessage || null,
+          image_search_prompt_system: imageSearchPromptSystem || null,
         })
         .eq("id", currentProjectId);
 
@@ -1348,6 +1358,21 @@ const Index = () => {
   const handleSearchWebImage = (sceneIndex: number, sceneText: string) => {
     setImageSearchSceneIndex(sceneIndex);
     setImageSearchSceneText(sceneText);
+    
+    // Get previous and next scenes for context (use scenes array which has the text)
+    const previousScenes = scenes
+      .slice(Math.max(0, sceneIndex - 3), sceneIndex)
+      .map(s => s.text)
+      .filter(t => t.trim().length > 0);
+    
+    const nextScenes = scenes
+      .slice(sceneIndex + 1, Math.min(scenes.length, sceneIndex + 4))
+      .map(s => s.text)
+      .filter(t => t.trim().length > 0);
+    
+    // Store in state to pass to modal
+    setImageSearchPreviousScenes(previousScenes);
+    setImageSearchNextScenes(nextScenes);
     setImageSearchOpen(true);
   };
 
@@ -3733,8 +3758,11 @@ const Index = () => {
           onOpenChange={setImageSearchOpen}
           sceneIndex={imageSearchSceneIndex}
           sceneText={imageSearchSceneText}
+          previousScenes={imageSearchPreviousScenes}
+          nextScenes={imageSearchNextScenes}
           summary={projectSummary}
           projectName={projectName}
+          customSearchPrompt={imageSearchPromptSystem || null}
           onSelectImage={handleSelectWebImage}
         />
 
@@ -3904,8 +3932,13 @@ const Index = () => {
             <DialogHeader className="flex-shrink-0">
               <DialogTitle>Paramètres de prompts</DialogTitle>
             </DialogHeader>
-            <div className="overflow-y-auto flex-1 min-h-0 space-y-6 pr-2 -mr-2">
-
+            <Tabs defaultValue="image-prompts" className="flex-1 flex flex-col min-h-0">
+              <TabsList className="flex-shrink-0">
+                <TabsTrigger value="image-prompts">Prompts d'images</TabsTrigger>
+                <TabsTrigger value="search-prompts">Recherche d'images</TabsTrigger>
+              </TabsList>
+              
+              <TabsContent value="image-prompts" className="flex-1 overflow-y-auto min-h-0 space-y-6 pr-2 -mr-2 mt-4">
               <div className="space-y-4">
                 <div>
                   <label className="text-sm font-medium mb-2 block">
@@ -3999,7 +4032,73 @@ Return ONLY the prompt text, no JSON, no title, just the optimized prompt in ENG
                   </div>
                 ))}
               </div>
-            </div>
+              </TabsContent>
+              
+              <TabsContent value="search-prompts" className="flex-1 overflow-y-auto min-h-0 space-y-6 pr-2 -mr-2 mt-4">
+                <div className="space-y-4">
+                  <div>
+                    <label className="text-sm font-medium mb-2 block">
+                      Prompt système pour la recherche d'images (Brave Search)
+                    </label>
+                    <p className="text-xs text-muted-foreground mb-3">
+                      Personnalisez les instructions données à l'IA pour générer les requêtes de recherche d'images sur le web. Ce prompt détermine comment l'IA analyse le texte de la scène et génère les mots-clés de recherche.
+                    </p>
+                    <Textarea
+                      placeholder="Entrez votre prompt système personnalisé pour la recherche d'images..."
+                      value={imageSearchPromptSystem}
+                      onChange={(e) => setImageSearchPromptSystem(e.target.value)}
+                      rows={15}
+                      className="resize-none font-mono text-xs"
+                    />
+                    <div className="mt-2 flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          const defaultPrompt = `You are an expert at generating image search queries for video production. Analyze the scene text WITHIN ITS TEMPORAL CONTEXT to understand what is happening, then generate a precise search query.
+
+CRITICAL: Use the TEMPORAL CONTEXT (previous and next scenes) to understand:
+- What topic/subject is being discussed in this part of the video
+- What specific event or concept is being described in THIS scene
+- How this scene relates to what came before and what comes after
+
+ANALYSIS PROCESS:
+1. Read the PREVIOUS SCENES to understand the topic being discussed
+2. Read the CURRENT SCENE TEXT carefully - what specific event/concept is described?
+3. Read the NEXT SCENES to see where the story is going
+4. Identify the MAIN EVENT/SUBJECT in the current scene (fire, accident, announcement, etc.)
+5. Identify KEY VISUAL ELEMENTS that would illustrate this specific moment
+6. The query should be PRECISE to the current scene's content, informed by the temporal context
+
+CRITICAL RULES:
+- Output ONLY the search query, nothing else
+- Use English keywords only
+- 2-6 words maximum
+- Be PRECISE to what is described in the CURRENT scene
+- Use temporal context to understand the topic, but focus on the CURRENT scene's specific event
+- If there's drama (fire, accident, tragedy), include those keywords
+- Think: "What image would best show what's happening in THIS specific scene?"
+
+Remember: Use temporal context to understand the topic, but the query must be PRECISE to what's happening in the CURRENT scene.`;
+                          setImageSearchPromptSystem(defaultPrompt);
+                        }}
+                      >
+                        Charger prompt par défaut
+                      </Button>
+                      {imageSearchPromptSystem && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setImageSearchPromptSystem("")}
+                        >
+                          Effacer
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </TabsContent>
+            </Tabs>
             <DialogFooter className="flex-shrink-0 mt-4">
               <Button variant="outline" onClick={() => setPromptSettingsOpen(false)}>
                 Fermer

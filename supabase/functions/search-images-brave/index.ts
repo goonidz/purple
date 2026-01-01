@@ -47,7 +47,7 @@ serve(async (req) => {
       });
     }
 
-    const { sceneText, sceneIndex, summary, projectName } = await req.json();
+    const { sceneText, sceneIndex, previousScenes = [], nextScenes = [], summary, projectName, customSearchPrompt } = await req.json();
 
     if (!sceneText) {
       return new Response(
@@ -99,7 +99,7 @@ serve(async (req) => {
     // Step 1: Use Gemini to generate an optimized search query
     let searchQuery: string;
     try {
-      searchQuery = await generateSearchQuery(sceneText, summary, projectName, GOOGLE_AI_API_KEY);
+      searchQuery = await generateSearchQuery(sceneText, previousScenes, nextScenes, summary, projectName, customSearchPrompt, GOOGLE_AI_API_KEY);
       console.log(`[search-images-brave] Scene ${sceneIndex}: Generated search query: "${searchQuery}"`);
     } catch (error: any) {
       console.error(`[search-images-brave] Error generating search query:`, error);
@@ -140,7 +140,15 @@ serve(async (req) => {
 });
 
 // Generate an optimized search query using Gemini
-async function generateSearchQuery(sceneText: string, summary: string | null, projectName: string | null, apiKey: string): Promise<string> {
+async function generateSearchQuery(
+  sceneText: string, 
+  previousScenes: string[], 
+  nextScenes: string[], 
+  summary: string | null, 
+  projectName: string | null,
+  customSearchPrompt: string | null | undefined,
+  apiKey: string
+): Promise<string> {
   let contextSection = '';
   if (summary) {
     contextSection = `\n\nGLOBAL CONTEXT (video topic/theme):\n"${summary}"`;
@@ -149,40 +157,65 @@ async function generateSearchQuery(sceneText: string, summary: string | null, pr
     contextSection += `\n\nVIDEO TITLE: "${projectName}"`;
   }
 
-  const prompt = `You are an expert at generating image search queries for video production. Your task is to analyze the scene text and generate a search query that captures the ESSENCE of what's happening, not just the first words.
+  let temporalContext = '';
+  if (previousScenes.length > 0) {
+    temporalContext = `\n\nPREVIOUS SCENES (what happened before, for context):\n${previousScenes.map((s, i) => `${i + 1}. "${s}"`).join('\n')}`;
+  }
+  if (nextScenes.length > 0) {
+    temporalContext += `\n\nNEXT SCENES (what happens after, for context):\n${nextScenes.map((s, i) => `${i + 1}. "${s}"`).join('\n')}`;
+  }
+
+  // Use custom prompt if provided, otherwise use default
+  let prompt: string;
+  if (customSearchPrompt && customSearchPrompt.trim()) {
+    // Custom prompt - user can define their own system
+    prompt = `${customSearchPrompt}
+
+CURRENT SCENE TEXT:
+"${sceneText}"${temporalContext}${contextSection}
+
+SEARCH QUERY:`;
+  } else {
+    // Default prompt
+    prompt = `You are an expert at generating image search queries for video production. Analyze the scene text WITHIN ITS TEMPORAL CONTEXT to understand what is happening, then generate a precise search query.
+
+CRITICAL: Use the TEMPORAL CONTEXT (previous and next scenes) to understand:
+- What topic/subject is being discussed in this part of the video
+- What specific event or concept is being described in THIS scene
+- How this scene relates to what came before and what comes after
 
 ANALYSIS PROCESS:
-1. Read the ENTIRE scene text carefully
-2. Identify: What is the MAIN EVENT? (fire, accident, announcement, discovery, etc.)
-3. Identify: What are the KEY VISUAL ELEMENTS? (flames, smoke, building, people, etc.)
-4. Identify: What is the EMOTIONAL TONE? (tragedy, celebration, conflict, etc.)
-5. The query should represent what you would SEE in an image, not just where/when it happened
+1. Read the PREVIOUS SCENES to understand the topic being discussed
+2. Read the CURRENT SCENE TEXT carefully - what specific event/concept is described?
+3. Read the NEXT SCENES to see where the story is going
+4. Identify the MAIN EVENT/SUBJECT in the current scene (fire, accident, announcement, etc.)
+5. Identify KEY VISUAL ELEMENTS that would illustrate this specific moment
+6. The query should be PRECISE to the current scene's content, informed by the temporal context
 
 CRITICAL RULES:
 - Output ONLY the search query, nothing else
 - Use English keywords only
 - 2-6 words maximum
-- PRIORITIZE the main event/subject over location or time
-- If there's drama (fire, accident, tragedy), that's MORE important than the location
-- Think: "What image would best show what happened?" not "What are the first words?"
+- Be PRECISE to what is described in the CURRENT scene
+- Use temporal context to understand the topic, but focus on the CURRENT scene's specific event
+- If there's drama (fire, accident, tragedy), include those keywords
+- Think: "What image would best show what's happening in THIS specific scene?"
 
-EXAMPLES:
-Scene: "Last night in Switzerland, a New Year's party turned tragic when a bar caught fire"
-❌ WRONG: "New Years Switzerland" (just extracts first words)
-✅ CORRECT: "bar fire tragedy" or "burning bar fire" (captures the event)
+EXAMPLE:
+Previous: "The economic situation in Europe has been deteriorating"
+Current: "Last night in Switzerland, a New Year's party turned tragic when a bar caught fire"
+Next: "The fire spread quickly, trapping dozens of people inside"
+❌ WRONG: "New Years Switzerland" (ignores the event)
+❌ WRONG: "economic Europe" (from previous context, not current scene)
+✅ CORRECT: "bar fire tragedy" or "burning bar fire" (precise to current scene's event)
 
-Scene: "The company announced record profits this quarter"
-✅ Query: "business success celebration" or "corporate profit"
+CURRENT SCENE TEXT:
+"${sceneText}"${temporalContext}${contextSection}
 
-Scene: "Scientists discovered a new species in the Amazon rainforest"
-✅ Query: "Amazon rainforest discovery" or "rainforest new species"
-
-SCENE TEXT:
-"${sceneText}"${contextSection}
-
-Remember: Focus on WHAT HAPPENED, not just WHERE or WHEN. What would the image show?
+Remember: Use temporal context to understand the topic, but the query must be PRECISE to what's happening in the CURRENT scene.
 
 SEARCH QUERY:`;
+  }
 
   const response = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
