@@ -85,36 +85,36 @@ serve(async (req) => {
     const BRAVE_API_KEY = braveKeyData;
     console.log(`[search-images-brave] Brave API key retrieved (length: ${BRAVE_API_KEY.length})`);
 
-    // Get user's Replicate API key from Vault for DeepSeek R1
-    console.log(`[search-images-brave] Fetching Replicate API key for user: ${user.id}`);
-    const { data: replicateKeyData, error: replicateKeyError } = await supabaseService
+    // Get user's Anthropic API key from Vault for Claude Haiku 4.5
+    console.log(`[search-images-brave] Fetching Anthropic API key for user: ${user.id}`);
+    const { data: anthropicKeyData, error: anthropicKeyError } = await supabaseService
       .rpc('get_user_api_key_for_service', {
         target_user_id: user.id,
-        key_name: 'replicate'
+        key_name: 'anthropic'
       });
 
-    if (replicateKeyError || !replicateKeyData || replicateKeyData.trim() === '') {
-      console.error("Error getting Replicate API key:", replicateKeyError);
+    if (anthropicKeyError || !anthropicKeyData || anthropicKeyData.trim() === '') {
+      console.error("Error getting Anthropic API key:", anthropicKeyError);
       return new Response(
-        JSON.stringify({ error: "Clé API Replicate non configurée. Ajoutez-la dans votre profil." }),
+        JSON.stringify({ error: "Clé API Anthropic non configurée. Ajoutez-la dans votre profil." }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    const REPLICATE_API_KEY = replicateKeyData;
-    console.log(`[search-images-brave] Replicate API key retrieved (length: ${REPLICATE_API_KEY.length})`);
+    const ANTHROPIC_API_KEY = anthropicKeyData;
+    console.log(`[search-images-brave] Anthropic API key retrieved (length: ${ANTHROPIC_API_KEY.length})`);
 
-    // Step 1: Use manual query if provided, otherwise generate with DeepSeek R1
+    // Step 1: Use manual query if provided, otherwise generate with Claude Haiku 4.5
     let searchQuery: string;
     if (manualQuery && manualQuery.trim()) {
       // User provided a manual query, use it directly
       searchQuery = manualQuery.trim();
       console.log(`[search-images-brave] Scene ${sceneIndex}: Using manual query: "${searchQuery}"`);
     } else {
-      // Generate query with DeepSeek R1 via Replicate
-      console.log(`[search-images-brave] Scene ${sceneIndex}: Generating search query with DeepSeek R1 for text: "${sceneText.substring(0, 100)}..."`);
+      // Generate query with Claude Haiku 4.5 via Anthropic API
+      console.log(`[search-images-brave] Scene ${sceneIndex}: Generating search query with Claude Haiku 4.5 for text: "${sceneText.substring(0, 100)}..."`);
       try {
-        searchQuery = await generateSearchQueryWithDeepSeek(sceneText, previousScenes, nextScenes, summary, projectName, customSearchPrompt, REPLICATE_API_KEY);
+        searchQuery = await generateSearchQueryWithClaude(sceneText, previousScenes, nextScenes, summary, projectName, customSearchPrompt, ANTHROPIC_API_KEY);
         console.log(`[search-images-brave] Scene ${sceneIndex}: Generated search query: "${searchQuery}"`);
       } catch (error: any) {
         console.error(`[search-images-brave] Error generating search query:`, error);
@@ -132,19 +132,19 @@ serve(async (req) => {
       throw new Error(`Erreur lors de la recherche d'images: ${error.message || 'Erreur inconnue'}`);
     }
 
-    // Step 3: If no images found, generate alternative queries with DeepSeek R1
+    // Step 3: If no images found, generate alternative queries with Claude Haiku 4.5
     let alternativeQueries: string[] = [];
     if (images.length === 0) {
-      console.log(`[search-images-brave] No images found, generating alternative queries with DeepSeek R1...`);
+      console.log(`[search-images-brave] No images found, generating alternative queries with Claude Haiku 4.5...`);
       try {
-        alternativeQueries = await generateAlternativeQueriesWithDeepSeek(
+        alternativeQueries = await generateAlternativeQueriesWithClaude(
           sceneText, 
           searchQuery, 
           previousScenes, 
           nextScenes, 
           summary, 
           projectName, 
-          REPLICATE_API_KEY
+          ANTHROPIC_API_KEY
         );
         console.log(`[search-images-brave] Generated ${alternativeQueries.length} alternative queries`);
       } catch (error: any) {
@@ -177,15 +177,15 @@ serve(async (req) => {
   }
 });
 
-// Generate an optimized search query using DeepSeek R1 via Replicate
-async function generateSearchQueryWithDeepSeek(
+// Generate an optimized search query using Claude Haiku 4.5 via Anthropic API
+async function generateSearchQueryWithClaude(
   sceneText: string, 
   previousScenes: string[], 
   nextScenes: string[], 
   summary: string | null, 
   projectName: string | null,
   customSearchPrompt: string | null | undefined,
-  replicateApiKey: string
+  anthropicApiKey: string
 ): Promise<string> {
   let contextSection = '';
   if (summary) {
@@ -248,87 +248,57 @@ Remember: Use temporal context to understand the topic, but the query must be PR
 SEARCH QUERY:`;
   }
 
-  console.log(`[DeepSeek R1] Starting prediction...`);
+  console.log(`[Claude Haiku 4.5] Starting API call...`);
   
-  // Start prediction with DeepSeek R1 via Replicate using the model endpoint
-  const createResponse = await fetch('https://api.replicate.com/v1/models/deepseek-ai/deepseek-r1/predictions', {
+  // Call Claude Haiku 4.5 via Anthropic API
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${replicateApiKey}`,
+      'x-api-key': anthropicApiKey,
+      'anthropic-version': '2023-06-01',
       'Content-Type': 'application/json',
-      'Prefer': 'wait', // Wait for result instead of polling
     },
     body: JSON.stringify({
-      input: {
-        prompt: prompt,
-        max_new_tokens: 100,
-        temperature: 0.5,
-        top_p: 0.9,
-      },
+      model: 'claude-3-5-haiku-20241022',
+      max_tokens: 50,
+      messages: [
+        {
+          role: 'user',
+          content: prompt
+        }
+      ]
     }),
   });
 
-  if (!createResponse.ok) {
-    const errorText = await createResponse.text();
-    console.error("DeepSeek R1 API error:", createResponse.status, errorText);
-    throw new Error(`Erreur DeepSeek R1: ${createResponse.status}`);
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({ error: { message: 'Unknown error' } }));
+    console.error("Claude Haiku 4.5 API error:", errorData);
+    throw new Error(`Erreur Claude Haiku 4.5: ${errorData.error?.message || response.statusText}`);
   }
 
-  const prediction = await createResponse.json();
-  console.log(`[DeepSeek R1] Prediction response:`, JSON.stringify(prediction).substring(0, 500));
+  const data = await response.json();
+  console.log(`[Claude Haiku 4.5] Response received`);
 
-  // With 'Prefer: wait', the response might already have the result
-  let result = prediction;
-  
-  // If not completed, poll for result (max 120 seconds for DeepSeek R1 which can be slow)
-  if (result.status !== 'succeeded' && result.status !== 'failed') {
-    const maxAttempts = 60; // 60 * 2s = 120s max
-    let attempts = 0;
-
-    while (result.status !== 'succeeded' && result.status !== 'failed' && attempts < maxAttempts) {
-      await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
-      
-      const pollResponse = await fetch(`https://api.replicate.com/v1/predictions/${prediction.id}`, {
-        headers: {
-          'Authorization': `Bearer ${replicateApiKey}`,
-        },
-      });
-      
-      if (!pollResponse.ok) {
-        const pollError = await pollResponse.text();
-        console.error(`[DeepSeek R1] Poll error:`, pollError);
-        throw new Error("Erreur lors de la vérification de la prédiction");
-      }
-      
-      result = await pollResponse.json();
-      attempts++;
-      console.log(`[DeepSeek R1] Status: ${result.status} (attempt ${attempts})`);
-    }
-  }
-
-  if (result.status === 'failed') {
-    console.error("DeepSeek R1 prediction failed:", result.error);
-    throw new Error(`DeepSeek R1 a échoué: ${result.error || 'Erreur inconnue'}`);
-  }
-
-  if (result.status !== 'succeeded') {
-    throw new Error("Timeout: la prédiction DeepSeek R1 a pris trop de temps");
-  }
-
-  // Extract the query from the output
+  // Extract the query from the response
   let output = '';
-  if (Array.isArray(result.output)) {
-    output = result.output.join('');
-  } else if (typeof result.output === 'string') {
-    output = result.output;
+  if (data.content && Array.isArray(data.content)) {
+    output = data.content
+      .filter((part: any) => part.type === 'text')
+      .map((part: any) => part.text)
+      .join('');
+  } else if (data.content && typeof data.content === 'string') {
+    output = data.content;
   }
 
-  console.log(`[DeepSeek R1] Raw output: "${output}"`);
+  if (!output || output.trim().length === 0) {
+    console.error("Claude Haiku 4.5 returned empty output:", JSON.stringify(data));
+    throw new Error("La génération de la requête de recherche a échoué");
+  }
+
+  console.log(`[Claude Haiku 4.5] Raw output: "${output}"`);
 
   // Clean up: extract just the search query
-  // DeepSeek R1 might include thinking tags like <think>...</think>
   let cleanedOutput = output
-    .replace(/<think>[\s\S]*?<\/think>/g, '') // Remove thinking tags
     .replace(/\n+/g, ' ')
     .trim();
 
@@ -351,19 +321,19 @@ SEARCH QUERY:`;
     throw new Error("La requête de recherche générée est vide");
   }
 
-  console.log(`[DeepSeek R1] Final query: "${cleanedOutput}"`);
+  console.log(`[Claude Haiku 4.5] Final query: "${cleanedOutput}"`);
   return cleanedOutput;
 }
 
-// Generate alternative search queries when no images are found using DeepSeek R1
-async function generateAlternativeQueriesWithDeepSeek(
+// Generate alternative search queries when no images are found using Claude Haiku 4.5
+async function generateAlternativeQueriesWithClaude(
   sceneText: string,
   originalQuery: string,
   previousScenes: string[],
   nextScenes: string[],
   summary: string | null,
   projectName: string | null,
-  replicateApiKey: string
+  anthropicApiKey: string
 ): Promise<string[]> {
   let contextSection = '';
   if (summary) {
@@ -392,66 +362,52 @@ Generate 3 different queries that might find better results:
 
 Output ONLY the 3 queries, one per line, 2-6 words each, English only:`;
 
-  console.log(`[DeepSeek R1] Generating alternative queries...`);
+  console.log(`[Claude Haiku 4.5] Generating alternative queries...`);
   
-  const createResponse = await fetch('https://api.replicate.com/v1/models/deepseek-ai/deepseek-r1/predictions', {
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${replicateApiKey}`,
+      'x-api-key': anthropicApiKey,
+      'anthropic-version': '2023-06-01',
       'Content-Type': 'application/json',
-      'Prefer': 'wait',
     },
     body: JSON.stringify({
-      input: {
-        prompt: prompt,
-        max_new_tokens: 150,
-        temperature: 0.7,
-        top_p: 0.9,
-      },
+      model: 'claude-3-5-haiku-20241022',
+      max_tokens: 150,
+      messages: [
+        {
+          role: 'user',
+          content: prompt
+        }
+      ]
     }),
   });
 
-  if (!createResponse.ok) {
-    const errorText = await createResponse.text();
-    console.error("DeepSeek R1 API error for alternatives:", createResponse.status, errorText);
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    console.error("Claude Haiku 4.5 API error for alternatives:", response.status, errorData);
     return [];
   }
 
-  const prediction = await createResponse.json();
+  const data = await response.json();
   
-  // Poll for result if not already completed
-  let result = prediction;
-  if (result.status !== 'succeeded' && result.status !== 'failed') {
-    const maxAttempts = 60;
-    let attempts = 0;
-
-    while (result.status !== 'succeeded' && result.status !== 'failed' && attempts < maxAttempts) {
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      const pollResponse = await fetch(`https://api.replicate.com/v1/predictions/${prediction.id}`, {
-        headers: { 'Authorization': `Bearer ${replicateApiKey}` },
-      });
-      
-      if (!pollResponse.ok) return [];
-      
-      result = await pollResponse.json();
-      attempts++;
-    }
-  }
-
-  if (result.status !== 'succeeded') {
-    return [];
-  }
-
+  // Extract output
   let output = '';
-  if (Array.isArray(result.output)) {
-    output = result.output.join('');
-  } else if (typeof result.output === 'string') {
-    output = result.output;
+  if (data.content && Array.isArray(data.content)) {
+    output = data.content
+      .filter((part: any) => part.type === 'text')
+      .map((part: any) => part.text)
+      .join('');
+  } else if (data.content && typeof data.content === 'string') {
+    output = data.content;
+  }
+
+  if (!output) {
+    return [];
   }
 
   // Clean up and extract queries
-  output = output.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+  output = output.trim();
   
   const lines = output.split('\n').filter(line => line.trim());
   const queries: string[] = [];
@@ -463,7 +419,7 @@ Output ONLY the 3 queries, one per line, 2-6 words each, English only:`;
     }
   }
 
-  console.log(`[DeepSeek R1] Alternative queries: ${JSON.stringify(queries)}`);
+  console.log(`[Claude Haiku 4.5] Alternative queries: ${JSON.stringify(queries)}`);
   return queries.slice(0, 3);
 }
 
