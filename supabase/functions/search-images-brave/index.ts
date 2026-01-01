@@ -47,7 +47,7 @@ serve(async (req) => {
       });
     }
 
-    const { sceneText, sceneIndex, previousScenes = [], nextScenes = [], summary, projectName, customSearchPrompt } = await req.json();
+    const { sceneText, sceneIndex, previousScenes = [], nextScenes = [], summary, projectName, customSearchPrompt, manualQuery } = await req.json();
 
     if (!sceneText) {
       return new Response(
@@ -84,26 +84,42 @@ serve(async (req) => {
 
     const BRAVE_API_KEY = braveKeyData;
     console.log(`[search-images-brave] Brave API key retrieved (length: ${BRAVE_API_KEY.length})`);
-    const GOOGLE_AI_API_KEY = Deno.env.get("GOOGLE_AI_API_KEY");
 
-    if (!GOOGLE_AI_API_KEY) {
-      console.error("GOOGLE_AI_API_KEY is not configured");
+    // Get user's Replicate API key from Vault for DeepSeek R1
+    console.log(`[search-images-brave] Fetching Replicate API key for user: ${user.id}`);
+    const { data: replicateKeyData, error: replicateKeyError } = await supabaseService
+      .rpc('get_user_api_key_for_service', {
+        target_user_id: user.id,
+        key_name: 'replicate'
+      });
+
+    if (replicateKeyError || !replicateKeyData || replicateKeyData.trim() === '') {
+      console.error("Error getting Replicate API key:", replicateKeyError);
       return new Response(
-        JSON.stringify({ error: "Configuration serveur manquante" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        JSON.stringify({ error: "Clé API Replicate non configurée. Ajoutez-la dans votre profil." }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    console.log(`[search-images-brave] Scene ${sceneIndex}: Generating search query for text: "${sceneText.substring(0, 100)}..."`);
+    const REPLICATE_API_KEY = replicateKeyData;
+    console.log(`[search-images-brave] Replicate API key retrieved (length: ${REPLICATE_API_KEY.length})`);
 
-    // Step 1: Use Gemini to generate an optimized search query
+    // Step 1: Use manual query if provided, otherwise generate with DeepSeek R1
     let searchQuery: string;
-    try {
-      searchQuery = await generateSearchQuery(sceneText, previousScenes, nextScenes, summary, projectName, customSearchPrompt, GOOGLE_AI_API_KEY);
-      console.log(`[search-images-brave] Scene ${sceneIndex}: Generated search query: "${searchQuery}"`);
-    } catch (error: any) {
-      console.error(`[search-images-brave] Error generating search query:`, error);
-      throw new Error(`Erreur lors de la génération de la requête: ${error.message || 'Erreur inconnue'}`);
+    if (manualQuery && manualQuery.trim()) {
+      // User provided a manual query, use it directly
+      searchQuery = manualQuery.trim();
+      console.log(`[search-images-brave] Scene ${sceneIndex}: Using manual query: "${searchQuery}"`);
+    } else {
+      // Generate query with DeepSeek R1 via Replicate
+      console.log(`[search-images-brave] Scene ${sceneIndex}: Generating search query with DeepSeek R1 for text: "${sceneText.substring(0, 100)}..."`);
+      try {
+        searchQuery = await generateSearchQueryWithDeepSeek(sceneText, previousScenes, nextScenes, summary, projectName, customSearchPrompt, REPLICATE_API_KEY);
+        console.log(`[search-images-brave] Scene ${sceneIndex}: Generated search query: "${searchQuery}"`);
+      } catch (error: any) {
+        console.error(`[search-images-brave] Error generating search query:`, error);
+        throw new Error(`Erreur lors de la génération de la requête: ${error.message || 'Erreur inconnue'}`);
+      }
     }
 
     // Step 2: Search images using Brave Search API
@@ -116,11 +132,33 @@ serve(async (req) => {
       throw new Error(`Erreur lors de la recherche d'images: ${error.message || 'Erreur inconnue'}`);
     }
 
+    // Step 3: If no images found, generate alternative queries with DeepSeek R1
+    let alternativeQueries: string[] = [];
+    if (images.length === 0) {
+      console.log(`[search-images-brave] No images found, generating alternative queries with DeepSeek R1...`);
+      try {
+        alternativeQueries = await generateAlternativeQueriesWithDeepSeek(
+          sceneText, 
+          searchQuery, 
+          previousScenes, 
+          nextScenes, 
+          summary, 
+          projectName, 
+          REPLICATE_API_KEY
+        );
+        console.log(`[search-images-brave] Generated ${alternativeQueries.length} alternative queries`);
+      } catch (error: any) {
+        console.error(`[search-images-brave] Error generating alternatives:`, error);
+        // Don't fail, just continue without alternatives
+      }
+    }
+
     return new Response(
       JSON.stringify({ 
         success: true,
         query: searchQuery,
-        images 
+        images,
+        alternativeQueries: alternativeQueries.length > 0 ? alternativeQueries : undefined
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
@@ -139,15 +177,15 @@ serve(async (req) => {
   }
 });
 
-// Generate an optimized search query using Gemini
-async function generateSearchQuery(
+// Generate an optimized search query using DeepSeek R1 via Replicate
+async function generateSearchQueryWithDeepSeek(
   sceneText: string, 
   previousScenes: string[], 
   nextScenes: string[], 
   summary: string | null, 
   projectName: string | null,
   customSearchPrompt: string | null | undefined,
-  apiKey: string
+  replicateApiKey: string
 ): Promise<string> {
   let contextSection = '';
   if (summary) {
@@ -168,89 +206,233 @@ async function generateSearchQuery(
   // Use custom prompt if provided, otherwise use default
   let prompt: string;
   if (customSearchPrompt && customSearchPrompt.trim()) {
-    // Custom prompt - user can define their own system
     prompt = `${customSearchPrompt}
 
 CURRENT SCENE TEXT:
 "${sceneText}"${temporalContext}${contextSection}
 
-SEARCH QUERY:`;
+Think carefully about the best way to illustrate this scene, then output ONLY the search query (2-6 words, English).`;
   } else {
-    // Default prompt
-    prompt = `You are an expert at generating image search queries for video production. Your role is to analyze the COMPLETE scene text and decide how to best illustrate it visually, considering the global context.
+    prompt = `You are an expert at generating image search queries for video production. Analyze this scene and decide the BEST way to illustrate it visually.
 
-YOUR TASK:
-Read the ENTIRE scene text below. Understand what is happening, the mood, the key events, and the visual elements. Then decide what type of image would BEST illustrate this scene, considering:
-- The global context (video topic/theme)
-- The temporal context (what happened before and after)
-- The emotional tone and atmosphere
-- The most visually impactful way to represent this moment
-
-YOU HAVE FULL CREATIVITY:
-- You decide what visual approach works best (literal representation, symbolic, atmospheric, etc.)
-- You choose which elements to emphasize (the main event, the setting, the mood, etc.)
-- You consider the overall narrative flow and how this image fits into the video
-
-ANALYSIS PROCESS:
-1. Read the COMPLETE CURRENT SCENE TEXT - understand everything that's happening
-2. Consider the GLOBAL CONTEXT - what is this video about overall?
-3. Consider the TEMPORAL CONTEXT - what happened before? What comes after?
-4. Decide: What image would BEST illustrate this scene? What visual approach is most effective?
-5. Generate a search query that will find images matching your chosen visual approach
-
-CRITICAL RULES:
-- Output ONLY the search query, nothing else
-- Use English keywords only
-- 2-6 words maximum
-- Be creative and choose the best visual representation, not necessarily the most literal
-- Consider the emotional impact and narrative flow
-- Think: "What image would best serve this scene in the context of the whole video?"
-
-CURRENT SCENE TEXT (COMPLETE):
+CURRENT SCENE TEXT:
 "${sceneText}"${temporalContext}${contextSection}
 
-Remember: You have the full scene text. Analyze it completely and decide the BEST way to illustrate it visually. Be creative and consider the global context.
+YOUR TASK:
+1. Understand what is happening in this scene (the event, mood, visual elements)
+2. Consider the global context (video topic/theme) and temporal context (what happened before/after)
+3. Decide: What image would BEST illustrate this scene? Think creatively - literal, symbolic, atmospheric?
+4. Generate a search query that will find the perfect image
 
-SEARCH QUERY:`;
+CRITICAL: Output ONLY the search query. 2-6 words, English only. No explanation, just the query.`;
   }
 
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          temperature: 0.5, // Slightly higher for better understanding
-          maxOutputTokens: 30, // Still short but enough for analysis
-        },
-      }),
+  console.log(`[DeepSeek R1] Starting prediction...`);
+  
+  // Start prediction with DeepSeek R1 via Replicate
+  const createResponse = await fetch('https://api.replicate.com/v1/predictions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${replicateApiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'deepseek-ai/deepseek-r1',
+      input: {
+        prompt: prompt,
+        max_tokens: 50,
+        temperature: 0.5,
+      },
+    }),
+  });
+
+  if (!createResponse.ok) {
+    const errorData = await createResponse.json();
+    console.error("DeepSeek R1 API error:", errorData);
+    throw new Error("Erreur lors de la création de la prédiction DeepSeek R1");
+  }
+
+  const prediction = await createResponse.json();
+  console.log(`[DeepSeek R1] Prediction created: ${prediction.id}`);
+
+  // Poll for result (max 60 seconds)
+  let result = prediction;
+  const maxAttempts = 30;
+  let attempts = 0;
+
+  while (result.status !== 'succeeded' && result.status !== 'failed' && attempts < maxAttempts) {
+    await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
+    
+    const pollResponse = await fetch(`https://api.replicate.com/v1/predictions/${prediction.id}`, {
+      headers: {
+        'Authorization': `Bearer ${replicateApiKey}`,
+      },
+    });
+    
+    if (!pollResponse.ok) {
+      throw new Error("Erreur lors de la vérification de la prédiction");
     }
-  );
-
-  if (!response.ok) {
-    const errorData = await response.json();
-    console.error("Gemini API error:", errorData);
-    throw new Error("Erreur lors de la génération de la requête de recherche");
+    
+    result = await pollResponse.json();
+    attempts++;
+    console.log(`[DeepSeek R1] Status: ${result.status} (attempt ${attempts})`);
   }
 
-  const data = await response.json();
-  const query = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
-  
-  if (!query || query.length === 0) {
-    console.error("Gemini returned empty query:", JSON.stringify(data));
-    throw new Error("La génération de la requête de recherche a échoué");
+  if (result.status === 'failed') {
+    console.error("DeepSeek R1 prediction failed:", result.error);
+    throw new Error("La prédiction DeepSeek R1 a échoué");
   }
+
+  if (result.status !== 'succeeded') {
+    throw new Error("Timeout: la prédiction DeepSeek R1 a pris trop de temps");
+  }
+
+  // Extract the query from the output
+  let output = '';
+  if (Array.isArray(result.output)) {
+    output = result.output.join('');
+  } else if (typeof result.output === 'string') {
+    output = result.output;
+  }
+
+  console.log(`[DeepSeek R1] Raw output: "${output}"`);
+
+  // Clean up: extract just the search query
+  // DeepSeek R1 might include thinking tags like <think>...</think>
+  let cleanedOutput = output
+    .replace(/<think>[\s\S]*?<\/think>/g, '') // Remove thinking tags
+    .replace(/\n+/g, ' ')
+    .trim();
+
+  // If the output contains multiple lines, take the last non-empty one (likely the query)
+  const lines = cleanedOutput.split('\n').filter(l => l.trim());
+  if (lines.length > 0) {
+    cleanedOutput = lines[lines.length - 1].trim();
+  }
+
+  // Remove quotes and extra punctuation
+  cleanedOutput = cleanedOutput.replace(/['"]/g, '').trim();
   
-  // Clean up the query (remove quotes, extra punctuation)
-  const cleanedQuery = query.replace(/['"]/g, '').trim();
-  
-  if (!cleanedQuery || cleanedQuery.length === 0) {
+  // If still too long, take first 6 words
+  const words = cleanedOutput.split(/\s+/);
+  if (words.length > 6) {
+    cleanedOutput = words.slice(0, 6).join(' ');
+  }
+
+  if (!cleanedOutput || cleanedOutput.length === 0) {
     throw new Error("La requête de recherche générée est vide");
   }
+
+  console.log(`[DeepSeek R1] Final query: "${cleanedOutput}"`);
+  return cleanedOutput;
+}
+
+// Generate alternative search queries when no images are found using DeepSeek R1
+async function generateAlternativeQueriesWithDeepSeek(
+  sceneText: string,
+  originalQuery: string,
+  previousScenes: string[],
+  nextScenes: string[],
+  summary: string | null,
+  projectName: string | null,
+  replicateApiKey: string
+): Promise<string[]> {
+  let contextSection = '';
+  if (summary) {
+    contextSection = `\n\nGLOBAL CONTEXT: "${summary}"`;
+  }
+  if (projectName) {
+    contextSection += `\n\nVIDEO TITLE: "${projectName}"`;
+  }
+
+  let temporalContext = '';
+  if (previousScenes.length > 0) {
+    temporalContext = `\n\nPREVIOUS SCENES:\n${previousScenes.map((s, i) => `${i + 1}. "${s}"`).join('\n')}`;
+  }
+  if (nextScenes.length > 0) {
+    temporalContext += `\n\nNEXT SCENES:\n${nextScenes.map((s, i) => `${i + 1}. "${s}"`).join('\n')}`;
+  }
+
+  const prompt = `The search query "${originalQuery}" found NO images. Generate 3 ALTERNATIVE search queries.
+
+SCENE TEXT: "${sceneText}"${temporalContext}${contextSection}
+
+Generate 3 different queries that might find better results:
+1. A more general/broader query
+2. A query with different keywords/synonyms  
+3. A query focusing on different visual aspects
+
+Output ONLY the 3 queries, one per line, 2-6 words each, English only:`;
+
+  console.log(`[DeepSeek R1] Generating alternative queries...`);
   
-  return cleanedQuery;
+  const createResponse = await fetch('https://api.replicate.com/v1/predictions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${replicateApiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'deepseek-ai/deepseek-r1',
+      input: {
+        prompt: prompt,
+        max_tokens: 100,
+        temperature: 0.7,
+      },
+    }),
+  });
+
+  if (!createResponse.ok) {
+    console.error("DeepSeek R1 API error for alternatives:", await createResponse.json());
+    return [];
+  }
+
+  const prediction = await createResponse.json();
+  
+  // Poll for result
+  let result = prediction;
+  const maxAttempts = 30;
+  let attempts = 0;
+
+  while (result.status !== 'succeeded' && result.status !== 'failed' && attempts < maxAttempts) {
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    const pollResponse = await fetch(`https://api.replicate.com/v1/predictions/${prediction.id}`, {
+      headers: { 'Authorization': `Bearer ${replicateApiKey}` },
+    });
+    
+    if (!pollResponse.ok) return [];
+    
+    result = await pollResponse.json();
+    attempts++;
+  }
+
+  if (result.status !== 'succeeded') {
+    return [];
+  }
+
+  let output = '';
+  if (Array.isArray(result.output)) {
+    output = result.output.join('');
+  } else if (typeof result.output === 'string') {
+    output = result.output;
+  }
+
+  // Clean up and extract queries
+  output = output.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+  
+  const lines = output.split('\n').filter(line => line.trim());
+  const queries: string[] = [];
+  
+  for (const line of lines) {
+    const cleaned = line.replace(/^\d+\.\s*/, '').replace(/['"]/g, '').trim();
+    if (cleaned && cleaned.length > 0 && cleaned.length < 50) {
+      queries.push(cleaned);
+    }
+  }
+
+  console.log(`[DeepSeek R1] Alternative queries: ${JSON.stringify(queries)}`);
+  return queries.slice(0, 3);
 }
 
 // Search images using Brave Search API

@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Loader2, Search, ExternalLink, Check } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Loader2, Search, ExternalLink, Check, Edit2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
@@ -47,6 +48,9 @@ export default function ImageSearchModal({
   const [images, setImages] = useState<SearchImage[]>([]);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
+  const [alternativeQueries, setAlternativeQueries] = useState<string[]>([]);
+  const [isEditingQuery, setIsEditingQuery] = useState(false);
+  const [manualQuery, setManualQuery] = useState("");
 
   // Load previous search results when modal opens
   useEffect(() => {
@@ -60,7 +64,15 @@ export default function ImageSearchModal({
             setImages(savedData.images);
             setSearchQuery(savedData.query || "");
             setHasSearched(true);
+            if (savedData.alternativeQueries) {
+              setAlternativeQueries(savedData.alternativeQueries);
+            }
             console.log(`[ImageSearchModal] Loaded ${savedData.images.length} previous results for scene ${sceneIndex}`);
+          } else if (savedData.query && savedData.alternativeQueries) {
+            // Even if no images, load the query and alternatives
+            setSearchQuery(savedData.query);
+            setAlternativeQueries(savedData.alternativeQueries);
+            setHasSearched(true);
           }
         } catch (e) {
           console.error("Error loading saved search results:", e);
@@ -69,7 +81,7 @@ export default function ImageSearchModal({
     }
   }, [open, sceneIndex]);
 
-  const handleSearch = async () => {
+  const handleSearch = async (customQuery?: string) => {
     if (!sceneText.trim()) {
       toast.error("Le texte de la scène est vide");
       return;
@@ -79,6 +91,8 @@ export default function ImageSearchModal({
     setImages([]);
     setSelectedImage(null);
     setHasSearched(false);
+    setAlternativeQueries([]);
+    setIsEditingQuery(false);
 
     try {
       const { data, error } = await supabase.functions.invoke('search-images-brave', {
@@ -89,7 +103,8 @@ export default function ImageSearchModal({
           nextScenes: nextScenes.slice(0, 3), // First 3 next scenes
           summary, 
           projectName,
-          customSearchPrompt // Custom prompt system if provided
+          customSearchPrompt, // Custom prompt system if provided
+          manualQuery: customQuery // If user provided a manual query
         }
       });
 
@@ -101,20 +116,26 @@ export default function ImageSearchModal({
         throw new Error(data.error);
       }
 
-      setSearchQuery(data.query || "");
+      setSearchQuery(data.query || customQuery || "");
       setImages(data.images || []);
       setHasSearched(true);
+      
+      // Store alternative queries if provided
+      if (data.alternativeQueries && data.alternativeQueries.length > 0) {
+        setAlternativeQueries(data.alternativeQueries);
+      }
 
       // Save results to localStorage for this scene
       const storageKey = `${STORAGE_KEY_PREFIX}${sceneIndex}`;
       localStorage.setItem(storageKey, JSON.stringify({
-        query: data.query || "",
+        query: data.query || customQuery || "",
         images: data.images || [],
+        alternativeQueries: data.alternativeQueries || [],
         timestamp: Date.now()
       }));
 
       if (data.images?.length === 0) {
-        toast.info("Aucune image trouvée pour cette scène");
+        toast.info("Aucune image trouvée. Des alternatives sont proposées ci-dessous.");
       }
     } catch (error: any) {
       console.error("Search error:", error);
@@ -122,6 +143,11 @@ export default function ImageSearchModal({
     } finally {
       setIsSearching(false);
     }
+  };
+
+  const handleSearchWithQuery = async (query: string) => {
+    setManualQuery(query);
+    await handleSearch(query);
   };
 
   const handleConfirm = () => {
@@ -183,10 +209,62 @@ export default function ImageSearchModal({
             </Button>
           )}
 
-          {/* Search query display */}
+          {/* Search query display with edit option */}
           {searchQuery && (
-            <div className="text-sm text-muted-foreground">
-              Recherche : <span className="font-medium text-foreground">"{searchQuery}"</span>
+            <div className="flex items-center gap-2">
+              <div className="text-sm text-muted-foreground flex-1">
+                Recherche : <span className="font-medium text-foreground">"{searchQuery}"</span>
+              </div>
+              {hasSearched && images.length === 0 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setIsEditingQuery(true);
+                    setManualQuery(searchQuery);
+                  }}
+                  className="h-7"
+                >
+                  <Edit2 className="h-3 w-3" />
+                </Button>
+              )}
+            </div>
+          )}
+
+          {/* Manual query input */}
+          {isEditingQuery && (
+            <div className="flex gap-2">
+              <Input
+                value={manualQuery}
+                onChange={(e) => setManualQuery(e.target.value)}
+                placeholder="Entrez votre requête de recherche..."
+                className="flex-1"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    handleSearchWithQuery(manualQuery);
+                  } else if (e.key === 'Escape') {
+                    setIsEditingQuery(false);
+                    setManualQuery("");
+                  }
+                }}
+              />
+              <Button
+                onClick={() => handleSearchWithQuery(manualQuery)}
+                disabled={!manualQuery.trim() || isSearching}
+                size="sm"
+              >
+                Rechercher
+              </Button>
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setIsEditingQuery(false);
+                  setManualQuery("");
+                }}
+                size="sm"
+              >
+                Annuler
+              </Button>
             </div>
           )}
 
@@ -264,18 +342,47 @@ export default function ImageSearchModal({
 
           {/* No results */}
           {!isSearching && hasSearched && images.length === 0 && (
-            <div className="flex-1 flex items-center justify-center py-12">
+            <div className="flex-1 flex flex-col items-center justify-center py-12 space-y-6">
               <div className="text-center">
                 <Search className="h-12 w-12 text-muted-foreground/50 mx-auto mb-4" />
-                <p className="text-muted-foreground">Aucune image trouvée</p>
+                <p className="text-muted-foreground mb-2">Aucune image trouvée</p>
+                <p className="text-xs text-muted-foreground">Essayez une des alternatives ci-dessous ou modifiez la requête</p>
+              </div>
+
+              {/* Alternative queries */}
+              {alternativeQueries.length > 0 && (
+                <div className="w-full max-w-md space-y-2">
+                  <p className="text-sm font-medium text-center">Suggestions alternatives :</p>
+                  <div className="space-y-2">
+                    {alternativeQueries.map((altQuery, idx) => (
+                      <Button
+                        key={idx}
+                        variant="outline"
+                        onClick={() => handleSearchWithQuery(altQuery)}
+                        disabled={isSearching}
+                        className="w-full justify-start text-left"
+                      >
+                        <Search className="mr-2 h-4 w-4" />
+                        "{altQuery}"
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Manual edit button if no alternatives */}
+              {alternativeQueries.length === 0 && !isEditingQuery && (
                 <Button
                   variant="outline"
-                  onClick={handleSearch}
-                  className="mt-4"
+                  onClick={() => {
+                    setIsEditingQuery(true);
+                    setManualQuery(searchQuery);
+                  }}
                 >
-                  Réessayer
+                  <Edit2 className="mr-2 h-4 w-4" />
+                  Modifier la requête
                 </Button>
-              </div>
+              )}
             </div>
           )}
         </div>
