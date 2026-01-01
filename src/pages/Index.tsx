@@ -637,6 +637,7 @@ const Index = () => {
       }
 
       setProjectName(data.name || "");
+      setProjectSummary(data.summary || null);
       
       // Load transcript data
       if (data.transcript_json) {
@@ -1357,29 +1358,24 @@ const Index = () => {
     try {
       setGeneratingImageIndex(sceneIndex);
       
-      // Download the image from the web URL
-      const response = await fetch(imageUrl);
-      if (!response.ok) throw new Error("Impossible de télécharger l'image");
-      
-      const blob = await response.blob();
-      const fileExt = imageUrl.split('.').pop()?.split('?')[0] || 'jpg';
-      const filename = `${currentProjectId || 'temp'}/scene_${sceneIndex + 1}_web_${Date.now()}.${fileExt}`;
+      // Use Edge Function to download image server-side (avoids CORS issues)
+      const { data, error } = await supabase.functions.invoke('download-web-image', {
+        body: {
+          imageUrl,
+          projectId: currentProjectId,
+          sceneIndex
+        }
+      });
 
-      // Upload to Supabase Storage
-      const { error: uploadError } = await supabase.storage
-        .from('generated-images')
-        .upload(filename, blob, {
-          cacheControl: '3600',
-          upsert: true,
-          contentType: blob.type || 'image/jpeg'
-        });
+      if (error) {
+        throw new Error(error.message || "Erreur lors du téléchargement");
+      }
 
-      if (uploadError) throw uploadError;
+      if (data?.error) {
+        throw new Error(data.error);
+      }
 
-      // Get public URL
-      const { data: { publicUrl } } = supabase.storage
-        .from('generated-images')
-        .getPublicUrl(filename);
+      const publicUrl = data.imageUrl;
 
       // Update the state
       setGeneratedPrompts(prev => {
