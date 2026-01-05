@@ -197,30 +197,46 @@ OUTPUT REQUIREMENTS:
 Return ONLY the prompt text, no JSON, no title, no explanations, just the optimized prompt in ENGLISH that matches the example format exactly.`;
     }
 
-    // Add continuity mode instructions if continuity detected
+    // CONTINUITY MODE: Add simple format instructions (completely different from normal mode)
     if (hasContinuity && previousPrompt) {
-      const continuityInstructions = `\n\nCONTINUITY MODE - IMAGE MODIFICATION:
+      systemPrompt += `CONTINUITY MODE - IMAGE MODIFICATION:
 You are generating a prompt for image-to-image generation. The image will be created by MODIFYING the previous scene's image.
 
 CRITICAL FORMAT REQUIREMENTS:
 1. Use a SIMPLE, DIRECT format: "Same [elements to keep], but now [what changes]"
-2. DO NOT follow complex formatting from examples - use a straightforward modification instruction
+2. DO NOT follow complex formatting - use a straightforward modification instruction
 3. Start with "Same" or "Keeping" to reference the previous image
 4. Use "but now", "but", or "with" to introduce changes
 5. Keep it concise (1-2 sentences maximum)
 6. Focus on what CHANGES, not the full scene description
 7. DO NOT use complex descriptive language - be direct and simple
+8. Generate prompts in ENGLISH only
+9. NEVER use the word "dead" in the prompt (rephrase with other words instead)
 
-FORMAT EXAMPLES:
+FORMAT EXAMPLES (FOLLOW THIS EXACT SIMPLE FORMAT):
 - "Same dark forest and cabin, but now a character is entering through the door"
 - "Keeping the laboratory setting, but now the scientist is explaining to a group"
 - "Same city street, but now a bus arrives"
 
 The previous prompt was: "${previousPrompt.substring(0, 200)}..."
 
-Your prompt must be a SIMPLE modification instruction, NOT a complex descriptive prompt. Ignore any format examples provided - use only the simple format above.\n\n`;
+Your role is to create ONE simple modification instruction for modifying the previous scene's image.
+
+CRITICAL - CONTENT MUST MATCH THE SCENE:
+1. READ the scene text carefully and identify what CHANGES from the previous scene
+2. The modification must DIRECTLY reflect what is new or different in this specific scene
+3. Keep the same visual elements (location, setting, atmosphere) unless the scene explicitly changes them
+4. Only describe what is NEW or CHANGING
+
+OUTPUT REQUIREMENTS:
+1. Start with "Same" or "Keeping" followed by the main elements to preserve
+2. Use "but now" or "but" to introduce the change
+3. Describe ONLY what changes, not the full scene
+4. Keep it to 1-2 sentences maximum
+5. Use simple, direct language
+
+Return ONLY the simple modification instruction in ENGLISH, following the format: "Same [elements], but now [changes]".`;
       
-      systemPrompt += continuityInstructions;
       console.log(`[generate-prompts] Scene ${sceneIndex}: Continuity mode enabled - using SIMPLE format (ignoring examples)`);
     }
 
