@@ -16,7 +16,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Version identifier - update this when making pan/zoom changes
-const SERVICE_VERSION = 'v2.13-ffmpeg-error-fix';
+const SERVICE_VERSION = 'v2.14-duration-limit-fix';
 
 // Path to FFmpeg fork with subpixel zoom support
 // Install with: ./install-ffmpeg-subpixel.sh
@@ -843,16 +843,59 @@ async function processRenderJob(jobId, renderData) {
     console.log(`[${jobId}] Concat file (first 500 chars): ${concatFileContent.substring(0, 500)}`);
     console.log(`[${jobId}] Concat file has ${concatFileContent.split('\n').filter(l => l.startsWith('file')).length} files`);
     
+    // Check available disk space before concatenation
+    try {
+      const { execSync } = require('child_process');
+      const dfOutput = execSync(`df -BM ${TEMP_DIR} | tail -1 | awk '{print $4}'`).toString().trim();
+      const availableMB = parseInt(dfOutput.replace('M', ''));
+      console.log(`[${jobId}] Available disk space: ${availableMB} MB`);
+      
+      // Estimate required space (segments size * 1.5 for safety)
+      let totalSegmentSize = 0;
+      for (let i = 0; i < scenes.length; i++) {
+        const segmentPath = path.join(segmentsDir, `segment_${i}.mp4`);
+        if (fs.existsSync(segmentPath)) {
+          totalSegmentSize += fs.statSync(segmentPath).size;
+        }
+      }
+      const requiredMB = Math.ceil((totalSegmentSize * 1.5) / 1024 / 1024);
+      console.log(`[${jobId}] Estimated space needed: ${requiredMB} MB (segments: ${Math.ceil(totalSegmentSize / 1024 / 1024)} MB)`);
+      
+      if (availableMB < requiredMB + 500) { // Keep 500MB buffer
+        throw new Error(`Insufficient disk space. Available: ${availableMB}MB, Required: ${requiredMB}MB + 500MB buffer`);
+      }
+    } catch (diskErr) {
+      if (diskErr.message.includes('Insufficient disk space')) {
+        throw diskErr;
+      }
+      console.warn(`[${jobId}] Could not check disk space: ${diskErr.message}`);
+    }
+    
+    // Verify all segment files exist and are valid before concatenation
+    console.log(`[${jobId}] Verifying segment files...`);
+    for (let i = 0; i < scenes.length; i++) {
+      const segmentPath = path.join(segmentsDir, `segment_${i}.mp4`);
+      if (!fs.existsSync(segmentPath)) {
+        throw new Error(`Segment file missing: ${segmentPath}`);
+      }
+      const stats = fs.statSync(segmentPath);
+      if (stats.size < 1000) {
+        throw new Error(`Segment file too small (${stats.size} bytes): ${segmentPath}`);
+      }
+      // Log segment sizes for first, last, and every 10th
+      if (i === 0 || i === scenes.length - 1 || i % 10 === 0) {
+        console.log(`[${jobId}] Segment ${i}: ${(stats.size / 1024 / 1024).toFixed(2)} MB`);
+      }
+    }
+    console.log(`[${jobId}] All ${scenes.length} segment files verified`);
+    
     return new Promise((resolve, reject) => {
       console.log(`[${jobId}] Starting final concatenation with ${scenes.length} segments + audio`);
       
-      // Calculate expected output duration (use audio duration as reference, add small buffer)
-      const expectedDuration = audioDuration ? parseFloat(audioDuration) + 0.5 : lastScene.endTime + 0.5;
-      console.log(`[${jobId}] Expected output duration: ${expectedDuration.toFixed(3)}s (audio: ${audioDuration}s, lastScene.endTime: ${lastScene.endTime}s)`);
-      
-      // Determine if we should use -shortest (when video is longer than audio)
-      const useShortestFlag = audioDuration && actualTotalDuration > parseFloat(audioDuration) + 0.5;
-      console.log(`[${jobId}] Using -shortest flag: ${useShortestFlag} (video: ${actualTotalDuration.toFixed(3)}s, audio: ${audioDuration}s)`);
+      // Use audio duration as the definitive output duration
+      const outputDuration = audioDuration ? parseFloat(audioDuration) : lastScene.endTime;
+      console.log(`[${jobId}] Output duration will be limited to: ${outputDuration.toFixed(3)}s (audio duration)`);
+      console.log(`[${jobId}] Video segments total: ${actualTotalDuration.toFixed(3)}s, Audio: ${audioDuration}s`);
       
       let ffmpegCommand = ffmpeg()
         .input(concatPath)
@@ -868,15 +911,15 @@ async function processRenderJob(jobId, renderData) {
         .outputOptions([
           '-map', '0:v',  // Map video from first input (concat)
           '-map', '1:a',  // Map audio from second input (audio file)
+          '-t', outputDuration.toFixed(3),  // IMPORTANT: Limit output to audio duration exactly
           '-preset', 'ultrafast',
           '-crf', '28',
           '-pix_fmt', 'yuv420p',
-          '-movflags', '+faststart',
+          '-movflags', 'faststart',  // Remove + prefix for cleaner syntax
           '-threads', '0',
-          '-vsync', 'cfr',  // Constant frame rate - ensures all frames are written
-          '-max_muxing_queue_size', '4096',  // Increase muxing buffer to prevent queue overflow
-          '-stats_period', '0.5',
-          ...(useShortestFlag ? ['-shortest'] : [])  // Use -shortest when video > audio to avoid encoding past audio end
+          '-vsync', 'cfr',  // Constant frame rate
+          '-max_muxing_queue_size', '9999',  // Large buffer to prevent queue overflow
+          '-stats_period', '0.5'
         ])
         .output(outputPath);
 
