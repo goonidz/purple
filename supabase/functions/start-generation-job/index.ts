@@ -893,6 +893,44 @@ async function processPromptsJob(
       .slice(index + 1, Math.min(scenes.length, index + 6))
       .map((s: any) => s.text);
 
+    // NOUVEAU: Analyser continuité si option activée
+    let hasContinuity = false;
+    let continuityData = null;
+    
+    if (visualContinuityEnabled && index > 0) {
+      const previousScene = newPrompts[index - 1];
+      
+      if (previousScene?.text && previousScene?.prompt) {
+        try {
+          console.log(`[processPromptsJob] Analyzing continuity for scene ${index + 1} before prompt generation...`);
+          const continuityResponse = await fetch(`${supabaseUrl}/functions/v1/analyze-scene-continuity`, {
+            method: 'POST',
+            headers: {
+              'Authorization': authHeader,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              currentSceneText: scene.text,
+              previousSceneText: previousScene.text,
+              previousPrompt: previousScene.prompt
+            }),
+          });
+          
+          if (continuityResponse.ok) {
+            continuityData = await continuityResponse.json();
+            hasContinuity = continuityData.hasContinuity && continuityData.confidence >= 0.7;
+            console.log(`[processPromptsJob] Scene ${index + 1}: Continuity ${hasContinuity ? 'DETECTED' : 'NOT detected'} (confidence: ${continuityData.confidence})`);
+          } else {
+            console.error(`[processPromptsJob] Scene ${index + 1}: Continuity analysis failed: ${continuityResponse.status}`);
+          }
+        } catch (error) {
+          console.error(`[processPromptsJob] Scene ${index + 1}: Error analyzing continuity:`, error);
+        }
+      } else {
+        console.log(`[processPromptsJob] Scene ${index + 1}: No previous scene data available for continuity check`);
+      }
+    }
+
     try {
       const response = await fetch(`${supabaseUrl}/functions/v1/generate-prompts`, {
         method: 'POST',
@@ -911,7 +949,11 @@ async function processPromptsJob(
           customSystemPrompt,
           previousPrompts,
           previousSceneTexts,
-          nextSceneTexts
+          nextSceneTexts,
+          // NOUVEAU: Paramètres de continuité
+          hasContinuity,
+          previousPrompt: hasContinuity ? newPrompts[index - 1]?.prompt : null,
+          continuityElements: hasContinuity ? continuityData : null
         }),
       });
 
@@ -966,25 +1008,34 @@ async function analyzeAllContinuities(
   supabaseUrl: string,
   authHeader: string
 ): Promise<Map<number, { hasContinuity: boolean; modifiedPromptSuffix?: string; confidence?: number }>> {
+  console.log(`[analyzeAllContinuities] Starting analysis for ${prompts.length} scenes`);
   const continuityMap = new Map<number, { hasContinuity: boolean; modifiedPromptSuffix?: string; confidence?: number }>();
   
   // Scene 0 has no previous scene
   continuityMap.set(0, { hasContinuity: false });
+  console.log(`[analyzeAllContinuities] Scene 0: No previous scene (hasContinuity: false)`);
   
   if (prompts.length <= 1) {
+    console.log(`[analyzeAllContinuities] Only 1 scene, no pairs to analyze`);
     return continuityMap;
   }
+  
+  console.log(`[analyzeAllContinuities] Analyzing ${prompts.length - 1} pairs in parallel...`);
   
   // Analyze all pairs in parallel
   const analysisPromises = prompts.slice(1).map(async (prompt, i) => {
     const index = i + 1; // Because we skipped the first one
     const previousScene = prompts[index - 1];
     
+    console.log(`[analyzeAllContinuities] Scene ${index + 1}: Checking continuity with scene ${index}`);
+    
     if (!previousScene?.text || !prompt?.text || !previousScene?.prompt) {
+      console.log(`[analyzeAllContinuities] Scene ${index + 1}: Missing data (prevText: ${!!previousScene?.text}, currText: ${!!prompt?.text}, prevPrompt: ${!!previousScene?.prompt})`);
       return { index, hasContinuity: false };
     }
     
     try {
+      console.log(`[analyzeAllContinuities] Scene ${index + 1}: Calling analyze-scene-continuity API...`);
       const response = await fetch(`${supabaseUrl}/functions/v1/analyze-scene-continuity`, {
         method: 'POST',
         headers: {
@@ -1000,18 +1051,21 @@ async function analyzeAllContinuities(
       
       if (response.ok) {
         const data = await response.json();
+        const hasContinuity = data.hasContinuity && data.confidence >= 0.7;
+        console.log(`[analyzeAllContinuities] Scene ${index + 1}: hasContinuity=${hasContinuity}, confidence=${data.confidence}, reason="${data.reasoning?.substring(0, 50)}..."`);
         return {
           index,
-          hasContinuity: data.hasContinuity && data.confidence >= 0.7,
+          hasContinuity,
           modifiedPromptSuffix: data.modifiedPromptSuffix,
           confidence: data.confidence
         };
       } else {
-        console.error(`[analyzeAllContinuities] Failed for scene ${index}: ${response.status}`);
+        const errorText = await response.text();
+        console.error(`[analyzeAllContinuities] Scene ${index + 1}: API failed with status ${response.status}: ${errorText.substring(0, 100)}`);
         return { index, hasContinuity: false };
       }
     } catch (error) {
-      console.error(`[analyzeAllContinuities] Error for scene ${index}:`, error);
+      console.error(`[analyzeAllContinuities] Scene ${index + 1}: Exception:`, error);
       return { index, hasContinuity: false };
     }
   });
@@ -1025,7 +1079,15 @@ async function analyzeAllContinuities(
     });
   });
   
-  console.log(`[analyzeAllContinuities] Analyzed ${results.length} pairs, ${results.filter(r => r.hasContinuity).length} with continuity`);
+  const continuityCount = results.filter(r => r.hasContinuity).length;
+  console.log(`[analyzeAllContinuities] ✅ Analysis complete: ${results.length} pairs analyzed, ${continuityCount} with continuity (${Math.round(continuityCount / results.length * 100)}%)`);
+  
+  // Log detailed results
+  results.forEach(r => {
+    if (r.hasContinuity) {
+      console.log(`[analyzeAllContinuities]   → Scene ${r.index + 1}: CONTINUITY (confidence: ${r.confidence})`);
+    }
+  });
   
   return continuityMap;
 }
@@ -1037,6 +1099,7 @@ function buildContinuityGroups(
   promptsToProcess: Array<{prompt: any, index: number}>,
   continuityMap: Map<number, { hasContinuity: boolean }>
 ): Array<Array<{prompt: any, index: number}>> {
+  console.log(`[buildContinuityGroups] Building groups from ${promptsToProcess.length} scenes to process`);
   const groups: Array<Array<{prompt: any, index: number}>> = [];
   let currentGroup: Array<{prompt: any, index: number}> = [];
   
@@ -1046,20 +1109,26 @@ function buildContinuityGroups(
     
     if (hasContinuityWithPrevious && currentGroup.length > 0) {
       // Continue in current group
+      console.log(`[buildContinuityGroups] Scene ${item.index + 1}: Adding to current group (continuity with scene ${item.index})`);
       currentGroup.push(item);
     } else {
       // Start new group
       if (currentGroup.length > 0) {
+        console.log(`[buildContinuityGroups] Closing group with ${currentGroup.length} scenes: [${currentGroup.map(i => i.index + 1).join(', ')}]`);
         groups.push(currentGroup);
       }
+      console.log(`[buildContinuityGroups] Starting new group with scene ${item.index + 1} (no continuity with previous)`);
       currentGroup = [item];
     }
   }
   
   // Add last group
   if (currentGroup.length > 0) {
+    console.log(`[buildContinuityGroups] Closing final group with ${currentGroup.length} scenes: [${currentGroup.map(i => i.index + 1).join(', ')}]`);
     groups.push(currentGroup);
   }
+  
+  console.log(`[buildContinuityGroups] ✅ Built ${groups.length} groups:`, groups.map((g, i) => `Group ${i + 1}[${g.map(item => item.index + 1).join(', ')}]`).join(', '));
   
   return groups;
 }
@@ -1181,15 +1250,16 @@ async function generateGroupSequentially(
     let finalPrompt = prompt.prompt;
     
     // If continuity detected and previous image available
+    // Note: The prompt is already adapted for continuity during generation (in processPromptsJob)
     if (continuity?.hasContinuity && previousScene?.imageUrl) {
-      console.log(`[generateGroupSequentially] Scene ${index + 1}: Using previous image as reference`);
+      console.log(`[generateGroupSequentially] Scene ${index + 1}: ✅ Using continuity mode`);
+      console.log(`[generateGroupSequentially] Scene ${index + 1}:   Previous image: ${previousScene.imageUrl.substring(0, 80)}...`);
+      console.log(`[generateGroupSequentially] Scene ${index + 1}:   Prompt already adapted for image modification during generation`);
       finalImageUrls = [previousScene.imageUrl, ...styleReferenceUrls];
-      
-      if (continuity.modifiedPromptSuffix) {
-        finalPrompt = `${prompt.prompt}. ${continuity.modifiedPromptSuffix}`;
-      }
+      // Prompt is already adapted during generation, no need to modify it here
     } else {
-      console.log(`[generateGroupSequentially] Scene ${index + 1}: Normal generation (no continuity or no previous image)`);
+      const reason = !continuity?.hasContinuity ? 'no continuity detected' : 'no previous image available';
+      console.log(`[generateGroupSequentially] Scene ${index + 1}: ⚪ Normal generation (${reason})`);
     }
     
     const requestBody: any = {
@@ -1434,14 +1504,12 @@ async function processImagesJob(
                 
                 if (continuityData.hasContinuity && continuityData.confidence >= 0.7) {
                   console.log(`[processImagesJob] Continuity detected (confidence: ${continuityData.confidence}) - using previous image as reference`);
+                  console.log(`[processImagesJob] Note: Prompt should already be adapted for continuity (generated in processPromptsJob)`);
                   
                   // Add previous scene's image as first reference (most important)
                   finalImageUrls = [previousScene.imageUrl, ...styleReferenceUrls];
                   
-                  // Modify prompt to describe changes while keeping the setting
-                  if (continuityData.modifiedPromptSuffix) {
-                    finalPrompt = `${prompt.prompt}. ${continuityData.modifiedPromptSuffix}`;
-                  }
+                  // Prompt is already adapted during generation, no need to modify it here
                 } else {
                   console.log(`[processImagesJob] No continuity detected (confidence: ${continuityData.confidence}) - normal generation`);
                 }
@@ -1993,6 +2061,7 @@ async function processSinglePromptJob(
   const existingPrompts = (project.prompts as any[]) || [];
   const examplePrompts = (project.example_prompts as string[]) || [];
   const customSystemPrompt = project.prompt_system_message || undefined;
+  const visualContinuityEnabled = project.visual_continuity_enabled || false;
 
   if (sceneIndex >= scenes.length) {
     throw new Error(`Scene index ${sceneIndex} out of bounds`);
@@ -2043,6 +2112,44 @@ async function processSinglePromptJob(
     .slice(sceneIndex + 1, Math.min(scenes.length, sceneIndex + 6))
     .map((s: any) => s.text);
 
+  // NOUVEAU: Analyser continuité si option activée
+  let hasContinuity = false;
+  let continuityData = null;
+  
+  if (visualContinuityEnabled && sceneIndex > 0) {
+    const previousScene = existingPrompts[sceneIndex - 1];
+    
+    if (previousScene?.text && previousScene?.prompt) {
+      try {
+        console.log(`[processSinglePromptJob] Analyzing continuity for scene ${sceneIndex + 1} before prompt generation...`);
+        const continuityResponse = await fetch(`${supabaseUrl}/functions/v1/analyze-scene-continuity`, {
+          method: 'POST',
+          headers: {
+            'Authorization': authHeader,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            currentSceneText: scene.text,
+            previousSceneText: previousScene.text,
+            previousPrompt: previousScene.prompt
+          }),
+        });
+        
+        if (continuityResponse.ok) {
+          continuityData = await continuityResponse.json();
+          hasContinuity = continuityData.hasContinuity && continuityData.confidence >= 0.7;
+          console.log(`[processSinglePromptJob] Scene ${sceneIndex + 1}: Continuity ${hasContinuity ? 'DETECTED' : 'NOT detected'} (confidence: ${continuityData.confidence})`);
+        } else {
+          console.error(`[processSinglePromptJob] Scene ${sceneIndex + 1}: Continuity analysis failed: ${continuityResponse.status}`);
+        }
+      } catch (error) {
+        console.error(`[processSinglePromptJob] Scene ${sceneIndex + 1}: Error analyzing continuity:`, error);
+      }
+    } else {
+      console.log(`[processSinglePromptJob] Scene ${sceneIndex + 1}: No previous scene data available for continuity check`);
+    }
+  }
+
   // Generate the prompt
   const response = await fetch(`${supabaseUrl}/functions/v1/generate-prompts`, {
     method: 'POST',
@@ -2050,19 +2157,23 @@ async function processSinglePromptJob(
       'Authorization': authHeader,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({
-      scene: scene.text,
-      summary,
-      examplePrompts: filteredExamples,
-      sceneIndex: sceneIndex + 1,
-      totalScenes: scenes.length,
-      startTime: scene.startTime,
-      endTime: scene.endTime,
-      customSystemPrompt,
-      previousPrompts,
-      previousSceneTexts,
-      nextSceneTexts
-    }),
+        body: JSON.stringify({
+          scene: scene.text,
+          summary,
+          examplePrompts: filteredExamples,
+          sceneIndex: sceneIndex + 1,
+          totalScenes: scenes.length,
+          startTime: scene.startTime,
+          endTime: scene.endTime,
+          customSystemPrompt,
+          previousPrompts,
+          previousSceneTexts,
+          nextSceneTexts,
+          // NOUVEAU: Paramètres de continuité
+          hasContinuity,
+          previousPrompt: hasContinuity ? existingPrompts[sceneIndex - 1]?.prompt : null,
+          continuityElements: hasContinuity ? continuityData : null
+        }),
   });
 
   if (!response.ok) {
@@ -2226,14 +2337,12 @@ async function processSingleImageJob(
           
           if (continuityData.hasContinuity && continuityData.confidence >= 0.7) {
             console.log(`[processSingleImageJob] Continuity detected (confidence: ${continuityData.confidence}) - using previous image as reference`);
+            console.log(`[processSingleImageJob] Note: Prompt should already be adapted for continuity (if regenerated via processPromptsJob)`);
             
             // Add previous scene's image as first reference (most important)
             finalImageUrls = [previousScene.imageUrl, ...styleReferenceUrls];
             
-            // Modify prompt to describe changes while keeping the setting
-            if (continuityData.modifiedPromptSuffix) {
-              finalPrompt = `${prompt.prompt}. ${continuityData.modifiedPromptSuffix}`;
-            }
+            // Prompt should already be adapted during generation, but if it wasn't regenerated, keep original
           } else {
             console.log(`[processSingleImageJob] No continuity detected (confidence: ${continuityData.confidence}) - normal generation`);
           }

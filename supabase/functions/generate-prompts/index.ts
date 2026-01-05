@@ -35,7 +35,7 @@ serve(async (req) => {
       });
     }
 
-    const { scene, summary, examplePrompts, sceneIndex, totalScenes, startTime, endTime, customSystemPrompt, previousPrompts, previousSceneTexts, nextSceneTexts } = await req.json();
+    const { scene, summary, examplePrompts, sceneIndex, totalScenes, startTime, endTime, customSystemPrompt, previousPrompts, previousSceneTexts, nextSceneTexts, hasContinuity, previousPrompt, continuityElements } = await req.json();
 
     // DEBUG: Log received examplePrompts
     console.log(`[DEBUG] Scene ${sceneIndex}: Received examplePrompts:`, JSON.stringify(examplePrompts));
@@ -191,6 +191,30 @@ OUTPUT REQUIREMENTS:
 Return ONLY the prompt text, no JSON, no title, no explanations, just the optimized prompt in ENGLISH that matches the example format exactly.`;
     }
 
+    // Add continuity mode instructions if continuity detected
+    if (hasContinuity && previousPrompt) {
+      const continuityInstructions = `\n\nCONTINUITY MODE - IMAGE MODIFICATION:
+You are generating a prompt for a scene that has VISUAL CONTINUITY with the previous scene.
+This means the image will be generated using the previous scene's image as a reference (image-to-image generation).
+
+CRITICAL INSTRUCTIONS FOR CONTINUITY MODE:
+1. The prompt should describe MODIFICATIONS to the previous image, not a completely new scene
+2. Keep the same location, setting, atmosphere, lighting, and color palette from the previous prompt
+3. Only describe what CHANGES: new actions, new elements, new details, new characters entering
+4. Use phrases like "same setting, but now...", "keeping the previous atmosphere, add...", "in the same location, show...", "maintaining the [element] from before, now..."
+5. DO NOT repeat the entire scene description - only describe the modifications
+6. The previous prompt was: "${previousPrompt.substring(0, 200)}..."
+
+EXAMPLE OF CONTINUITY PROMPT:
+Previous prompt: "A dark forest at night, a cabin with warm light in the window, misty atmosphere, cinematic lighting"
+Your prompt (continuity): "Same dark forest and cabin setting with misty night atmosphere, but now a character is entering through the door, maintaining the warm window light and cinematic style"
+
+IMPORTANT: Your prompt must be a MODIFICATION instruction that works with image-to-image generation, keeping the visual foundation while describing what changes.\n\n`;
+      
+      systemPrompt += continuityInstructions;
+      console.log(`[generate-prompts] Scene ${sceneIndex}: Continuity mode enabled - prompt will be adapted for image modification`);
+    }
+
     // Build user message with few-shot examples
     let userMessage = "";
     
@@ -229,8 +253,30 @@ Return ONLY the prompt text, no JSON, no title, no explanations, just the optimi
       userMessage += `\n`;
     }
     
-    // Add previous prompts for visual coherence
-    if (previousPrompts && Array.isArray(previousPrompts) && previousPrompts.length > 0) {
+    // Add continuity information if detected
+    if (hasContinuity && previousPrompt) {
+      userMessage += `\n═══════════════════════════════════════════════════════════\n`;
+      userMessage += `CONTINUITY DETECTED: This scene has visual continuity with the previous scene.\n`;
+      userMessage += `═══════════════════════════════════════════════════════════\n\n`;
+      userMessage += `Previous scene prompt: "${previousPrompt.substring(0, 300)}..."\n\n`;
+      
+      if (continuityElements?.elementsToKeep && Array.isArray(continuityElements.elementsToKeep) && continuityElements.elementsToKeep.length > 0) {
+        userMessage += `Elements to KEEP (from previous image): ${continuityElements.elementsToKeep.join(', ')}\n`;
+      }
+      
+      if (continuityElements?.elementsToChange && Array.isArray(continuityElements.elementsToChange) && continuityElements.elementsToChange.length > 0) {
+        userMessage += `Elements to CHANGE: ${continuityElements.elementsToChange.join(', ')}\n`;
+      }
+      
+      userMessage += `\nCRITICAL: Generate a prompt that describes ONLY the modifications to the previous image.\n`;
+      userMessage += `- Keep the same visual setting, location, atmosphere, lighting\n`;
+      userMessage += `- Only describe what is NEW or CHANGING in this scene\n`;
+      userMessage += `- Use phrases like "same [element], but now..." or "keeping [element], add..."\n`;
+      userMessage += `- The prompt will be used for image-to-image generation, so it must work as a modification instruction\n\n`;
+    }
+    
+    // Add previous prompts for visual coherence (only if not in continuity mode)
+    if (!hasContinuity && previousPrompts && Array.isArray(previousPrompts) && previousPrompts.length > 0) {
       userMessage += `PREVIOUS VISUAL PROMPTS (maintain coherence while varying composition):\n`;
       previousPrompts.slice(-3).forEach((prompt: string, i: number) => {
         userMessage += `- Scene ${sceneIndex - previousPrompts.length + i}: "${prompt.substring(0, 200)}..."\n`;
