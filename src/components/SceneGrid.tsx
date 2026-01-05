@@ -247,8 +247,9 @@ export function SceneGrid({
             </div>
 
             {/* Image / Video */}
-            <div className="w-full md:w-[300px]">
-              {prompt?.videoUrl ? (
+            <div className="w-full md:w-[300px] space-y-2">
+              {/* Video (if animated) */}
+              {prompt?.videoUrl && (
                 <div className="group relative aspect-video w-full overflow-hidden rounded-lg bg-muted">
                   <video
                     src={prompt.videoUrl}
@@ -263,30 +264,6 @@ export function SceneGrid({
                     <span>Animé</span>
                   </div>
                   <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      className="h-7 w-7 p-0"
-                      onClick={() => triggerFileUpload(index)}
-                      disabled={generatingImageIndex === index || animatingSceneIndex === index}
-                      title="Importer une image"
-                    >
-                      <Upload className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      className="h-7 w-7 p-0"
-                      onClick={() => setConfirmRegenerateImage(index)}
-                      disabled={generatingImageIndex === index || animatingSceneIndex === index}
-                      title="Régénérer l'image"
-                    >
-                      {generatingImageIndex === index ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <RefreshCw className="h-3.5 w-3.5" />
-                      )}
-                    </Button>
                     {onAnimateScene && (
                       <Button
                         variant="secondary"
@@ -304,84 +281,78 @@ export function SceneGrid({
                       </Button>
                     )}
                   </div>
-                  {/* Web search button - always visible */}
-                  {onSearchWeb && (
-                    <div className="absolute bottom-2 right-2">
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        className="h-7 w-7 p-0 shadow-md"
-                        onClick={() => onSearchWeb(index, text)}
-                        disabled={generatingImageIndex === index}
-                        title="Chercher une image sur le web"
-                      >
-                        <Search className="h-3.5 w-3.5" />
-                      </Button>
+                </div>
+              )}
+              
+              {/* Image (always shown if exists) */}
+              {prompt?.imageUrl ? (
+                <div className={`group relative w-full overflow-hidden rounded-lg bg-muted ${prompt?.videoUrl ? 'h-20' : 'aspect-video'}`}>
+                  {prompt?.videoUrl && (
+                    <div className="absolute top-1 left-1 bg-muted-foreground/60 text-white text-[10px] px-1.5 py-0.5 rounded z-10">
+                      Image source
                     </div>
                   )}
-                </div>
-              ) : prompt?.imageUrl ? (
-                <div className="group relative aspect-video w-full overflow-hidden rounded-lg bg-muted">
                   <img
                     src={prompt.imageUrl}
                     alt={`Scene ${index + 1}`}
                     className="w-full h-full object-contain cursor-pointer"
                     onClick={() => setImagePreviewUrl(prompt.imageUrl || null)}
                   />
-                  <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     <Button
                       variant="secondary"
                       size="sm"
-                      className="h-7 w-7 p-0"
+                      className="h-6 w-6 p-0"
                       onClick={() => triggerFileUpload(index)}
                       disabled={generatingImageIndex === index || animatingSceneIndex === index}
                       title="Importer une image"
                     >
-                      <Upload className="h-3.5 w-3.5" />
+                      <Upload className="h-3 w-3" />
                     </Button>
                     <Button
                       variant="secondary"
                       size="sm"
-                      className="h-7 w-7 p-0"
+                      className="h-6 w-6 p-0"
                       onClick={() => setConfirmRegenerateImage(index)}
                       disabled={generatingImageIndex === index || animatingSceneIndex === index}
                       title="Régénérer l'image"
                     >
                       {generatingImageIndex === index ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        <Loader2 className="h-3 w-3 animate-spin" />
                       ) : (
-                        <RefreshCw className="h-3.5 w-3.5" />
+                        <RefreshCw className="h-3 w-3" />
                       )}
                     </Button>
-                    {onAnimateScene && (
+                    {/* Only show animate button if no video yet */}
+                    {onAnimateScene && !prompt?.videoUrl && (
                       <Button
                         variant="secondary"
                         size="sm"
-                        className="h-7 w-7 p-0"
+                        className="h-6 w-6 p-0"
                         onClick={() => onAnimateScene(index)}
                         disabled={generatingImageIndex === index || animatingSceneIndex === index}
                         title="Animer l'image (Seedance 1.5 Pro)"
                       >
                         {animatingSceneIndex === index ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          <Loader2 className="h-3 w-3 animate-spin" />
                         ) : (
-                          <Video className="h-3.5 w-3.5" />
+                          <Video className="h-3 w-3" />
                         )}
                       </Button>
                     )}
                   </div>
-                  {/* Web search button - always visible */}
-                  {onSearchWeb && (
-                    <div className="absolute bottom-2 right-2">
+                  {/* Web search button - only visible when no video */}
+                  {onSearchWeb && !prompt?.videoUrl && (
+                    <div className="absolute bottom-1 right-1">
                       <Button
                         variant="secondary"
                         size="sm"
-                        className="h-7 w-7 p-0 shadow-md"
+                        className="h-6 w-6 p-0 shadow-md"
                         onClick={() => onSearchWeb(index, text)}
                         disabled={generatingImageIndex === index}
                         title="Chercher une image sur le web"
                       >
-                        <Search className="h-3.5 w-3.5" />
+                        <Search className="h-3 w-3" />
                       </Button>
                     </div>
                   )}

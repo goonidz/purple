@@ -1814,9 +1814,7 @@ const Index = () => {
       // Just show a toast that it's starting
       toast.info(`Animation de la scène ${index + 1} lancée. Suivi en cours...`);
 
-      // DEBUG: Very visible log + alert
-      console.log('%c========== ANIMATE SCENE STARTED ==========', 'background: red; color: yellow; font-size: 20px; padding: 10px;');
-      alert('DEBUG: Animation started for scene ' + (index + 1) + '. Check console for logs.');
+      console.log('[handleAnimateScene] Animation started for scene', index + 1);
       
       console.log('[handleAnimateScene] Calling animate-scene with:', {
         projectId: currentProjectId,

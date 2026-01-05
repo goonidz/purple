@@ -35,7 +35,7 @@ serve(async (req) => {
       });
     }
 
-    const { scene, summary, examplePrompts, sceneIndex, totalScenes, startTime, endTime, customSystemPrompt, previousPrompts } = await req.json();
+    const { scene, summary, examplePrompts, sceneIndex, totalScenes, startTime, endTime, customSystemPrompt, previousPrompts, previousSceneTexts, nextSceneTexts } = await req.json();
 
     // DEBUG: Log received examplePrompts
     console.log(`[DEBUG] Scene ${sceneIndex}: Received examplePrompts:`, JSON.stringify(examplePrompts));
@@ -71,9 +71,18 @@ serve(async (req) => {
     if (customSystemPrompt && customSystemPrompt.trim()) {
       systemPrompt = customSystemPrompt.trim();
       
+      // Add narrative coherence instructions
+      systemPrompt += `\n\nNARRATIVE COHERENCE - CRITICAL:
+- Study the PREVIOUS PROMPTS to understand the visual story being built
+- Maintain visual continuity: similar color palettes, lighting style, and atmosphere when scenes are connected
+- If scenes follow a progression (same subject, same event), keep visual elements consistent
+- Vary compositions and angles while maintaining the same visual universe
+- The generated prompt should feel like part of the same video, not a random image
+- Use the PREVIOUS and NEXT SCENE TEXTS to understand the narrative flow and create appropriate transitions\n`;
+      
       // Add examples if provided - emphasize EXACT FORMAT MATCHING
       if (examplePrompts && Array.isArray(examplePrompts) && examplePrompts.length > 0) {
-        systemPrompt += `\n\nFORMAT REFERENCE EXAMPLES - YOU MUST FOLLOW THESE EXACTLY:\n\n`;
+        systemPrompt += `\nFORMAT REFERENCE EXAMPLES - YOU MUST FOLLOW THESE EXACTLY:\n\n`;
         examplePrompts.forEach((example: string, i: number) => {
           systemPrompt += `Example ${i + 1} (COPY THIS EXACT FORMAT STRUCTURE):\n"${example}"\n\n`;
         });
@@ -123,6 +132,14 @@ CONTENT SAFETY - STRICTLY FORBIDDEN (to avoid AI image generator blocks):
 - No content involving minors in any potentially inappropriate context
 - Instead of violent scenes, describe tension, conflict, or drama through expressions, postures, and atmosphere
 - Instead of intimate scenes, describe emotional connection through eye contact, gestures, or symbolic imagery
+
+NARRATIVE COHERENCE - CRITICAL:
+- Study the PREVIOUS PROMPTS to understand the visual story being built
+- Maintain visual continuity: similar color palettes, lighting style, and atmosphere when scenes are connected
+- If scenes follow a progression (same subject, same event), keep visual elements consistent
+- Vary compositions and angles while maintaining the same visual universe
+- The generated prompt should feel like part of the same video, not a random image
+- Use the PREVIOUS and NEXT SCENE TEXTS to understand the narrative flow and create appropriate transitions
 
 `;
 
@@ -194,14 +211,31 @@ Return ONLY the prompt text, no JSON, no title, no explanations, just the optimi
     if (summary) {
       userMessage += `Global context: ${summary}\n\n`;
     }
-    
-    // Add previous prompts to avoid repetition
-    if (previousPrompts && Array.isArray(previousPrompts) && previousPrompts.length > 0) {
-      userMessage += `Previous prompts (avoid similar imagery, compositions, and visual elements):\n`;
-      previousPrompts.slice(-3).forEach((prompt: string, i: number) => {
-        userMessage += `- Scene ${sceneIndex - previousPrompts.length + i}: "${prompt.substring(0, 150)}..."\n`;
+
+    // Add temporal context from surrounding scenes
+    if (previousSceneTexts && Array.isArray(previousSceneTexts) && previousSceneTexts.length > 0) {
+      userMessage += `PREVIOUS SCENES (what was said before - for narrative context):\n`;
+      previousSceneTexts.forEach((text: string, i: number) => {
+        userMessage += `${i + 1}. "${text}"\n`;
       });
-      userMessage += `\nIMPORTANT: Create a VISUALLY DIFFERENT prompt - vary the composition, angle, lighting, and main visual elements to avoid repetitive imagery.\n\n`;
+      userMessage += `\n`;
+    }
+
+    if (nextSceneTexts && Array.isArray(nextSceneTexts) && nextSceneTexts.length > 0) {
+      userMessage += `NEXT SCENES (what will be said after - for narrative context):\n`;
+      nextSceneTexts.forEach((text: string, i: number) => {
+        userMessage += `${i + 1}. "${text}"\n`;
+      });
+      userMessage += `\n`;
+    }
+    
+    // Add previous prompts for visual coherence
+    if (previousPrompts && Array.isArray(previousPrompts) && previousPrompts.length > 0) {
+      userMessage += `PREVIOUS VISUAL PROMPTS (maintain coherence while varying composition):\n`;
+      previousPrompts.slice(-3).forEach((prompt: string, i: number) => {
+        userMessage += `- Scene ${sceneIndex - previousPrompts.length + i}: "${prompt.substring(0, 200)}..."\n`;
+      });
+      userMessage += `\nIMPORTANT: Create a prompt that is part of the SAME VISUAL STORY. Maintain similar style, color palette, and atmosphere. Vary the composition, angle, and specific elements while keeping narrative coherence.\n\n`;
     }
     
     userMessage += `Now generate a prompt for this scene:\n`;

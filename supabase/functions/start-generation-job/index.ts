@@ -884,6 +884,15 @@ async function processPromptsJob(
       .filter((p: any) => p?.prompt && p.prompt !== "Erreur lors de la génération")
       .map((p: any) => p.prompt);
 
+    // Get previous and next scene texts for temporal/narrative context
+    const previousSceneTexts = scenes
+      .slice(Math.max(0, index - 5), index)
+      .map((s: any) => s.text);
+
+    const nextSceneTexts = scenes
+      .slice(index + 1, Math.min(scenes.length, index + 6))
+      .map((s: any) => s.text);
+
     try {
       const response = await fetch(`${supabaseUrl}/functions/v1/generate-prompts`, {
         method: 'POST',
@@ -900,7 +909,9 @@ async function processPromptsJob(
           startTime: scene.startTime,
           endTime: scene.endTime,
           customSystemPrompt,
-          previousPrompts
+          previousPrompts,
+          previousSceneTexts,
+          nextSceneTexts
         }),
       });
 
@@ -1645,6 +1656,15 @@ async function processSinglePromptJob(
     .filter((p: any) => p?.prompt && p.prompt !== "Erreur lors de la génération")
     .map((p: any) => p.prompt);
 
+  // Get previous and next scene texts for temporal/narrative context
+  const previousSceneTexts = scenes
+    .slice(Math.max(0, sceneIndex - 5), sceneIndex)
+    .map((s: any) => s.text);
+
+  const nextSceneTexts = scenes
+    .slice(sceneIndex + 1, Math.min(scenes.length, sceneIndex + 6))
+    .map((s: any) => s.text);
+
   // Generate the prompt
   const response = await fetch(`${supabaseUrl}/functions/v1/generate-prompts`, {
     method: 'POST',
@@ -1661,7 +1681,9 @@ async function processSinglePromptJob(
       startTime: scene.startTime,
       endTime: scene.endTime,
       customSystemPrompt,
-      previousPrompts
+      previousPrompts,
+      previousSceneTexts,
+      nextSceneTexts
     }),
   });
 
