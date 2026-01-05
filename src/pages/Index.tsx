@@ -181,8 +181,21 @@ const Index = () => {
   const [loraSteps, setLoraSteps] = useState<number>(10);
   const [visualContinuityEnabled, setVisualContinuityEnabled] = useState<boolean>(false);
   const [isGeneratingImages, setIsGeneratingImages] = useState(false);
-  const [generatingImageIndex, setGeneratingImageIndex] = useState<number | null>(null);
+  const [generatingImageIndices, setGeneratingImageIndices] = useState<Set<number>>(new Set());
   const [generatingPromptIndex, setGeneratingPromptIndex] = useState<number | null>(null);
+  
+  // Helpers for managing generating image indices
+  const addGeneratingImageIndex = (index: number) => {
+    setGeneratingImageIndices(prev => new Set([...prev, index]));
+  };
+  
+  const removeGeneratingImageIndex = (index: number) => {
+    setGeneratingImageIndices(prev => {
+      const next = new Set(prev);
+      next.delete(index);
+      return next;
+    });
+  };
   const [styleReferenceUrls, setStyleReferenceUrls] = useState<string[]>([]);
   const [uploadedStyleImageUrl, setUploadedStyleImageUrl] = useState<string>("");
   const [isUploadingStyleImage, setIsUploadingStyleImage] = useState(false);
@@ -332,7 +345,10 @@ const Index = () => {
       setGeneratingPromptIndex(null);
       setRegeneratingPromptIndex(null);
     } else if (job.job_type === 'single_image') {
-      setGeneratingImageIndex(null);
+      const sceneIndex = job.metadata?.sceneIndex;
+      if (sceneIndex !== undefined && sceneIndex !== null) {
+        removeGeneratingImageIndex(sceneIndex);
+      }
     } else if (job.job_type === 'single_animation') {
       setAnimatingSceneIndex(null);
     }
@@ -428,7 +444,10 @@ const Index = () => {
       setGeneratingPromptIndex(null);
       setRegeneratingPromptIndex(null);
     } else if (job.job_type === 'single_image') {
-      setGeneratingImageIndex(null);
+      const sceneIndex = job.metadata?.sceneIndex;
+      if (sceneIndex !== undefined && sceneIndex !== null) {
+        removeGeneratingImageIndex(sceneIndex);
+      }
     } else if (job.job_type === 'single_animation') {
       setAnimatingSceneIndex(null);
     }
@@ -1398,7 +1417,7 @@ const Index = () => {
   // Helper function to upload manual image
   const uploadManualImage = async (file: File, sceneIndex: number) => {
     try {
-      setGeneratingImageIndex(sceneIndex);
+      addGeneratingImageIndex(sceneIndex);
       
       // Generate unique filename
       const timestamp = Date.now();
@@ -1435,7 +1454,7 @@ const Index = () => {
       console.error("Error uploading manual image:", error);
       toast.error(error.message || "Erreur lors de l'import de l'image");
     } finally {
-      setGeneratingImageIndex(null);
+      removeGeneratingImageIndex(sceneIndex);
     }
   };
 
@@ -1515,7 +1534,7 @@ const Index = () => {
       console.error("Error downloading web image:", error);
       toast.error(error.message || "Erreur lors du téléchargement de l'image");
     } finally {
-      setGeneratingImageIndex(null);
+      removeGeneratingImageIndex(sceneIndex);
     }
   };
 
@@ -1825,12 +1844,12 @@ const Index = () => {
       return;
     }
 
-    setGeneratingImageIndex(index);
+    addGeneratingImageIndex(index);
     
     // Start background job
     const result = await startJob('single_image', { sceneIndex: index });
     if (!result) {
-      setGeneratingImageIndex(null);
+      removeGeneratingImageIndex(index);
     }
   };
 
@@ -3739,7 +3758,7 @@ const Index = () => {
                       editingPromptIndex={editingPromptIndex}
                       regeneratingPromptIndex={regeneratingPromptIndex}
                       generatingPromptIndex={generatingPromptIndex}
-                      generatingImageIndex={generatingImageIndex}
+                      generatingImageIndices={generatingImageIndices}
                       copiedIndex={copiedIndex}
                       handleEditScene={handleEditScene}
                       handleEditPrompt={handleEditPrompt}
@@ -3924,7 +3943,7 @@ const Index = () => {
                       onRegenerateImage={generateImage}
                       onUpdatePrompt={updatePromptFromPreview}
                       regeneratingPromptIndex={generatingPromptIndex}
-                      regeneratingImageIndex={generatingImageIndex}
+                      regeneratingImageIndices={generatingImageIndices}
                     />
                   ) : (
                     <Card className="p-12 text-center">

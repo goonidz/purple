@@ -40,7 +40,7 @@ interface SceneGridProps {
   editingPromptIndex: number | null;
   regeneratingPromptIndex: number | null;
   generatingPromptIndex: number | null;
-  generatingImageIndex: number | null;
+  generatingImageIndices: Set<number>;
   animatingSceneIndex: number | null;
   copiedIndex: number | null;
   handleEditScene: (index: number) => void;
@@ -66,7 +66,7 @@ export function SceneGrid({
   editingPromptIndex,
   regeneratingPromptIndex,
   generatingPromptIndex,
-  generatingImageIndex,
+  generatingImageIndices,
   animatingSceneIndex,
   copiedIndex,
   handleEditScene,
@@ -289,7 +289,7 @@ export function SceneGrid({
                         size="sm"
                         className="h-7 w-7 p-0"
                         onClick={() => onAnimateScene(index)}
-                        disabled={generatingImageIndex === index || animatingSceneIndex === index}
+                        disabled={generatingImageIndices.has(index) || animatingSceneIndex === index}
                         title="Réanimer la scène"
                       >
                         {animatingSceneIndex === index ? (
@@ -323,7 +323,7 @@ export function SceneGrid({
                       size="sm"
                       className="h-6 w-6 p-0"
                       onClick={() => triggerFileUpload(index)}
-                      disabled={generatingImageIndex === index || animatingSceneIndex === index}
+                      disabled={generatingImageIndices.has(index) || animatingSceneIndex === index}
                       title="Importer une image"
                     >
                       <Upload className="h-3 w-3" />
@@ -333,10 +333,10 @@ export function SceneGrid({
                       size="sm"
                       className="h-6 w-6 p-0"
                       onClick={() => setConfirmRegenerateImage(index)}
-                      disabled={generatingImageIndex === index || animatingSceneIndex === index}
+                      disabled={generatingImageIndices.has(index) || animatingSceneIndex === index}
                       title="Régénérer l'image"
                     >
-                      {generatingImageIndex === index ? (
+                      {generatingImageIndices.has(index) ? (
                         <Loader2 className="h-3 w-3 animate-spin" />
                       ) : (
                         <RefreshCw className="h-3 w-3" />
@@ -349,7 +349,7 @@ export function SceneGrid({
                         size="sm"
                         className="h-6 w-6 p-0"
                         onClick={() => onAnimateScene(index)}
-                        disabled={generatingImageIndex === index || animatingSceneIndex === index}
+                        disabled={generatingImageIndices.has(index) || animatingSceneIndex === index}
                         title="Animer l'image (Seedance 1.5 Pro)"
                       >
                         {animatingSceneIndex === index ? (
@@ -368,7 +368,7 @@ export function SceneGrid({
                         size="sm"
                         className="h-6 w-6 p-0 shadow-md"
                         onClick={() => onSearchWeb(index, text)}
-                        disabled={generatingImageIndex === index}
+                        disabled={generatingImageIndices.has(index)}
                         title="Chercher une image sur le web"
                       >
                         <Search className="h-3 w-3" />
@@ -382,7 +382,7 @@ export function SceneGrid({
                     variant="outline"
                     size="sm"
                     onClick={() => triggerFileUpload(index)}
-                    disabled={generatingImageIndex === index}
+                    disabled={generatingImageIndices.has(index)}
                     title="Importer une image"
                   >
                     <Upload className="h-4 w-4 mr-1" />
@@ -392,10 +392,10 @@ export function SceneGrid({
                     variant="outline"
                     size="sm"
                     onClick={() => generateImage(index)}
-                    disabled={generatingImageIndex === index}
+                    disabled={generatingImageIndices.has(index)}
                     title="Générer l'image"
                   >
-                    {generatingImageIndex === index ? (
+                    {generatingImageIndices.has(index) ? (
                       <>
                         <Loader2 className="h-4 w-4 animate-spin mr-1" />
                         <span className="text-xs">...</span>
@@ -412,7 +412,7 @@ export function SceneGrid({
                       variant="outline"
                       size="sm"
                       onClick={() => onSearchWeb(index, text)}
-                      disabled={generatingImageIndex === index}
+                      disabled={generatingImageIndices.has(index)}
                       title="Chercher une image sur le web"
                     >
                       <Search className="h-4 w-4 mr-1" />

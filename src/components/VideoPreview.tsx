@@ -27,7 +27,7 @@ interface VideoPreviewProps {
   onRegenerateImage?: (sceneIndex: number) => void;
   onUpdatePrompt?: (sceneIndex: number, newPrompt: string) => void;
   regeneratingPromptIndex?: number | null;
-  regeneratingImageIndex?: number | null;
+  regeneratingImageIndices?: Set<number>;
 }
 
 interface SubtitleSettings {
@@ -63,7 +63,7 @@ export const VideoPreview = ({
   onRegenerateImage,
   onUpdatePrompt,
   regeneratingPromptIndex = null,
-  regeneratingImageIndex = null
+  regeneratingImageIndices = new Set<number>()
 }: VideoPreviewProps) => {
   const audioRef = useRef<HTMLAudioElement>(null);
   const animationFrameRef = useRef<number>();
@@ -537,7 +537,7 @@ export const VideoPreview = ({
                     size="sm"
                     variant="default"
                     onClick={() => onRegeneratePrompt(currentSceneIndex)}
-                    disabled={regeneratingPromptIndex === currentSceneIndex || regeneratingImageIndex === currentSceneIndex}
+                    disabled={regeneratingPromptIndex === currentSceneIndex || regeneratingImageIndices?.has(currentSceneIndex)}
                     className="h-8"
                   >
                     <RefreshCw className={`h-4 w-4 mr-2 ${regeneratingPromptIndex === currentSceneIndex ? 'animate-spin' : ''}`} />
@@ -549,10 +549,10 @@ export const VideoPreview = ({
                     size="sm"
                     variant="default"
                     onClick={() => onRegenerateImage(currentSceneIndex)}
-                    disabled={regeneratingPromptIndex === currentSceneIndex || regeneratingImageIndex === currentSceneIndex}
+                    disabled={regeneratingPromptIndex === currentSceneIndex || regeneratingImageIndices?.has(currentSceneIndex)}
                     className="h-8"
                   >
-                    <ImageIcon className={`h-4 w-4 mr-2 ${regeneratingImageIndex === currentSceneIndex ? 'animate-spin' : ''}`} />
+                    <ImageIcon className={`h-4 w-4 mr-2 ${regeneratingImageIndices?.has(currentSceneIndex) ? 'animate-spin' : ''}`} />
                     Régénérer image scène {currentSceneIndex + 1}
                   </Button>
                 )}
