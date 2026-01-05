@@ -16,7 +16,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Version identifier - update this when making pan/zoom changes
-const SERVICE_VERSION = 'v2.15-auto-cleanup';
+const SERVICE_VERSION = 'v2.16-cleanup-endpoint';
 
 // Path to FFmpeg fork with subpixel zoom support
 // Install with: ./install-ffmpeg-subpixel.sh
@@ -1510,6 +1510,32 @@ RÈGLE CRITIQUE SUR LA LONGUEUR:
     const errorMessage = error.response?.data?.error?.message || error.message;
     res.status(500).json({ 
       error: `Anthropic API error: ${errorMessage}` 
+    });
+  }
+});
+
+// Cleanup endpoint - manually trigger cleanup of old files
+app.post('/cleanup', async (req, res) => {
+  const { maxAgeDays = 4 } = req.body;
+  const maxAgeHours = maxAgeDays * 24;
+  
+  console.log(`[cleanup] Starting cleanup of files older than ${maxAgeDays} days (${maxAgeHours} hours)`);
+  
+  try {
+    const result = await cleanupOldJobs(maxAgeHours);
+    
+    res.json({
+      success: true,
+      deletedCount: result.deletedCount,
+      freedMB: result.freedMB.toFixed(2),
+      maxAgeDays,
+      message: `Cleaned up ${result.deletedCount} jobs, freed ${result.freedMB.toFixed(2)} MB`
+    });
+  } catch (error) {
+    console.error('[cleanup] Error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
     });
   }
 });
