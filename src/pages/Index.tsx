@@ -336,18 +336,25 @@ const Index = () => {
           }
         });
     } else if (job.job_type === 'single_animation' && projectId) {
-      // For single_animation, just refresh prompts to get the videoUrl
-      supabase
-        .from("projects")
-        .select("prompts")
-        .eq("id", projectId)
-        .single()
-        .then(({ data, error }) => {
-          if (!error && data?.prompts) {
-            const validPrompts = ((data.prompts as unknown as GeneratedPrompt[]) || []).filter(p => p !== null);
-            setGeneratedPrompts(validPrompts);
-          }
-        });
+      // For single_animation, wait a bit then refresh prompts to get the videoUrl
+      // The polling in handleAnimateScene should have already updated the state,
+      // but we refresh from DB to be sure
+      setTimeout(() => {
+        supabase
+          .from("projects")
+          .select("prompts")
+          .eq("id", projectId)
+          .single()
+          .then(({ data, error }) => {
+            if (!error && data?.prompts) {
+              const validPrompts = ((data.prompts as unknown as GeneratedPrompt[]) || []).filter(p => p !== null);
+              console.log(`[handleJobComplete] Reloaded prompts for single_animation, scene:`, job.metadata?.sceneIndex, 'videoUrl:', validPrompts[job.metadata?.sceneIndex as number]?.videoUrl);
+              setGeneratedPrompts(validPrompts);
+            } else if (error) {
+              console.error(`[handleJobComplete] Error loading prompts:`, error);
+            }
+          });
+      }, 1500); // Wait 1.5s to ensure check-animation-status has updated the project
     }
   }, []);
 
@@ -1807,6 +1814,18 @@ const Index = () => {
       // Just show a toast that it's starting
       toast.info(`Animation de la scène ${index + 1} lancée. Suivi en cours...`);
 
+      // DEBUG: Very visible log + alert
+      console.log('%c========== ANIMATE SCENE STARTED ==========', 'background: red; color: yellow; font-size: 20px; padding: 10px;');
+      alert('DEBUG: Animation started for scene ' + (index + 1) + '. Check console for logs.');
+      
+      console.log('[handleAnimateScene] Calling animate-scene with:', {
+        projectId: currentProjectId,
+        sceneIndex: index,
+        hasImageUrl: !!prompt.imageUrl,
+        hasPrompt: !!prompt.prompt,
+        sceneDuration
+      });
+
       const { data, error } = await supabase.functions.invoke('animate-scene', {
         body: {
           projectId: currentProjectId,
@@ -1817,21 +1836,189 @@ const Index = () => {
         }
       });
 
+      console.log('[handleAnimateScene] animate-scene response:', { data, error });
+
       if (error) {
+        console.error('[handleAnimateScene] Function error:', error);
         throw error;
       }
 
       if (data?.error) {
+        console.error('[handleAnimateScene] Data error:', data.error);
         throw new Error(data.error);
       }
 
-      // Job is tracked automatically via useGenerationJobs hook
-      // The job completion will be handled by handleJobComplete
-      // No need to manually refresh here - the job system handles it
+      if (!data?.taskId) {
+        console.error('[handleAnimateScene] No taskId in response:', data);
+        throw new Error('Réponse invalide: taskId manquant');
+      }
+      
+      console.log('[handleAnimateScene] Task created successfully:', { taskId: data.taskId, jobId: data.jobId });
+      
+      if (!data?.jobId) {
+        console.warn('[handleAnimateScene] No jobId in response - job tracking may have failed, but continuing with taskId:', data.taskId);
+      }
+
+      // Poll for completion - job is already tracked by useGenerationJobs
+      const taskId = data.taskId;
+      const jobId = data.jobId; // May be null if job creation failed
+      let completed = false;
+      let attempts = 0;
+      const maxAttempts = 300; // 25 minutes max
+
+      // Update job progress during polling (only if jobId exists)
+      const updateJobProgress = async (progress: number, status?: string, errorMessage?: string) => {
+        if (!jobId) {
+          console.log(`[handleAnimateScene] Skipping job progress update (no jobId), progress: ${progress}%`);
+          return;
+        }
+        try {
+          const updateData: any = { progress };
+          if (status) updateData.status = status;
+          if (errorMessage) updateData.error_message = errorMessage;
+          
+          await supabase
+            .from('generation_jobs')
+            .update(updateData)
+            .eq('id', jobId);
+        } catch (err) {
+          console.error('Error updating job progress:', err);
+        }
+      };
+
+      // Wait a bit for the job to appear in the UI
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Start with 5% progress
+      await updateJobProgress(5, 'processing');
+
+      console.log(`%c[handleAnimateScene] Starting polling loop for taskId: ${taskId}`, 'background: green; color: white; padding: 2px 5px;');
+
+      while (!completed && attempts < maxAttempts) {
+        await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds
+        attempts++;
+
+        // Update progress: 5% to 90% over maxAttempts
+        const progress = Math.min(90, 5 + Math.floor((attempts / maxAttempts) * 85));
+        await updateJobProgress(progress);
+
+        try {
+          const { data: statusData, error: statusError } = await supabase.functions.invoke('check-animation-status', {
+            body: {
+              taskId,
+              jobId: jobId || null, // Pass null if jobId doesn't exist
+              projectId: currentProjectId,
+              sceneIndex: index
+            }
+          });
+
+          if (statusError) {
+            console.error('%c[handleAnimateScene] Error checking status:', 'background: red; color: white;', statusError);
+            continue;
+          }
+          
+          if (!statusData) {
+            console.error('%c[handleAnimateScene] No statusData returned', 'background: red; color: white;');
+            continue;
+          }
+
+          console.log(`%c[handleAnimateScene] Poll attempt ${attempts}`, 'background: blue; color: white; padding: 2px 5px;', {
+            status: statusData?.status,
+            completed: statusData?.completed,
+            videoUrl: statusData?.videoUrl,
+            error: statusData?.error,
+            success: statusData?.success,
+            fullResponse: statusData
+          });
+
+          if (statusData?.completed) {
+            completed = true;
+            
+            console.log(`[handleAnimateScene] Status data:`, JSON.stringify(statusData, null, 2));
+            
+            if (statusData.videoUrl) {
+              console.log(`[handleAnimateScene] Animation completed with videoUrl:`, statusData.videoUrl);
+              
+              // Update state immediately with videoUrl
+              setGeneratedPrompts(prev => {
+                const updated = [...prev];
+                if (updated[index]) {
+                  updated[index] = {
+                    ...updated[index],
+                    videoUrl: statusData.videoUrl
+                  };
+                  console.log(`[handleAnimateScene] Updated state immediately, scene ${index} now has videoUrl:`, updated[index].videoUrl);
+                }
+                return updated;
+              });
+              
+              // Mark as completed AFTER updating the project
+              await updateJobProgress(100, 'completed');
+              
+              // Wait a bit for the project update to complete, then reload from DB as backup
+              await new Promise(resolve => setTimeout(resolve, 1000));
+              
+              // Reload prompts from database to ensure we have the latest data (backup)
+              if (currentProjectId) {
+                try {
+                  const { data: projectData, error: projectError } = await supabase
+                    .from('projects')
+                    .select('prompts')
+                    .eq('id', currentProjectId)
+                    .single();
+                  
+                  if (projectError) {
+                    console.error(`[handleAnimateScene] Error loading project:`, projectError);
+                  } else if (projectData?.prompts) {
+                    const validPrompts = ((projectData.prompts as unknown as GeneratedPrompt[]) || []).filter(p => p !== null);
+                    console.log(`[handleAnimateScene] Reloaded prompts from DB, total: ${validPrompts.length}, scene ${index} videoUrl:`, validPrompts[index]?.videoUrl);
+                    // Only update if the DB has the videoUrl (to avoid overwriting with stale data)
+                    if (validPrompts[index]?.videoUrl) {
+                      setGeneratedPrompts(validPrompts);
+                    }
+                  }
+                } catch (err) {
+                  console.error(`[handleAnimateScene] Exception loading project:`, err);
+                  // State was already updated above, so continue
+                }
+              }
+              
+              toast.success(`Animation terminée pour la scène ${index + 1} !`);
+            } else if (statusData.error) {
+              await updateJobProgress(0, 'failed', statusData.error);
+              throw new Error(statusData.error);
+            } else {
+              // Completed but no videoUrl - mark as completed anyway
+              console.warn(`[handleAnimateScene] Completed but no videoUrl in response`);
+              await updateJobProgress(100, 'completed');
+            }
+          }
+          // Still processing - progress already updated above
+        } catch (pollError: any) {
+          console.error('Error during polling:', pollError);
+          // Continue polling despite errors
+        }
+      }
+
+      if (!completed) {
+        await updateJobProgress(0, 'failed', 'Animation timeout - la tâche prend plus de temps que prévu');
+        throw new Error('Animation timeout - la tâche prend plus de temps que prévu');
+      }
       
     } catch (error: any) {
       console.error("Error animating scene:", error);
-      toast.error(`Erreur lors de l'animation: ${error.message || 'Erreur inconnue'}`);
+      // Try to get more details from the error
+      let errorMessage = error.message || 'Erreur inconnue';
+      if (error.context?.body) {
+        try {
+          const body = JSON.parse(error.context.body);
+          errorMessage = body.error || body.details || errorMessage;
+          console.error("Error details:", body);
+        } catch (e) {
+          // body is not JSON
+        }
+      }
+      toast.error(`Erreur lors de l'animation: ${errorMessage}`);
       setAnimatingSceneIndex(null);
     }
   };

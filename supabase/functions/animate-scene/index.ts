@@ -1,4 +1,3 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
@@ -15,55 +14,110 @@ interface AnimateSceneRequest {
 }
 
 // Calculate closest duration (4s, 8s, or 12s)
-function getClosestDuration(duration: number): "4" | "8" | "12" {
+function getClosestDuration(duration: number): number {
   if (duration < 6) {
-    return "4";
+    return 4;
   } else if (duration < 10) {
-    return "8";
+    return 8;
   } else {
-    return "12";
+    return 12;
   }
 }
 
-serve(async (req) => {
+Deno.serve(async (req) => {
+  console.log('[animate-scene] Function invoked, method:', req.method);
+  
   if (req.method === "OPTIONS") {
-    return new Response('ok', { 
-      status: 200,
-      headers: corsHeaders 
-    });
+    return new Response('ok', { headers: corsHeaders });
   }
 
   try {
+    console.log('[animate-scene] Starting request processing...');
+    
     // Verify authentication
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) {
+      console.log('[animate-scene] No authorization header');
       return new Response(JSON.stringify({ error: 'No authorization header' }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
+    console.log('[animate-scene] Auth header present, getting env vars...');
     const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
     const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+    
+    console.log('[animate-scene] Env vars - URL:', supabaseUrl ? supabaseUrl.substring(0, 30) : 'EMPTY', 'AnonKey:', supabaseAnonKey ? supabaseAnonKey.length : 0, 'ServiceKey:', supabaseServiceKey ? supabaseServiceKey.length : 0);
+    
+    if (!supabaseServiceKey) {
+      console.error('[animate-scene] CRITICAL: SUPABASE_SERVICE_ROLE_KEY is not set!');
+      return new Response(JSON.stringify({ 
+        error: 'Server configuration error: Service key not available' 
+      }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
     // Authenticate user
+    console.log('[animate-scene] Creating supabase client for auth...');
     const supabase = createClient(supabaseUrl, supabaseAnonKey, {
       global: { headers: { Authorization: authHeader } }
     });
 
+    console.log('[animate-scene] Getting user...');
     const { data: { user }, error: userError } = await supabase.auth.getUser();
-    if (userError || !user) {
+    
+    if (userError) {
+      console.error('[animate-scene] User auth error:', userError);
+      return new Response(JSON.stringify({ error: 'Unauthorized', details: userError.message }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    
+    if (!user) {
+      console.error('[animate-scene] No user returned');
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
+    
+    console.log('[animate-scene] User authenticated:', user.id);
 
-    const body: AnimateSceneRequest = await req.json();
+    let body: AnimateSceneRequest;
+    try {
+      body = await req.json();
+      console.log(`[animate-scene] Request body received:`, JSON.stringify({ 
+        projectId: body.projectId, 
+        sceneIndex: body.sceneIndex,
+        hasImageUrl: !!body.imageUrl,
+        hasPrompt: !!body.prompt,
+        sceneDuration: body.sceneDuration
+      }));
+    } catch (parseError: any) {
+      console.error(`[animate-scene] Error parsing request body:`, parseError);
+      return new Response(JSON.stringify({ 
+        error: 'Invalid JSON in request body',
+        details: parseError.message 
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    
     const { projectId, sceneIndex, imageUrl, prompt, sceneDuration } = body;
 
     if (!projectId || sceneIndex === undefined || !imageUrl || !prompt) {
+      console.error(`[animate-scene] Missing required fields:`, {
+        hasProjectId: !!projectId,
+        sceneIndex,
+        hasImageUrl: !!imageUrl,
+        hasPrompt: !!prompt
+      });
       return new Response(JSON.stringify({ 
         error: 'projectId, sceneIndex, imageUrl, and prompt are required' 
       }), {
@@ -73,26 +127,52 @@ serve(async (req) => {
     }
 
     // Get user's Kie.ai API key from Vault
+    console.log('[animate-scene] Creating service client...');
     const supabaseService = createClient(supabaseUrl, supabaseServiceKey);
+    console.log('[animate-scene] Service client created');
 
     console.log(`[animate-scene] Fetching Kie.ai API key for user: ${user.id}`);
-    const { data: keiApiKey, error: keiKeyError } = await supabaseService
-      .rpc('get_user_api_key_for_service', {
-        target_user_id: user.id,
-        key_name: 'kei'
-      });
+    let keiApiKey: string;
+    try {
+      const { data: keiApiKeyData, error: keiKeyError } = await supabaseService
+        .rpc('get_user_api_key_for_service', {
+          target_user_id: user.id,
+          key_name: 'kei'
+        });
 
-    if (keiKeyError || !keiApiKey || keiApiKey.trim() === '') {
-      console.error("Error getting Kie.ai API key:", keiKeyError);
+      if (keiKeyError) {
+        console.error("[animate-scene] Error calling get_user_api_key_for_service:", keiKeyError);
+        return new Response(JSON.stringify({ 
+          error: "Erreur lors de la récupération de la clé API Kie.ai",
+          details: keiKeyError.message
+        }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      if (!keiApiKeyData || keiApiKeyData.trim() === '') {
+        console.error("[animate-scene] Kie.ai API key is empty or null");
+        return new Response(JSON.stringify({ 
+          error: "Clé API Kie.ai non configurée. Ajoutez-la dans votre profil." 
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      keiApiKey = keiApiKeyData;
+      console.log(`[animate-scene] Kie.ai API key retrieved (length: ${keiApiKey.length})`);
+    } catch (keyError: any) {
+      console.error("[animate-scene] Exception getting API key:", keyError);
       return new Response(JSON.stringify({ 
-        error: "Clé API Kie.ai non configurée. Ajoutez-la dans votre profil." 
+        error: "Erreur lors de la récupération de la clé API",
+        details: keyError.message
       }), {
-        status: 400,
+        status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
-
-    console.log(`[animate-scene] Kie.ai API key retrieved (length: ${keiApiKey.length})`);
 
     // Create generation job for tracking
     const { data: animationJob, error: jobError } = await supabaseService
@@ -116,7 +196,8 @@ serve(async (req) => {
 
     if (jobError) {
       console.error(`[animate-scene] Error creating job:`, jobError);
-      // Continue anyway - job tracking is optional
+      console.error(`[animate-scene] Job error details:`, JSON.stringify(jobError, null, 2));
+      // Continue anyway - job tracking is optional, but log the error
     } else {
       console.log(`[animate-scene] Created tracking job: ${animationJob.id}`);
     }
@@ -126,22 +207,24 @@ serve(async (req) => {
     console.log(`[animate-scene] Scene duration: ${sceneDuration}s, using Kie.ai duration: ${duration}s`);
 
     // Prepare request for Kie.ai Seedance 1.5 Pro
-    const kieApiUrl = "https://api.kie.ai/v1/predictions";
+    const kieApiUrl = "https://api.kie.ai/api/v1/jobs/createTask";
     
     const requestBody = {
-      version: "seedance-1-5-pro", // Model identifier
+      model: "bytedance/seedance-1.5-pro", // Model identifier
       input: {
         prompt: prompt.substring(0, 2500), // Max 2500 chars
         input_urls: [imageUrl], // Image-to-Video
         aspect_ratio: "16:9",
         resolution: "720p",
-        duration: duration,
+        duration: String(duration), // Must be a string
         fixed_lens: false,
         generate_audio: false
       }
     };
 
     console.log(`[animate-scene] Creating prediction for scene ${sceneIndex}...`);
+    console.log(`[animate-scene] Request URL: ${kieApiUrl}`);
+    console.log(`[animate-scene] Request body:`, JSON.stringify(requestBody, null, 2));
 
     // Create prediction
     const createResponse = await fetch(kieApiUrl, {
@@ -152,6 +235,8 @@ serve(async (req) => {
       },
       body: JSON.stringify(requestBody),
     });
+    
+    console.log(`[animate-scene] Response status: ${createResponse.status}`);
 
     if (!createResponse.ok) {
       const errorText = await createResponse.text();
@@ -165,254 +250,79 @@ serve(async (req) => {
     }
 
     const prediction = await createResponse.json();
-    const predictionId = prediction.id;
+    
+    // Kie.ai API returns { code, msg, data: { taskId, status } }
+    if (prediction.code !== 200 || !prediction.data) {
+      const errorMsg = prediction.msg || 'Failed to create task';
+      console.error(`[animate-scene] Kie.ai API error: ${errorMsg}`, prediction);
+      return new Response(JSON.stringify({ 
+        error: `Kie.ai API error: ${errorMsg}` 
+      }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    
+    const predictionId = prediction.data.taskId;
+    const taskStatus = prediction.data.status;
 
     if (!predictionId) {
       return new Response(JSON.stringify({ 
-        error: 'Failed to create prediction - no ID returned' 
+        error: 'Failed to create task - no taskId returned' 
       }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    console.log(`[animate-scene] Prediction created: ${predictionId}, status: ${prediction.status}`);
+    console.log(`[animate-scene] Task created: ${predictionId}, status: ${taskStatus}`);
 
-    // Update job progress: prediction created
+    // Update job with taskId - polling will be done separately
     if (animationJob) {
       await supabaseService
         .from('generation_jobs')
         .update({ 
-          progress: 0,
+          progress: 5,
           metadata: {
             ...animationJob.metadata,
             predictionId,
-            kieApiStatus: prediction.status
+            kieApiStatus: taskStatus,
+            kieApiTaskId: predictionId
           }
         })
         .eq('id', animationJob.id);
     }
 
-    // Poll for completion (no timeout - can take several minutes)
-    let finalStatus = prediction.status;
-    let videoUrl: string | null = null;
-    let attempts = 0;
-    const maxAttempts = 300; // 300 * 5s = 25 minutes max (should be enough)
+    // Return immediately - polling will be handled by a separate function or frontend
+    // Edge Functions have timeout limits, so we can't poll here for long-running tasks
+    console.log(`[animate-scene] Task ${predictionId} created successfully, returning immediately for async processing`);
 
-    while (finalStatus !== 'succeeded' && finalStatus !== 'failed' && attempts < maxAttempts) {
-      await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds
-      attempts++;
-
-      console.log(`[animate-scene] Polling attempt ${attempts}/${maxAttempts} for prediction ${predictionId}...`);
-
-      // Update job progress during polling
-      if (animationJob && attempts % 6 === 0) { // Update every 30 seconds
-        await supabaseService
-          .from('generation_jobs')
-          .update({ 
-            progress: Math.min(90, Math.floor((attempts / maxAttempts) * 90)), // 0-90% during polling
-            metadata: {
-              ...animationJob.metadata,
-              predictionId,
-              kieApiStatus: finalStatus,
-              pollingAttempts: attempts
-            }
-          })
-          .eq('id', animationJob.id);
-      }
-
-      const statusResponse = await fetch(`${kieApiUrl}/${predictionId}`, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${keiApiKey}`,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (!statusResponse.ok) {
-        console.error(`[animate-scene] Error checking status: ${statusResponse.status}`);
-        break;
-      }
-
-      const statusData = await statusResponse.json();
-      finalStatus = statusData.status;
-      
-      console.log(`[animate-scene] Prediction ${predictionId} status: ${finalStatus}`);
-
-      if (finalStatus === 'succeeded') {
-        // Extract video URL from output
-        if (statusData.output && typeof statusData.output === 'string') {
-          videoUrl = statusData.output;
-        } else if (statusData.output && Array.isArray(statusData.output) && statusData.output.length > 0) {
-          videoUrl = statusData.output[0];
-        } else if (statusData.output && statusData.output.video) {
-          videoUrl = statusData.output.video;
-        }
-        break;
-      } else if (finalStatus === 'failed') {
-        const errorMsg = statusData.error || 'Unknown error';
-        console.error(`[animate-scene] Prediction failed: ${errorMsg}`);
-        
-        // Mark job as failed
-        if (animationJob) {
-          await supabaseService
-            .from('generation_jobs')
-            .update({ 
-              status: 'failed',
-              error_message: `Animation failed: ${errorMsg}`,
-              metadata: {
-                ...animationJob.metadata,
-                predictionId,
-                kieApiStatus: finalStatus,
-                pollingAttempts: attempts
-              }
-            })
-            .eq('id', animationJob.id);
-        }
-
-        return new Response(JSON.stringify({ 
-          error: `Animation failed: ${errorMsg}` 
-        }), {
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      }
-    }
-
-    if (finalStatus !== 'succeeded' || !videoUrl) {
-      // Mark job as failed
-      if (animationJob) {
-        await supabaseService
-          .from('generation_jobs')
-          .update({ 
-            status: 'failed',
-            error_message: `Animation timed out or failed. Final status: ${finalStatus}`,
-            metadata: {
-              ...animationJob.metadata,
-              predictionId,
-              kieApiStatus: finalStatus,
-              pollingAttempts: attempts
-            }
-          })
-          .eq('id', animationJob.id);
-      }
-
-      return new Response(JSON.stringify({ 
-        error: `Animation timed out or failed. Final status: ${finalStatus}` 
-      }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    console.log(`[animate-scene] Animation completed! Video URL: ${videoUrl}`);
-
-    // Update job progress: video URL received
-    if (animationJob) {
-      await supabaseService
-        .from('generation_jobs')
-        .update({ 
-          progress: 95,
-          metadata: {
-            ...animationJob.metadata,
-            predictionId,
-            kieApiStatus: finalStatus,
-            videoUrl
-          }
-        })
-        .eq('id', animationJob.id);
-    }
-
-    // Update project prompts with videoUrl
-    const { data: project } = await supabaseService
-      .from('projects')
-      .select('prompts')
-      .eq('id', projectId)
-      .single();
-
-    if (!project) {
-      return new Response(JSON.stringify({ error: 'Project not found' }), {
-        status: 404,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    const prompts = (project.prompts as any[]) || [];
-    if (sceneIndex >= prompts.length) {
-      return new Response(JSON.stringify({ error: 'Invalid scene index' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    // Update the specific scene with videoUrl
-    prompts[sceneIndex] = {
-      ...prompts[sceneIndex],
-      videoUrl: videoUrl
-    };
-
-    const { error: updateError } = await supabaseService
-      .from('projects')
-      .update({ prompts })
-      .eq('id', projectId);
-
-    if (updateError) {
-      console.error(`[animate-scene] Error updating project:`, updateError);
-      
-      // Mark job as failed
-      if (animationJob) {
-        await supabaseService
-          .from('generation_jobs')
-          .update({ 
-            status: 'failed',
-            error_message: `Failed to update project: ${updateError.message}`
-          })
-          .eq('id', animationJob.id);
-      }
-
-      return new Response(JSON.stringify({ 
-        error: `Failed to update project: ${updateError.message}` 
-      }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    console.log(`[animate-scene] Project updated successfully with videoUrl for scene ${sceneIndex}`);
-
-    // Mark job as completed
-    if (animationJob) {
-      await supabaseService
-        .from('generation_jobs')
-        .update({ 
-          status: 'completed',
-          progress: 100,
-          completed_at: new Date().toISOString(),
-          metadata: {
-            ...animationJob.metadata,
-            predictionId,
-            kieApiStatus: finalStatus,
-            videoUrl,
-            duration: `${duration}s`
-          }
-        })
-        .eq('id', animationJob.id);
-    }
-
-    return new Response(JSON.stringify({
+    const response = {
       success: true,
-      videoUrl,
+      taskId: predictionId,
+      status: taskStatus,
       sceneIndex,
       duration: `${duration}s`,
-      jobId: animationJob?.id
-    }), {
+      jobId: animationJob?.id || null,
+      message: 'Animation task created. Polling will continue in background.'
+    };
+    
+    console.log(`[animate-scene] Returning response:`, JSON.stringify(response, null, 2));
+    
+    return new Response(JSON.stringify(response), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
 
   } catch (error: any) {
-    console.error('[animate-scene] Error:', error);
+    console.error('[animate-scene] Unhandled error:', error);
+    console.error('[animate-scene] Error stack:', error.stack);
+    console.error('[animate-scene] Error name:', error.name);
+    console.error('[animate-scene] Error message:', error.message);
+    
     return new Response(JSON.stringify({ 
-      error: error.message || 'Internal server error' 
+      error: error.message || 'Internal server error',
+      details: error.stack ? error.stack.substring(0, 500) : 'No stack trace',
+      type: error.name || 'UnknownError'
     }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
