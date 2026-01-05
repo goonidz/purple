@@ -369,10 +369,11 @@ function getSubpixelZoomEffect(sceneIndex, duration, width, height, framerate) {
 async function renderSceneWithEffect(imagePath, outputPath, duration, width, height, framerate, sceneIndex, jobId, effectType = 'zoom', renderMethod = 'standard') {
   return new Promise((resolve, reject) => {
     console.log(`[${jobId}] Rendering scene ${sceneIndex} with effectType: "${effectType}" (type: ${typeof effectType})`);
-    const normalizedEffectType = String(effectType).toLowerCase().trim();
+    const normalizedEffectType = String(effectType || '').toLowerCase().trim();
     const isPan = normalizedEffectType === 'pan';
     const isSubpixelZoom = normalizedEffectType === 'zoom_subpixel';
     const isNoEffect = normalizedEffectType === 'none';
+    console.log(`[${jobId}] Normalized effectType: "${normalizedEffectType}"`);
     console.log(`[${jobId}] Is pan effect? ${isPan}, Is subpixel zoom? ${isSubpixelZoom}, Is no effect? ${isNoEffect}`);
     
     // Check if FFmpeg subpixel fork is available (only for subpixel zoom)
@@ -425,13 +426,10 @@ async function renderSceneWithEffect(imagePath, outputPath, duration, width, hei
         return reject(new Error(`Invalid framerate: ${framerate} (must be > 0 and <= 120)`));
       }
       
-      // Validate filter string doesn't contain invalid characters
-      if (finalFilter.includes('undefined') || finalFilter.includes('NaN') || finalFilter.includes('Infinity')) {
-        return reject(new Error(`Invalid filter contains undefined/NaN/Infinity: ${finalFilter}`));
-      }
-      
       // Select the appropriate effect based on effectType
       let filter, effect, finalFilter;
+      
+      console.log(`[${jobId}] Scene ${sceneIndex}: Selecting effect - normalizedEffectType="${normalizedEffectType}", isNoEffect=${isNoEffect}, isPan=${isPan}, isSubpixelZoom=${isSubpixelZoom}`);
       
       if (isNoEffect) {
         // No effect: use zoompan with zoom=1 (no zoom) to generate frames for the duration
@@ -442,6 +440,7 @@ async function renderSceneWithEffect(imagePath, outputPath, duration, width, hei
         const staticFilter = `zoompan=z=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${totalFrames}:s=${width}x${height}:fps=${framerate}`;
         finalFilter = `${preprocessFilter},${staticFilter}`;
         console.log(`[${jobId}] Scene ${sceneIndex}: No effect (static image), ${duration.toFixed(2)}s`);
+        console.log(`[${jobId}] Scene ${sceneIndex}: Final filter for no effect: ${finalFilter}`);
       } else {
         if (isPan) {
           ({ filter, effect } = getPanEffect(sceneIndex, duration, width, height, framerate));
@@ -449,6 +448,7 @@ async function renderSceneWithEffect(imagePath, outputPath, duration, width, hei
           ({ filter, effect } = getSubpixelZoomEffect(sceneIndex, duration, width, height, framerate));
         } else {
           // Default: Ken Burns zoom
+          console.log(`[${jobId}] Scene ${sceneIndex}: Falling back to Ken Burns (effectType="${effectType}", normalized="${normalizedEffectType}")`);
           ({ filter, effect } = getKenBurnsEffect(sceneIndex, duration, width, height, framerate, renderMethod));
         }
         
@@ -468,6 +468,11 @@ async function renderSceneWithEffect(imagePath, outputPath, duration, width, hei
         
         // Combine preprocessing with the effect filter
         finalFilter = `${preprocessFilter},${filter}`;
+      }
+      
+      // Validate filter string doesn't contain invalid characters
+      if (finalFilter.includes('undefined') || finalFilter.includes('NaN') || finalFilter.includes('Infinity')) {
+        return reject(new Error(`Invalid filter contains undefined/NaN/Infinity: ${finalFilter}`));
       }
       
       console.log(`[${jobId}] Final filter chain: ${finalFilter}`);
