@@ -98,16 +98,22 @@ const calculateGroupsIfMissing = (prompts: GeneratedPrompt[]): GeneratedPrompt[]
     return prompts;
   }
   
-  // Sinon, calculer les groupes en analysant les prompts
+  // Sinon, calculer les groupes en analysant les prompts avec reduce
+  // (on utilise reduce au lieu de map pour pouvoir accéder aux éléments précédemment traités)
   let currentGroupId = 1;
-  const updatedPrompts = prompts.map((prompt, index) => {
+  const updatedPrompts: GeneratedPrompt[] = [];
+  
+  for (let index = 0; index < prompts.length; index++) {
+    const prompt = prompts[index];
+    
     // Si déjà un groupId, le garder et mettre à jour currentGroupId si nécessaire
     if (prompt?.continuityGroupId !== null && prompt?.continuityGroupId !== undefined) {
       // Mettre à jour currentGroupId pour les prochaines scènes
       if (prompt.continuityGroupId > currentGroupId) {
         currentGroupId = prompt.continuityGroupId;
       }
-      return prompt;
+      updatedPrompts.push(prompt);
+      continue;
     }
     
     // Détecter continuité par pattern dans le prompt
@@ -118,10 +124,11 @@ const calculateGroupsIfMissing = (prompts: GeneratedPrompt[]): GeneratedPrompt[]
     if (hasContinuityPattern && index > 0) {
       const previousGroupId = updatedPrompts[index - 1]?.continuityGroupId;
       if (previousGroupId !== null && previousGroupId !== undefined) {
-        return {
+        updatedPrompts.push({
           ...prompt,
           continuityGroupId: previousGroupId
-        };
+        });
+        continue;
       }
     }
     
@@ -130,11 +137,11 @@ const calculateGroupsIfMissing = (prompts: GeneratedPrompt[]): GeneratedPrompt[]
       currentGroupId++;
     }
     
-    return {
+    updatedPrompts.push({
       ...prompt,
       continuityGroupId: currentGroupId
-    };
-  });
+    });
+  }
   
   return updatedPrompts;
 };
@@ -1130,6 +1137,9 @@ const Index = () => {
   };
 
   const handleGeneratePrompts = async (testMode: boolean = false) => {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/7569e75c-c860-4717-86b3-bbfc0f7faa5e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Index.tsx:handleGeneratePrompts',message:'handleGeneratePrompts called',data:{testMode,scenesLength:scenes.length,currentProjectId,visualContinuityEnabled},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
+    // #endregion
     if (scenes.length === 0) {
       toast.error("Veuillez d'abord générer les scènes");
       return;
@@ -1147,7 +1157,13 @@ const Index = () => {
     }
 
     // Start background job
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/7569e75c-c860-4717-86b3-bbfc0f7faa5e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Index.tsx:handleGeneratePrompts',message:'calling startJob prompts',data:{currentProjectId},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
+    // #endregion
     const result = await startJob('prompts', { regenerate: false });
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/7569e75c-c860-4717-86b3-bbfc0f7faa5e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Index.tsx:handleGeneratePrompts',message:'startJob result',data:{result},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
+    // #endregion
     if (result) {
       setIsGeneratingPrompts(true);
       toast.info("Génération des prompts lancée en arrière-plan. Vous pouvez quitter cette page.");

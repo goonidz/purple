@@ -351,13 +351,22 @@ export function useGenerationJobs({ projectId, onJobComplete, onJobFailed, autoR
     setIsLoading(true);
 
     try {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/7569e75c-c860-4717-86b3-bbfc0f7faa5e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useGenerationJobs.ts:startJob',message:'invoking start-generation-job',data:{targetProjectId,jobType,metadata},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})}).catch(()=>{});
+      // #endregion
       const { data, error } = await supabase.functions.invoke('start-generation-job', {
         body: { projectId: targetProjectId, jobType, metadata }
       });
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/7569e75c-c860-4717-86b3-bbfc0f7faa5e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useGenerationJobs.ts:startJob',message:'start-generation-job response',data:{data,error:error?.message},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})}).catch(()=>{});
+      // #endregion
 
       if (error) throw error;
 
       if (data.error) {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/7569e75c-c860-4717-86b3-bbfc0f7faa5e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useGenerationJobs.ts:startJob',message:'data.error detected',data:{dataError:data.error,existingJobId:data.existingJobId},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})}).catch(()=>{});
+        // #endregion
         if (data.existingJobId) {
           toast.info("Une génération est déjà en cours pour ce projet");
         } else {
