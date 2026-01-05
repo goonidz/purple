@@ -4563,10 +4563,26 @@ Remember: Use temporal context to understand the topic, but the query must be PR
                         setVisualContinuityEnabled(newValue);
                         // Sauvegarder dans le projet
                         if (currentProjectId) {
-                          await supabase
-                            .from('projects')
-                            .update({ visual_continuity_enabled: newValue })
-                            .eq('id', currentProjectId);
+                          try {
+                            const { error } = await supabase
+                              .from('projects')
+                              .update({ visual_continuity_enabled: newValue })
+                              .eq('id', currentProjectId);
+                            
+                            if (error) {
+                              console.error('Error saving visual_continuity_enabled:', error);
+                              toast.error(`Erreur lors de la sauvegarde: ${error.message}`);
+                              // Revert the checkbox state on error
+                              setVisualContinuityEnabled(!newValue);
+                            } else {
+                              console.log('Successfully saved visual_continuity_enabled:', newValue);
+                            }
+                          } catch (err: any) {
+                            console.error('Exception saving visual_continuity_enabled:', err);
+                            toast.error(`Erreur: ${err.message || 'Erreur inconnue'}`);
+                            // Revert the checkbox state on error
+                            setVisualContinuityEnabled(!newValue);
+                          }
                         }
                       }}
                     />
