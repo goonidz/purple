@@ -281,14 +281,11 @@ export function SceneGrid({
                         <RefreshCw className="h-3.5 w-3.5" />
                       )}
                     </Button>
-                  </div>
-                  {/* Animation button - always visible */}
-                  {onAnimateScene && (
-                    <div className="absolute top-2 left-2">
+                    {onAnimateScene && (
                       <Button
                         variant="secondary"
                         size="sm"
-                        className="h-7 w-7 p-0 shadow-md"
+                        className="h-7 w-7 p-0"
                         onClick={() => onAnimateScene(index)}
                         disabled={generatingImageIndex === index || animatingSceneIndex === index}
                         title="Animer l'image (Seedance 1.5 Pro)"
@@ -299,8 +296,8 @@ export function SceneGrid({
                           <Video className="h-3.5 w-3.5" />
                         )}
                       </Button>
-                    </div>
-                  )}
+                    )}
+                  </div>
                   {/* Web search button - always visible */}
                   {onSearchWeb && (
                     <div className="absolute bottom-2 right-2">
