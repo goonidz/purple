@@ -2440,6 +2440,12 @@ async function processSingleImageJob(
       }
     }
   }
+  
+  console.log(`[processSingleImageJob] Scene ${sceneIndex + 1}: Configuration check:`);
+  console.log(`  - imageModel: ${imageModel}`);
+  console.log(`  - visualContinuityEnabled: ${visualContinuityEnabled}`);
+  console.log(`  - styleReferenceUrls count: ${styleReferenceUrls.length}`);
+  console.log(`  - styleReferenceUrls: ${styleReferenceUrls.length > 0 ? styleReferenceUrls.join(', ').substring(0, 100) + '...' : 'NONE'}`);
 
   // Build webhook URL - use async webhook mode like processImagesJob
   const webhookUrl = `${supabaseUrl}/functions/v1/replicate-webhook`;
@@ -2502,8 +2508,12 @@ async function processSingleImageJob(
     userId,
   };
 
+  console.log(`[processSingleImageJob] Scene ${sceneIndex + 1}: Final image URLs to send: ${finalImageUrls.length}`);
   if (finalImageUrls.length > 0) {
     requestBody.image_urls = finalImageUrls;
+    console.log(`  - URLs: ${finalImageUrls.map(u => u.substring(0, 60) + '...').join(', ')}`);
+  } else {
+    console.log(`  - NO IMAGE REFERENCES - generating without style reference`);
   }
   
   // Add LoRA parameters for z-image-turbo-lora model

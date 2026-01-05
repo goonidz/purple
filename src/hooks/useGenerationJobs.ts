@@ -235,32 +235,19 @@ export function useGenerationJobs({ projectId, onJobComplete, onJobFailed, autoR
         const jobIds = currentJobs.map(j => j.id);
         console.log('Polling for jobs:', jobIds);
         
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/7569e75c-c860-4717-86b3-bbfc0f7faa5e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useGenerationJobs.ts:238',message:'polling start',data:{jobIds,jobCount:jobIds.length},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
-        // #endregion
         const { data, error } = await supabase
           .from('generation_jobs')
           .select('*')
           .in('id', jobIds);
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/7569e75c-c860-4717-86b3-bbfc0f7faa5e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useGenerationJobs.ts:245',message:'polling response raw',data:{dataLength:data?.length,hasError:!!error,errorMsg:error?.message,firstJobKeys:data?.[0]?Object.keys(data[0]):[],firstJobId:data?.[0]?.id,firstJobStatus:data?.[0]?.status},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
-        // #endregion
-
         if (error) {
           console.error('Polling error:', error);
           console.error('Error details:', JSON.stringify(error, null, 2));
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/7569e75c-c860-4717-86b3-bbfc0f7faa5e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useGenerationJobs.ts:252',message:'polling error',data:{error:error?.message,code:error?.code},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
-          // #endregion
           return;
         }
         
         if (!data || data.length === 0) {
           console.log('No jobs found in polling response');
           console.log('Job IDs queried:', jobIds);
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/7569e75c-c860-4717-86b3-bbfc0f7faa5e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useGenerationJobs.ts:260',message:'no jobs in response',data:{jobIds},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
-          // #endregion
           // Try to fetch one job individually to debug
           if (jobIds.length > 0) {
             const { data: singleJob, error: singleError } = await supabase
@@ -269,9 +256,6 @@ export function useGenerationJobs({ projectId, onJobComplete, onJobFailed, autoR
               .eq('id', jobIds[0])
               .single();
             console.log('Single job fetch result:', { data: singleJob, error: singleError });
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/7569e75c-c860-4717-86b3-bbfc0f7faa5e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useGenerationJobs.ts:270',message:'single job fetch',data:{hasJob:!!singleJob,jobId:singleJob?.id,jobStatus:singleJob?.status,error:singleError?.message},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
-            // #endregion
           }
           return;
         }
@@ -283,9 +267,6 @@ export function useGenerationJobs({ projectId, onJobComplete, onJobFailed, autoR
           console.error('⚠️  Received empty objects in polling response - possible RLS issue');
           console.error('Job IDs:', jobIds);
           console.error('Full response:', JSON.stringify(data, null, 2));
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/7569e75c-c860-4717-86b3-bbfc0f7faa5e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useGenerationJobs.ts:282',message:'EMPTY OBJECTS - RLS issue suspected',data:{jobIds,dataLength:data.length},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
-          // #endregion
         }
 
         data.forEach(job => {
@@ -302,9 +283,6 @@ export function useGenerationJobs({ projectId, onJobComplete, onJobFailed, autoR
           // Check if status changed to completed or failed
           if (typedJob.status === 'completed' && existingJob.status !== 'completed') {
             console.log('Polling detected job completed:', typedJob.id);
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/7569e75c-c860-4717-86b3-bbfc0f7faa5e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useGenerationJobs.ts:290',message:'job completed',data:{jobId:typedJob.id,jobType:typedJob.job_type},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})}).catch(()=>{});
-            // #endregion
             onJobCompleteRef.current?.(typedJob);
             setActiveJobs(prev => prev.filter(j => j.id !== typedJob.id));
             // Check for missing images and auto-retry
@@ -373,15 +351,9 @@ export function useGenerationJobs({ projectId, onJobComplete, onJobFailed, autoR
     setIsLoading(true);
 
     try {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/7569e75c-c860-4717-86b3-bbfc0f7faa5e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useGenerationJobs.ts:355',message:'startJob called',data:{targetProjectId,jobType,metadata},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D'})}).catch(()=>{});
-      // #endregion
       const { data, error } = await supabase.functions.invoke('start-generation-job', {
         body: { projectId: targetProjectId, jobType, metadata }
       });
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/7569e75c-c860-4717-86b3-bbfc0f7faa5e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useGenerationJobs.ts:358',message:'startJob response',data:{data,error:error?.message},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D'})}).catch(()=>{});
-      // #endregion
 
       if (error) throw error;
 
