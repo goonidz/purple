@@ -1079,9 +1079,61 @@ async function processImagesJob(
           userId,
         };
 
-        if (styleReferenceUrls.length > 0) {
-          requestBody.image_urls = styleReferenceUrls;
+        // Visual continuity logic: use previous scene's image as reference if continuity detected
+        let finalImageUrls = [...styleReferenceUrls];
+        let finalPrompt = prompt.prompt;
+        
+        if (visualContinuityEnabled && imageModel === 'seedream-4.5' && index > 0) {
+          const previousScene = prompts[index - 1];
+          
+          if (previousScene?.imageUrl && previousScene?.prompt && previousScene?.text) {
+            try {
+              console.log(`[processImagesJob] Checking continuity for scene ${index + 1} (previous: scene ${index})`);
+              
+              const continuityResponse = await fetch(`${supabaseUrl}/functions/v1/analyze-scene-continuity`, {
+                method: 'POST',
+                headers: {
+                  'Authorization': authHeader,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  currentSceneText: prompt.text || '',
+                  previousSceneText: previousScene.text || '',
+                  previousPrompt: previousScene.prompt || ''
+                }),
+              });
+              
+              if (continuityResponse.ok) {
+                const continuityData = await continuityResponse.json();
+                
+                if (continuityData.hasContinuity && continuityData.confidence >= 0.7) {
+                  console.log(`[processImagesJob] Continuity detected (confidence: ${continuityData.confidence}) - using previous image as reference`);
+                  
+                  // Add previous scene's image as first reference (most important)
+                  finalImageUrls = [previousScene.imageUrl, ...styleReferenceUrls];
+                  
+                  // Modify prompt to describe changes while keeping the setting
+                  if (continuityData.modifiedPromptSuffix) {
+                    finalPrompt = `${prompt.prompt}. ${continuityData.modifiedPromptSuffix}`;
+                  }
+                } else {
+                  console.log(`[processImagesJob] No continuity detected (confidence: ${continuityData.confidence}) - normal generation`);
+                }
+              } else {
+                console.error(`[processImagesJob] Failed to analyze continuity: ${continuityResponse.status}`);
+              }
+            } catch (continuityError) {
+              console.error(`[processImagesJob] Error checking continuity:`, continuityError);
+              // Continue with normal generation if continuity check fails
+            }
+          }
         }
+
+        if (finalImageUrls.length > 0) {
+          requestBody.image_urls = finalImageUrls;
+        }
+        
+        requestBody.prompt = finalPrompt;
         
         if (imageModel === 'z-image-turbo-lora') {
           if (project.lora_url) {
@@ -1781,6 +1833,7 @@ async function processSingleImageJob(
   let imageWidth = project.image_width || 1920;
   let imageHeight = project.image_height || 1080;
   const imageModel = project.image_model || 'seedream-4.5';
+  const visualContinuityEnabled = project.visual_continuity_enabled || false;
 
   // IMPORTANT: For Z-Image models with 16:9, always generate at 960x544 (will be upscaled later)
   const isZImage = imageModel === 'z-image-turbo' || imageModel === 'z-image-turbo-lora';
@@ -1818,8 +1871,58 @@ async function processSingleImageJob(
   // Build webhook URL - use async webhook mode like processImagesJob
   const webhookUrl = `${supabaseUrl}/functions/v1/replicate-webhook`;
 
+  // Visual continuity logic: use previous scene's image as reference if continuity detected
+  let finalImageUrls = [...styleReferenceUrls];
+  let finalPrompt = prompt.prompt;
+  
+  if (visualContinuityEnabled && imageModel === 'seedream-4.5' && sceneIndex > 0) {
+    const previousScene = prompts[sceneIndex - 1];
+    
+    if (previousScene?.imageUrl && previousScene?.prompt && previousScene?.text) {
+      try {
+        console.log(`[processSingleImageJob] Checking continuity for scene ${sceneIndex + 1} (previous: scene ${sceneIndex})`);
+        
+        const continuityResponse = await fetch(`${supabaseUrl}/functions/v1/analyze-scene-continuity`, {
+          method: 'POST',
+          headers: {
+            'Authorization': authHeader,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            currentSceneText: prompt.text || '',
+            previousSceneText: previousScene.text || '',
+            previousPrompt: previousScene.prompt || ''
+          }),
+        });
+        
+        if (continuityResponse.ok) {
+          const continuityData = await continuityResponse.json();
+          
+          if (continuityData.hasContinuity && continuityData.confidence >= 0.7) {
+            console.log(`[processSingleImageJob] Continuity detected (confidence: ${continuityData.confidence}) - using previous image as reference`);
+            
+            // Add previous scene's image as first reference (most important)
+            finalImageUrls = [previousScene.imageUrl, ...styleReferenceUrls];
+            
+            // Modify prompt to describe changes while keeping the setting
+            if (continuityData.modifiedPromptSuffix) {
+              finalPrompt = `${prompt.prompt}. ${continuityData.modifiedPromptSuffix}`;
+            }
+          } else {
+            console.log(`[processSingleImageJob] No continuity detected (confidence: ${continuityData.confidence}) - normal generation`);
+          }
+        } else {
+          console.error(`[processSingleImageJob] Failed to analyze continuity: ${continuityResponse.status}`);
+        }
+      } catch (continuityError) {
+        console.error(`[processSingleImageJob] Error checking continuity:`, continuityError);
+        // Continue with normal generation if continuity check fails
+      }
+    }
+  }
+
   const requestBody: any = {
-    prompt: prompt.prompt,
+    prompt: finalPrompt,
     width: imageWidth,
     height: imageHeight,
     model: imageModel,
@@ -1828,8 +1931,8 @@ async function processSingleImageJob(
     userId,
   };
 
-  if (styleReferenceUrls.length > 0) {
-    requestBody.image_urls = styleReferenceUrls;
+  if (finalImageUrls.length > 0) {
+    requestBody.image_urls = finalImageUrls;
   }
   
   // Add LoRA parameters for z-image-turbo-lora model

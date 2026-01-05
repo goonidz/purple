@@ -48,6 +48,7 @@ import {
   type ExportMode
 } from "@/lib/videoExportHelpers";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { VideoPreview } from "@/components/VideoPreview";
 import { PresetManager } from "@/components/PresetManager";
@@ -127,6 +128,7 @@ const Index = () => {
   const [imageModel, setImageModel] = useState<string>("seedream-4.5");
   const [loraUrl, setLoraUrl] = useState<string>("");
   const [loraSteps, setLoraSteps] = useState<number>(10);
+  const [visualContinuityEnabled, setVisualContinuityEnabled] = useState<boolean>(false);
   const [isGeneratingImages, setIsGeneratingImages] = useState(false);
   const [generatingImageIndex, setGeneratingImageIndex] = useState<number | null>(null);
   const [generatingPromptIndex, setGeneratingPromptIndex] = useState<number | null>(null);
@@ -720,6 +722,7 @@ const Index = () => {
       if (projectData.image_model) setImageModel(projectData.image_model);
       if (projectData.lora_url) setLoraUrl(projectData.lora_url);
       if (projectData.lora_steps) setLoraSteps(projectData.lora_steps);
+      if (projectData.visual_continuity_enabled !== undefined) setVisualContinuityEnabled(projectData.visual_continuity_enabled);
       if (projectData.prompt_system_message) {
         setPromptSystemMessage(projectData.prompt_system_message);
       } else if (projectData.prompts && Array.isArray(projectData.prompts) && projectData.prompts.length > 0) {
@@ -4490,6 +4493,30 @@ Remember: Use temporal context to understand the topic, but the query must be PR
                     }
                   </p>
                 </div>
+
+                {/* Visual continuity option for Seedream 4.5 */}
+                {imageModel === 'seedream-4.5' && (
+                  <div className="flex items-center space-x-2">
+                    <Checkbox 
+                      id="visual-continuity" 
+                      checked={visualContinuityEnabled}
+                      onCheckedChange={async (checked) => {
+                        const newValue = checked as boolean;
+                        setVisualContinuityEnabled(newValue);
+                        // Sauvegarder dans le projet
+                        if (currentProjectId) {
+                          await supabase
+                            .from('projects')
+                            .update({ visual_continuity_enabled: newValue })
+                            .eq('id', currentProjectId);
+                        }
+                      }}
+                    />
+                    <Label htmlFor="visual-continuity" className="text-sm cursor-pointer">
+                      Continuité visuelle (utilise l'image précédente comme référence si même sujet)
+                    </Label>
+                  </div>
+                )}
 
                 {/* LoRA configuration for z-image-turbo-lora */}
                 {imageModel === "z-image-turbo-lora" && (
