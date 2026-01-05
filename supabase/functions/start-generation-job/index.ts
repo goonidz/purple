@@ -1038,20 +1038,22 @@ async function processPromptsJob(
         }
       }
 
-      // Calculate group ID
-      let groupId: number;
-      if (index === 0) {
-        groupId = 1;
-        currentGroupId = 1;
-      } else if (hasContinuity) {
-        // Same group as previous scene
-        groupId = newPrompts[index - 1]?.continuityGroupId || currentGroupId;
-      } else {
-        // New group
-        currentGroupId++;
-        groupId = currentGroupId;
+      // Calculate group ID (only if visual continuity is enabled)
+      let groupId: number | null = null;
+      if (visualContinuityEnabled) {
+        if (index === 0) {
+          groupId = 1;
+          currentGroupId = 1;
+        } else if (hasContinuity) {
+          // Same group as previous scene
+          groupId = newPrompts[index - 1]?.continuityGroupId || currentGroupId;
+        } else {
+          // New group
+          currentGroupId++;
+          groupId = currentGroupId;
+        }
+        groupMap.set(index, groupId);
       }
-      groupMap.set(index, groupId);
 
       try {
         const response = await fetch(`${supabaseUrl}/functions/v1/generate-prompts`, {
@@ -1081,6 +1083,7 @@ async function processPromptsJob(
 
         if (response.ok) {
           const data = await response.json();
+          const finalGroupId = visualContinuityEnabled ? groupId : null;
           newPrompts[index] = {
             scene: `Scène ${index + 1}`,
             prompt: data.prompt,
@@ -1089,9 +1092,13 @@ async function processPromptsJob(
             endTime: scene.endTime,
             duration: scene.endTime - scene.startTime,
             imageUrl: newPrompts[index]?.imageUrl,
-            continuityGroupId: groupId
+            continuityGroupId: finalGroupId
           };
-          console.log(`[processPromptsJob] Scene ${index + 1}: Generated prompt, assigned to group ${groupId}`);
+          if (finalGroupId) {
+            console.log(`[processPromptsJob] Scene ${index + 1}: Generated prompt, assigned to group ${finalGroupId}`);
+          } else {
+            console.log(`[processPromptsJob] Scene ${index + 1}: Generated prompt (no continuity group)`);
+          }
         } else {
           console.error(`[processPromptsJob] Scene ${index + 1}: Failed to generate prompt - ${response.status}`);
         }

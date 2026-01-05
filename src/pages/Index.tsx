@@ -3353,8 +3353,19 @@ const Index = () => {
                           </Button>
                           <Button
                             onClick={() => handleGeneratePrompts(false)}
-                            disabled={isGeneratingPrompts || (!hasTestedFirstTwo && !generatedPrompts.some((p: any) => p && p.prompt && p.prompt.trim() !== ''))}
-                            title={!hasTestedFirstTwo && !generatedPrompts.some((p: any) => p && p.prompt && p.prompt.trim() !== '') ? "Veuillez d'abord tester avec les 2 premières scènes" : ""}
+                            disabled={
+                              isGeneratingPrompts || 
+                              (!hasTestedFirstTwo && 
+                               generatedPrompts.length === 0 && 
+                               !generatedPrompts.some((p: any) => p && p.prompt))
+                            }
+                            title={
+                              !hasTestedFirstTwo && 
+                              generatedPrompts.length === 0 && 
+                              !generatedPrompts.some((p: any) => p && p.prompt)
+                                ? "Veuillez d'abord tester avec les 2 premières scènes" 
+                                : ""
+                            }
                             size="sm"
                           >
                             {isGeneratingPrompts ? (
