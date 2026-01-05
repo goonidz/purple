@@ -879,15 +879,18 @@ async function processPromptsJob(
   let continuityDataMap = new Map<number, any>(); // Stocke les données complètes de continuité
   let groupMap = new Map<number, number>(); // sceneIndex -> groupId
   
-  if (visualContinuityEnabled) {
-    console.log(`[processPromptsJob] Analyzing continuities for all scenes to calculate groups...`);
+  // Check if we have enough existing prompts for continuity analysis
+  const hasEnoughExistingPrompts = existingPrompts.filter((p: any) => p?.prompt).length >= scenesToProcess.length - 1;
+  
+  if (visualContinuityEnabled && hasEnoughExistingPrompts) {
+    console.log(`[processPromptsJob] Analyzing continuities for all scenes (using existing prompts)...`);
     
     // Analyser toutes les continuités en parallèle (utiliser existingPrompts pour les scènes précédentes)
     const continuityPromises = scenesToProcess
       .filter(({ index }: any) => index > 0) // Skip first scene
       .map(async ({ scene, index }: any) => {
         // Utiliser existingPrompts pour la scène précédente (qui a déjà un prompt)
-        const previousScene = existingPrompts[index - 1] || newPrompts[index - 1];
+        const previousScene = existingPrompts[index - 1];
         if (!previousScene?.text || !previousScene?.prompt) {
           return { index, hasContinuity: false, data: null };
         }
@@ -964,44 +967,52 @@ async function processPromptsJob(
       }
     }
     
-    console.log(`[processPromptsJob] Calculated ${Math.max(...Array.from(groupMap.values()))} continuity groups`);
+    const groupValues = Array.from(groupMap.values());
+    const maxGroupId = groupValues.length > 0 ? Math.max(...groupValues) : 0;
+    console.log(`[processPromptsJob] Calculated ${maxGroupId} continuity groups`);
     console.log(`[processPromptsJob] Group mapping:`, Array.from(groupMap.entries()).map(([idx, gid]) => `Scene ${idx + 1} → G${gid}`).join(', '));
+  } else if (visualContinuityEnabled) {
+    // Not enough existing prompts - need sequential generation for continuity
+    console.log(`[processPromptsJob] Continuity enabled but no existing prompts - using SEQUENTIAL generation`);
   }
 
-  // Process chunk in parallel
+  // Determine if we should process sequentially (for continuity with no existing prompts)
+  const shouldProcessSequentially = visualContinuityEnabled && !hasEnoughExistingPrompts;
+
+  // Process chunk
   let progress = 0;
-  const batchPromises = scenesToProcess.map(async ({ scene, index }: any) => {
-    // Get previous prompts for context
-    const previousPrompts = newPrompts
-      .slice(Math.max(0, index - 3), index)
-      .filter((p: any) => p?.prompt && p.prompt !== "Erreur lors de la génération")
-      .map((p: any) => p.prompt);
-
-    // Get previous and next scene texts for temporal/narrative context
-    const previousSceneTexts = scenes
-      .slice(Math.max(0, index - 5), index)
-      .map((s: any) => s.text);
-
-    const nextSceneTexts = scenes
-      .slice(index + 1, Math.min(scenes.length, index + 6))
-      .map((s: any) => s.text);
-
-    // Utiliser les résultats de l'analyse préalable si disponible
-    let hasContinuity = false;
-    let continuityData = null;
+  
+  if (shouldProcessSequentially) {
+    // SEQUENTIAL processing for continuity when no existing prompts
+    console.log(`[processPromptsJob] Processing ${scenesToProcess.length} prompts SEQUENTIALLY for continuity analysis`);
     
-    if (visualContinuityEnabled && index > 0) {
-      const continuityDataFull = continuityDataMap.get(index);
-      if (continuityDataFull) {
-        hasContinuity = continuityDataFull.hasContinuity && continuityDataFull.confidence >= 0.7;
-        continuityData = continuityDataFull; // Utiliser les données complètes
-        console.log(`[processPromptsJob] Scene ${index + 1}: Using pre-analyzed continuity: ${hasContinuity ? 'DETECTED' : 'NOT detected'}`);
-      } else {
-        // Fallback: analyser individuellement si pas dans le map (ne devrait pas arriver)
+    let currentGroupId = 1;
+    
+    for (const { scene, index } of scenesToProcess) {
+      // Get previous prompts for context
+      const previousPrompts = newPrompts
+        .slice(Math.max(0, index - 3), index)
+        .filter((p: any) => p?.prompt && p.prompt !== "Erreur lors de la génération")
+        .map((p: any) => p.prompt);
+
+      // Get previous and next scene texts for temporal/narrative context
+      const previousSceneTexts = scenes
+        .slice(Math.max(0, index - 5), index)
+        .map((s: any) => s.text);
+
+      const nextSceneTexts = scenes
+        .slice(index + 1, Math.min(scenes.length, index + 6))
+        .map((s: any) => s.text);
+
+      // Analyze continuity with previous prompt (now available because sequential)
+      let hasContinuity = false;
+      let continuityData = null;
+      
+      if (index > 0) {
         const previousScene = newPrompts[index - 1];
         if (previousScene?.text && previousScene?.prompt) {
           try {
-            console.log(`[processPromptsJob] Scene ${index + 1}: Analyzing continuity individually (fallback)...`);
+            console.log(`[processPromptsJob] Scene ${index + 1}: Analyzing continuity with previous prompt...`);
             const continuityResponse = await fetch(`${supabaseUrl}/functions/v1/analyze-scene-continuity`, {
               method: 'POST',
               headers: {
@@ -1018,71 +1029,176 @@ async function processPromptsJob(
             if (continuityResponse.ok) {
               continuityData = await continuityResponse.json();
               hasContinuity = continuityData.hasContinuity && continuityData.confidence >= 0.7;
+              console.log(`[processPromptsJob] Scene ${index + 1}: Continuity ${hasContinuity ? 'DETECTED' : 'NOT detected'} (confidence: ${continuityData.confidence})`);
             }
           } catch (error) {
             console.error(`[processPromptsJob] Scene ${index + 1}: Error analyzing continuity:`, error);
           }
         }
       }
+
+      // Calculate group ID
+      let groupId: number;
+      if (index === 0) {
+        groupId = 1;
+        currentGroupId = 1;
+      } else if (hasContinuity) {
+        // Same group as previous scene
+        groupId = newPrompts[index - 1]?.continuityGroupId || currentGroupId;
+      } else {
+        // New group
+        currentGroupId++;
+        groupId = currentGroupId;
+      }
+      groupMap.set(index, groupId);
+
+      try {
+        const response = await fetch(`${supabaseUrl}/functions/v1/generate-prompts`, {
+          method: 'POST',
+          headers: {
+            'Authorization': authHeader,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            scene: scene.text,
+            summary,
+            examplePrompts: filteredExamples,
+            sceneIndex: index + 1,
+            totalScenes: scenes.length,
+            startTime: scene.startTime,
+            endTime: scene.endTime,
+            customSystemPrompt,
+            previousPrompts,
+            previousSceneTexts,
+            nextSceneTexts,
+            // Continuity parameters
+            hasContinuity,
+            previousPrompt: hasContinuity ? newPrompts[index - 1]?.prompt : null,
+            continuityElements: hasContinuity ? continuityData : null
+          }),
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          newPrompts[index] = {
+            scene: `Scène ${index + 1}`,
+            prompt: data.prompt,
+            text: scene.text,
+            startTime: scene.startTime,
+            endTime: scene.endTime,
+            duration: scene.endTime - scene.startTime,
+            imageUrl: newPrompts[index]?.imageUrl,
+            continuityGroupId: groupId
+          };
+          console.log(`[processPromptsJob] Scene ${index + 1}: Generated prompt, assigned to group ${groupId}`);
+        } else {
+          console.error(`[processPromptsJob] Scene ${index + 1}: Failed to generate prompt - ${response.status}`);
+        }
+      } catch (error) {
+        console.error(`Error generating prompt for scene ${index + 1}:`, error);
+      }
+
+      // Update progress after each prompt
+      progress++;
+      await adminClient
+        .from('generation_jobs')
+        .update({ progress })
+        .eq('id', jobId);
     }
+    
+    const groupValues = Array.from(groupMap.values());
+    const maxGroupId = groupValues.length > 0 ? Math.max(...groupValues) : 0;
+    console.log(`[processPromptsJob] Sequential processing complete. Created ${maxGroupId} continuity groups`);
+    
+  } else {
+    // PARALLEL processing (original behavior)
+    const batchPromises = scenesToProcess.map(async ({ scene, index }: any) => {
+      // Get previous prompts for context
+      const previousPrompts = newPrompts
+        .slice(Math.max(0, index - 3), index)
+        .filter((p: any) => p?.prompt && p.prompt !== "Erreur lors de la génération")
+        .map((p: any) => p.prompt);
 
-    try {
-      const response = await fetch(`${supabaseUrl}/functions/v1/generate-prompts`, {
-        method: 'POST',
-        headers: {
-          'Authorization': authHeader,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          scene: scene.text,
-          summary,
-          examplePrompts: filteredExamples,
-          sceneIndex: index + 1,
-          totalScenes: scenes.length,
-          startTime: scene.startTime,
-          endTime: scene.endTime,
-          customSystemPrompt,
-          previousPrompts,
-          previousSceneTexts,
-          nextSceneTexts,
-          // NOUVEAU: Paramètres de continuité
-          hasContinuity,
-          previousPrompt: hasContinuity ? newPrompts[index - 1]?.prompt : null,
-          continuityElements: hasContinuity ? continuityData : null
-        }),
-      });
+      // Get previous and next scene texts for temporal/narrative context
+      const previousSceneTexts = scenes
+        .slice(Math.max(0, index - 5), index)
+        .map((s: any) => s.text);
 
-      if (response.ok) {
-        const data = await response.json();
-        const groupId = visualContinuityEnabled ? (groupMap.get(index) || null) : null;
-        newPrompts[index] = {
-          scene: `Scène ${index + 1}`,
-          prompt: data.prompt,
-          text: scene.text,
-          startTime: scene.startTime,
-          endTime: scene.endTime,
-          duration: scene.endTime - scene.startTime,
-          imageUrl: newPrompts[index]?.imageUrl, // Preserve existing image
-          continuityGroupId: groupId // NOUVEAU: Stocker l'ID du groupe
-        };
-        if (groupId) {
-          console.log(`[processPromptsJob] Scene ${index + 1}: Assigned to continuity group ${groupId}`);
+      const nextSceneTexts = scenes
+        .slice(index + 1, Math.min(scenes.length, index + 6))
+        .map((s: any) => s.text);
+
+      // Utiliser les résultats de l'analyse préalable si disponible
+      let hasContinuity = false;
+      let continuityData = null;
+      
+      if (visualContinuityEnabled && index > 0) {
+        const continuityDataFull = continuityDataMap.get(index);
+        if (continuityDataFull) {
+          hasContinuity = continuityDataFull.hasContinuity && continuityDataFull.confidence >= 0.7;
+          continuityData = continuityDataFull;
+          console.log(`[processPromptsJob] Scene ${index + 1}: Using pre-analyzed continuity: ${hasContinuity ? 'DETECTED' : 'NOT detected'}`);
         }
       }
-    } catch (error) {
-      console.error(`Error generating prompt for scene ${index + 1}:`, error);
-    }
-  });
 
-  await Promise.all(batchPromises);
+      try {
+        const response = await fetch(`${supabaseUrl}/functions/v1/generate-prompts`, {
+          method: 'POST',
+          headers: {
+            'Authorization': authHeader,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            scene: scene.text,
+            summary,
+            examplePrompts: filteredExamples,
+            sceneIndex: index + 1,
+            totalScenes: scenes.length,
+            startTime: scene.startTime,
+            endTime: scene.endTime,
+            customSystemPrompt,
+            previousPrompts,
+            previousSceneTexts,
+            nextSceneTexts,
+            // Continuity parameters
+            hasContinuity,
+            previousPrompt: hasContinuity ? existingPrompts[index - 1]?.prompt : null,
+            continuityElements: hasContinuity ? continuityData : null
+          }),
+        });
 
-  // Update progress
-  progress = scenesToProcess.length;
-  
-  await adminClient
-    .from('generation_jobs')
-    .update({ progress })
-    .eq('id', jobId);
+        if (response.ok) {
+          const data = await response.json();
+          const groupId = visualContinuityEnabled ? (groupMap.get(index) || null) : null;
+          newPrompts[index] = {
+            scene: `Scène ${index + 1}`,
+            prompt: data.prompt,
+            text: scene.text,
+            startTime: scene.startTime,
+            endTime: scene.endTime,
+            duration: scene.endTime - scene.startTime,
+            imageUrl: newPrompts[index]?.imageUrl,
+            continuityGroupId: groupId
+          };
+          if (groupId) {
+            console.log(`[processPromptsJob] Scene ${index + 1}: Assigned to continuity group ${groupId}`);
+          }
+        }
+      } catch (error) {
+        console.error(`Error generating prompt for scene ${index + 1}:`, error);
+      }
+    });
+
+    await Promise.all(batchPromises);
+    
+    // Update progress after parallel batch
+    progress = scenesToProcess.length;
+    
+    await adminClient
+      .from('generation_jobs')
+      .update({ progress })
+      .eq('id', jobId);
+  }
 
   // Save prompts
   await adminClient
