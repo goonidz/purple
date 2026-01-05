@@ -27,7 +27,10 @@ function getClosestDuration(duration: number): "4" | "8" | "12" {
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+    return new Response('ok', { 
+      status: 200,
+      headers: corsHeaders 
+    });
   }
 
   try {
