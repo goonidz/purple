@@ -16,7 +16,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Version identifier - update this when making pan/zoom changes
-const SERVICE_VERSION = 'v2.14-duration-limit-fix';
+const SERVICE_VERSION = 'v2.15-auto-cleanup';
 
 // Path to FFmpeg fork with subpixel zoom support
 // Install with: ./install-ffmpeg-subpixel.sh
@@ -843,7 +843,7 @@ async function processRenderJob(jobId, renderData) {
     try {
       const { execSync } = require('child_process');
       const dfOutput = execSync(`df -BM ${TEMP_DIR} | tail -1 | awk '{print $4}'`).toString().trim();
-      const availableMB = parseInt(dfOutput.replace('M', ''));
+      let availableMB = parseInt(dfOutput.replace('M', ''));
       console.log(`[${jobId}] Available disk space: ${availableMB} MB`);
       
       // Estimate required space (segments size * 1.5 for safety)
@@ -857,8 +857,20 @@ async function processRenderJob(jobId, renderData) {
       const requiredMB = Math.ceil((totalSegmentSize * 1.5) / 1024 / 1024);
       console.log(`[${jobId}] Estimated space needed: ${requiredMB} MB (segments: ${Math.ceil(totalSegmentSize / 1024 / 1024)} MB)`);
       
+      // If insufficient space, try to clean up old jobs
+      if (availableMB < requiredMB + 500) {
+        console.log(`[${jobId}] Insufficient disk space. Attempting to clean up old jobs...`);
+        const cleanupResult = await cleanupOldJobs(1); // Clean jobs older than 1 hour
+        console.log(`[${jobId}] Cleanup result: ${cleanupResult.deletedCount} jobs deleted, ${cleanupResult.freedMB.toFixed(2)} MB freed`);
+        
+        // Re-check available space after cleanup
+        const dfOutputAfter = execSync(`df -BM ${TEMP_DIR} | tail -1 | awk '{print $4}'`).toString().trim();
+        availableMB = parseInt(dfOutputAfter.replace('M', ''));
+        console.log(`[${jobId}] Available disk space after cleanup: ${availableMB} MB`);
+      }
+      
       if (availableMB < requiredMB + 500) { // Keep 500MB buffer
-        throw new Error(`Insufficient disk space. Available: ${availableMB}MB, Required: ${requiredMB}MB + 500MB buffer`);
+        throw new Error(`Insufficient disk space. Available: ${availableMB}MB, Required: ${requiredMB}MB + 500MB buffer. Please free up space manually or wait for cleanup script.`);
       }
     } catch (diskErr) {
       if (diskErr.message.includes('Insufficient disk space')) {
@@ -1347,6 +1359,76 @@ async function cleanup(workDir) {
     }
   } catch (error) {
     console.error('Cleanup error:', error);
+  }
+}
+
+// Cleanup old completed/failed jobs from temp directory to free up space
+async function cleanupOldJobs(maxAgeHours = 1) {
+  try {
+    if (!fs.existsSync(TEMP_DIR)) {
+      return { deletedCount: 0, freedMB: 0 };
+    }
+    
+    const entries = fs.readdirSync(TEMP_DIR);
+    const now = Date.now();
+    const maxAgeMs = maxAgeHours * 60 * 60 * 1000;
+    let deletedCount = 0;
+    let freedBytes = 0;
+    
+    for (const entry of entries) {
+      const jobDir = path.join(TEMP_DIR, entry);
+      try {
+        const stats = fs.statSync(jobDir);
+        if (stats.isDirectory()) {
+          // Check if job is old enough to delete
+          const ageMs = now - stats.mtimeMs;
+          if (ageMs > maxAgeMs) {
+            // Check job status in memory
+            const jobId = entry;
+            const job = jobs.get(jobId);
+            
+            // Only delete if job is completed, failed, or cancelled (or not in memory = old)
+            if (!job || job.status === 'completed' || job.status === 'failed' || job.status === 'cancelled') {
+              // Calculate size before deletion
+              let dirSize = 0;
+              try {
+                const { execSync } = require('child_process');
+                const duOutput = execSync(`du -sb ${jobDir} 2>/dev/null || echo 0`).toString().trim();
+                dirSize = parseInt(duOutput.split('\t')[0]) || 0;
+              } catch (e) {
+                // Fallback: estimate from files
+                const files = fs.readdirSync(jobDir, { recursive: true });
+                for (const file of files) {
+                  try {
+                    const filePath = path.join(jobDir, file);
+                    const fileStats = fs.statSync(filePath);
+                    if (fileStats.isFile()) {
+                      dirSize += fileStats.size;
+                    }
+                  } catch (e) {
+                    // Ignore
+                  }
+                }
+              }
+              
+              // Delete the directory
+              await cleanup(jobDir);
+              deletedCount++;
+              freedBytes += dirSize;
+              console.log(`Cleaned up old job: ${jobId} (${(dirSize / 1024 / 1024).toFixed(2)} MB, ${(ageMs / 3600000).toFixed(1)}h old)`);
+            }
+          }
+        }
+      } catch (err) {
+        // Ignore errors for individual entries
+        console.warn(`Error checking ${entry}:`, err.message);
+      }
+    }
+    
+    return { deletedCount, freedMB: freedBytes / 1024 / 1024 };
+  } catch (error) {
+    console.error('Error in cleanupOldJobs:', error);
+    return { deletedCount: 0, freedMB: 0 };
   }
 }
 
