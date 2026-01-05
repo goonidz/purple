@@ -236,6 +236,7 @@ const Index = () => {
         'test_images': 'Test des 2 premières scènes terminé !',
         'single_prompt': 'Prompt généré !',
         'single_image': 'Image générée !',
+        'single_animation': 'Scène animée avec succès !',
         'upscale': 'Images upscalées en 1920x1088 !'
       };
       toast.success(messages[job.job_type] || 'Génération terminée !');
@@ -348,6 +349,8 @@ const Index = () => {
       setRegeneratingPromptIndex(null);
     } else if (job.job_type === 'single_image') {
       setGeneratingImageIndex(null);
+    } else if (job.job_type === 'single_animation') {
+      setAnimatingSceneIndex(null);
     }
   }, []);
 
@@ -1783,7 +1786,9 @@ const Index = () => {
     setConfirmAnimateScene(null);
 
     try {
-      toast.info(`Animation de la scène ${index + 1} en cours... (cela peut prendre plusieurs minutes)`);
+      // The job will be created by the Edge Function and tracked automatically
+      // Just show a toast that it's starting
+      toast.info(`Animation de la scène ${index + 1} lancée. Suivi en cours...`);
 
       const { data, error } = await supabase.functions.invoke('animate-scene', {
         body: {
@@ -1803,19 +1808,13 @@ const Index = () => {
         throw new Error(data.error);
       }
 
-      if (data?.success && data?.videoUrl) {
-        // Refresh project data to get updated prompts
-        if (currentProjectId) {
-          await loadProjectData(currentProjectId);
-        }
-        toast.success(`Scène ${index + 1} animée avec succès !`);
-      } else {
-        throw new Error("Animation échouée - aucune URL vidéo retournée");
-      }
+      // Job is tracked automatically via useGenerationJobs hook
+      // The job completion will be handled by handleJobComplete
+      // No need to manually refresh here - the job system handles it
+      
     } catch (error: any) {
       console.error("Error animating scene:", error);
       toast.error(`Erreur lors de l'animation: ${error.message || 'Erreur inconnue'}`);
-    } finally {
       setAnimatingSceneIndex(null);
     }
   };

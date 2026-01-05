@@ -94,6 +94,33 @@ serve(async (req) => {
 
     console.log(`[animate-scene] Kie.ai API key retrieved (length: ${keiApiKey.length})`);
 
+    // Create generation job for tracking
+    const { data: animationJob, error: jobError } = await supabaseService
+      .from('generation_jobs')
+      .insert({
+        project_id: projectId,
+        user_id: user.id,
+        job_type: 'single_animation',
+        status: 'processing',
+        progress: 0,
+        total: 1,
+        metadata: {
+          sceneIndex,
+          sceneDuration,
+          imageUrl,
+          prompt: prompt.substring(0, 100) // Store first 100 chars for reference
+        }
+      })
+      .select()
+      .single();
+
+    if (jobError) {
+      console.error(`[animate-scene] Error creating job:`, jobError);
+      // Continue anyway - job tracking is optional
+    } else {
+      console.log(`[animate-scene] Created tracking job: ${animationJob.id}`);
+    }
+
     // Calculate duration
     const duration = getClosestDuration(sceneDuration);
     console.log(`[animate-scene] Scene duration: ${sceneDuration}s, using Kie.ai duration: ${duration}s`);
@@ -151,6 +178,21 @@ serve(async (req) => {
 
     console.log(`[animate-scene] Prediction created: ${predictionId}, status: ${prediction.status}`);
 
+    // Update job progress: prediction created
+    if (animationJob) {
+      await supabaseService
+        .from('generation_jobs')
+        .update({ 
+          progress: 0,
+          metadata: {
+            ...animationJob.metadata,
+            predictionId,
+            kieApiStatus: prediction.status
+          }
+        })
+        .eq('id', animationJob.id);
+    }
+
     // Poll for completion (no timeout - can take several minutes)
     let finalStatus = prediction.status;
     let videoUrl: string | null = null;
@@ -162,6 +204,22 @@ serve(async (req) => {
       attempts++;
 
       console.log(`[animate-scene] Polling attempt ${attempts}/${maxAttempts} for prediction ${predictionId}...`);
+
+      // Update job progress during polling
+      if (animationJob && attempts % 6 === 0) { // Update every 30 seconds
+        await supabaseService
+          .from('generation_jobs')
+          .update({ 
+            progress: Math.min(90, Math.floor((attempts / maxAttempts) * 90)), // 0-90% during polling
+            metadata: {
+              ...animationJob.metadata,
+              predictionId,
+              kieApiStatus: finalStatus,
+              pollingAttempts: attempts
+            }
+          })
+          .eq('id', animationJob.id);
+      }
 
       const statusResponse = await fetch(`${kieApiUrl}/${predictionId}`, {
         method: 'GET',
@@ -194,6 +252,24 @@ serve(async (req) => {
       } else if (finalStatus === 'failed') {
         const errorMsg = statusData.error || 'Unknown error';
         console.error(`[animate-scene] Prediction failed: ${errorMsg}`);
+        
+        // Mark job as failed
+        if (animationJob) {
+          await supabaseService
+            .from('generation_jobs')
+            .update({ 
+              status: 'failed',
+              error_message: `Animation failed: ${errorMsg}`,
+              metadata: {
+                ...animationJob.metadata,
+                predictionId,
+                kieApiStatus: finalStatus,
+                pollingAttempts: attempts
+              }
+            })
+            .eq('id', animationJob.id);
+        }
+
         return new Response(JSON.stringify({ 
           error: `Animation failed: ${errorMsg}` 
         }), {
@@ -204,6 +280,23 @@ serve(async (req) => {
     }
 
     if (finalStatus !== 'succeeded' || !videoUrl) {
+      // Mark job as failed
+      if (animationJob) {
+        await supabaseService
+          .from('generation_jobs')
+          .update({ 
+            status: 'failed',
+            error_message: `Animation timed out or failed. Final status: ${finalStatus}`,
+            metadata: {
+              ...animationJob.metadata,
+              predictionId,
+              kieApiStatus: finalStatus,
+              pollingAttempts: attempts
+            }
+          })
+          .eq('id', animationJob.id);
+      }
+
       return new Response(JSON.stringify({ 
         error: `Animation timed out or failed. Final status: ${finalStatus}` 
       }), {
@@ -213,6 +306,22 @@ serve(async (req) => {
     }
 
     console.log(`[animate-scene] Animation completed! Video URL: ${videoUrl}`);
+
+    // Update job progress: video URL received
+    if (animationJob) {
+      await supabaseService
+        .from('generation_jobs')
+        .update({ 
+          progress: 95,
+          metadata: {
+            ...animationJob.metadata,
+            predictionId,
+            kieApiStatus: finalStatus,
+            videoUrl
+          }
+        })
+        .eq('id', animationJob.id);
+    }
 
     // Update project prompts with videoUrl
     const { data: project } = await supabaseService
@@ -249,6 +358,18 @@ serve(async (req) => {
 
     if (updateError) {
       console.error(`[animate-scene] Error updating project:`, updateError);
+      
+      // Mark job as failed
+      if (animationJob) {
+        await supabaseService
+          .from('generation_jobs')
+          .update({ 
+            status: 'failed',
+            error_message: `Failed to update project: ${updateError.message}`
+          })
+          .eq('id', animationJob.id);
+      }
+
       return new Response(JSON.stringify({ 
         error: `Failed to update project: ${updateError.message}` 
       }), {
@@ -259,11 +380,31 @@ serve(async (req) => {
 
     console.log(`[animate-scene] Project updated successfully with videoUrl for scene ${sceneIndex}`);
 
+    // Mark job as completed
+    if (animationJob) {
+      await supabaseService
+        .from('generation_jobs')
+        .update({ 
+          status: 'completed',
+          progress: 100,
+          completed_at: new Date().toISOString(),
+          metadata: {
+            ...animationJob.metadata,
+            predictionId,
+            kieApiStatus: finalStatus,
+            videoUrl,
+            duration: `${duration}s`
+          }
+        })
+        .eq('id', animationJob.id);
+    }
+
     return new Response(JSON.stringify({
       success: true,
       videoUrl,
       sceneIndex,
-      duration: `${duration}s`
+      duration: `${duration}s`,
+      jobId: animationJob?.id
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
