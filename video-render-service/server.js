@@ -500,9 +500,6 @@ async function renderSceneWithEffect(imagePath, outputPath, duration, width, hei
         console.log(`[${jobId}] Scene ${sceneIndex}: Using FFmpeg subpixel fork at ${FFMPEG_SUBPIXEL_PATH}`);
       }
       
-      // Set timeout for FFmpeg (max 5 minutes per scene to avoid hanging)
-      const ffmpegTimeout = Math.max(300000, duration * 1000 * 2); // At least 2x the scene duration, min 5 minutes
-      
       sceneFfmpegCommand
         .input(imagePath)
         .inputOptions(['-loop', '1']) // Loop the single image
@@ -521,7 +518,6 @@ async function renderSceneWithEffect(imagePath, outputPath, duration, width, hei
         ])
         .videoFilters([finalFilter])
         .output(outputPath)
-        .timeout(ffmpegTimeout)
         .on('start', (cmd) => {
           console.log(`[${jobId}] Scene ${sceneIndex} FFmpeg: ${cmd}`);
         })
