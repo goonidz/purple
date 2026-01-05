@@ -137,6 +137,8 @@ const Index = () => {
   const [regeneratingPromptIndex, setRegeneratingPromptIndex] = useState<number | null>(null);
   const [confirmRegeneratePrompt, setConfirmRegeneratePrompt] = useState<number | null>(null);
   const [confirmRegenerateImage, setConfirmRegenerateImage] = useState<number | null>(null);
+  const [confirmAnimateScene, setConfirmAnimateScene] = useState<number | null>(null);
+  const [animatingSceneIndex, setAnimatingSceneIndex] = useState<number | null>(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
   const [imageSearchOpen, setImageSearchOpen] = useState(false);
   const [imageSearchSceneIndex, setImageSearchSceneIndex] = useState<number>(0);
@@ -1744,6 +1746,77 @@ const Index = () => {
     const result = await startJob('single_image', { sceneIndex: index });
     if (!result) {
       setGeneratingImageIndex(null);
+    }
+  };
+
+  const animateScene = async (index: number) => {
+    const prompt = generatedPrompts[index];
+    if (!prompt) {
+      toast.error("Aucun prompt disponible pour cette scène");
+      return;
+    }
+
+    if (!prompt.imageUrl) {
+      toast.error("Aucune image disponible pour animer cette scène");
+      return;
+    }
+
+    if (!prompt.prompt) {
+      toast.error("Aucun prompt disponible pour cette scène");
+      return;
+    }
+
+    if (!currentProjectId) {
+      toast.error("Veuillez d'abord sélectionner ou créer un projet");
+      return;
+    }
+
+    const scene = scenes[index];
+    if (!scene) {
+      toast.error("Scène introuvable");
+      return;
+    }
+
+    const sceneDuration = scene.endTime - scene.startTime;
+
+    setAnimatingSceneIndex(index);
+    setConfirmAnimateScene(null);
+
+    try {
+      toast.info(`Animation de la scène ${index + 1} en cours... (cela peut prendre plusieurs minutes)`);
+
+      const { data, error } = await supabase.functions.invoke('animate-scene', {
+        body: {
+          projectId: currentProjectId,
+          sceneIndex: index,
+          imageUrl: prompt.imageUrl,
+          prompt: prompt.prompt,
+          sceneDuration: sceneDuration
+        }
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      if (data?.error) {
+        throw new Error(data.error);
+      }
+
+      if (data?.success && data?.videoUrl) {
+        // Refresh project data to get updated prompts
+        if (currentProjectId) {
+          await loadProjectData(currentProjectId);
+        }
+        toast.success(`Scène ${index + 1} animée avec succès !`);
+      } else {
+        throw new Error("Animation échouée - aucune URL vidéo retournée");
+      }
+    } catch (error: any) {
+      console.error("Error animating scene:", error);
+      toast.error(`Erreur lors de l'animation: ${error.message || 'Erreur inconnue'}`);
+    } finally {
+      setAnimatingSceneIndex(null);
     }
   };
 
@@ -3416,6 +3489,7 @@ const Index = () => {
                       copyToClipboard={copyToClipboard}
                       setImagePreviewUrl={setImagePreviewUrl}
                       selectedScenes={selectedScenes}
+                      animatingSceneIndex={animatingSceneIndex}
                       onToggleSceneSelection={(index) => {
                         setSelectedScenes(prev => {
                           const next = new Set(prev);
@@ -3428,6 +3502,7 @@ const Index = () => {
                         });
                       }}
                       onSearchWeb={handleSearchWebImage}
+                      onAnimateScene={(index) => setConfirmAnimateScene(index)}
                     />
                   </Card>
                 )}
@@ -3734,6 +3809,30 @@ const Index = () => {
                 }
               }}>
                 Régénérer
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        <AlertDialog open={confirmAnimateScene !== null} onOpenChange={(open) => !open && setConfirmAnimateScene(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Animer la scène ?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Cette action va animer l'image de la scène {confirmAnimateScene !== null ? confirmAnimateScene + 1 : ''} avec Seedance 1.5 Pro (Kie.ai). 
+                La vidéo animée remplacera l'image statique dans le rendu final. 
+                <br /><br />
+                <strong>Attention :</strong> Cette opération peut prendre plusieurs minutes. La génération se fait en arrière-plan.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Annuler</AlertDialogCancel>
+              <AlertDialogAction onClick={() => {
+                if (confirmAnimateScene !== null) {
+                  animateScene(confirmAnimateScene);
+                }
+              }}>
+                Animer
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

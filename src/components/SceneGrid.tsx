@@ -13,6 +13,7 @@ import {
   Upload,
   Clock,
   Search,
+  Video,
 } from "lucide-react";
 
 interface Scene {
@@ -27,6 +28,7 @@ interface GeneratedPrompt {
   text?: string;
   prompt?: string;
   imageUrl?: string;
+  videoUrl?: string;
 }
 
 interface SceneGridProps {
@@ -38,6 +40,7 @@ interface SceneGridProps {
   regeneratingPromptIndex: number | null;
   generatingPromptIndex: number | null;
   generatingImageIndex: number | null;
+  animatingSceneIndex: number | null;
   copiedIndex: number | null;
   handleEditScene: (index: number) => void;
   handleEditPrompt: (index: number) => void;
@@ -51,6 +54,7 @@ interface SceneGridProps {
   selectedScenes?: Set<number>;
   onToggleSceneSelection?: (index: number) => void;
   onSearchWeb?: (index: number, sceneText: string) => void;
+  onAnimateScene?: (index: number) => void;
 }
 
 export function SceneGrid({
@@ -62,6 +66,7 @@ export function SceneGrid({
   regeneratingPromptIndex,
   generatingPromptIndex,
   generatingImageIndex,
+  animatingSceneIndex,
   copiedIndex,
   handleEditScene,
   handleEditPrompt,
@@ -75,6 +80,7 @@ export function SceneGrid({
   selectedScenes = new Set(),
   onToggleSceneSelection,
   onSearchWeb,
+  onAnimateScene,
 }: SceneGridProps) {
   const items = scenes.length > 0 ? scenes : generatedPrompts;
 
@@ -256,7 +262,7 @@ export function SceneGrid({
                       size="sm"
                       className="h-7 w-7 p-0"
                       onClick={() => triggerFileUpload(index)}
-                      disabled={generatingImageIndex === index}
+                      disabled={generatingImageIndex === index || animatingSceneIndex === index}
                       title="Importer une image"
                     >
                       <Upload className="h-3.5 w-3.5" />
@@ -266,7 +272,7 @@ export function SceneGrid({
                       size="sm"
                       className="h-7 w-7 p-0"
                       onClick={() => setConfirmRegenerateImage(index)}
-                      disabled={generatingImageIndex === index}
+                      disabled={generatingImageIndex === index || animatingSceneIndex === index}
                       title="Régénérer l'image"
                     >
                       {generatingImageIndex === index ? (
@@ -276,6 +282,25 @@ export function SceneGrid({
                       )}
                     </Button>
                   </div>
+                  {/* Animation button - always visible */}
+                  {onAnimateScene && (
+                    <div className="absolute top-2 left-2">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        className="h-7 w-7 p-0 shadow-md"
+                        onClick={() => onAnimateScene(index)}
+                        disabled={generatingImageIndex === index || animatingSceneIndex === index}
+                        title="Animer l'image (Seedance 1.5 Pro)"
+                      >
+                        {animatingSceneIndex === index ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Video className="h-3.5 w-3.5" />
+                        )}
+                      </Button>
+                    </div>
+                  )}
                   {/* Web search button - always visible */}
                   {onSearchWeb && (
                     <div className="absolute bottom-2 right-2">

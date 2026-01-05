@@ -365,6 +365,135 @@ function getSubpixelZoomEffect(sceneIndex, duration, width, height, framerate) {
   };
 }
 
+// Render a video scene (from animated video URL) - just transcode to match duration and format
+async function renderVideoScene(videoPath, outputPath, duration, width, height, framerate, sceneIndex, jobId) {
+  return new Promise((resolve, reject) => {
+    console.log(`[${jobId}] Rendering animated video scene ${sceneIndex}`);
+    console.log(`[${jobId}] Video file: ${videoPath}`);
+    console.log(`[${jobId}] Target: ${width}x${height}@${framerate}fps, duration: ${duration}s`);
+    
+    // Validate video exists
+    if (!fs.existsSync(videoPath)) {
+      return reject(new Error(`Video file not found: ${videoPath}`));
+    }
+    
+    // Validate video is readable
+    try {
+      fs.accessSync(videoPath, fs.constants.R_OK);
+    } catch (accessErr) {
+      return reject(new Error(`Video file is not readable: ${videoPath} - ${accessErr.message}`));
+    }
+    
+    // Validate output directory exists
+    const outputDir = path.dirname(outputPath);
+    if (!fs.existsSync(outputDir)) {
+      try {
+        fs.mkdirSync(outputDir, { recursive: true });
+        console.log(`[${jobId}] Created output directory: ${outputDir}`);
+      } catch (mkdirErr) {
+        return reject(new Error(`Failed to create output directory: ${mkdirErr.message}`));
+      }
+    }
+    
+    // Get video info
+    ffmpeg.ffprobe(videoPath, (err, metadata) => {
+      if (err) {
+        console.error(`[${jobId}] Error probing video ${sceneIndex}:`, err);
+        return reject(new Error(`Failed to probe video: ${err.message}`));
+      }
+      
+      const videoStream = metadata?.streams?.find(s => s.codec_type === 'video');
+      const actualWidth = videoStream?.width || 0;
+      const actualHeight = videoStream?.height || 0;
+      const videoDuration = parseFloat(metadata?.format?.duration) || 0;
+      
+      console.log(`[${jobId}] Scene ${sceneIndex} video info:`);
+      console.log(`[${jobId}]   File: ${videoPath}`);
+      console.log(`[${jobId}]   Dimensions: ${actualWidth}x${actualHeight}`);
+      console.log(`[${jobId}]   Duration: ${videoDuration.toFixed(3)}s`);
+      console.log(`[${jobId}]   Target dimensions: ${width}x${height}`);
+      console.log(`[${jobId}]   Target duration: ${duration.toFixed(3)}s`);
+      
+      if (actualWidth === 0 || actualHeight === 0) {
+        return reject(new Error(`Invalid video dimensions: ${actualWidth}x${actualHeight}`));
+      }
+      
+      // Build FFmpeg command to transcode video
+      // Scale to target dimensions, trim/extend to target duration, match framerate
+      const sceneFfmpegCommand = ffmpeg(videoPath);
+      
+      // If video is shorter than target duration, loop it
+      // If video is longer, trim it
+      const scaleFilter = `scale=${width}:${height}:force_original_aspect_ratio=decrease,crop=${width}:${height}`;
+      
+      // Calculate how many loops needed if video is shorter
+      const loopsNeeded = videoDuration < duration ? Math.ceil(duration / videoDuration) : 1;
+      
+      if (loopsNeeded > 1) {
+        // Video is shorter - loop it first, then trim
+        sceneFfmpegCommand
+          .inputOptions(['-stream_loop', loopsNeeded.toString()])
+          .videoCodec('libx264')
+          .outputOptions([
+            '-preset', 'ultrafast',
+            '-crf', '23',
+            '-vsync', 'cfr',
+            '-r', framerate.toString(), // Force framerate
+            '-t', duration.toFixed(6),  // Trim to target duration
+            '-pix_fmt', 'yuv420p'
+          ])
+          .videoFilters([scaleFilter])
+          .output(outputPath);
+      } else {
+        // Video is longer or same length - just trim and scale
+        sceneFfmpegCommand
+          .videoCodec('libx264')
+          .outputOptions([
+            '-preset', 'ultrafast',
+            '-crf', '23',
+            '-vsync', 'cfr',
+            '-r', framerate.toString(), // Force framerate
+            '-t', duration.toFixed(6),  // Trim to target duration
+            '-pix_fmt', 'yuv420p'
+          ])
+          .videoFilters([scaleFilter])
+          .output(outputPath);
+      }
+        .on('start', (cmd) => {
+          console.log(`[${jobId}] Scene ${sceneIndex} FFmpeg (video): ${cmd}`);
+        })
+        .on('stderr', (stderrLine) => {
+          if (stderrLine.includes('error') || stderrLine.includes('Error') || stderrLine.includes('failed') || stderrLine.includes('Failed')) {
+            console.error(`[${jobId}] Scene ${sceneIndex} FFmpeg stderr: ${stderrLine}`);
+          }
+        })
+        .on('end', () => {
+          console.log(`[${jobId}] Scene ${sceneIndex} (animated video) completed`);
+          resolve();
+        })
+        .on('error', (err, stdout, stderr) => {
+          console.error(`[${jobId}] Scene ${sceneIndex} error:`, err.message);
+          if (stderr) {
+            console.error(`[${jobId}] Scene ${sceneIndex} FFmpeg stderr output:`, stderr);
+          }
+          reject(err);
+        });
+      
+      // Store scene FFmpeg command in job for cancellation
+      const job = jobs.get(jobId);
+      if (job) {
+        if (!job.sceneCommands) {
+          job.sceneCommands = [];
+        }
+        job.sceneCommands.push(sceneFfmpegCommand);
+        jobs.set(jobId, job);
+      }
+      
+      sceneFfmpegCommand.run();
+    });
+  });
+}
+
 // Render a single scene with effect (Ken Burns, Pan, or Subpixel Zoom)
 async function renderSceneWithEffect(imagePath, outputPath, duration, width, height, framerate, sceneIndex, jobId, effectType = 'zoom', renderMethod = 'standard') {
   return new Promise((resolve, reject) => {
@@ -694,30 +823,44 @@ async function processRenderJob(jobId, renderData) {
     
     addStep('Audio téléchargé', 15);
 
-    // Step 2: Download all images
-    addStep(`Téléchargement de ${scenes.length} images...`, 20, true);
+    // Step 2: Download all images and videos
+    addStep(`Téléchargement de ${scenes.length} médias...`, 20, true);
     const imagesDir = path.join(workDir, 'images');
+    const videosDir = path.join(workDir, 'videos');
     await mkdir(imagesDir, { recursive: true });
+    await mkdir(videosDir, { recursive: true });
     
     let downloadedCount = 0;
-    const imagePromises = scenes.map(async (scene, index) => {
-      if (!scene.imageUrl) {
-        throw new Error(`Scene ${index} has no image URL`);
+    const mediaPromises = scenes.map(async (scene, index) => {
+      if (scene.videoUrl) {
+        // Download animated video
+        const videoPath = path.join(videosDir, `scene_${index}.mp4`);
+        await downloadFile(scene.videoUrl, videoPath);
+        downloadedCount++;
+        const job = jobs.get(jobId);
+        if (job) {
+          job.currentStep = `Téléchargement des médias... ${downloadedCount}/${scenes.length}`;
+          jobs.set(jobId, job);
+        }
+        return { type: 'video', path: videoPath, index };
+      } else if (scene.imageUrl) {
+        // Download image
+        const imagePath = path.join(imagesDir, `scene_${index}.jpg`);
+        await downloadFile(scene.imageUrl, imagePath);
+        downloadedCount++;
+        const job = jobs.get(jobId);
+        if (job) {
+          job.currentStep = `Téléchargement des médias... ${downloadedCount}/${scenes.length}`;
+          jobs.set(jobId, job);
+        }
+        return { type: 'image', path: imagePath, index };
+      } else {
+        throw new Error(`Scene ${index} has no image or video URL`);
       }
-      const imagePath = path.join(imagesDir, `scene_${index}.jpg`);
-      await downloadFile(scene.imageUrl, imagePath);
-      downloadedCount++;
-      // Update current step with progress
-      const job = jobs.get(jobId);
-      if (job) {
-        job.currentStep = `Téléchargement des images... ${downloadedCount}/${scenes.length}`;
-        jobs.set(jobId, job);
-      }
-      return imagePath;
     });
     
-    await Promise.all(imagePromises);
-    addStep(`Toutes les images téléchargées (${scenes.length}/${scenes.length})`, 30);
+    const mediaFiles = await Promise.all(mediaPromises);
+    addStep(`Tous les médias téléchargés (${scenes.length}/${scenes.length})`, 30);
 
     // Step 3: Create segments directory for Ken Burns rendered scenes
     const segmentsDir = path.join(workDir, 'segments');
@@ -739,7 +882,7 @@ async function processRenderJob(jobId, renderData) {
     let totalRenderedDuration = 0;
     for (let i = 0; i < scenes.length; i++) {
       const scene = scenes[i];
-      const imagePath = path.join(imagesDir, `scene_${i}.jpg`);
+      const mediaFile = mediaFiles.find(m => m.index === i);
       const segmentPath = path.join(segmentsDir, `segment_${i}.mp4`);
       const duration = scene.endTime - scene.startTime;
       totalRenderedDuration += duration;
@@ -747,6 +890,11 @@ async function processRenderJob(jobId, renderData) {
       // Log each scene's timing
       if (i === 0 || i === scenes.length - 1 || i % 20 === 0) {
         console.log(`[${jobId}] Scene ${i}: ${scene.startTime.toFixed(3)}s - ${scene.endTime.toFixed(3)}s (duration: ${duration.toFixed(3)}s)`);
+        if (scene.videoUrl) {
+          console.log(`[${jobId}] Scene ${i}: Using animated video (videoUrl present)`);
+        } else {
+          console.log(`[${jobId}] Scene ${i}: Using static image with effect`);
+        }
       }
       
       // Show current scene being processed (updates the same line)
@@ -756,18 +904,35 @@ async function processRenderJob(jobId, renderData) {
         jobs.set(jobId, job);
       }
       
-      await renderSceneWithEffect(
-        imagePath, 
-        segmentPath, 
-        duration, 
-        width, 
-        height, 
-        framerate, 
-        i, 
-        jobId,
-        effectType,
-        renderMethod
-      );
+      if (mediaFile?.type === 'video') {
+        // Render animated video scene (no effects, just transcode)
+        await renderVideoScene(
+          mediaFile.path,
+          segmentPath,
+          duration,
+          width,
+          height,
+          framerate,
+          i,
+          jobId
+        );
+      } else if (mediaFile?.type === 'image') {
+        // Render static image with effect
+        await renderSceneWithEffect(
+          mediaFile.path, 
+          segmentPath, 
+          duration, 
+          width, 
+          height, 
+          framerate, 
+          i, 
+          jobId,
+          effectType,
+          renderMethod
+        );
+      } else {
+        throw new Error(`Scene ${i} has no media file`);
+      }
       
       // Update current step to show completed (replaces the line)
       const jobAfter = jobs.get(jobId);
