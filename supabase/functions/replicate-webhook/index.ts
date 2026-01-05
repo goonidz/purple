@@ -844,7 +844,7 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
       // Chain to thumbnails if semi-auto mode
       if (metadata.semiAutoMode === true) {
         console.log(`Job ${jobId}: Upscale complete. Chaining to thumbnails.`);
-        await chainNextJobFromWebhook(adminClient, job.project_id, job.user_id, 'images', metadata);
+        await chainNextJobFromWebhook(adminClient, job.project_id, job.user_id, 'upscale', metadata);
       }
     }
   } else if (job.job_type === 'single_image') {
@@ -1073,6 +1073,9 @@ async function chainNextJobFromWebhook(
   if (completedJobType === 'prompts') {
     nextJobType = 'images';
   } else if (completedJobType === 'images') {
+    nextJobType = 'thumbnails';
+  } else if (completedJobType === 'upscale') {
+    // After upscale completes, chain to thumbnails in semi-auto mode
     nextJobType = 'thumbnails';
   }
   
