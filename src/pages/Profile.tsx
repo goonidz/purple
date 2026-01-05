@@ -20,6 +20,7 @@ const Profile = () => {
   const [elevenLabsApiKey, setElevenLabsApiKey] = useState("");
   const [anthropicApiKey, setAnthropicApiKey] = useState("");
   const [braveApiKey, setBraveApiKey] = useState("");
+  const [keiApiKey, setKeiApiKey] = useState("");
   
   // Track original values to detect changes
   const [originalKeys, setOriginalKeys] = useState({
@@ -27,14 +28,16 @@ const Profile = () => {
     eleven_labs: "",
     minimax: "",
     anthropic: "",
-    brave: ""
+    brave: "",
+    kei: ""
   });
   const [showKeys, setShowKeys] = useState({
     replicate: false,
     eleven_labs: false,
     minimax: false,
     anthropic: false,
-    brave: false
+    brave: false,
+    kei: false
   });
 
   useEffect(() => {
@@ -63,12 +66,13 @@ const Profile = () => {
     setIsLoading(true);
     try {
       // Try to get API keys from Vault
-      const [replicateResult, elevenLabsResult, minimaxResult, anthropicResult, braveResult] = await Promise.all([
+      const [replicateResult, elevenLabsResult, minimaxResult, anthropicResult, braveResult, keiResult] = await Promise.all([
         supabase.rpc('get_user_api_key', { key_name: 'replicate' }),
         supabase.rpc('get_user_api_key', { key_name: 'eleven_labs' }),
         supabase.rpc('get_user_api_key', { key_name: 'minimax' }),
         supabase.rpc('get_user_api_key', { key_name: 'anthropic' }),
         supabase.rpc('get_user_api_key', { key_name: 'brave' }),
+        supabase.rpc('get_user_api_key', { key_name: 'kei' }),
       ]);
 
       const replicateValue = replicateResult.data || "";
@@ -76,6 +80,7 @@ const Profile = () => {
       const minimaxValue = minimaxResult.data || "";
       const anthropicValue = anthropicResult.data || "";
       const braveValue = braveResult.data || "";
+      const keiValue = keiResult.data || "";
 
       // Set current values
       setReplicateApiKey(replicateValue);
@@ -83,6 +88,7 @@ const Profile = () => {
       setMinimaxApiKey(minimaxValue);
       setAnthropicApiKey(anthropicValue);
       setBraveApiKey(braveValue);
+      setKeiApiKey(keiValue);
       
       // Store original values to track changes
       setOriginalKeys({
@@ -90,7 +96,8 @@ const Profile = () => {
         eleven_labs: elevenLabsValue,
         minimax: minimaxValue,
         anthropic: anthropicValue,
-        brave: braveValue
+        brave: braveValue,
+        kei: keiValue
       });
       
       if (replicateResult.error && !replicateResult.error.message?.includes('not found')) {
@@ -101,6 +108,9 @@ const Profile = () => {
       }
       if (minimaxResult.error && !minimaxResult.error.message?.includes('not found')) {
         console.error("Error loading MiniMax API key:", minimaxResult.error);
+      }
+      if (keiResult.error && !keiResult.error.message?.includes('not found')) {
+        console.error("Error loading Kei.ai API key:", keiResult.error);
       }
     } catch (error: any) {
       console.error("Error loading API keys:", error);
@@ -131,6 +141,9 @@ const Profile = () => {
     if (braveApiKey.trim() !== originalKeys.brave) {
       changedKeys.push({ key_name: 'brave', key_value: braveApiKey.trim() });
     }
+    if (keiApiKey.trim() !== originalKeys.kei) {
+      changedKeys.push({ key_name: 'kei', key_value: keiApiKey.trim() });
+    }
 
     if (changedKeys.length === 0) {
       toast.info("Aucune modification détectée");
@@ -158,7 +171,8 @@ const Profile = () => {
         eleven_labs: elevenLabsApiKey.trim(),
         minimax: minimaxApiKey.trim(),
         anthropic: anthropicApiKey.trim(),
-        brave: braveApiKey.trim()
+        brave: braveApiKey.trim(),
+        kei: keiApiKey.trim()
       });
 
       toast.success("Clés API sauvegardées avec succès !");
@@ -405,11 +419,47 @@ const Profile = () => {
                       </a>
                     </p>
                   </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="kei-key">
+                      Kei.ai API Key
+                    </Label>
+                    <div className="relative">
+                      <Input
+                        id="kei-key"
+                        type={showKeys.kei ? "text" : "password"}
+                        value={keiApiKey}
+                        onChange={(e) => setKeiApiKey(e.target.value)}
+                        placeholder="kei_..."
+                        className="pr-10"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                        onClick={() => setShowKeys(prev => ({ ...prev, kei: !prev.kei }))}
+                      >
+                        {showKeys.kei ? <EyeOff className="h-4 w-4 text-muted-foreground" /> : <Eye className="h-4 w-4 text-muted-foreground" />}
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Utilisée pour la génération d'images avec Kei.ai.{" "}
+                      <a
+                        href="https://kei.ai/"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary hover:underline"
+                      >
+                        Obtenir une clé
+                      </a>
+                    </p>
+                  </div>
                 </div>
 
                 <Button
                   onClick={handleSave}
-                  disabled={isSaving || (!replicateApiKey.trim() && !elevenLabsApiKey.trim() && !minimaxApiKey.trim() && !anthropicApiKey.trim() && !braveApiKey.trim())}
+                  disabled={isSaving || (!replicateApiKey.trim() && !elevenLabsApiKey.trim() && !minimaxApiKey.trim() && !anthropicApiKey.trim() && !braveApiKey.trim() && !keiApiKey.trim())}
                   className="w-full"
                   size="lg"
                 >
