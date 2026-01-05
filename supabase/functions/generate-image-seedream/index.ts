@@ -156,16 +156,19 @@ Deno.serve(async (req) => {
       console.log(`${modelVersion}: dimensions rounded to multiples of 16: ${width}x${height}`);
     }
     
-    // SeedDream 4.5 requires minimum 3,686,400 pixels when using image_input (style references)
+    // SeedDream 4.5 ALWAYS requires minimum 3,686,400 pixels (not just with image_input)
     // SeedDream 4.0 does not have this constraint
-    if (modelVersion === 'seedream-4.5' && body.image_urls && body.image_urls.length > 0) {
+    if (modelVersion === 'seedream-4.5') {
       const MIN_PIXELS = 3686400;
       const currentPixels = width * height;
       if (currentPixels < MIN_PIXELS) {
         const scaleFactor = Math.sqrt(MIN_PIXELS / currentPixels);
         width = Math.ceil(width * scaleFactor);
         height = Math.ceil(height * scaleFactor);
-        console.log(`SeedDream 4.5 with image references: scaled from ${requestedWidth}x${requestedHeight} to ${width}x${height} to meet minimum pixel requirement`);
+        // Ensure dimensions are even (required by many image models)
+        width = width % 2 === 0 ? width : width + 1;
+        height = height % 2 === 0 ? height : height + 1;
+        console.log(`SeedDream 4.5: scaled from ${requestedWidth}x${requestedHeight} to ${width}x${height} to meet minimum ${MIN_PIXELS} pixel requirement`);
       }
     }
     
