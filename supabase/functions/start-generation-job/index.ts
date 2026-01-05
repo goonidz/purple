@@ -956,6 +956,283 @@ async function processPromptsJob(
   };
 }
 
+// ========== VISUAL CONTINUITY FUNCTIONS ==========
+
+/**
+ * Analyze continuity for all consecutive scene pairs in parallel
+ */
+async function analyzeAllContinuities(
+  prompts: any[],
+  supabaseUrl: string,
+  authHeader: string
+): Promise<Map<number, { hasContinuity: boolean; modifiedPromptSuffix?: string; confidence?: number }>> {
+  const continuityMap = new Map<number, { hasContinuity: boolean; modifiedPromptSuffix?: string; confidence?: number }>();
+  
+  // Scene 0 has no previous scene
+  continuityMap.set(0, { hasContinuity: false });
+  
+  if (prompts.length <= 1) {
+    return continuityMap;
+  }
+  
+  // Analyze all pairs in parallel
+  const analysisPromises = prompts.slice(1).map(async (prompt, i) => {
+    const index = i + 1; // Because we skipped the first one
+    const previousScene = prompts[index - 1];
+    
+    if (!previousScene?.text || !prompt?.text || !previousScene?.prompt) {
+      return { index, hasContinuity: false };
+    }
+    
+    try {
+      const response = await fetch(`${supabaseUrl}/functions/v1/analyze-scene-continuity`, {
+        method: 'POST',
+        headers: {
+          'Authorization': authHeader,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          currentSceneText: prompt.text,
+          previousSceneText: previousScene.text,
+          previousPrompt: previousScene.prompt
+        }),
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        return {
+          index,
+          hasContinuity: data.hasContinuity && data.confidence >= 0.7,
+          modifiedPromptSuffix: data.modifiedPromptSuffix,
+          confidence: data.confidence
+        };
+      } else {
+        console.error(`[analyzeAllContinuities] Failed for scene ${index}: ${response.status}`);
+        return { index, hasContinuity: false };
+      }
+    } catch (error) {
+      console.error(`[analyzeAllContinuities] Error for scene ${index}:`, error);
+      return { index, hasContinuity: false };
+    }
+  });
+  
+  const results = await Promise.all(analysisPromises);
+  results.forEach(r => {
+    continuityMap.set(r.index, {
+      hasContinuity: r.hasContinuity,
+      modifiedPromptSuffix: r.modifiedPromptSuffix,
+      confidence: r.confidence
+    });
+  });
+  
+  console.log(`[analyzeAllContinuities] Analyzed ${results.length} pairs, ${results.filter(r => r.hasContinuity).length} with continuity`);
+  
+  return continuityMap;
+}
+
+/**
+ * Build groups of consecutive scenes with continuity
+ */
+function buildContinuityGroups(
+  promptsToProcess: Array<{prompt: any, index: number}>,
+  continuityMap: Map<number, { hasContinuity: boolean }>
+): Array<Array<{prompt: any, index: number}>> {
+  const groups: Array<Array<{prompt: any, index: number}>> = [];
+  let currentGroup: Array<{prompt: any, index: number}> = [];
+  
+  for (const item of promptsToProcess) {
+    const continuity = continuityMap.get(item.index);
+    const hasContinuityWithPrevious = continuity?.hasContinuity || false;
+    
+    if (hasContinuityWithPrevious && currentGroup.length > 0) {
+      // Continue in current group
+      currentGroup.push(item);
+    } else {
+      // Start new group
+      if (currentGroup.length > 0) {
+        groups.push(currentGroup);
+      }
+      currentGroup = [item];
+    }
+  }
+  
+  // Add last group
+  if (currentGroup.length > 0) {
+    groups.push(currentGroup);
+  }
+  
+  return groups;
+}
+
+/**
+ * Generate an image and wait for the result via polling
+ */
+async function generateImageAndWait(
+  requestBody: any,
+  supabaseUrl: string,
+  authHeader: string,
+  maxWaitMs: number = 300000 // 5 minutes
+): Promise<string | null> {
+  const pollIntervalMs = 3000; // Poll every 3 seconds
+  
+  try {
+    // Start generation
+    const startResponse = await fetch(`${supabaseUrl}/functions/v1/generate-image-seedream`, {
+      method: 'POST',
+      headers: {
+        'Authorization': authHeader,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(requestBody),
+    });
+    
+    if (!startResponse.ok) {
+      const errorText = await startResponse.text();
+      console.error(`[generateImageAndWait] Failed to start: ${startResponse.status} - ${errorText}`);
+      return null;
+    }
+    
+    const startData = await startResponse.json();
+    const predictionId = startData.predictionId;
+    
+    if (!predictionId) {
+      console.error(`[generateImageAndWait] No predictionId returned`);
+      return null;
+    }
+    
+    console.log(`[generateImageAndWait] Started prediction ${predictionId}, polling for result...`);
+    
+    // Poll for completion
+    const startTime = Date.now();
+    let attempts = 0;
+    
+    while (Date.now() - startTime < maxWaitMs) {
+      attempts++;
+      
+      const statusResponse = await fetch(`${supabaseUrl}/functions/v1/generate-image-seedream`, {
+        method: 'POST',
+        headers: {
+          'Authorization': authHeader,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ predictionId }),
+      });
+      
+      if (statusResponse.ok) {
+        const data = await statusResponse.json();
+        
+        if (data.status === 'succeeded' && data.output) {
+          const imageUrl = Array.isArray(data.output) ? data.output[0] : data.output;
+          console.log(`[generateImageAndWait] Image generated after ${attempts} attempts`);
+          return imageUrl;
+        }
+        
+        if (data.status === 'failed') {
+          console.error(`[generateImageAndWait] Generation failed: ${data.error || 'Unknown error'}`);
+          return null;
+        }
+        
+        // Still processing
+        if (attempts % 10 === 0) {
+          console.log(`[generateImageAndWait] Still processing... (attempt ${attempts}, status: ${data.status})`);
+        }
+      } else {
+        console.error(`[generateImageAndWait] Status check failed: ${statusResponse.status}`);
+      }
+      
+      // Wait before next poll
+      await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
+    }
+    
+    console.error(`[generateImageAndWait] Timeout after ${maxWaitMs}ms`);
+    return null;
+    
+  } catch (error) {
+    console.error(`[generateImageAndWait] Error:`, error);
+    return null;
+  }
+}
+
+/**
+ * Generate images for a group sequentially (waiting for each to complete)
+ */
+async function generateGroupSequentially(
+  group: Array<{prompt: any, index: number}>,
+  prompts: any[],
+  continuityData: Map<number, { hasContinuity: boolean; modifiedPromptSuffix?: string }>,
+  styleReferenceUrls: string[],
+  imageWidth: number,
+  imageHeight: number,
+  imageModel: string,
+  supabaseUrl: string,
+  authHeader: string,
+  userId: string,
+  projectId: string,
+  jobId: string,
+  adminClient: any
+): Promise<void> {
+  console.log(`[generateGroupSequentially] Processing group with ${group.length} scenes`);
+  
+  for (const { prompt, index } of group) {
+    const previousScene = prompts[index - 1];
+    const continuity = continuityData.get(index);
+    
+    let finalImageUrls = [...styleReferenceUrls];
+    let finalPrompt = prompt.prompt;
+    
+    // If continuity detected and previous image available
+    if (continuity?.hasContinuity && previousScene?.imageUrl) {
+      console.log(`[generateGroupSequentially] Scene ${index + 1}: Using previous image as reference`);
+      finalImageUrls = [previousScene.imageUrl, ...styleReferenceUrls];
+      
+      if (continuity.modifiedPromptSuffix) {
+        finalPrompt = `${prompt.prompt}. ${continuity.modifiedPromptSuffix}`;
+      }
+    } else {
+      console.log(`[generateGroupSequentially] Scene ${index + 1}: Normal generation (no continuity or no previous image)`);
+    }
+    
+    const requestBody: any = {
+      prompt: finalPrompt,
+      width: imageWidth,
+      height: imageHeight,
+      model: imageModel,
+      async: true,
+      userId,
+    };
+    
+    if (finalImageUrls.length > 0) {
+      requestBody.image_urls = finalImageUrls;
+    }
+    
+    // Generate and wait for result
+    const imageUrl = await generateImageAndWait(requestBody, supabaseUrl, authHeader);
+    
+    if (imageUrl) {
+      // Update prompts array
+      prompts[index].imageUrl = imageUrl;
+      
+      // Save to database
+      await adminClient
+        .from('projects')
+        .update({ prompts })
+        .eq('id', projectId);
+      
+      // Update job progress
+      await adminClient
+        .from('generation_jobs')
+        .update({ progress: index + 1 })
+        .eq('id', jobId);
+      
+      console.log(`[generateGroupSequentially] Scene ${index + 1}: Image saved`);
+    } else {
+      console.error(`[generateGroupSequentially] Scene ${index + 1}: Failed to generate image`);
+    }
+  }
+  
+  console.log(`[generateGroupSequentially] Group complete`);
+}
+
 async function processImagesJob(
   jobId: string,
   projectId: string,
@@ -985,6 +1262,7 @@ async function processImagesJob(
   let imageWidth = project.image_width || 1920;
   let imageHeight = project.image_height || 1080;
   const imageModel = project.image_model || 'seedream-4.5';
+  const visualContinuityEnabled = project.visual_continuity_enabled || false;
   
   // IMPORTANT: For Z-Image models with 16:9, always generate at 960x544 (will be upscaled later)
   const isZImage = imageModel === 'z-image-turbo' || imageModel === 'z-image-turbo-lora';
@@ -1045,6 +1323,54 @@ async function processImagesJob(
     })
     .eq('id', jobId);
 
+  // ========== VISUAL CONTINUITY MODE ==========
+  if (visualContinuityEnabled && imageModel === 'seedream-4.5' && promptsToProcess.length > 0) {
+    console.log(`[processImagesJob] Visual continuity enabled - using group-based generation`);
+    
+    try {
+      // Step 1: Analyze all continuities in parallel
+      console.log(`[processImagesJob] Analyzing continuity for ${prompts.length} scenes...`);
+      const continuityData = await analyzeAllContinuities(prompts, supabaseUrl, authHeader);
+      
+      // Step 2: Build continuity groups
+      const groups = buildContinuityGroups(promptsToProcess, continuityData);
+      console.log(`[processImagesJob] Built ${groups.length} continuity groups:`, groups.map(g => `[${g.map(i => i.index + 1).join(', ')}]`).join(', '));
+      
+      // Step 3: Generate groups in parallel, sequentially within each group
+      await Promise.all(groups.map(group => 
+        generateGroupSequentially(
+          group,
+          prompts,
+          continuityData,
+          styleReferenceUrls,
+          imageWidth,
+          imageHeight,
+          imageModel,
+          supabaseUrl,
+          authHeader,
+          userId,
+          projectId,
+          jobId,
+          adminClient
+        )
+      ));
+      
+      console.log(`[processImagesJob] All continuity groups completed`);
+      
+      // Update final progress
+      await adminClient
+        .from('generation_jobs')
+        .update({ progress: promptsToProcess.length })
+        .eq('id', jobId);
+      
+      return; // Skip normal flow
+    } catch (continuityError) {
+      console.error(`[processImagesJob] Continuity mode failed, falling back to normal generation:`, continuityError);
+      // Fall through to normal generation
+    }
+  }
+
+  // ========== NORMAL MODE (existing flow unchanged) ==========
   // Build webhook URL
   const webhookUrl = `${supabaseUrl}/functions/v1/replicate-webhook`;
 
