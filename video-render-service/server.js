@@ -16,7 +16,11 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Version identifier - update this when making pan/zoom changes
-const SERVICE_VERSION = 'v2.11-pan-zoom-1.2x';
+const SERVICE_VERSION = 'v2.12-subpixel-zoom';
+
+// Path to FFmpeg fork with subpixel zoom support
+// Install with: ./install-ffmpeg-subpixel.sh
+const FFMPEG_SUBPIXEL_PATH = '/home/ubuntu/ffmpeg-subpixel-build/bin/ffmpeg';
 
 // Create temp directory (must be defined before use)
 const TEMP_DIR = path.join(__dirname, 'temp');
@@ -302,13 +306,78 @@ function getKenBurnsEffect(sceneIndex, duration, width, height, framerate, rende
   };
 }
 
-// Render a single scene with effect (Ken Burns or Pan)
+// Generate Subpixel Zoom effect parameters for a scene
+// Uses the FFmpeg fork with subpixel=1 for smoother zoom animations
+// Source: https://github.com/pYtoner/FFmpeg/tree/subpixel_zoompan
+function getSubpixelZoomEffect(sceneIndex, duration, width, height, framerate) {
+  // Various zoom and pan directions for variety (same as Ken Burns)
+  const effects = ['zoom_in', 'zoom_out', 'zoom_in_left', 'zoom_out_right', 'zoom_in_top', 'zoom_out_bottom'];
+  const effect = effects[sceneIndex % effects.length];
+  
+  const totalFrames = Math.max(1, Math.ceil(duration * framerate));
+  const zoomAmount = 0.08; // 8% zoom - subtle but visible
+  
+  let zoomExpr, xExpr, yExpr;
+  
+  switch (effect) {
+    case 'zoom_in':
+      zoomExpr = `1+${zoomAmount}*on/${totalFrames}`;
+      xExpr = `(iw-iw/zoom)/2`;
+      yExpr = `(ih-ih/zoom)/2`;
+      break;
+    case 'zoom_out':
+      zoomExpr = `${1 + zoomAmount}-${zoomAmount}*on/${totalFrames}`;
+      xExpr = `(iw-iw/zoom)/2`;
+      yExpr = `(ih-ih/zoom)/2`;
+      break;
+    case 'zoom_in_left':
+      zoomExpr = `1+${zoomAmount}*on/${totalFrames}`;
+      xExpr = `(iw-iw/zoom)/4`;
+      yExpr = `(ih-ih/zoom)/2`;
+      break;
+    case 'zoom_out_right':
+      zoomExpr = `${1 + zoomAmount}-${zoomAmount}*on/${totalFrames}`;
+      xExpr = `(iw-iw/zoom)*3/4`;
+      yExpr = `(ih-ih/zoom)/2`;
+      break;
+    case 'zoom_in_top':
+      zoomExpr = `1+${zoomAmount}*on/${totalFrames}`;
+      xExpr = `(iw-iw/zoom)/2`;
+      yExpr = `(ih-ih/zoom)/4`;
+      break;
+    case 'zoom_out_bottom':
+      zoomExpr = `${1 + zoomAmount}-${zoomAmount}*on/${totalFrames}`;
+      xExpr = `(iw-iw/zoom)/2`;
+      yExpr = `(ih-ih/zoom)*3/4`;
+      break;
+    default:
+      zoomExpr = `1+${zoomAmount}*on/${totalFrames}`;
+      xExpr = `(iw-iw/zoom)/2`;
+      yExpr = `(ih-ih/zoom)/2`;
+  }
+  
+  // The key difference: subpixel=1 enables bilinear interpolation for smoother animations
+  const filter = `zoompan=z='${zoomExpr}':x='${xExpr}':y='${yExpr}':d=${totalFrames}:s=${width}x${height}:fps=${framerate}:subpixel=1`;
+  
+  return {
+    filter,
+    effect: `${effect}_subpixel`
+  };
+}
+
+// Render a single scene with effect (Ken Burns, Pan, or Subpixel Zoom)
 async function renderSceneWithEffect(imagePath, outputPath, duration, width, height, framerate, sceneIndex, jobId, effectType = 'zoom', renderMethod = 'standard') {
   return new Promise((resolve, reject) => {
     console.log(`[${jobId}] Rendering scene ${sceneIndex} with effectType: "${effectType}" (type: ${typeof effectType})`);
-    const isPan = String(effectType).toLowerCase().trim() === 'pan';
-    console.log(`[${jobId}] Is pan effect? ${isPan}`);
-    console.log(`[${jobId}] Comparison: "${String(effectType).toLowerCase().trim()}" === "pan" ? ${isPan}`);
+    const normalizedEffectType = String(effectType).toLowerCase().trim();
+    const isPan = normalizedEffectType === 'pan';
+    const isSubpixelZoom = normalizedEffectType === 'zoom_subpixel';
+    console.log(`[${jobId}] Is pan effect? ${isPan}, Is subpixel zoom? ${isSubpixelZoom}`);
+    
+    // Check if FFmpeg subpixel fork is available (only for subpixel zoom)
+    if (isSubpixelZoom && !fs.existsSync(FFMPEG_SUBPIXEL_PATH)) {
+      return reject(new Error(`FFmpeg Subpixel fork not installed. Run install-ffmpeg-subpixel.sh on the VPS. Expected path: ${FFMPEG_SUBPIXEL_PATH}`));
+    }
     
     // Verify image exists and get its dimensions
     if (!fs.existsSync(imagePath)) {
@@ -348,9 +417,16 @@ async function renderSceneWithEffect(imagePath, outputPath, duration, width, hei
         return reject(new Error(`Invalid framerate: ${framerate} (must be > 0 and <= 120)`));
       }
       
-      const { filter, effect } = isPan
-        ? getPanEffect(sceneIndex, duration, width, height, framerate)
-        : getKenBurnsEffect(sceneIndex, duration, width, height, framerate, renderMethod);
+      // Select the appropriate effect based on effectType
+      let filter, effect;
+      if (isPan) {
+        ({ filter, effect } = getPanEffect(sceneIndex, duration, width, height, framerate));
+      } else if (isSubpixelZoom) {
+        ({ filter, effect } = getSubpixelZoomEffect(sceneIndex, duration, width, height, framerate));
+      } else {
+        // Default: Ken Burns zoom
+        ({ filter, effect } = getKenBurnsEffect(sceneIndex, duration, width, height, framerate, renderMethod));
+      }
       
       // Validate filter string is not empty
       if (!filter || filter.trim().length === 0) {
@@ -375,7 +451,15 @@ async function renderSceneWithEffect(imagePath, outputPath, duration, width, hei
       
       // Use zoompan filter directly on the image - it generates frames from a single image
       // The filter chain handles format conversion (yuv444p -> zoompan -> yuv420p)
-      const sceneFfmpegCommand = ffmpeg()
+      const sceneFfmpegCommand = ffmpeg();
+      
+      // For subpixel zoom, use the forked FFmpeg binary with subpixel support
+      if (isSubpixelZoom) {
+        sceneFfmpegCommand.setFfmpegPath(FFMPEG_SUBPIXEL_PATH);
+        console.log(`[${jobId}] Scene ${sceneIndex}: Using FFmpeg subpixel fork at ${FFMPEG_SUBPIXEL_PATH}`);
+      }
+      
+      sceneFfmpegCommand
         .input(imagePath)
         .inputOptions(['-loop', '1']) // Loop the single image
         .videoCodec('libx264')
