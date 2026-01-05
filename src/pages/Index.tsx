@@ -280,11 +280,15 @@ const Index = () => {
       setRegeneratingPromptIndex(null);
     } else if (job.job_type === 'single_image') {
       setGeneratingImageIndex(null);
+    } else if (job.job_type === 'single_animation') {
+      setAnimatingSceneIndex(null);
     }
     
-    // Reload project data to get updated data - use ref to get current value
+    // Reload project data to get updated data - only for jobs that modify project data
+    // Skip reload for single_animation as it's handled by the Edge Function directly
+    const shouldReload = !['single_animation'].includes(job.job_type);
     const projectId = currentProjectIdRef.current;
-    if (projectId) {
+    if (shouldReload && projectId) {
       // Fetch fresh data from database
       supabase
         .from("projects")
@@ -329,6 +333,19 @@ const Index = () => {
           // If transcription just completed and no scenes yet, show configuration modal
           if (job.job_type === 'transcription' && data.transcript_json && existingScenes.length === 0) {
             setShowConfigurationModal(true);
+          }
+        });
+    } else if (job.job_type === 'single_animation' && projectId) {
+      // For single_animation, just refresh prompts to get the videoUrl
+      supabase
+        .from("projects")
+        .select("prompts")
+        .eq("id", projectId)
+        .single()
+        .then(({ data, error }) => {
+          if (!error && data?.prompts) {
+            const validPrompts = ((data.prompts as unknown as GeneratedPrompt[]) || []).filter(p => p !== null);
+            setGeneratedPrompts(validPrompts);
           }
         });
     }
