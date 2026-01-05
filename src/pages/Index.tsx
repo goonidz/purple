@@ -101,8 +101,12 @@ const calculateGroupsIfMissing = (prompts: GeneratedPrompt[]): GeneratedPrompt[]
   // Sinon, calculer les groupes en analysant les prompts
   let currentGroupId = 1;
   const updatedPrompts = prompts.map((prompt, index) => {
-    // Si déjà un groupId, le garder
+    // Si déjà un groupId, le garder et mettre à jour currentGroupId si nécessaire
     if (prompt?.continuityGroupId !== null && prompt?.continuityGroupId !== undefined) {
+      // Mettre à jour currentGroupId pour les prochaines scènes
+      if (prompt.continuityGroupId > currentGroupId) {
+        currentGroupId = prompt.continuityGroupId;
+      }
       return prompt;
     }
     
@@ -110,6 +114,18 @@ const calculateGroupsIfMissing = (prompts: GeneratedPrompt[]): GeneratedPrompt[]
     const promptText = prompt?.prompt?.toLowerCase() || '';
     const hasContinuityPattern = promptText.includes('same') || promptText.includes('keeping') || promptText.startsWith('same');
     
+    // Si continuité détectée, utiliser le même groupe que la scène précédente
+    if (hasContinuityPattern && index > 0) {
+      const previousGroupId = updatedPrompts[index - 1]?.continuityGroupId;
+      if (previousGroupId !== null && previousGroupId !== undefined) {
+        return {
+          ...prompt,
+          continuityGroupId: previousGroupId
+        };
+      }
+    }
+    
+    // Nouveau groupe si première scène ou pas de continuité
     if (index === 0 || !hasContinuityPattern) {
       currentGroupId++;
     }

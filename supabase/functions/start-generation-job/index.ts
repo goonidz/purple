@@ -1379,8 +1379,11 @@ async function generateGroupSequentially(
     const imageUrl = await generateImageAndWait(requestBody, supabaseUrl, authHeader);
     
     if (imageUrl) {
-      // Update prompts array
-      prompts[index].imageUrl = imageUrl;
+      // Update prompts array - preserve all existing properties including continuityGroupId
+      prompts[index] = {
+        ...prompts[index],
+        imageUrl: imageUrl
+      };
       
       // Save to database
       await adminClient
