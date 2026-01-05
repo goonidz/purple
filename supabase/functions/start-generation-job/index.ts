@@ -875,6 +875,75 @@ async function processPromptsJob(
     newPrompts.push(null);
   }
 
+  // NOUVEAU: Si continuité activée, analyser toutes les continuités d'abord pour calculer les groupes
+  let continuityDataMap = new Map<number, any>(); // Stocke les données complètes de continuité
+  let groupMap = new Map<number, number>(); // sceneIndex -> groupId
+  
+  if (visualContinuityEnabled) {
+    console.log(`[processPromptsJob] Analyzing continuities for all scenes to calculate groups...`);
+    
+    // Analyser toutes les continuités en parallèle
+    const continuityPromises = scenesToProcess
+      .filter(({ index }: any) => index > 0) // Skip first scene
+      .map(async ({ scene, index }: any) => {
+        const previousScene = newPrompts[index - 1];
+        if (!previousScene?.text || !previousScene?.prompt) {
+          return { index, hasContinuity: false, data: null };
+        }
+        
+        try {
+          const continuityResponse = await fetch(`${supabaseUrl}/functions/v1/analyze-scene-continuity`, {
+            method: 'POST',
+            headers: {
+              'Authorization': authHeader,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              currentSceneText: scene.text,
+              previousSceneText: previousScene.text,
+              previousPrompt: previousScene.prompt
+            }),
+          });
+          
+          if (continuityResponse.ok) {
+            const data = await continuityResponse.json();
+            return {
+              index,
+              hasContinuity: data.hasContinuity && data.confidence >= 0.7,
+              data: data // Stocker les données complètes
+            };
+          }
+        } catch (error) {
+          console.error(`[processPromptsJob] Error analyzing continuity for scene ${index + 1}:`, error);
+        }
+        return { index, hasContinuity: false, data: null };
+      });
+    
+    const continuityResults = await Promise.all(continuityPromises);
+    continuityResults.forEach(r => {
+      continuityDataMap.set(r.index, r.data); // Stocker les données complètes
+    });
+    
+    // Calculer les groupes
+    let currentGroupId = 0;
+    for (const { index } of scenesToProcess) {
+      if (index === 0) {
+        currentGroupId = 1;
+        groupMap.set(index, currentGroupId);
+      } else {
+        const continuityData = continuityDataMap.get(index);
+        const hasContinuity = continuityData?.hasContinuity && continuityData?.confidence >= 0.7;
+        if (!hasContinuity) {
+          currentGroupId++;
+        }
+        groupMap.set(index, currentGroupId);
+      }
+    }
+    
+    console.log(`[processPromptsJob] Calculated ${currentGroupId} continuity groups`);
+    console.log(`[processPromptsJob] Group mapping:`, Array.from(groupMap.entries()).map(([idx, gid]) => `Scene ${idx + 1} → G${gid}`).join(', '));
+  }
+
   // Process chunk in parallel
   let progress = 0;
   const batchPromises = scenesToProcess.map(async ({ scene, index }: any) => {
@@ -893,41 +962,43 @@ async function processPromptsJob(
       .slice(index + 1, Math.min(scenes.length, index + 6))
       .map((s: any) => s.text);
 
-    // NOUVEAU: Analyser continuité si option activée
+    // Utiliser les résultats de l'analyse préalable si disponible
     let hasContinuity = false;
     let continuityData = null;
     
     if (visualContinuityEnabled && index > 0) {
-      const previousScene = newPrompts[index - 1];
-      
-      if (previousScene?.text && previousScene?.prompt) {
-        try {
-          console.log(`[processPromptsJob] Analyzing continuity for scene ${index + 1} before prompt generation...`);
-          const continuityResponse = await fetch(`${supabaseUrl}/functions/v1/analyze-scene-continuity`, {
-            method: 'POST',
-            headers: {
-              'Authorization': authHeader,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              currentSceneText: scene.text,
-              previousSceneText: previousScene.text,
-              previousPrompt: previousScene.prompt
-            }),
-          });
-          
-          if (continuityResponse.ok) {
-            continuityData = await continuityResponse.json();
-            hasContinuity = continuityData.hasContinuity && continuityData.confidence >= 0.7;
-            console.log(`[processPromptsJob] Scene ${index + 1}: Continuity ${hasContinuity ? 'DETECTED' : 'NOT detected'} (confidence: ${continuityData.confidence})`);
-          } else {
-            console.error(`[processPromptsJob] Scene ${index + 1}: Continuity analysis failed: ${continuityResponse.status}`);
-          }
-        } catch (error) {
-          console.error(`[processPromptsJob] Scene ${index + 1}: Error analyzing continuity:`, error);
-        }
+      const continuityDataFull = continuityDataMap.get(index);
+      if (continuityDataFull) {
+        hasContinuity = continuityDataFull.hasContinuity && continuityDataFull.confidence >= 0.7;
+        continuityData = continuityDataFull; // Utiliser les données complètes
+        console.log(`[processPromptsJob] Scene ${index + 1}: Using pre-analyzed continuity: ${hasContinuity ? 'DETECTED' : 'NOT detected'}`);
       } else {
-        console.log(`[processPromptsJob] Scene ${index + 1}: No previous scene data available for continuity check`);
+        // Fallback: analyser individuellement si pas dans le map (ne devrait pas arriver)
+        const previousScene = newPrompts[index - 1];
+        if (previousScene?.text && previousScene?.prompt) {
+          try {
+            console.log(`[processPromptsJob] Scene ${index + 1}: Analyzing continuity individually (fallback)...`);
+            const continuityResponse = await fetch(`${supabaseUrl}/functions/v1/analyze-scene-continuity`, {
+              method: 'POST',
+              headers: {
+                'Authorization': authHeader,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                currentSceneText: scene.text,
+                previousSceneText: previousScene.text,
+                previousPrompt: previousScene.prompt
+              }),
+            });
+            
+            if (continuityResponse.ok) {
+              continuityData = await continuityResponse.json();
+              hasContinuity = continuityData.hasContinuity && continuityData.confidence >= 0.7;
+            }
+          } catch (error) {
+            console.error(`[processPromptsJob] Scene ${index + 1}: Error analyzing continuity:`, error);
+          }
+        }
       }
     }
 
@@ -959,6 +1030,7 @@ async function processPromptsJob(
 
       if (response.ok) {
         const data = await response.json();
+        const groupId = visualContinuityEnabled ? (groupMap.get(index) || null) : null;
         newPrompts[index] = {
           scene: `Scène ${index + 1}`,
           prompt: data.prompt,
@@ -966,8 +1038,12 @@ async function processPromptsJob(
           startTime: scene.startTime,
           endTime: scene.endTime,
           duration: scene.endTime - scene.startTime,
-          imageUrl: newPrompts[index]?.imageUrl // Preserve existing image
+          imageUrl: newPrompts[index]?.imageUrl, // Preserve existing image
+          continuityGroupId: groupId // NOUVEAU: Stocker l'ID du groupe
         };
+        if (groupId) {
+          console.log(`[processPromptsJob] Scene ${index + 1}: Assigned to continuity group ${groupId}`);
+        }
       }
     } catch (error) {
       console.error(`Error generating prompt for scene ${index + 1}:`, error);
@@ -2112,9 +2188,10 @@ async function processSinglePromptJob(
     .slice(sceneIndex + 1, Math.min(scenes.length, sceneIndex + 6))
     .map((s: any) => s.text);
 
-  // NOUVEAU: Analyser continuité si option activée
+  // NOUVEAU: Analyser continuité si option activée et calculer le groupe
   let hasContinuity = false;
   let continuityData = null;
+  let continuityGroupId = null;
   
   if (visualContinuityEnabled && sceneIndex > 0) {
     const previousScene = existingPrompts[sceneIndex - 1];
@@ -2139,6 +2216,19 @@ async function processSinglePromptJob(
           continuityData = await continuityResponse.json();
           hasContinuity = continuityData.hasContinuity && continuityData.confidence >= 0.7;
           console.log(`[processSinglePromptJob] Scene ${sceneIndex + 1}: Continuity ${hasContinuity ? 'DETECTED' : 'NOT detected'} (confidence: ${continuityData.confidence})`);
+          
+          // Calculer le groupId : si continuité, utiliser le même groupe que la scène précédente, sinon nouveau groupe
+          if (hasContinuity && previousScene?.continuityGroupId !== null && previousScene?.continuityGroupId !== undefined) {
+            continuityGroupId = previousScene.continuityGroupId;
+            console.log(`[processSinglePromptJob] Scene ${sceneIndex + 1}: Assigned to existing group ${continuityGroupId}`);
+          } else {
+            // Trouver le prochain groupId disponible
+            const existingGroupIds = existingPrompts
+              .map((p: any) => p?.continuityGroupId)
+              .filter((id: any) => id !== null && id !== undefined) as number[];
+            continuityGroupId = existingGroupIds.length > 0 ? Math.max(...existingGroupIds) + 1 : 1;
+            console.log(`[processSinglePromptJob] Scene ${sceneIndex + 1}: Assigned to new group ${continuityGroupId}`);
+          }
         } else {
           console.error(`[processSinglePromptJob] Scene ${sceneIndex + 1}: Continuity analysis failed: ${continuityResponse.status}`);
         }
@@ -2147,7 +2237,15 @@ async function processSinglePromptJob(
       }
     } else {
       console.log(`[processSinglePromptJob] Scene ${sceneIndex + 1}: No previous scene data available for continuity check`);
+      // Nouveau groupe si pas de scène précédente
+      const existingGroupIds = existingPrompts
+        .map((p: any) => p?.continuityGroupId)
+        .filter((id: any) => id !== null && id !== undefined) as number[];
+      continuityGroupId = existingGroupIds.length > 0 ? Math.max(...existingGroupIds) + 1 : 1;
     }
+  } else if (visualContinuityEnabled && sceneIndex === 0) {
+    // Première scène = groupe 1
+    continuityGroupId = 1;
   }
 
   // Generate the prompt
@@ -2215,7 +2313,8 @@ async function processSinglePromptJob(
     startTime: scene.startTime,
     endTime: scene.endTime,
     duration: scene.endTime - scene.startTime,
-    imageUrl: latestPrompts[sceneIndex]?.imageUrl // Preserve existing image
+    imageUrl: latestPrompts[sceneIndex]?.imageUrl, // Preserve existing image
+    continuityGroupId: visualContinuityEnabled ? continuityGroupId : null // NOUVEAU: Stocker l'ID du groupe
   };
 
   // Save prompts to project with explicit await

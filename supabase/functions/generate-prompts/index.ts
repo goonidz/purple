@@ -194,32 +194,35 @@ Return ONLY the prompt text, no JSON, no title, no explanations, just the optimi
     // Add continuity mode instructions if continuity detected
     if (hasContinuity && previousPrompt) {
       const continuityInstructions = `\n\nCONTINUITY MODE - IMAGE MODIFICATION:
-You are generating a prompt for a scene that has VISUAL CONTINUITY with the previous scene.
-This means the image will be generated using the previous scene's image as a reference (image-to-image generation).
+You are generating a prompt for image-to-image generation. The image will be created by MODIFYING the previous scene's image.
 
-CRITICAL INSTRUCTIONS FOR CONTINUITY MODE:
-1. The prompt should describe MODIFICATIONS to the previous image, not a completely new scene
-2. Keep the same location, setting, atmosphere, lighting, and color palette from the previous prompt
-3. Only describe what CHANGES: new actions, new elements, new details, new characters entering
-4. Use phrases like "same setting, but now...", "keeping the previous atmosphere, add...", "in the same location, show...", "maintaining the [element] from before, now..."
-5. DO NOT repeat the entire scene description - only describe the modifications
-6. The previous prompt was: "${previousPrompt.substring(0, 200)}..."
+CRITICAL FORMAT REQUIREMENTS:
+1. Use a SIMPLE, DIRECT format: "Same [elements to keep], but now [what changes]"
+2. DO NOT follow complex formatting from examples - use a straightforward modification instruction
+3. Start with "Same" or "Keeping" to reference the previous image
+4. Use "but now", "but", or "with" to introduce changes
+5. Keep it concise (1-2 sentences maximum)
+6. Focus on what CHANGES, not the full scene description
+7. DO NOT use complex descriptive language - be direct and simple
 
-EXAMPLE OF CONTINUITY PROMPT:
-Previous prompt: "A dark forest at night, a cabin with warm light in the window, misty atmosphere, cinematic lighting"
-Your prompt (continuity): "Same dark forest and cabin setting with misty night atmosphere, but now a character is entering through the door, maintaining the warm window light and cinematic style"
+FORMAT EXAMPLES:
+- "Same dark forest and cabin, but now a character is entering through the door"
+- "Keeping the laboratory setting, but now the scientist is explaining to a group"
+- "Same city street, but now a bus arrives"
 
-IMPORTANT: Your prompt must be a MODIFICATION instruction that works with image-to-image generation, keeping the visual foundation while describing what changes.\n\n`;
+The previous prompt was: "${previousPrompt.substring(0, 200)}..."
+
+Your prompt must be a SIMPLE modification instruction, NOT a complex descriptive prompt. Ignore any format examples provided - use only the simple format above.\n\n`;
       
       systemPrompt += continuityInstructions;
-      console.log(`[generate-prompts] Scene ${sceneIndex}: Continuity mode enabled - prompt will be adapted for image modification`);
+      console.log(`[generate-prompts] Scene ${sceneIndex}: Continuity mode enabled - using SIMPLE format (ignoring examples)`);
     }
 
     // Build user message with few-shot examples
     let userMessage = "";
     
-    // Add few-shot examples directly in the user message for better format matching
-    if (examplePrompts && Array.isArray(examplePrompts) && examplePrompts.length > 0) {
+    // Add few-shot examples ONLY if NOT in continuity mode (continuity uses simple format)
+    if (!hasContinuity && examplePrompts && Array.isArray(examplePrompts) && examplePrompts.length > 0) {
       userMessage += `Here are examples of the EXACT format and style you must follow:\n\n`;
       examplePrompts.forEach((example: string, i: number) => {
         userMessage += `EXAMPLE ${i + 1} (This is the EXACT format you must copy):\n${example}\n\n`;
@@ -283,11 +286,16 @@ IMPORTANT: Your prompt must be a MODIFICATION instruction that works with image-
         userMessage += `Elements to CHANGE: ${continuityElements.elementsToChange.join(', ')}\n`;
       }
       
-      userMessage += `\nCRITICAL: Generate a prompt that describes ONLY the modifications to the previous image.\n`;
-      userMessage += `- Keep the same visual setting, location, atmosphere, lighting\n`;
-      userMessage += `- Only describe what is NEW or CHANGING in this scene\n`;
-      userMessage += `- Use phrases like "same [element], but now..." or "keeping [element], add..."\n`;
-      userMessage += `- The prompt will be used for image-to-image generation, so it must work as a modification instruction\n\n`;
+      userMessage += `\nCONTINUITY MODE: Generate a SIMPLE modification prompt.\n`;
+      userMessage += `Format: "Same [keep], but now [change]"\n`;
+      userMessage += `Previous prompt: "${previousPrompt.substring(0, 200)}..."\n`;
+      if (continuityElements?.elementsToKeep && Array.isArray(continuityElements.elementsToKeep) && continuityElements.elementsToKeep.length > 0) {
+        userMessage += `Elements to keep: ${continuityElements.elementsToKeep.join(', ')}\n`;
+      }
+      if (continuityElements?.elementsToChange && Array.isArray(continuityElements.elementsToChange) && continuityElements.elementsToChange.length > 0) {
+        userMessage += `What changes: ${continuityElements.elementsToChange.join(', ')}\n`;
+      }
+      userMessage += `\nGenerate ONLY a simple modification instruction in the format "Same [elements], but now [changes]". Keep it short and direct (1-2 sentences max).\n\n`;
     } else {
       console.log(`[generate-prompts] Scene ${sceneIndex}: Normal mode (no continuity)`);
     }
@@ -303,7 +311,12 @@ IMPORTANT: Your prompt must be a MODIFICATION instruction that works with image-
     
     userMessage += `Now generate a prompt for this scene:\n`;
     userMessage += `Scene ${sceneIndex}/${totalScenes} (${startTime.toFixed(1)}s - ${endTime.toFixed(1)}s):\n"${scene}"\n\n`;
-    userMessage += `Generate a detailed visual prompt following the EXACT format and style of the examples above. The content must describe what is in this scene, but the format, structure, and style must match the examples exactly.`;
+    
+    if (hasContinuity) {
+      userMessage += `Generate a SIMPLE modification prompt in the format: "Same [elements], but now [changes]". Keep it short and direct (1-2 sentences maximum).`;
+    } else {
+      userMessage += `Generate a detailed visual prompt following the EXACT format and style of the examples above. The content must describe what is in this scene, but the format, structure, and style must match the examples exactly.`;
+    }
 
     console.log(`[generate-prompts] Scene ${sceneIndex}/${totalScenes}: Generating prompt...`);
     console.log(`[generate-prompts] Scene ${sceneIndex}: Scene text: "${scene.substring(0, 100)}..."`);

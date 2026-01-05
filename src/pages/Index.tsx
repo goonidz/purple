@@ -86,7 +86,42 @@ interface GeneratedPrompt {
   endTime: number;
   duration: number;
   imageUrl?: string;
+  videoUrl?: string;
+  continuityGroupId?: number | null;
 }
+
+// Fonction pour calculer les groupes si continuityGroupId manquant (rétrocompatibilité)
+const calculateGroupsIfMissing = (prompts: GeneratedPrompt[]): GeneratedPrompt[] => {
+  // Si tous les prompts ont déjà un continuityGroupId, retourner tel quel
+  const allHaveGroupId = prompts.every(p => p?.continuityGroupId !== null && p?.continuityGroupId !== undefined);
+  if (allHaveGroupId) {
+    return prompts;
+  }
+  
+  // Sinon, calculer les groupes en analysant les prompts
+  let currentGroupId = 1;
+  const updatedPrompts = prompts.map((prompt, index) => {
+    // Si déjà un groupId, le garder
+    if (prompt?.continuityGroupId !== null && prompt?.continuityGroupId !== undefined) {
+      return prompt;
+    }
+    
+    // Détecter continuité par pattern dans le prompt
+    const promptText = prompt?.prompt?.toLowerCase() || '';
+    const hasContinuityPattern = promptText.includes('same') || promptText.includes('keeping') || promptText.startsWith('same');
+    
+    if (index === 0 || !hasContinuityPattern) {
+      currentGroupId++;
+    }
+    
+    return {
+      ...prompt,
+      continuityGroupId: currentGroupId
+    };
+  });
+  
+  return updatedPrompts;
+};
 
 const Index = () => {
   const navigate = useNavigate();
@@ -314,7 +349,9 @@ const Index = () => {
           
           // Update prompts
           const validPrompts = ((data.prompts as unknown as GeneratedPrompt[]) || []).filter(p => p !== null);
-          setGeneratedPrompts(validPrompts);
+          // Calculer les groupes si manquants (rétrocompatibilité)
+          const promptsWithGroups = calculateGroupsIfMissing(validPrompts);
+          setGeneratedPrompts(promptsWithGroups);
           
           // Update audio URL
           if (data.audio_url) {
@@ -351,7 +388,8 @@ const Index = () => {
             if (!error && data?.prompts) {
               const validPrompts = ((data.prompts as unknown as GeneratedPrompt[]) || []).filter(p => p !== null);
               console.log(`[handleJobComplete] Reloaded prompts for single_animation, scene:`, job.metadata?.sceneIndex, 'videoUrl:', validPrompts[job.metadata?.sceneIndex as number]?.videoUrl);
-              setGeneratedPrompts(validPrompts);
+              const promptsWithGroups = calculateGroupsIfMissing(validPrompts);
+              setGeneratedPrompts(promptsWithGroups);
             } else if (error) {
               console.error(`[handleJobComplete] Error loading prompts:`, error);
             }
@@ -706,8 +744,9 @@ const Index = () => {
       setScenes(existingScenes);
       
       // Filter out any null values from prompts array
-      const validPrompts = ((data.prompts as unknown as GeneratedPrompt[]) || []).filter(p => p !== null && p !== undefined);
-      setGeneratedPrompts(validPrompts);
+              const validPrompts = ((data.prompts as unknown as GeneratedPrompt[]) || []).filter(p => p !== null && p !== undefined);
+              const promptsWithGroups = calculateGroupsIfMissing(validPrompts);
+              setGeneratedPrompts(promptsWithGroups);
       
       // Check if test has already been done (at least 2 scenes with images)
       const firstTwoWithImages = validPrompts.slice(0, 2).filter(p => p && p.imageUrl).length;
@@ -1975,7 +2014,8 @@ const Index = () => {
                     console.log(`[handleAnimateScene] Reloaded prompts from DB, total: ${validPrompts.length}, scene ${index} videoUrl:`, validPrompts[index]?.videoUrl);
                     // Only update if the DB has the videoUrl (to avoid overwriting with stale data)
                     if (validPrompts[index]?.videoUrl) {
-                      setGeneratedPrompts(validPrompts);
+                      const promptsWithGroups = calculateGroupsIfMissing(validPrompts);
+                      setGeneratedPrompts(promptsWithGroups);
                     }
                   }
                 } catch (err) {
@@ -3585,7 +3625,9 @@ const Index = () => {
                                       .eq('id', currentProjectId)
                                       .single();
                                     if (project?.prompts) {
-                                      setGeneratedPrompts(project.prompts as any[]);
+                                      const validPrompts = ((project.prompts as unknown as GeneratedPrompt[]) || []).filter(p => p !== null);
+                                      const promptsWithGroups = calculateGroupsIfMissing(validPrompts);
+                                      setGeneratedPrompts(promptsWithGroups);
                                     }
                                   }
                                   

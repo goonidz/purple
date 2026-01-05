@@ -29,6 +29,7 @@ interface GeneratedPrompt {
   prompt?: string;
   imageUrl?: string;
   videoUrl?: string;
+  continuityGroupId?: number | null;
 }
 
 interface SceneGridProps {
@@ -84,6 +85,17 @@ export function SceneGrid({
 }: SceneGridProps) {
   const items = scenes.length > 0 ? scenes : generatedPrompts;
 
+  // Fonction pour obtenir la couleur du groupe
+  const getGroupColor = (groupId: number | null | undefined): string => {
+    if (groupId === null || groupId === undefined) return '';
+    const colors = [
+      'bg-blue-500', 'bg-green-500', 'bg-purple-500', 'bg-orange-500',
+      'bg-pink-500', 'bg-cyan-500', 'bg-yellow-500', 'bg-red-500',
+      'bg-indigo-500', 'bg-teal-500', 'bg-amber-500', 'bg-rose-500'
+    ];
+    return colors[(groupId - 1) % colors.length];
+  };
+
   const triggerFileUpload = (index: number) => {
     const input = document.createElement("input");
     input.type = "file";
@@ -134,7 +146,14 @@ export function SceneGrid({
             )}
             {/* Header: Number + Timing (always visible) */}
             <div className="flex items-center gap-3 md:flex-col md:items-start md:gap-1">
-              <span className="font-bold text-lg text-primary">#{index + 1}</span>
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-lg text-primary">#{index + 1}</span>
+                {prompt?.continuityGroupId !== null && prompt?.continuityGroupId !== undefined && (
+                  <span className={`${getGroupColor(prompt.continuityGroupId)} text-white text-xs px-1.5 py-0.5 rounded font-bold`}>
+                    G{prompt.continuityGroupId}
+                  </span>
+                )}
+              </div>
               <div className="flex items-center gap-1 text-xs text-muted-foreground">
                 <Clock className="h-3 w-3 hidden md:inline" />
                 <span>{formatTimecode(startTime)} - {formatTimecode(endTime)}</span>
