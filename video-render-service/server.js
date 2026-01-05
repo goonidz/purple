@@ -407,6 +407,13 @@ async function renderSceneWithEffect(imagePath, outputPath, duration, width, hei
         return reject(new Error(`Invalid image dimensions: ${actualWidth}x${actualHeight}`));
       }
       
+      // Validate image is readable
+      try {
+        fs.accessSync(imagePath, fs.constants.R_OK);
+      } catch (accessErr) {
+        return reject(new Error(`Image file is not readable: ${imagePath} - ${accessErr.message}`));
+      }
+      
       // Validate duration and dimensions
       if (duration <= 0 || duration > 300) {
         return reject(new Error(`Invalid duration: ${duration}s (must be > 0 and <= 300)`));
@@ -416,6 +423,11 @@ async function renderSceneWithEffect(imagePath, outputPath, duration, width, hei
       }
       if (framerate <= 0 || framerate > 120) {
         return reject(new Error(`Invalid framerate: ${framerate} (must be > 0 and <= 120)`));
+      }
+      
+      // Validate filter string doesn't contain invalid characters
+      if (finalFilter.includes('undefined') || finalFilter.includes('NaN') || finalFilter.includes('Infinity')) {
+        return reject(new Error(`Invalid filter contains undefined/NaN/Infinity: ${finalFilter}`));
       }
       
       // Select the appropriate effect based on effectType
@@ -462,6 +474,17 @@ async function renderSceneWithEffect(imagePath, outputPath, duration, width, hei
       
       console.log(`[${jobId}] Final filter chain: ${finalFilter}`);
       
+      // Validate output directory exists
+      const outputDir = path.dirname(outputPath);
+      if (!fs.existsSync(outputDir)) {
+        try {
+          fs.mkdirSync(outputDir, { recursive: true });
+          console.log(`[${jobId}] Created output directory: ${outputDir}`);
+        } catch (mkdirErr) {
+          return reject(new Error(`Failed to create output directory: ${mkdirErr.message}`));
+        }
+      }
+      
       // Use zoompan filter directly on the image - it generates frames from a single image
       // The filter chain handles format conversion (yuv444p -> zoompan -> yuv420p)
       const sceneFfmpegCommand = ffmpeg();
@@ -471,6 +494,9 @@ async function renderSceneWithEffect(imagePath, outputPath, duration, width, hei
         sceneFfmpegCommand.setFfmpegPath(FFMPEG_SUBPIXEL_PATH);
         console.log(`[${jobId}] Scene ${sceneIndex}: Using FFmpeg subpixel fork at ${FFMPEG_SUBPIXEL_PATH}`);
       }
+      
+      // Set timeout for FFmpeg (max 5 minutes per scene to avoid hanging)
+      const ffmpegTimeout = Math.max(300000, duration * 1000 * 2); // At least 2x the scene duration, min 5 minutes
       
       sceneFfmpegCommand
         .input(imagePath)
@@ -490,16 +516,46 @@ async function renderSceneWithEffect(imagePath, outputPath, duration, width, hei
         ])
         .videoFilters([finalFilter])
         .output(outputPath)
+        .timeout(ffmpegTimeout)
         .on('start', (cmd) => {
           console.log(`[${jobId}] Scene ${sceneIndex} FFmpeg: ${cmd}`);
+        })
+        .on('stderr', (stderrLine) => {
+          // Log FFmpeg stderr for debugging - filter out verbose messages
+          if (stderrLine.includes('error') || stderrLine.includes('Error') || stderrLine.includes('failed') || stderrLine.includes('Failed')) {
+            console.error(`[${jobId}] Scene ${sceneIndex} FFmpeg stderr: ${stderrLine}`);
+          }
         })
         .on('end', () => {
           console.log(`[${jobId}] Scene ${sceneIndex} completed`);
           resolve();
         })
-        .on('error', (err) => {
+        .on('error', (err, stdout, stderr) => {
           console.error(`[${jobId}] Scene ${sceneIndex} error:`, err.message);
           console.error(`[${jobId}] Scene ${sceneIndex} error details:`, err);
+          if (stderr) {
+            console.error(`[${jobId}] Scene ${sceneIndex} FFmpeg stderr output:`, stderr);
+          }
+          if (stdout) {
+            console.error(`[${jobId}] Scene ${sceneIndex} FFmpeg stdout output:`, stdout);
+          }
+          // Extract more details from error if available
+          const errorDetails = {
+            message: err.message,
+            code: err.code,
+            signal: err.signal,
+            killed: err.killed,
+            cmd: err.cmd,
+            imagePath,
+            outputPath,
+            finalFilter,
+            duration,
+            width,
+            height,
+            framerate,
+            effectType
+          };
+          console.error(`[${jobId}] Scene ${sceneIndex} full error context:`, JSON.stringify(errorDetails, null, 2));
           reject(err);
         });
       
