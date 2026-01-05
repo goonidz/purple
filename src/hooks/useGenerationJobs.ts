@@ -242,15 +242,33 @@ export function useGenerationJobs({ projectId, onJobComplete, onJobFailed, autoR
 
         if (error) {
           console.error('Polling error:', error);
+          console.error('Error details:', JSON.stringify(error, null, 2));
           return;
         }
         
         if (!data || data.length === 0) {
           console.log('No jobs found in polling response');
+          console.log('Job IDs queried:', jobIds);
+          // Try to fetch one job individually to debug
+          if (jobIds.length > 0) {
+            const { data: singleJob, error: singleError } = await supabase
+              .from('generation_jobs')
+              .select('*')
+              .eq('id', jobIds[0])
+              .single();
+            console.log('Single job fetch result:', { data: singleJob, error: singleError });
+          }
           return;
         }
 
-        console.log('Polling response:', data.map(j => ({ id: j.id, status: j.status })));
+        console.log('Polling response:', data.map(j => ({ id: j.id, status: j.status, progress: j.progress })));
+        
+        // Check if we got empty objects
+        if (data.length > 0 && Object.keys(data[0]).length === 0) {
+          console.error('⚠️  Received empty objects in polling response - possible RLS issue');
+          console.error('Job IDs:', jobIds);
+          console.error('Full response:', JSON.stringify(data, null, 2));
+        }
 
         data.forEach(job => {
           const typedJob = job as unknown as GenerationJob;

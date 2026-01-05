@@ -2574,7 +2574,11 @@ async function processSingleImageJob(
     console.error(`Failed to create pending_prediction:`, insertError);
   }
 
-  console.log(`Single image generation started for scene ${sceneIndex} with webhook mode`);
+  console.log(`[processSingleImageJob] Single image generation started for scene ${sceneIndex + 1}`);
+  console.log(`[processSingleImageJob] Job ID: ${jobId}`);
+  console.log(`[processSingleImageJob] Prediction ID: ${predictionId}`);
+  console.log(`[processSingleImageJob] Webhook URL: ${webhookUrl}`);
+  console.log(`[processSingleImageJob] Job will remain in 'processing' status until webhook completes it`);
 
   // Throw to keep job in processing status - webhook will handle completion and upscale
   throw new Error("WEBHOOK_MODE_ACTIVE");
