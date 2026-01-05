@@ -3353,8 +3353,8 @@ const Index = () => {
                           </Button>
                           <Button
                             onClick={() => handleGeneratePrompts(false)}
-                            disabled={isGeneratingPrompts || (!hasTestedFirstTwo && generatedPrompts.length === 0)}
-                            title={!hasTestedFirstTwo && generatedPrompts.length === 0 ? "Veuillez d'abord tester avec les 2 premières scènes" : ""}
+                            disabled={isGeneratingPrompts || (!hasTestedFirstTwo && !generatedPrompts.some((p: any) => p && p.prompt && p.prompt.trim() !== ''))}
+                            title={!hasTestedFirstTwo && !generatedPrompts.some((p: any) => p && p.prompt && p.prompt.trim() !== '') ? "Veuillez d'abord tester avec les 2 premières scènes" : ""}
                             size="sm"
                           >
                             {isGeneratingPrompts ? (
@@ -3374,11 +3374,11 @@ const Index = () => {
                               onClick={() => generateAllImages(true)}
                               disabled={
                                 isGeneratingImages || 
-                                (!hasTestedFirstTwo && generatedPrompts.filter((p: any) => p && p.imageUrl).length === 0) || 
+                                (!hasTestedFirstTwo && !generatedPrompts.some((p: any) => p && (p.prompt || p.imageUrl))) || 
                                 generatedPrompts.length < scenes.length
                               }
                               title={
-                                !hasTestedFirstTwo && generatedPrompts.filter((p: any) => p && p.imageUrl).length === 0
+                                !hasTestedFirstTwo && !generatedPrompts.some((p: any) => p && (p.prompt || p.imageUrl))
                                   ? "Veuillez d'abord tester avec les 2 premières scènes" 
                                   : generatedPrompts.length < scenes.length
                                   ? "Veuillez d'abord générer tous les prompts"

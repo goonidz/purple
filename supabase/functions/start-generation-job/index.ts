@@ -805,6 +805,7 @@ async function processPromptsJob(
   const existingPrompts = (project.prompts as any[]) || [];
   const examplePrompts = (project.example_prompts as string[]) || [];
   const customSystemPrompt = project.prompt_system_message || undefined;
+  const visualContinuityEnabled = project.visual_continuity_enabled || false;
 
   // Get or generate summary (only on first chunk)
   let summary = project.summary;
