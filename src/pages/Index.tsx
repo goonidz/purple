@@ -1137,9 +1137,6 @@ const Index = () => {
   };
 
   const handleGeneratePrompts = async (testMode: boolean = false) => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/7569e75c-c860-4717-86b3-bbfc0f7faa5e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Index.tsx:handleGeneratePrompts',message:'handleGeneratePrompts called',data:{testMode,scenesLength:scenes.length,currentProjectId,visualContinuityEnabled},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
-    // #endregion
     if (scenes.length === 0) {
       toast.error("Veuillez d'abord générer les scènes");
       return;
@@ -1157,13 +1154,7 @@ const Index = () => {
     }
 
     // Start background job
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/7569e75c-c860-4717-86b3-bbfc0f7faa5e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Index.tsx:handleGeneratePrompts',message:'calling startJob prompts',data:{currentProjectId},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
-    // #endregion
     const result = await startJob('prompts', { regenerate: false });
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/7569e75c-c860-4717-86b3-bbfc0f7faa5e',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Index.tsx:handleGeneratePrompts',message:'startJob result',data:{result},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
-    // #endregion
     if (result) {
       setIsGeneratingPrompts(true);
       toast.info("Génération des prompts lancée en arrière-plan. Vous pouvez quitter cette page.");
