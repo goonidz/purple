@@ -882,11 +882,12 @@ async function processPromptsJob(
   if (visualContinuityEnabled) {
     console.log(`[processPromptsJob] Analyzing continuities for all scenes to calculate groups...`);
     
-    // Analyser toutes les continuités en parallèle
+    // Analyser toutes les continuités en parallèle (utiliser existingPrompts pour les scènes précédentes)
     const continuityPromises = scenesToProcess
       .filter(({ index }: any) => index > 0) // Skip first scene
       .map(async ({ scene, index }: any) => {
-        const previousScene = newPrompts[index - 1];
+        // Utiliser existingPrompts pour la scène précédente (qui a déjà un prompt)
+        const previousScene = existingPrompts[index - 1] || newPrompts[index - 1];
         if (!previousScene?.text || !previousScene?.prompt) {
           return { index, hasContinuity: false, data: null };
         }
@@ -924,23 +925,46 @@ async function processPromptsJob(
       continuityDataMap.set(r.index, r.data); // Stocker les données complètes
     });
     
-    // Calculer les groupes
+    // Calculer les groupes en tenant compte des groupes existants
     let currentGroupId = 0;
+    const existingGroupIds = existingPrompts
+      .map((p: any) => p?.continuityGroupId)
+      .filter((id: any) => id !== null && id !== undefined) as number[];
+    const maxExistingGroupId = existingGroupIds.length > 0 ? Math.max(...existingGroupIds) : 0;
+    
     for (const { index } of scenesToProcess) {
       if (index === 0) {
-        currentGroupId = 1;
-        groupMap.set(index, currentGroupId);
+        // Première scène : nouveau groupe ou groupe existant si déjà assigné
+        if (existingPrompts[0]?.continuityGroupId) {
+          groupMap.set(index, existingPrompts[0].continuityGroupId);
+          currentGroupId = existingPrompts[0].continuityGroupId;
+        } else {
+          currentGroupId = maxExistingGroupId + 1;
+          groupMap.set(index, currentGroupId);
+        }
       } else {
         const continuityData = continuityDataMap.get(index);
         const hasContinuity = continuityData?.hasContinuity && continuityData?.confidence >= 0.7;
-        if (!hasContinuity) {
-          currentGroupId++;
+        
+        if (hasContinuity) {
+          // Continuité : utiliser le même groupe que la scène précédente
+          const previousGroupId = groupMap.get(index - 1) || existingPrompts[index - 1]?.continuityGroupId;
+          if (previousGroupId) {
+            groupMap.set(index, previousGroupId);
+          } else {
+            // Pas de groupe précédent, créer nouveau
+            currentGroupId = maxExistingGroupId + 1;
+            groupMap.set(index, currentGroupId);
+          }
+        } else {
+          // Pas de continuité : nouveau groupe
+          currentGroupId = Math.max(currentGroupId, maxExistingGroupId) + 1;
+          groupMap.set(index, currentGroupId);
         }
-        groupMap.set(index, currentGroupId);
       }
     }
     
-    console.log(`[processPromptsJob] Calculated ${currentGroupId} continuity groups`);
+    console.log(`[processPromptsJob] Calculated ${Math.max(...Array.from(groupMap.values()))} continuity groups`);
     console.log(`[processPromptsJob] Group mapping:`, Array.from(groupMap.entries()).map(([idx, gid]) => `Scene ${idx + 1} → G${gid}`).join(', '));
   }
 
