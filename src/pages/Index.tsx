@@ -784,8 +784,12 @@ const Index = () => {
               setGeneratedPrompts(promptsWithGroups);
       
       // Check if test has already been done (at least 2 scenes with images)
+      // OR if there are already prompts/images in the project (meaning work has been done)
       const firstTwoWithImages = validPrompts.slice(0, 2).filter(p => p && p.imageUrl).length;
-      if (firstTwoWithImages >= 2) {
+      const hasExistingPrompts = validPrompts.length > 0 && validPrompts.some(p => p && p.prompt);
+      const hasExistingImages = validPrompts.some(p => p && p.imageUrl);
+      
+      if (firstTwoWithImages >= 2 || hasExistingPrompts || hasExistingImages) {
         setHasTestedFirstTwo(true);
       }
       
@@ -3349,8 +3353,8 @@ const Index = () => {
                           </Button>
                           <Button
                             onClick={() => handleGeneratePrompts(false)}
-                            disabled={isGeneratingPrompts || !hasTestedFirstTwo}
-                            title={!hasTestedFirstTwo ? "Veuillez d'abord tester avec les 2 premières scènes" : ""}
+                            disabled={isGeneratingPrompts || (!hasTestedFirstTwo && generatedPrompts.length === 0)}
+                            title={!hasTestedFirstTwo && generatedPrompts.length === 0 ? "Veuillez d'abord tester avec les 2 premières scènes" : ""}
                             size="sm"
                           >
                             {isGeneratingPrompts ? (
@@ -3370,11 +3374,11 @@ const Index = () => {
                               onClick={() => generateAllImages(true)}
                               disabled={
                                 isGeneratingImages || 
-                                !hasTestedFirstTwo || 
+                                (!hasTestedFirstTwo && generatedPrompts.filter((p: any) => p && p.imageUrl).length === 0) || 
                                 generatedPrompts.length < scenes.length
                               }
                               title={
-                                !hasTestedFirstTwo 
+                                !hasTestedFirstTwo && generatedPrompts.filter((p: any) => p && p.imageUrl).length === 0
                                   ? "Veuillez d'abord tester avec les 2 premières scènes" 
                                   : generatedPrompts.length < scenes.length
                                   ? "Veuillez d'abord générer tous les prompts"
