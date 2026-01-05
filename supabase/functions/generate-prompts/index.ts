@@ -255,6 +255,21 @@ IMPORTANT: Your prompt must be a MODIFICATION instruction that works with image-
     
     // Add continuity information if detected
     if (hasContinuity && previousPrompt) {
+      console.log(`[generate-prompts] Scene ${sceneIndex}: ═══════════════════════════════════════════════════════`);
+      console.log(`[generate-prompts] Scene ${sceneIndex}: CONTINUITY MODE ACTIVATED`);
+      console.log(`[generate-prompts] Scene ${sceneIndex}: Previous prompt: "${previousPrompt.substring(0, 100)}..."`);
+      
+      if (continuityElements?.elementsToKeep && Array.isArray(continuityElements.elementsToKeep) && continuityElements.elementsToKeep.length > 0) {
+        console.log(`[generate-prompts] Scene ${sceneIndex}: Elements to KEEP: ${continuityElements.elementsToKeep.join(', ')}`);
+      }
+      
+      if (continuityElements?.elementsToChange && Array.isArray(continuityElements.elementsToChange) && continuityElements.elementsToChange.length > 0) {
+        console.log(`[generate-prompts] Scene ${sceneIndex}: Elements to CHANGE: ${continuityElements.elementsToChange.join(', ')}`);
+      }
+      
+      console.log(`[generate-prompts] Scene ${sceneIndex}: Generating prompt adapted for image modification`);
+      console.log(`[generate-prompts] Scene ${sceneIndex}: ═══════════════════════════════════════════════════════`);
+      
       userMessage += `\n═══════════════════════════════════════════════════════════\n`;
       userMessage += `CONTINUITY DETECTED: This scene has visual continuity with the previous scene.\n`;
       userMessage += `═══════════════════════════════════════════════════════════\n\n`;
@@ -273,6 +288,8 @@ IMPORTANT: Your prompt must be a MODIFICATION instruction that works with image-
       userMessage += `- Only describe what is NEW or CHANGING in this scene\n`;
       userMessage += `- Use phrases like "same [element], but now..." or "keeping [element], add..."\n`;
       userMessage += `- The prompt will be used for image-to-image generation, so it must work as a modification instruction\n\n`;
+    } else {
+      console.log(`[generate-prompts] Scene ${sceneIndex}: Normal mode (no continuity)`);
     }
     
     // Add previous prompts for visual coherence (only if not in continuity mode)
@@ -288,7 +305,13 @@ IMPORTANT: Your prompt must be a MODIFICATION instruction that works with image-
     userMessage += `Scene ${sceneIndex}/${totalScenes} (${startTime.toFixed(1)}s - ${endTime.toFixed(1)}s):\n"${scene}"\n\n`;
     userMessage += `Generate a detailed visual prompt following the EXACT format and style of the examples above. The content must describe what is in this scene, but the format, structure, and style must match the examples exactly.`;
 
-    console.log(`Generating prompt for scene ${sceneIndex}/${totalScenes}`);
+    console.log(`[generate-prompts] Scene ${sceneIndex}/${totalScenes}: Generating prompt...`);
+    console.log(`[generate-prompts] Scene ${sceneIndex}: Scene text: "${scene.substring(0, 100)}..."`);
+    if (hasContinuity) {
+      console.log(`[generate-prompts] Scene ${sceneIndex}: Mode: CONTINUITY (image modification)`);
+    } else {
+      console.log(`[generate-prompts] Scene ${sceneIndex}: Mode: NORMAL (new image)`);
+    }
     
     // DEBUG: Log what we're sending to Gemini
     console.log(`[DEBUG] Scene ${sceneIndex}: systemPrompt length: ${systemPrompt.length} chars`);
@@ -339,14 +362,19 @@ IMPORTANT: Your prompt must be a MODIFICATION instruction that works with image-
     }
 
     const data = await response.json();
-    console.log(`Prompt generated for scene ${sceneIndex}`);
-
+    
     const generatedPrompt = data.candidates?.[0]?.content?.parts?.[0]?.text;
     
-    // DEBUG: Log what Gemini returned
-    console.log(`[DEBUG] Scene ${sceneIndex}: Gemini response: "${generatedPrompt?.substring(0, 200)}..."`);
-    if (!generatedPrompt) {
-      console.log(`[DEBUG] Scene ${sceneIndex}: WARNING - Empty response from Gemini! Full response:`, JSON.stringify(data));
+    if (generatedPrompt) {
+      console.log(`[generate-prompts] Scene ${sceneIndex}: ✅ Prompt generated successfully`);
+      console.log(`[generate-prompts] Scene ${sceneIndex}: Prompt length: ${generatedPrompt.length} chars`);
+      console.log(`[generate-prompts] Scene ${sceneIndex}: Prompt preview: "${generatedPrompt.substring(0, 150)}..."`);
+      if (hasContinuity) {
+        console.log(`[generate-prompts] Scene ${sceneIndex}: Prompt is adapted for image modification`);
+      }
+    } else {
+      console.error(`[generate-prompts] Scene ${sceneIndex}: ❌ WARNING - Empty response from Gemini!`);
+      console.error(`[generate-prompts] Scene ${sceneIndex}: Full response:`, JSON.stringify(data));
     }
 
     return new Response(
