@@ -39,6 +39,12 @@ serve(async (req) => {
 
     // DEBUG: Log received examplePrompts
     console.log(`[DEBUG] Scene ${sceneIndex}: Received examplePrompts:`, JSON.stringify(examplePrompts));
+    
+    // DEBUG: Log continuity parameters
+    console.log(`[generate-prompts] Scene ${sceneIndex}: Continuity parameters:`);
+    console.log(`[generate-prompts] Scene ${sceneIndex}:   hasContinuity: ${hasContinuity}`);
+    console.log(`[generate-prompts] Scene ${sceneIndex}:   previousPrompt: ${previousPrompt ? previousPrompt.substring(0, 100) + '...' : 'null'}`);
+    console.log(`[generate-prompts] Scene ${sceneIndex}:   continuityElements: ${continuityElements ? JSON.stringify(continuityElements).substring(0, 200) + '...' : 'null'}`);
     console.log(`[DEBUG] Scene ${sceneIndex}: examplePrompts type: ${typeof examplePrompts}, isArray: ${Array.isArray(examplePrompts)}, length: ${examplePrompts?.length || 0}`);
     if (examplePrompts && Array.isArray(examplePrompts) && examplePrompts.length > 0) {
       examplePrompts.forEach((ex: string, i: number) => {

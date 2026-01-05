@@ -2243,6 +2243,7 @@ async function processSinglePromptJob(
           continuityData = await continuityResponse.json();
           hasContinuity = continuityData.hasContinuity && continuityData.confidence >= 0.7;
           console.log(`[processSinglePromptJob] Scene ${sceneIndex + 1}: Continuity ${hasContinuity ? 'DETECTED' : 'NOT detected'} (confidence: ${continuityData.confidence})`);
+          console.log(`[processSinglePromptJob] Scene ${sceneIndex + 1}: Previous prompt available: ${!!previousScene?.prompt}`);
           
           // Calculer le groupId : si continuité, utiliser le même groupe que la scène précédente, sinon nouveau groupe
           if (hasContinuity && previousScene?.continuityGroupId !== null && previousScene?.continuityGroupId !== undefined) {
@@ -2276,6 +2277,15 @@ async function processSinglePromptJob(
   }
 
   // Generate the prompt
+  const previousPromptForGeneration = hasContinuity && existingPrompts[sceneIndex - 1]?.prompt 
+    ? existingPrompts[sceneIndex - 1].prompt 
+    : null;
+  
+  console.log(`[processSinglePromptJob] Scene ${sceneIndex + 1}: Sending to generate-prompts:`);
+  console.log(`[processSinglePromptJob] Scene ${sceneIndex + 1}:   hasContinuity: ${hasContinuity}`);
+  console.log(`[processSinglePromptJob] Scene ${sceneIndex + 1}:   previousPrompt: ${previousPromptForGeneration ? previousPromptForGeneration.substring(0, 100) + '...' : 'null'}`);
+  console.log(`[processSinglePromptJob] Scene ${sceneIndex + 1}:   continuityElements: ${continuityData ? 'present' : 'null'}`);
+  
   const response = await fetch(`${supabaseUrl}/functions/v1/generate-prompts`, {
     method: 'POST',
     headers: {
@@ -2296,7 +2306,7 @@ async function processSinglePromptJob(
           nextSceneTexts,
           // NOUVEAU: Paramètres de continuité
           hasContinuity,
-          previousPrompt: hasContinuity ? existingPrompts[sceneIndex - 1]?.prompt : null,
+          previousPrompt: previousPromptForGeneration,
           continuityElements: hasContinuity ? continuityData : null
         }),
   });
