@@ -16,7 +16,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Version identifier - update this when making pan/zoom changes
-const SERVICE_VERSION = 'v2.12-subpixel-zoom';
+const SERVICE_VERSION = 'v2.13-ffmpeg-error-fix';
 
 // Path to FFmpeg fork with subpixel zoom support
 // Install with: ./install-ffmpeg-subpixel.sh
@@ -850,6 +850,10 @@ async function processRenderJob(jobId, renderData) {
       const expectedDuration = audioDuration ? parseFloat(audioDuration) + 0.5 : lastScene.endTime + 0.5;
       console.log(`[${jobId}] Expected output duration: ${expectedDuration.toFixed(3)}s (audio: ${audioDuration}s, lastScene.endTime: ${lastScene.endTime}s)`);
       
+      // Determine if we should use -shortest (when video is longer than audio)
+      const useShortestFlag = audioDuration && actualTotalDuration > parseFloat(audioDuration) + 0.5;
+      console.log(`[${jobId}] Using -shortest flag: ${useShortestFlag} (video: ${actualTotalDuration.toFixed(3)}s, audio: ${audioDuration}s)`);
+      
       let ffmpegCommand = ffmpeg()
         .input(concatPath)
         .inputOptions([
@@ -870,8 +874,9 @@ async function processRenderJob(jobId, renderData) {
           '-movflags', '+faststart',
           '-threads', '0',
           '-vsync', 'cfr',  // Constant frame rate - ensures all frames are written
-          '-stats_period', '0.5'
-          // No -shortest flag - let both streams play to completion
+          '-max_muxing_queue_size', '4096',  // Increase muxing buffer to prevent queue overflow
+          '-stats_period', '0.5',
+          ...(useShortestFlag ? ['-shortest'] : [])  // Use -shortest when video > audio to avoid encoding past audio end
         ])
         .output(outputPath);
 
@@ -886,6 +891,7 @@ async function processRenderJob(jobId, renderData) {
       let encodingStartTime = null;
       let lastProgressUpdate = null;
       let lastPercent = 0;
+      let ffmpegStderr = [];  // Collect stderr for debugging
 
       ffmpegCommand
         .on('start', (commandLine) => {
@@ -898,43 +904,66 @@ async function processRenderJob(jobId, renderData) {
           const now = Date.now();
           lastProgressUpdate = now;
           
-          // Log all progress data for debugging
-          console.log(`[${jobId}] FFmpeg progress:`, JSON.stringify(progress));
+          // Log progress data (reduce spam by only logging every 5%)
+          let percent = 0;
           
-          if (progress.percent !== undefined && progress.percent !== null) {
-            // Parse percent (can be string or number from FFmpeg)
-            let percent = typeof progress.percent === 'string' 
+          // Calculate percent from timemark (more reliable than FFmpeg's percent for concat)
+          if (progress.timemark) {
+            // Parse timemark (format: HH:MM:SS.ms)
+            const parts = progress.timemark.split(':');
+            if (parts.length >= 3) {
+              const hours = parseFloat(parts[0]) || 0;
+              const minutes = parseFloat(parts[1]) || 0;
+              const seconds = parseFloat(parts[2]) || 0;
+              const currentTime = hours * 3600 + minutes * 60 + seconds;
+              
+              // Calculate percent based on expected duration (from audio or scenes)
+              const refDuration = audioDuration ? parseFloat(audioDuration) : lastScene.endTime;
+              if (refDuration > 0) {
+                percent = Math.min(100, (currentTime / refDuration) * 100);
+              }
+            }
+          }
+          
+          // Fallback to FFmpeg's percent if timemark calculation failed
+          if (percent === 0 && progress.percent !== undefined && progress.percent !== null) {
+            percent = typeof progress.percent === 'string' 
               ? parseFloat(progress.percent) 
               : Number(progress.percent);
-            
-            // Clamp percent between 0 and 100 (FFmpeg can sometimes report > 100)
-            percent = Math.max(0, Math.min(100, percent));
+            // FFmpeg's percent for concat can be very wrong, so cap it at 100
+            percent = Math.min(100, Math.max(0, percent));
+          }
+          
+          // Only log and update if percent changed significantly (every ~5%)
+          if (Math.abs(percent - lastPercent) >= 5 || percent >= 99) {
+            console.log(`[${jobId}] FFmpeg progress: ${percent.toFixed(1)}% (timemark: ${progress.timemark}, frames: ${progress.frames})`);
             lastPercent = percent;
-            
-            // Map FFmpeg progress (0-100) to our progress range (75-95)
-            const mappedProgress = 75 + Math.floor(percent * 0.2);
-            // Clamp final progress between 75 and 95
-            const finalProgress = clampProgress(Math.max(75, Math.min(95, mappedProgress)));
-            
-            // Update job progress and current step
-            const job = jobs.get(jobId);
-            if (job) {
-              job.progress = finalProgress;
-              job.currentStep = `Encodage vidéo en cours... ${Math.round(percent)}%`;
-              jobs.set(jobId, job);
-            }
-            
-            console.log(`[${jobId}] Progress updated: ${Math.round(percent)}% (mapped to ${finalProgress}%)`);
-          } else if (progress.timemark) {
-            // If we have timemark but no percent, log it
-            console.log(`[${jobId}] FFmpeg timemark: ${progress.timemark}, target: ${progress.targetSize || 'N/A'}, current: ${progress.currentKbps || 'N/A'} kbps`);
+          }
+          
+          // Map FFmpeg progress (0-100) to our progress range (75-95)
+          const mappedProgress = 75 + Math.floor(percent * 0.2);
+          // Clamp final progress between 75 and 95
+          const finalProgress = clampProgress(Math.max(75, Math.min(95, mappedProgress)));
+          
+          // Update job progress and current step
+          const job = jobs.get(jobId);
+          if (job) {
+            job.progress = finalProgress;
+            job.currentStep = `Encodage vidéo en cours... ${Math.round(percent)}%`;
+            jobs.set(jobId, job);
           }
         })
         .on('stderr', (stderrLine) => {
           // Capture FFmpeg stderr output for debugging
-          // Look for progress indicators in stderr
-          if (stderrLine.includes('time=') || stderrLine.includes('frame=') || stderrLine.includes('bitrate=')) {
-            console.log(`[${jobId}] FFmpeg stderr: ${stderrLine.trim()}`);
+          // Collect error lines for later analysis
+          if (stderrLine.includes('error') || stderrLine.includes('Error') || 
+              stderrLine.includes('failed') || stderrLine.includes('Failed') ||
+              stderrLine.includes('Invalid') || stderrLine.includes('Discarding')) {
+            ffmpegStderr.push(stderrLine.trim());
+            console.error(`[${jobId}] FFmpeg stderr ERROR: ${stderrLine.trim()}`);
+          }
+          // Progress indicators
+          if (stderrLine.includes('time=') || stderrLine.includes('frame=')) {
             lastProgressUpdate = Date.now();
           }
         })
@@ -1011,13 +1040,42 @@ async function processRenderJob(jobId, renderData) {
             reject(error);
           }
         })
-        .on('error', async (err) => {
+        .on('error', async (err, stdout, stderr) => {
           // Clean up fallback interval
           if (fallbackInterval) {
             clearInterval(fallbackInterval);
           }
           
-          console.error(`[${jobId}] FFmpeg error:`, err);
+          console.error(`[${jobId}] FFmpeg final concatenation error:`, err.message);
+          
+          // Log collected stderr errors
+          if (ffmpegStderr.length > 0) {
+            console.error(`[${jobId}] FFmpeg stderr errors collected (${ffmpegStderr.length} lines):`);
+            ffmpegStderr.forEach((line, i) => console.error(`[${jobId}]   ${i + 1}: ${line}`));
+          }
+          
+          // Log full stderr if available
+          if (stderr) {
+            const lastLines = stderr.split('\n').slice(-20).join('\n');
+            console.error(`[${jobId}] FFmpeg stderr (last 20 lines):\n${lastLines}`);
+          }
+          
+          // Log diagnostic info
+          console.error(`[${jobId}] Diagnostic info:`);
+          console.error(`[${jobId}]   Audio duration: ${audioDuration}s`);
+          console.error(`[${jobId}]   Video duration (from segments): ${actualTotalDuration.toFixed(3)}s`);
+          console.error(`[${jobId}]   Last scene end time: ${lastScene.endTime}s`);
+          console.error(`[${jobId}]   Output path: ${outputPath}`);
+          
+          // Check disk space
+          try {
+            const { execSync } = require('child_process');
+            const diskSpace = execSync('df -h ' + TEMP_DIR).toString();
+            console.error(`[${jobId}] Disk space:\n${diskSpace}`);
+          } catch (e) {
+            console.error(`[${jobId}] Could not check disk space`);
+          }
+          
           // Remove FFmpeg command reference
           const job = jobs.get(jobId);
           if (job) {
