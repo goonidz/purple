@@ -372,7 +372,8 @@ async function renderSceneWithEffect(imagePath, outputPath, duration, width, hei
     const normalizedEffectType = String(effectType).toLowerCase().trim();
     const isPan = normalizedEffectType === 'pan';
     const isSubpixelZoom = normalizedEffectType === 'zoom_subpixel';
-    console.log(`[${jobId}] Is pan effect? ${isPan}, Is subpixel zoom? ${isSubpixelZoom}`);
+    const isNoEffect = normalizedEffectType === 'none';
+    console.log(`[${jobId}] Is pan effect? ${isPan}, Is subpixel zoom? ${isSubpixelZoom}, Is no effect? ${isNoEffect}`);
     
     // Check if FFmpeg subpixel fork is available (only for subpixel zoom)
     if (isSubpixelZoom && !fs.existsSync(FFMPEG_SUBPIXEL_PATH)) {
@@ -418,34 +419,46 @@ async function renderSceneWithEffect(imagePath, outputPath, duration, width, hei
       }
       
       // Select the appropriate effect based on effectType
-      let filter, effect;
-      if (isPan) {
-        ({ filter, effect } = getPanEffect(sceneIndex, duration, width, height, framerate));
-      } else if (isSubpixelZoom) {
-        ({ filter, effect } = getSubpixelZoomEffect(sceneIndex, duration, width, height, framerate));
+      let filter, effect, finalFilter;
+      
+      if (isNoEffect) {
+        // No effect: use zoompan with zoom=1 (no zoom) to generate frames for the duration
+        effect = 'none';
+        const totalFrames = Math.max(1, Math.ceil(duration * framerate));
+        const preprocessFilter = `scale=${width}:${height}:force_original_aspect_ratio=decrease,crop=${width}:${height}`;
+        // zoompan with z=1 (no zoom), x/y at center, generates static frames
+        const staticFilter = `zoompan=z=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${totalFrames}:s=${width}x${height}:fps=${framerate}`;
+        finalFilter = `${preprocessFilter},${staticFilter}`;
+        console.log(`[${jobId}] Scene ${sceneIndex}: No effect (static image), ${duration.toFixed(2)}s`);
       } else {
-        // Default: Ken Burns zoom
-        ({ filter, effect } = getKenBurnsEffect(sceneIndex, duration, width, height, framerate, renderMethod));
+        if (isPan) {
+          ({ filter, effect } = getPanEffect(sceneIndex, duration, width, height, framerate));
+        } else if (isSubpixelZoom) {
+          ({ filter, effect } = getSubpixelZoomEffect(sceneIndex, duration, width, height, framerate));
+        } else {
+          // Default: Ken Burns zoom
+          ({ filter, effect } = getKenBurnsEffect(sceneIndex, duration, width, height, framerate, renderMethod));
+        }
+        
+        // Validate filter string is not empty
+        if (!filter || filter.trim().length === 0) {
+          return reject(new Error(`Empty filter generated for scene ${sceneIndex}`));
+        }
+        
+        console.log(`[${jobId}] Scene ${sceneIndex}: ${effect} effect (effectType: "${effectType}", isPan: ${isPan}), ${duration.toFixed(2)}s`);
+        console.log(`[${jobId}] Filter: ${filter}`);
+        
+        // Preprocessing: Resize image to fit target dimensions, then crop minimally to avoid black bars
+        // Strategy: First downscale/upscale to fit within target dimensions (maintains aspect ratio)
+        // Then crop only the minimum necessary to reach exact dimensions and avoid black bars
+        // This minimizes content loss while ensuring the frame is filled
+        const preprocessFilter = `scale=${width}:${height}:force_original_aspect_ratio=decrease,crop=${width}:${height}`;
+        
+        // Combine preprocessing with the effect filter
+        finalFilter = `${preprocessFilter},${filter}`;
       }
       
-      // Validate filter string is not empty
-      if (!filter || filter.trim().length === 0) {
-        return reject(new Error(`Empty filter generated for scene ${sceneIndex}`));
-      }
-      
-      console.log(`[${jobId}] Scene ${sceneIndex}: ${effect} effect (effectType: "${effectType}", isPan: ${isPan}), ${duration.toFixed(2)}s`);
-      console.log(`[${jobId}] Filter: ${filter}`);
-      
-      // Preprocessing: Resize image to fit target dimensions, then crop minimally to avoid black bars
-      // Strategy: First downscale/upscale to fit within target dimensions (maintains aspect ratio)
-      // Then crop only the minimum necessary to reach exact dimensions and avoid black bars
-      // This minimizes content loss while ensuring the frame is filled
-      const preprocessFilter = `scale=${width}:${height}:force_original_aspect_ratio=decrease,crop=${width}:${height}`;
-      
-      // Combine preprocessing with the effect filter
-      const finalFilter = isPan 
-        ? `${preprocessFilter},${filter}` // For pan: preprocess then apply pan effect
-        : `${preprocessFilter},${filter}`; // For zoom: preprocess then apply zoom effect
+      console.log(`[${jobId}] Final filter chain: ${finalFilter}`);
       
       console.log(`[${jobId}] Final filter chain: ${finalFilter}`);
       
@@ -467,7 +480,13 @@ async function renderSceneWithEffect(imagePath, outputPath, duration, width, hei
           '-preset', 'ultrafast',
           '-crf', '23',
           '-vsync', 'cfr',  // Constant frame rate
-          '-t', duration.toFixed(6)  // Precise duration
+          '-t', duration.toFixed(6),  // Precise duration
+          // Optimizations for subpixel zoom (bilinear interpolation is more CPU-intensive)
+          ...(isSubpixelZoom ? [
+            '-threads', '0',  // Use all available CPU threads
+            '-tune', 'fastdecode',  // Optimize for speed
+            '-x264-params', 'threads=0:lookahead-threads=0'  // Parallel encoding
+          ] : [])
         ])
         .videoFilters([finalFilter])
         .output(outputPath)
@@ -648,7 +667,16 @@ async function processRenderJob(jobId, renderData) {
     await mkdir(segmentsDir, { recursive: true });
 
     // Step 4: Render each scene with effect
-    const effectLabel = effectType === 'pan' ? 'pan' : 'Ken Burns';
+    let effectLabel;
+    if (effectType === 'pan') {
+      effectLabel = 'pan';
+    } else if (effectType === 'zoom_subpixel') {
+      effectLabel = 'zoom subpixel';
+    } else if (effectType === 'none') {
+      effectLabel = 'aucun effet';
+    } else {
+      effectLabel = 'Ken Burns';
+    }
     addStep(`Application de l'effet ${effectLabel} sur les scènes...`, 35);
     
     let totalRenderedDuration = 0;

@@ -157,7 +157,7 @@ const Index = () => {
   const [exportFormat, setExportFormat] = useState<ExportFormat>("premiere-xml");
   const [exportMode, setExportMode] = useState<ExportMode>("with-images");
   const [exportFramerate, setExportFramerate] = useState<number>(25);
-  const [exportEffectType, setExportEffectType] = useState<'zoom' | 'pan' | 'zoom_subpixel'>('pan');
+  const [exportEffectType, setExportEffectType] = useState<'zoom' | 'pan' | 'zoom_subpixel' | 'none'>('pan');
   const [exportRenderMethod, setExportRenderMethod] = useState<'standard' | 'lanczos'>('standard');
   const [exportBasePath, setExportBasePath] = useState<string>("");
   const [isExporting, setIsExporting] = useState(false);
@@ -2926,13 +2926,14 @@ const Index = () => {
                                     </Select>
                                     <Select 
                                       value={exportEffectType} 
-                                      onValueChange={(value) => setExportEffectType(value as 'zoom' | 'pan' | 'zoom_subpixel')}
+                                      onValueChange={(value) => setExportEffectType(value as 'zoom' | 'pan' | 'zoom_subpixel' | 'none')}
                                       disabled={!audioUrl}
                                     >
                                       <SelectTrigger className="w-[180px] h-9">
                                         <SelectValue />
                                       </SelectTrigger>
                                       <SelectContent>
+                                        <SelectItem value="none">Aucun effet</SelectItem>
                                         <SelectItem value="zoom">Zoom (Ken Burns)</SelectItem>
                                         <SelectItem value="pan">Pan</SelectItem>
                                         <SelectItem value="zoom_subpixel">Zoom Subpixel (Exp.)</SelectItem>
