@@ -593,43 +593,60 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
     
     // Check if upscaling is needed (Z-Image 16:9) - works in both manual and semi-auto mode
     if (isZImage && is16x9) {
-      // Check if there's already an upscale job (use limit(1) instead of single() to avoid error on multiple results)
-      const { data: existingUpscaleJobs } = await adminClient
-        .from('generation_jobs')
-        .select('id, status')
-        .eq('project_id', job.project_id)
-        .eq('job_type', 'upscale')
-        .in('status', ['pending', 'processing', 'completed'])
-        .limit(1);
+      // First, check if all images are already upscaled
+      const projectPrompts = (fullProject?.prompts as any[]) || [];
+      const imagesWithUrl = projectPrompts.filter((p: any) => p && p.imageUrl).length;
+      const imagesUpscaled = projectPrompts.filter((p: any) => p && p.imageUrl && p.isUpscaled === true).length;
+      const needsUpscale = imagesWithUrl > imagesUpscaled;
       
-      const existingUpscaleJob = existingUpscaleJobs?.[0];
+      console.log(`Job ${jobId}: Upscale check - ${imagesWithUrl} images total, ${imagesUpscaled} upscaled, ${imagesWithUrl - imagesUpscaled} need upscaling`);
       
-      if (existingUpscaleJob) {
-        console.log(`Job ${jobId}: Upscale job already exists (${existingUpscaleJob.id}, status: ${existingUpscaleJob.status}), skipping creation`);
+      if (!needsUpscale) {
+        console.log(`Job ${jobId}: All images already upscaled, skipping upscale job creation`);
+        // Continue to semi-auto chaining if enabled (thumbnails)
+        if (metadata.semiAutoMode === true) {
+          console.log(`Job ${jobId}: All images upscaled. Chaining to thumbnails.`);
+          await chainNextJobFromWebhook(adminClient, job.project_id, job.user_id, job.job_type, metadata);
+        }
+        return; // Don't proceed further
       } else {
-        // Create upscale job
-        const projectPrompts = (fullProject?.prompts as any[]) || [];
-        const imagesWithUrl = projectPrompts.filter((p: any) => p && p.imageUrl).length;
-        
-        console.log(`Job ${jobId}: Z-Image 16:9 detected. Creating upscale job for ${imagesWithUrl} images.`);
-        
-        const { data: upscaleJob, error: upscaleError } = await adminClient
+        // Check if there's already an active upscale job (pending or processing)
+        const { data: existingUpscaleJobs } = await adminClient
           .from('generation_jobs')
-          .insert({
-            project_id: job.project_id,
-            user_id: job.user_id,
-            job_type: 'upscale',
-            status: 'pending',
-            progress: 0,
-            total: imagesWithUrl,
-            metadata: {
-              ...metadata,
-              imageModel,
-              skipExisting: false // Always upscale all images
-            }
-          })
-          .select()
-          .single();
+          .select('id, status')
+          .eq('project_id', job.project_id)
+          .eq('job_type', 'upscale')
+          .in('status', ['pending', 'processing'])
+          .limit(1);
+        
+        const existingUpscaleJob = existingUpscaleJobs?.[0];
+        
+        if (existingUpscaleJob) {
+          console.log(`Job ${jobId}: Active upscale job already exists (${existingUpscaleJob.id}, status: ${existingUpscaleJob.status}), skipping creation`);
+        } else {
+          // Create upscale job for images that need upscaling
+          const imagesNeedingUpscale = imagesWithUrl - imagesUpscaled;
+          
+          console.log(`Job ${jobId}: Z-Image 16:9 detected. Creating upscale job for ${imagesNeedingUpscale} images (${imagesWithUrl} total, ${imagesUpscaled} already upscaled).`);
+          
+          const { data: upscaleJob, error: upscaleError } = await adminClient
+            .from('generation_jobs')
+            .insert({
+              project_id: job.project_id,
+              user_id: job.user_id,
+              job_type: 'upscale',
+              status: 'pending',
+              progress: 0,
+              total: imagesNeedingUpscale,
+              metadata: {
+                ...metadata,
+                imageModel,
+                skipExisting: true, // Skip already upscaled images
+                totalGlobal: imagesNeedingUpscale
+              }
+            })
+            .select()
+            .single();
         
         if (upscaleError) {
           console.error("Error creating upscale job:", upscaleError);
@@ -673,6 +690,7 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
           })());
           
           return; // Don't proceed to thumbnails yet - wait for upscale to complete
+        }
         }
       }
     }
