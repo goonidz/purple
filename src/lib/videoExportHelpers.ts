@@ -385,14 +385,25 @@ export async function downloadImagesAsZip(
   const mediaFolder = zip.folder('media');
   
   // Add audio file if provided
+  console.log('[Export] audioUrl provided:', audioUrl ? 'YES' : 'NO', audioUrl);
   if (audioUrl) {
     try {
+      console.log('[Export] Fetching audio from:', audioUrl);
       const audioResponse = await fetch(audioUrl);
-      const audioBlob = await audioResponse.blob();
-      mediaFolder?.file('audio.mp3', audioBlob);
+      console.log('[Export] Audio fetch response:', audioResponse.status, audioResponse.ok);
+      if (audioResponse.ok) {
+        const audioBlob = await audioResponse.blob();
+        console.log('[Export] Audio blob size:', audioBlob.size);
+        mediaFolder?.file('audio.mp3', audioBlob);
+        console.log('[Export] Audio added to ZIP');
+      } else {
+        console.error('[Export] Audio fetch failed with status:', audioResponse.status);
+      }
     } catch (error) {
-      console.error('Failed to download audio file:', error);
+      console.error('[Export] Failed to download audio file:', error);
     }
+  } else {
+    console.warn('[Export] No audioUrl provided - audio will NOT be included in export');
   }
   
   // Download and add each image into media/ subfolder, converting to JPEG
