@@ -2790,6 +2790,8 @@ async function processThumbnailsJob(
 
   const creativePrompts = promptsData.prompts as string[];
   console.log("Generated thumbnail prompts:", creativePrompts.length);
+  console.log("Image model:", imageModel || 'seedream-4.5');
+  console.log("Text model used:", textModel || 'gemini (default)');
 
   // Update metadata with generated prompts
   await adminClient
@@ -2803,6 +2805,7 @@ async function processThumbnailsJob(
   const webhookUrl = `${supabaseUrl}/functions/v1/replicate-webhook`;
 
   // Step 2: Start all 3 generations with webhooks (non-blocking)
+  let failedCount = 0;
   for (let i = 0; i < 3; i++) {
     const prompt = creativePrompts[i];
     
@@ -2829,6 +2832,7 @@ async function processThumbnailsJob(
       }
 
       // Start async generation with service role key and userId
+      console.log(`Starting thumbnail ${i + 1} with model ${imageModel || 'seedream-4.5'}, webhook: ${webhookUrl}`);
       const startResponse = await fetch(`${supabaseUrl}/functions/v1/generate-image-seedream`, {
         method: 'POST',
         headers: {
@@ -2839,7 +2843,9 @@ async function processThumbnailsJob(
       });
 
       if (!startResponse.ok) {
-        console.error(`Failed to start thumbnail ${i + 1}: ${startResponse.status}`);
+        const errorBody = await startResponse.text();
+        console.error(`Failed to start thumbnail ${i + 1}: ${startResponse.status} - ${errorBody}`);
+        failedCount++;
         continue;
       }
 
@@ -2873,12 +2879,26 @@ async function processThumbnailsJob(
 
     } catch (error) {
       console.error(`Error starting thumbnail ${i + 1}:`, error);
+      failedCount++;
     }
+  }
+
+  // Check if any predictions were successfully created
+  const { data: createdPredictions } = await adminClient
+    .from('pending_predictions')
+    .select('id')
+    .eq('job_id', jobId);
+  
+  const successCount = createdPredictions?.length || 0;
+  
+  if (successCount === 0) {
+    // All 3 thumbnail generations failed - mark job as failed
+    throw new Error(`Toutes les générations de miniatures ont échoué. Vérifiez votre clé API Replicate.`);
   }
 
   // Job stays in 'processing' status - the webhook will mark it complete
   // Do NOT mark as completed here - that's the webhook's job
-  console.log(`Thumbnail generations started. Waiting for webhooks...`);
+  console.log(`Thumbnail generations started: ${successCount}/3 successful. Waiting for webhooks...`);
   
   // Throw a special marker to prevent the job from being marked complete by processJob
   throw new Error("WEBHOOK_MODE_ACTIVE");

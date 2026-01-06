@@ -24,7 +24,15 @@ Deno.serve(async (req) => {
 
     // Check if this is a service role key (internal call)
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
-    const isServiceRoleCall = authHeader === `Bearer ${serviceRoleKey}`;
+    const expectedHeader = `Bearer ${serviceRoleKey}`;
+    const isServiceRoleCall = authHeader === expectedHeader;
+    
+    // Debug logging
+    console.log(`[AUTH DEBUG] authHeader length: ${authHeader.length}`);
+    console.log(`[AUTH DEBUG] expectedHeader length: ${expectedHeader.length}`);
+    console.log(`[AUTH DEBUG] authHeader first 50 chars: ${authHeader.substring(0, 50)}`);
+    console.log(`[AUTH DEBUG] expectedHeader first 50 chars: ${expectedHeader.substring(0, 50)}`);
+    console.log(`[AUTH DEBUG] isServiceRoleCall: ${isServiceRoleCall}`);
     
     let userId: string;
     

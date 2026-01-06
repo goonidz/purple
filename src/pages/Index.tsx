@@ -3835,6 +3835,11 @@ const Index = () => {
                   <DescriptionGenerator
                     projectId={currentProjectId || ""}
                     videoScript={generatedPrompts.filter(p => p).map(p => p.text).join(" ")}
+                    scenes={generatedPrompts.filter(p => p).map(p => ({
+                      text: p.text,
+                      startTime: p.startTime,
+                      endTime: p.endTime
+                    }))}
                   />
                 </div>
               </TabsContent>

@@ -2,13 +2,22 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import { Loader2, Sparkles, Copy, Check, Trash2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
+interface SceneInfo {
+  text: string;
+  startTime: number;
+  endTime: number;
+}
+
 interface DescriptionGeneratorProps {
   projectId: string;
   videoScript: string;
+  scenes?: SceneInfo[];
 }
 
 interface GeneratedDescriptionHistory {
@@ -17,11 +26,12 @@ interface GeneratedDescriptionHistory {
   created_at: string;
 }
 
-export const DescriptionGenerator = ({ projectId, videoScript }: DescriptionGeneratorProps) => {
+export const DescriptionGenerator = ({ projectId, videoScript, scenes = [] }: DescriptionGeneratorProps) => {
   const [generatedDescription, setGeneratedDescription] = useState<string>("");
   const [descriptionHistory, setDescriptionHistory] = useState<GeneratedDescriptionHistory[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [includeChapters, setIncludeChapters] = useState(true);
 
   useEffect(() => {
     loadDescriptionHistory();
@@ -54,9 +64,16 @@ export const DescriptionGenerator = ({ projectId, videoScript }: DescriptionGene
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("User not authenticated");
       
+      const scenesToSend = includeChapters && scenes.length > 0 ? scenes : undefined;
+      console.log('[DEBUG] includeChapters:', includeChapters);
+      console.log('[DEBUG] scenes.length:', scenes.length);
+      console.log('[DEBUG] scenes:', scenes);
+      console.log('[DEBUG] scenesToSend:', scenesToSend);
+      
       const { data, error } = await supabase.functions.invoke("generate-descriptions", {
         body: {
           videoScript,
+          scenes: scenesToSend,
         },
       });
 
@@ -153,6 +170,23 @@ export const DescriptionGenerator = ({ projectId, videoScript }: DescriptionGene
         </TabsList>
 
         <TabsContent value="generate" className="space-y-6">
+          {/* Options */}
+          <Card className="p-4">
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="include-chapters"
+                checked={includeChapters}
+                onCheckedChange={(checked) => setIncludeChapters(checked as boolean)}
+              />
+              <Label
+                htmlFor="include-chapters"
+                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+              >
+                Inclure les chapitres YouTube
+              </Label>
+            </div>
+          </Card>
+
           {/* Generate Button */}
           <Button
             onClick={generateDescription}
@@ -178,7 +212,7 @@ export const DescriptionGenerator = ({ projectId, videoScript }: DescriptionGene
             <Card className="p-6 space-y-4">
               <h3 className="font-semibold text-lg">Description générée</h3>
               <div className="p-4 bg-muted rounded-lg flex items-start justify-between gap-3 group hover:bg-muted/80 transition-colors">
-                <p className="flex-1 text-sm leading-relaxed">{generatedDescription}</p>
+                <p className="flex-1 text-sm leading-relaxed whitespace-pre-wrap">{generatedDescription}</p>
                 <Button
                   variant="ghost"
                   size="icon"
@@ -221,7 +255,7 @@ export const DescriptionGenerator = ({ projectId, videoScript }: DescriptionGene
                   </Button>
                 </div>
                 <div className="p-4 bg-muted rounded-lg flex items-start justify-between gap-3 group hover:bg-muted/80 transition-colors">
-                  <p className="flex-1 text-sm leading-relaxed">{(history.descriptions as string[])[0]}</p>
+                  <p className="flex-1 text-sm leading-relaxed whitespace-pre-wrap">{(history.descriptions as string[])[0]}</p>
                   <Button
                     variant="ghost"
                     size="icon"
