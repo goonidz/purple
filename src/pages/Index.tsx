@@ -3806,6 +3806,7 @@ const Index = () => {
                       }}
                       onSearchWeb={handleSearchWebImage}
                       onAnimateScene={(index) => setConfirmAnimateScene(index)}
+                      visualContinuityEnabled={visualContinuityEnabled}
                     />
                   </Card>
                 )}
@@ -3835,11 +3836,14 @@ const Index = () => {
                   <DescriptionGenerator
                     projectId={currentProjectId || ""}
                     videoScript={generatedPrompts.filter(p => p).map(p => p.text).join(" ")}
-                    scenes={generatedPrompts.filter(p => p).map(p => ({
-                      text: p.text,
-                      startTime: p.startTime,
-                      endTime: p.endTime
-                    }))}
+                    scenes={generatedPrompts
+                      .filter(p => p && p.startTime !== undefined)
+                      .map(p => ({
+                        text: p.text,
+                        startTime: p.startTime,
+                        endTime: p.endTime
+                      }))
+                      .sort((a, b) => a.startTime - b.startTime)}
                   />
                 </div>
               </TabsContent>

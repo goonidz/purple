@@ -56,6 +56,7 @@ interface SceneGridProps {
   onToggleSceneSelection?: (index: number) => void;
   onSearchWeb?: (index: number, sceneText: string) => void;
   onAnimateScene?: (index: number) => void;
+  visualContinuityEnabled?: boolean;
 }
 
 export function SceneGrid({
@@ -82,6 +83,7 @@ export function SceneGrid({
   onToggleSceneSelection,
   onSearchWeb,
   onAnimateScene,
+  visualContinuityEnabled = false,
 }: SceneGridProps) {
   const items = scenes.length > 0 ? scenes : generatedPrompts;
 
@@ -148,7 +150,7 @@ export function SceneGrid({
             <div className="flex items-center gap-3 md:flex-col md:items-start md:gap-1">
               <div className="flex items-center gap-2">
                 <span className="font-bold text-lg text-primary">#{index + 1}</span>
-                {prompt?.continuityGroupId !== null && prompt?.continuityGroupId !== undefined && (
+                {visualContinuityEnabled && prompt?.continuityGroupId !== null && prompt?.continuityGroupId !== undefined && (
                   <span className={`${getGroupColor(prompt.continuityGroupId)} text-white text-xs px-1.5 py-0.5 rounded font-bold`}>
                     G{prompt.continuityGroupId}
                   </span>

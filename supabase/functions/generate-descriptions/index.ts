@@ -25,6 +25,19 @@ function formatYouTubeTimestamp(seconds: number): string {
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
+// Parse timestamp string (M:SS or H:MM:SS) to seconds
+function parseTimestampToSeconds(timestamp: string): number {
+  const parts = timestamp.split(':').map(Number);
+  if (parts.length === 2) {
+    // M:SS format
+    return parts[0] * 60 + parts[1];
+  } else if (parts.length === 3) {
+    // H:MM:SS format
+    return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  }
+  return 0;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -76,13 +89,16 @@ serve(async (req) => {
     // Build the system prompt based on whether we need chapters
     let systemPrompt = `You generate ultra-short YouTube descriptions.
 
-ABSOLUTE LANGUAGE RULE - THIS IS MANDATORY:
-1. First, detect the language of the video script provided
-2. Your response MUST be written in that EXACT language - no exceptions
-3. If script is English → respond in English
-4. If script is French → respond in French  
-5. If script is German → respond in German
-6. NEVER default to French or any other language - MATCH the script's language exactly
+CRITICAL LANGUAGE RULE - THIS IS THE HIGHEST PRIORITY:
+1. FIRST, read the entire video script and identify its language
+2. Your ENTIRE response (description AND chapters) MUST be written in that EXACT language
+3. If the script is in English → write EVERYTHING in English
+4. If the script is in French → write EVERYTHING in French
+5. If the script is in German → write EVERYTHING in German
+6. If the script is in Spanish → write EVERYTHING in Spanish
+7. If the script is in Italian → write EVERYTHING in Italian
+8. NEVER translate or change the language - MATCH the script's language EXACTLY
+9. If you are unsure of the language, analyze the script more carefully before responding
 
 Your task: write ONE SINGLE SENTENCE in first person (I/we) that summarizes the video.
 
@@ -92,15 +108,17 @@ Rules for description:
 - Conversational and authentic tone
 - No emojis
 - No marketing phrases
-- MUST be in the same language as the script`;
+- CRITICAL: MUST be in the EXACT SAME language as the script (detect the script's language first!)`;
 
     if (hasScenes) {
       systemPrompt += `
 
 ADDITIONAL TASK - YouTube Chapters:
-You will also generate catchy, copywritten chapter titles for each scene provided.
+You will analyze the video script and generate meaningful chapter titles at key moments (approximately every 3-4 minutes).
 
-Rules for chapter titles:
+Rules for chapter generation:
+- Analyze the script content to identify natural topic transitions and key moments
+- Generate chapters approximately every 3-4 minutes based on content structure
 - Each title should be SHORT (2-5 words max)
 - Make them INTRIGUING and CLICKABLE
 - Use action words, questions, or dramatic statements
@@ -113,36 +131,79 @@ Rules for chapter titles:
   * "How I Did It"
   * "The Turning Point"
 - MUST be in the same language as the script
-- Don't use emojis`;
+- Don't use emojis
+- Focus on major topic shifts, not minor scene changes`;
     }
 
     // Build the user prompt
-    let userPrompt = `MANDATORY: Your response MUST be in the SAME language as this script.
-
-Script language detection: Read the script below and identify its language.
+    let userPrompt = `STEP 1: DETECT THE LANGUAGE OF THIS SCRIPT
+Read the script below carefully and identify what language it is written in.
 
 Script:
 ${videoScript}
 
-Now write ONE SINGLE SENTENCE description in first person, in the EXACT SAME language as the script above.`;
+STEP 2: RESPOND IN THAT EXACT LANGUAGE
+Now write ONE SINGLE SENTENCE description in first person, using the EXACT SAME language as the script above.
+
+CRITICAL: 
+- If the script is in English, write in English
+- If the script is in French, write in French
+- If the script is in German, write in German
+- DO NOT translate or change the language
+- MATCH the script's language EXACTLY`;
 
     if (hasScenes) {
-      const scenesWithTimestamps = (scenes as SceneInfo[]).map((scene, index) => 
-        `Scene ${index + 1} (${formatYouTubeTimestamp(scene.startTime)}): "${scene.text.substring(0, 100)}${scene.text.length > 100 ? '...' : ''}"`
+      // Calculate total video duration
+      const totalDuration = Math.max(...(scenes as SceneInfo[]).map(s => s.endTime || s.startTime));
+      const durationInMinutes = totalDuration / 60;
+      
+      // Estimate number of chapters (one every 3-4 minutes)
+      const estimatedChapters = Math.max(1, Math.floor(durationInMinutes / 3.5));
+      
+      // Provide scene timeline for context
+      const scenesTimeline = (scenes as SceneInfo[]).map((scene, index) => 
+        `${formatYouTubeTimestamp(scene.startTime)}: "${scene.text.substring(0, 150)}${scene.text.length > 150 ? '...' : ''}"`
       ).join('\n');
 
       userPrompt += `
 
-Also generate a catchy chapter title for each of these ${scenes.length} scenes:
-${scenesWithTimestamps}
+ANALYZE THE SCRIPT ABOVE and generate meaningful YouTube chapters.
+
+Video duration: approximately ${Math.round(durationInMinutes)} minutes
+Generate approximately ${estimatedChapters} chapters (one every 3-4 minutes) at key moments where topics shift or important points are made.
+
+Scene timeline for reference:
+${scenesTimeline}
+
+CRITICAL LANGUAGE REQUIREMENT:
+- ALL chapter titles MUST be in the EXACT SAME language as the script
+- If the script is in English, write chapter titles in English
+- If the script is in French, write chapter titles in French
+- If the script is in German, write chapter titles in German
+- DO NOT translate chapter titles - use the script's language
+
+IMPORTANT: 
+- Analyze the script content to identify natural topic transitions
+- Generate chapters at meaningful moments (major topic shifts, key revelations, important points)
+- Do NOT create a chapter for every scene - only for significant content breaks
+- Space chapters approximately 3-4 minutes apart based on content structure
+- The first chapter MUST be at 0:00
 
 Return ONLY this JSON:
 {
   "description": "your sentence here - MUST BE IN THE SCRIPT'S LANGUAGE",
-  "chapters": ["Chapter title 1", "Chapter title 2", ...]
+  "chapters": [
+    {"time": "0:00", "title": "Chapter title 1 - IN SCRIPT'S LANGUAGE"},
+    {"time": "3:45", "title": "Chapter title 2 - IN SCRIPT'S LANGUAGE"},
+    {"time": "7:20", "title": "Chapter title 3 - IN SCRIPT'S LANGUAGE"}
+  ]
 }
 
-The chapters array MUST have exactly ${scenes.length} titles, one for each scene, in order.`;
+Each chapter object must have:
+- "time": timestamp in format "M:SS" or "H:MM:SS" (must match actual content moments in the script)
+- "title": catchy chapter title (2-5 words, MUST be in the script's language - same language as the description!)
+
+Generate ${estimatedChapters} to ${estimatedChapters + 1} chapters based on content analysis.`;
     } else {
       userPrompt += `
 
@@ -153,6 +214,9 @@ Return ONLY this JSON:
     }
 
     console.log('Calling Google Gemini API for description generation...');
+    console.log('[DEBUG] Script preview (first 200 chars):', videoScript.substring(0, 200));
+    console.log('[DEBUG] System prompt length:', systemPrompt.length);
+    console.log('[DEBUG] User prompt length:', userPrompt.length);
 
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GOOGLE_AI_API_KEY}`,
@@ -217,13 +281,36 @@ Return ONLY this JSON:
 
     // If we have chapters, format and append them
     if (hasScenes && parsedResponse.chapters && Array.isArray(parsedResponse.chapters)) {
-      const chapters = parsedResponse.chapters as string[];
-      console.log('[DEBUG] Formatting chapters, count:', chapters.length);
-      const chaptersText = (scenes as SceneInfo[]).map((scene, index) => {
-        const timestamp = formatYouTubeTimestamp(scene.startTime);
-        const title = chapters[index] || `Scene ${index + 1}`;
-        return `${timestamp} - ${title}`;
-      }).join('\n');
+      console.log('[DEBUG] Formatting chapters, count:', parsedResponse.chapters.length);
+      
+      // Check if chapters are in new format (objects with time and title) or old format (array of strings)
+      const isNewFormat = parsedResponse.chapters.length > 0 && 
+                          typeof parsedResponse.chapters[0] === 'object' && 
+                          parsedResponse.chapters[0].time !== undefined;
+      
+      let chaptersText: string;
+      
+      if (isNewFormat) {
+        // New format: chapters with timestamps from AI
+        const chapters = parsedResponse.chapters as Array<{time: string, title: string}>;
+        chaptersText = chapters
+          .sort((a, b) => {
+            // Sort by timestamp (convert to seconds for comparison)
+            const timeA = parseTimestampToSeconds(a.time);
+            const timeB = parseTimestampToSeconds(b.time);
+            return timeA - timeB;
+          })
+          .map(ch => `${ch.time} - ${ch.title}`)
+          .join('\n');
+      } else {
+        // Old format: array of titles, use scene timestamps
+        const chapters = parsedResponse.chapters as string[];
+        chaptersText = (scenes as SceneInfo[]).map((scene, index) => {
+          const timestamp = formatYouTubeTimestamp(scene.startTime);
+          const title = chapters[index] || `Scene ${index + 1}`;
+          return `${timestamp} - ${title}`;
+        }).join('\n');
+      }
 
       console.log('[DEBUG] Formatted chapters text:', chaptersText);
       description = `${description}\n\nCHAPTERS\n${chaptersText}`;
