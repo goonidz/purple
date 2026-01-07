@@ -232,7 +232,7 @@ const CreateFromScratch = () => {
   const [customScriptText, setCustomScriptText] = useState("");
   
   // Audio step
-  const [ttsProvider, setTtsProvider] = useState<"minimax" | "inworld">("minimax");
+  const [ttsProvider, setTtsProvider] = useState<"minimax" | "inworld">("inworld");
   const [selectedVoice, setSelectedVoice] = useState("English_expressive_narrator");
   const [inworldVoiceId, setInworldVoiceId] = useState("Dennis");
   const [minimaxModel, setMinimaxModel] = useState("speech-2.6-hd");
@@ -242,6 +242,7 @@ const CreateFromScratch = () => {
   const [minimaxLanguageBoost, setMinimaxLanguageBoost] = useState("auto");
   const [minimaxEnglishNormalization, setMinimaxEnglishNormalization] = useState(true);
   const [minimaxEmotion, setMinimaxEmotion] = useState("neutral");
+  const [showAudioImport, setShowAudioImport] = useState(false);
   const [isGeneratingAudio, setIsGeneratingAudio] = useState(false);
   const [audioUrl, setAudioUrl] = useState("");
   const [isUploadingAudio, setIsUploadingAudio] = useState(false);
@@ -641,39 +642,52 @@ const CreateFromScratch = () => {
         .order("name", { ascending: true });
 
       if (error) throw error;
-      setTtsPresets(data || []);
+      const presetsData = (data || []) as TtsPreset[];
+      setTtsPresets(presetsData);
+
+      // Auto-select a default preset if none selected yet (prefer Inworld)
+      if (!selectedTtsPresetId && presetsData.length > 0) {
+        const defaultPreset = presetsData.find(p => p.provider === "inworld") ?? presetsData[0];
+        applyTtsPreset(defaultPreset, { silent: true });
+      }
     } catch (error) {
       console.error("Error loading TTS presets:", error);
+    }
+  };
+
+  const applyTtsPreset = (preset: TtsPreset, opts?: { silent?: boolean }) => {
+    // Load provider
+    if (preset.provider === "minimax" || preset.provider === "inworld") {
+      setTtsProvider(preset.provider);
+    } else {
+      toast.error("Ce preset utilise un fournisseur non supporté");
+      return;
+    }
+
+    // Load voice ID based on provider
+    if (preset.provider === "inworld") {
+      setInworldVoiceId(preset.voice_id);
+    } else {
+      setSelectedVoice(preset.voice_id);
+      if (preset.model) setMinimaxModel(preset.model);
+      setMinimaxSpeed(preset.speed);
+      setMinimaxPitch(preset.pitch);
+      setMinimaxVolume(preset.volume);
+      setMinimaxLanguageBoost(preset.language_boost);
+      setMinimaxEnglishNormalization(preset.english_normalization);
+      setMinimaxEmotion(preset.emotion);
+    }
+
+    setSelectedTtsPresetId(preset.id);
+    if (!opts?.silent) {
+      toast.success(`Preset TTS "${preset.name}" chargé`);
     }
   };
 
   const handleLoadTtsPreset = (presetId: string) => {
     const preset = ttsPresets.find(p => p.id === presetId);
     if (preset) {
-      // Load provider
-      if (preset.provider === "minimax" || preset.provider === "inworld") {
-        setTtsProvider(preset.provider);
-      } else {
-        toast.error("Ce preset utilise un fournisseur non supporté");
-        return;
-      }
-      
-      // Load voice ID based on provider
-      if (preset.provider === "inworld") {
-        setInworldVoiceId(preset.voice_id);
-      } else {
-        setSelectedVoice(preset.voice_id);
-        if (preset.model) setMinimaxModel(preset.model);
-        setMinimaxSpeed(preset.speed);
-        setMinimaxPitch(preset.pitch);
-        setMinimaxVolume(preset.volume);
-        setMinimaxLanguageBoost(preset.language_boost);
-        setMinimaxEnglishNormalization(preset.english_normalization);
-        setMinimaxEmotion(preset.emotion);
-      }
-      
-      setSelectedTtsPresetId(presetId);
-      toast.success(`Preset TTS "${preset.name}" chargé`);
+      applyTtsPreset(preset);
     }
   };
 
@@ -1537,7 +1551,7 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
       }
       
       if (!project?.audio_url) {
-        toast.error("Veuillez d'abord importer un fichier audio");
+        toast.error("Veuillez d'abord générer ou importer un audio");
         return;
       }
       
@@ -2096,62 +2110,6 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                 <div className="space-y-4 border-t pt-6">
                   <h3 className="text-lg font-semibold">Audio</h3>
                   
-                  {/* Import Audio Option */}
-                  <div className="space-y-3">
-                    <input
-                      ref={audioInputRef}
-                      type="file"
-                      accept="audio/mpeg,audio/mp3,audio/wav,audio/wave,audio/x-wav"
-                      onChange={handleAudioUpload}
-                      className="hidden"
-                      id="audio-upload"
-                    />
-                    <Button
-                      variant="outline"
-                      onClick={() => audioInputRef.current?.click()}
-                      disabled={isUploadingAudio || isGeneratingAudio || !generatedScript.trim()}
-                      className="w-full"
-                    >
-                      {isUploadingAudio ? (
-                        <>
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Import en cours...
-                        </>
-                      ) : (
-                        <>
-                          <Upload className="mr-2 h-4 w-4" />
-                          Importer un fichier audio (MP3, WAV)
-                        </>
-                      )}
-                    </Button>
-
-                    {/* Upload Progress */}
-                    {isUploadingAudio && (
-                      <div className="space-y-2 p-4 bg-muted rounded-lg">
-                        <div className="flex items-center justify-between text-sm">
-                          <span className="font-medium truncate">{uploadFileName}</span>
-                          <span className="text-muted-foreground">{Math.round(uploadProgress)}%</span>
-                        </div>
-                        <Progress value={uploadProgress} className="h-2" />
-                        <div className="flex items-center justify-between text-xs text-muted-foreground">
-                          <span>{formatBytes(uploadedBytes)} / {formatBytes(totalBytes)}</span>
-                          {uploadSpeed > 0 && (
-                            <span>{formatSpeed(uploadSpeed)}</span>
-                          )}
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="relative flex items-center justify-center">
-                      <div className="absolute inset-0 flex items-center">
-                        <span className="w-full border-t" />
-                      </div>
-                      <span className="relative bg-card px-3 text-xs text-muted-foreground uppercase">
-                        ou générer
-                      </span>
-                    </div>
-                  </div>
-
                   {/* Generation Options - Collapsible */}
                   <Collapsible open={isGenerationOpen} onOpenChange={setIsGenerationOpen}>
                     <CollapsibleTrigger asChild>
@@ -2464,6 +2422,71 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                       </Button>
                     </CollapsibleContent>
                   </Collapsible>
+
+                  {/* Import Audio Option (optional) */}
+                  <div className="space-y-3">
+                    <div className="flex items-center space-x-2">
+                      <Checkbox
+                        id="showAudioImport"
+                        checked={showAudioImport}
+                        onCheckedChange={(checked) => setShowAudioImport(checked as boolean)}
+                      />
+                      <Label
+                        htmlFor="showAudioImport"
+                        className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                      >
+                        Importer mon audio (optionnel)
+                      </Label>
+                    </div>
+
+                    {showAudioImport && (
+                      <div className="space-y-3">
+                        <input
+                          ref={audioInputRef}
+                          type="file"
+                          accept="audio/mpeg,audio/mp3,audio/wav,audio/wave,audio/x-wav"
+                          onChange={handleAudioUpload}
+                          className="hidden"
+                          id="audio-upload"
+                        />
+                        <Button
+                          variant="outline"
+                          onClick={() => audioInputRef.current?.click()}
+                          disabled={isUploadingAudio || isGeneratingAudio || !generatedScript.trim()}
+                          className="w-full"
+                        >
+                          {isUploadingAudio ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Import en cours...
+                            </>
+                          ) : (
+                            <>
+                              <Upload className="mr-2 h-4 w-4" />
+                              Importer un fichier audio (MP3, WAV)
+                            </>
+                          )}
+                        </Button>
+
+                        {/* Upload Progress */}
+                        {isUploadingAudio && (
+                          <div className="space-y-2 p-4 bg-muted rounded-lg">
+                            <div className="flex items-center justify-between text-sm">
+                              <span className="font-medium truncate">{uploadFileName}</span>
+                              <span className="text-muted-foreground">{Math.round(uploadProgress)}%</span>
+                            </div>
+                            <Progress value={uploadProgress} className="h-2" />
+                            <div className="flex items-center justify-between text-xs text-muted-foreground">
+                              <span>{formatBytes(uploadedBytes)} / {formatBytes(totalBytes)}</span>
+                              {uploadSpeed > 0 && (
+                                <span>{formatSpeed(uploadSpeed)}</span>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 <div className="flex gap-4 border-t pt-4">
