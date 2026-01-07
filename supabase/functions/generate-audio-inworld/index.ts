@@ -15,8 +15,8 @@ const corsHeaders = {
 // We cap at 1200 chars to keep timestamps consistent.
 const MAX_CHUNK_SIZE = 1200;
 
-// Inworld rate limit: 21 requests/second (per job invocation)
-const INWORLD_RATE_LIMIT_RPS = 21;
+// Inworld rate limit: 20 requests/second (per job invocation)
+const INWORLD_RATE_LIMIT_RPS = 20;
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
