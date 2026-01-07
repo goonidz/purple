@@ -77,6 +77,7 @@ serve(async (req) => {
       script, 
       voice = 'Dennis', 
       speed: rawSpeed,
+      forceElevenLabsTranscription: forceElevenLabsTranscriptionRaw,
       projectId,
       jobId,
       userId: passedUserId
@@ -114,6 +115,8 @@ serve(async (req) => {
         ? rawSpeed
         : 0.9;
 
+    const forceElevenLabsTranscription = forceElevenLabsTranscriptionRaw === true;
+
     console.log(
       "Generating audio with Inworld, script length:",
       script.length,
@@ -121,6 +124,8 @@ serve(async (req) => {
       voice,
       "speakingRate:",
       speakingRate,
+      "forceElevenLabsTranscription:",
+      forceElevenLabsTranscription,
       "jobId:",
       jobId
     );
@@ -170,7 +175,8 @@ serve(async (req) => {
         script,
         apiKeyData,
         voice,
-        speakingRate
+        speakingRate,
+        forceElevenLabsTranscription
       ));
       
       return new Response(
@@ -195,7 +201,7 @@ serve(async (req) => {
     );
 
     return new Response(
-      JSON.stringify({ audioUrl, transcriptData, needsFallbackTranscription, badChunks }),
+      JSON.stringify({ audioUrl, transcriptData, needsFallbackTranscription: needsFallbackTranscription || forceElevenLabsTranscription, badChunks }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
 
@@ -217,7 +223,8 @@ async function processAudioInBackground(
   script: string,
   apiKey: string,
   voiceId: string,
-  speakingRate: number
+  speakingRate: number,
+  forceElevenLabsTranscription: boolean
 ) {
   try {
     console.log(`Background processing started for job ${jobId}`);
@@ -247,14 +254,19 @@ async function processAudioInBackground(
         updated_at: new Date().toISOString()
       };
       
-      // Store transcript_json only if we are NOT falling back to transcription
-      if (!needsFallbackTranscription && transcriptData) {
+      const shouldForceTranscription = forceElevenLabsTranscription === true;
+
+      // Store transcript_json only if we are NOT falling back to transcription and not forcing ElevenLabs
+      if (!needsFallbackTranscription && !shouldForceTranscription && transcriptData) {
         updateData.transcript_json = transcriptData;
         console.log(`Storing transcript_json with ${transcriptData.segments.length} segments`);
-      } else if (needsFallbackTranscription) {
+      } else if (needsFallbackTranscription || shouldForceTranscription) {
         // Ensure transcript_json is cleared so the normal flow considers it missing
         updateData.transcript_json = null;
-        console.log(`Inworld timestamps incomplete; cleared transcript_json and will trigger ElevenLabs transcription. badChunks=${JSON.stringify(badChunks)}`);
+        console.log(
+          `Cleared transcript_json and will trigger ElevenLabs transcription. ` +
+          `needsFallback=${needsFallbackTranscription}, force=${shouldForceTranscription}, badChunks=${JSON.stringify(badChunks)}`
+        );
       }
       
       await adminClient
@@ -263,8 +275,8 @@ async function processAudioInBackground(
         .eq('id', projectId);
     }
 
-    // If timestamps were incomplete, trigger the existing transcription workflow (ElevenLabs STT)
-    if (needsFallbackTranscription) {
+    // If timestamps were incomplete OR forced, trigger the existing transcription workflow (ElevenLabs STT)
+    if (needsFallbackTranscription || forceElevenLabsTranscription) {
       const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
       const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
       if (supabaseUrl && serviceKey) {
@@ -281,7 +293,7 @@ async function processAudioInBackground(
             userId,
             metadata: {
               audioUrl,
-              source: 'inworld_timestamp_fallback',
+              source: forceElevenLabsTranscription ? 'inworld_forced_elevenlabs' : 'inworld_timestamp_fallback',
               badChunks,
             },
           }),
@@ -306,6 +318,7 @@ async function processAudioInBackground(
         metadata: {
           audioUrl: audioUrl,
           inworldTimestampFallback: needsFallbackTranscription,
+          forceElevenLabsTranscription: forceElevenLabsTranscription === true,
           badChunks,
         },
         completed_at: new Date().toISOString()

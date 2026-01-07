@@ -107,6 +107,31 @@ async function tryUpdateProjectTranscriptFromElevenLabs({ projectId, userId, aud
   }
 }
 
+async function shouldTranscribeWithElevenLabs({ projectId }) {
+  if (!supabase || !projectId) return true;
+  try {
+    const { data: job, error } = await supabase
+      .from('generation_jobs')
+      .select('metadata, created_at')
+      .eq('project_id', projectId)
+      .eq('job_type', 'audio_generation')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+
+    const flag = job?.metadata?.forceElevenLabsTranscription;
+    if (flag === false) {
+      console.log(`[transcript] forceElevenLabsTranscription=false for project ${projectId} (skip ElevenLabs STT)`);
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.warn(`[transcript] Failed to read generation_jobs metadata for ${projectId}; defaulting to transcribe.`, e.message || e);
+    return true;
+  }
+}
+
 // Job status storage (in-memory, could be moved to Redis/DB for production)
 const jobs = new Map();
 
@@ -1880,10 +1905,12 @@ app.post('/concat-audio', async (req, res) => {
       totalDuration: audioDurations.reduce((sum, d) => sum + (typeof d === 'number' ? d : 0), 0),
     });
 
-    // Best-effort: produce a reliable transcript_json via ElevenLabs STT on the VPS.
-    // This avoids Inworld timestamp flakiness (wordAlignment sometimes returns empty arrays).
+    // Best-effort: produce a reliable transcript_json via ElevenLabs STT on the VPS,
+    // but only if the job metadata doesn't explicitly opt out.
     if (projectId && userId && supabase) {
-      setTimeout(() => {
+      setTimeout(async () => {
+        const shouldTranscribe = await shouldTranscribeWithElevenLabs({ projectId });
+        if (!shouldTranscribe) return;
         tryUpdateProjectTranscriptFromElevenLabs({
           projectId,
           userId,

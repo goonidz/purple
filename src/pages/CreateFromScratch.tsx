@@ -236,6 +236,7 @@ const CreateFromScratch = () => {
   const [selectedVoice, setSelectedVoice] = useState("English_expressive_narrator");
   const [inworldVoiceId, setInworldVoiceId] = useState("Dennis");
   const [inworldSpeakingRate, setInworldSpeakingRate] = useState(0.9);
+  const [forceElevenLabsTranscription, setForceElevenLabsTranscription] = useState(true);
   const [minimaxModel, setMinimaxModel] = useState("speech-2.6-hd");
   const [minimaxSpeed, setMinimaxSpeed] = useState(1.0);
   const [minimaxPitch, setMinimaxPitch] = useState(0);
@@ -1363,7 +1364,8 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
             languageBoost: minimaxLanguageBoost,
             englishNormalization: minimaxEnglishNormalization,
             emotion: minimaxEmotion,
-            provider: ttsProvider
+            provider: ttsProvider,
+            forceElevenLabsTranscription: ttsProvider === "inworld" ? forceElevenLabsTranscription : false,
           }
         }
       });
@@ -2275,6 +2277,20 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                               <span>0.5x</span>
                               <span>1.5x</span>
                             </div>
+                          </div>
+                          <div className="flex items-center justify-between p-3 bg-background/60 rounded-lg border">
+                            <div className="space-y-0.5">
+                              <Label className="text-sm">Transcrire avec ElevenLabs</Label>
+                              <p className="text-xs text-muted-foreground">
+                                Recommandé : garantit un transcript complet/ordonné (même si Inworld fournit des timestamps).
+                              </p>
+                            </div>
+                            <input
+                              type="checkbox"
+                              checked={forceElevenLabsTranscription}
+                              onChange={(e) => setForceElevenLabsTranscription(e.target.checked)}
+                              className="h-5 w-5 rounded border-gray-300 text-primary focus:ring-primary"
+                            />
                           </div>
                           <p className="text-xs text-amber-600">
                             Note : Inworld TTS supporte max 2000 caractères par requête. Les scripts longs seront automatiquement découpés et assemblés.
