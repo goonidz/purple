@@ -1722,11 +1722,23 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                         <div className="mt-2 p-2 bg-muted/50 rounded-md border">
                           <p className="text-xs text-muted-foreground mb-1 font-semibold">Variables détectées :</p>
                           <div className="flex flex-wrap gap-1">
-                            {Array.from(new Set(customPrompt.match(/\{\{[^}]+\}\}/g) || [])).map((variable, index) => (
-                              <span key={index} className="bg-primary/20 text-primary text-xs font-mono font-semibold rounded px-2 py-1">
-                                {variable} → <span className="text-foreground">{projectName || "Nom du projet"}</span>
-                              </span>
-                            ))}
+                            {Array.from(new Set(customPrompt.match(/\{\{[^}]+\}\}/g) || [])).map((variable, index) => {
+                              // Determine the value based on the variable name
+                              let value = "";
+                              const varName = variable.toLowerCase();
+                              if (varName.includes("projectname") || varName.includes("project_name") || varName.includes("title") || varName.includes("videotitle")) {
+                                value = projectName || "Nom du projet";
+                              } else if (varName.includes("sourcetranscript") || varName.includes("source_transcript")) {
+                                value = sourceTranscript ? `${sourceTranscript.substring(0, 50)}...` : "(non disponible)";
+                              } else {
+                                value = "Variable inconnue";
+                              }
+                              return (
+                                <span key={index} className="bg-primary/20 text-primary text-xs font-mono font-semibold rounded px-2 py-1">
+                                  {variable} → <span className="text-foreground">{value}</span>
+                                </span>
+                              );
+                            })}
                           </div>
                         </div>
                       )}
