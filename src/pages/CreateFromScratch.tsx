@@ -1833,19 +1833,16 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                         id="customScriptText"
                         value={customScriptText}
                         onChange={(e) => {
-                          setCustomScriptText(e.target.value);
-                          // Update generatedScript when custom text changes
-                          setGeneratedScript(e.target.value);
-                          // Calculate word count and duration
-                          const words = e.target.value.trim().split(/\s+/).filter(w => w.length > 0);
-                          setWordCount(words.length);
-                          setEstimatedDuration(Math.ceil(words.length / 2.5)); // ~2.5 words per second
+                          const text = e.target.value;
+                          setCustomScriptText(text);
                         }}
                         className="min-h-[300px] font-mono text-sm"
                         placeholder="Collez votre script ici..."
                       />
                       <p className="text-xs text-muted-foreground">
-                        {customScriptText.trim() ? `${wordCount} mots • ~${estimatedDuration}s de lecture` : "Le texte collé sera utilisé comme script"}
+                        {customScriptText.trim() ? 
+                          `${customScriptText.trim().split(/\s+/).filter(w => w.length > 0).length} mots • ~${Math.ceil(customScriptText.trim().split(/\s+/).filter(w => w.length > 0).length / 2.5)}s de lecture` 
+                          : "Le texte collé sera utilisé comme script"}
                       </p>
                     </div>
                   )}
@@ -1878,7 +1875,12 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                     <Button 
                       onClick={() => {
                         if (customScriptText.trim()) {
-                          setGeneratedScript(customScriptText.trim());
+                          const text = customScriptText.trim();
+                          setGeneratedScript(text);
+                          // Calculate word count and duration
+                          const words = text.split(/\s+/).filter(w => w.length > 0);
+                          setWordCount(words.length);
+                          setEstimatedDuration(Math.ceil(words.length / 2.5));
                           setStep("script");
                         } else {
                           toast.error("Veuillez coller votre texte");
