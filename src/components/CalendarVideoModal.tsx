@@ -1069,13 +1069,13 @@ export default function CalendarVideoModal({
 
         {/* Transcript ready notification - at bottom */}
         {sourceTranscript && !isScrapingTranscript && (
-          <div className="mx-6 mb-2 p-3 bg-green-100 dark:bg-green-900/30 border border-green-300 dark:border-green-700 rounded-lg flex items-center gap-3">
-            <Check className="h-5 w-5 text-green-600 dark:text-green-400" />
+          <div className="mx-6 mb-2 p-3 bg-orange-100 dark:bg-orange-900/30 border border-orange-300 dark:border-orange-700 rounded-lg flex items-center gap-3">
+            <Check className="h-5 w-5 text-orange-600 dark:text-orange-400" />
             <div className="flex-1">
-              <p className="text-sm font-medium text-green-800 dark:text-green-200">
+              <p className="text-sm font-medium text-orange-800 dark:text-orange-200">
                 Transcription disponible !
               </p>
-              <p className="text-xs text-green-600 dark:text-green-400">
+              <p className="text-xs text-orange-600 dark:text-orange-400">
                 Utilisez {`{{sourceTranscript}}`} dans le prompt de génération.
               </p>
             </div>

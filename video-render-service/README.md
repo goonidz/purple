@@ -54,8 +54,14 @@ sudo ufw allow 3000/tcp
 
 Ajoutez dans `.env` :
 ```
+# Pour HTTP (développement)
 VPS_PUBLIC_URL=http://51.91.158.233:3000
+
+# Pour HTTPS (production avec domaine)
+VPS_PUBLIC_URL=https://purpleai.duckdns.org/api/render
 ```
+
+**Note :** Si vous avez configuré HTTPS (voir [HTTPS_SETUP.md](../docs/HTTPS_SETUP.md)), utilisez l'URL HTTPS.
 
 ## Nettoyage automatique
 
