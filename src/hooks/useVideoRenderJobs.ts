@@ -33,7 +33,7 @@ export function useVideoRenderJobs({ projectId, onJobComplete, onJobFailed }: Us
   const [activeJobs, setActiveJobs] = useState<VideoRenderJob[]>([]);
   const [allJobs, setAllJobs] = useState<VideoRenderJob[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const vpsBaseUrl = (import.meta as any)?.env?.VITE_VPS_URL as string | undefined;
+  const vpsBaseUrl = ((import.meta as any)?.env?.VITE_VPS_URL as string | undefined) || "https://purpleai.duckdns.org/api/render";
 
   // Use refs to avoid stale closures
   const onJobCompleteRef = useRef(onJobComplete);
