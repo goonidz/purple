@@ -1870,6 +1870,16 @@ async function processImagesJob(
               if (!insertError) {
                 startedCount++;
                 console.log(`Scene ${index + 1} generation started: ${predictionId}${retry > 0 ? ` (after ${retry} retries)` : ''}`);
+                
+                // IMPORTANT: keep job.total in sync with the number of tracked predictions.
+                // This prevents webhook completion from waiting forever if the Edge Function
+                // is interrupted before reaching the end-of-chunk "total" update.
+                if (startedCount === 1 || startedCount % 5 === 0) {
+                  await adminClient
+                    .from('generation_jobs')
+                    .update({ total: startedCount })
+                    .eq('id', jobId);
+                }
                 success = true;
                 break;
               }
