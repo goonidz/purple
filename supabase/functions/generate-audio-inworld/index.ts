@@ -225,67 +225,92 @@ async function processAudioInBackground(
   }
 }
 
-// Convert word alignments to TranscriptData format (grouping words into sentence segments)
-function convertWordAlignmentsToTranscriptData(
-  wordAlignments: Array<{ words: string[]; wordStartTimeSeconds: number[]; wordEndTimeSeconds: number[] }>
+type InworldWordAlignment = {
+  words: string[];
+  wordStartTimeSeconds: number[];
+  wordEndTimeSeconds: number[];
+};
+
+type WordTiming = { word: string; start: number; end: number };
+
+function normalizeJoinedText(text: string): string {
+  // Remove spaces before common punctuation (handles tokenization differences)
+  return text
+    .replace(/\s+([,.;:!?])/g, "$1")
+    .replace(/\s+\)/g, ")")
+    .replace(/\(\s+/g, "(")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function alignmentToWordTimings(alignment: InworldWordAlignment, offsetSeconds: number): WordTiming[] {
+  const len = Math.min(
+    alignment.words?.length ?? 0,
+    alignment.wordStartTimeSeconds?.length ?? 0,
+    alignment.wordEndTimeSeconds?.length ?? 0
+  );
+
+  const out: WordTiming[] = [];
+  for (let i = 0; i < len; i++) {
+    const word = alignment.words[i];
+    const start = alignment.wordStartTimeSeconds[i] + offsetSeconds;
+    const end = alignment.wordEndTimeSeconds[i] + offsetSeconds;
+    if (typeof word !== "string") continue;
+    if (!Number.isFinite(start) || !Number.isFinite(end)) continue;
+    out.push({ word, start, end });
+  }
+  return out;
+}
+
+// Convert word timings to TranscriptData format (bucketed segments, ordered)
+function wordTimingsToTranscriptData(
+  wordTimings: WordTiming[],
+  opts?: { maxSegmentSeconds?: number; maxWordsPerSegment?: number }
 ): { segments: Array<{ text: string; start_time: number; end_time: number }>; language_code?: string } {
+  const maxSegmentSeconds = opts?.maxSegmentSeconds ?? 4;
+  const maxWordsPerSegment = opts?.maxWordsPerSegment ?? 40;
+
+  const sorted = [...wordTimings].sort((a, b) => a.start - b.start);
   const segments: Array<{ text: string; start_time: number; end_time: number }> = [];
-  
-  for (const alignment of wordAlignments) {
-    if (!alignment.words || alignment.words.length === 0) continue;
-    
-    const words = alignment.words;
-    const starts = alignment.wordStartTimeSeconds;
-    const ends = alignment.wordEndTimeSeconds;
-    
-    let currentSegmentText = "";
-    let currentSegmentStart = starts[0];
-    let currentSegmentEnd = ends[0];
-    
-    for (let i = 0; i < words.length; i++) {
-      const word = words[i];
-      const wordStart = starts[i];
-      const wordEnd = ends[i];
-      
-      // Add word to current segment
-      if (currentSegmentText) {
-        currentSegmentText += " ";
-      }
-      currentSegmentText += word;
-      currentSegmentEnd = wordEnd;
-      
-      // Check if word ends with sentence-ending punctuation
-      const trimmedWord = word.trim();
-      if (trimmedWord.match(/[.!?]$/)) {
-        // End of sentence - save segment
-        segments.push({
-          text: currentSegmentText.trim(),
-          start_time: currentSegmentStart,
-          end_time: currentSegmentEnd
-        });
-        
-        // Start new segment
-        if (i < words.length - 1) {
-          currentSegmentText = "";
-          currentSegmentStart = starts[i + 1];
-          currentSegmentEnd = ends[i + 1];
-        }
-      }
+
+  let segWords: string[] = [];
+  let segStart = 0;
+  let segEnd = 0;
+
+  const flush = () => {
+    if (segWords.length === 0) return;
+    const text = normalizeJoinedText(segWords.join(" "));
+    if (text) {
+      segments.push({ text, start_time: segStart, end_time: segEnd });
     }
-    
-    // Don't forget the last segment if it doesn't end with punctuation
-    if (currentSegmentText.trim()) {
-      segments.push({
-        text: currentSegmentText.trim(),
-        start_time: currentSegmentStart,
-        end_time: currentSegmentEnd
-      });
+    segWords = [];
+  };
+
+  for (const wt of sorted) {
+    if (segWords.length === 0) {
+      segStart = wt.start;
+      segEnd = wt.end;
+    } else {
+      segEnd = wt.end;
+    }
+
+    segWords.push(wt.word);
+
+    const last = wt.word.trim();
+    const endsSentence = /[.!?]$/.test(last);
+    const tooLong = segEnd - segStart >= maxSegmentSeconds;
+    const tooManyWords = segWords.length >= maxWordsPerSegment;
+
+    if (endsSentence || tooLong || tooManyWords) {
+      flush();
     }
   }
-  
+
+  flush();
+
   return {
     segments,
-    language_code: 'en' // Inworld timestamps are English-only for now
+    language_code: "en", // Inworld timestamps are English-first; others are experimental
   };
 }
 
@@ -332,8 +357,9 @@ async function generateAndAssembleAudio(
     // Convert timestamps to TranscriptData if available
     let transcriptData = null;
     if (timestamps) {
-      transcriptData = convertWordAlignmentsToTranscriptData([timestamps]);
-      console.log(`Generated transcript with ${transcriptData.segments.length} segments`);
+      const wordTimings = alignmentToWordTimings(timestamps as InworldWordAlignment, 0);
+      transcriptData = wordTimingsToTranscriptData(wordTimings);
+      console.log(`Generated transcript with ${transcriptData.segments.length} segments (single chunk)`);
     }
 
     return { audioUrl: publicUrl, transcriptData };
@@ -380,34 +406,24 @@ async function generateAndAssembleAudio(
 
   // Process timestamps with offsets for concatenation
   let transcriptData = null;
-  const allWordAlignments: Array<{ words: string[]; wordStartTimeSeconds: number[]; wordEndTimeSeconds: number[] }> = [];
+  const allWordTimings: WordTiming[] = [];
   let cumulativeOffset = 0;
 
   for (const result of sortedResults) {
     if (result.timestamps) {
-      const { words, wordStartTimeSeconds, wordEndTimeSeconds } = result.timestamps;
-      
-      // Apply offset to timestamps (add cumulative duration of previous chunks)
-      const offsetStarts = wordStartTimeSeconds.map(t => t + cumulativeOffset);
-      const offsetEnds = wordEndTimeSeconds.map(t => t + cumulativeOffset);
-      
-      allWordAlignments.push({
-        words,
-        wordStartTimeSeconds: offsetStarts,
-        wordEndTimeSeconds: offsetEnds
-      });
-      
-      console.log(`Chunk ${result.index} timestamps offset by ${cumulativeOffset}s`);
+      const timings = alignmentToWordTimings(result.timestamps as InworldWordAlignment, cumulativeOffset);
+      allWordTimings.push(...timings);
+      console.log(`Chunk ${result.index} timestamps merged (+${cumulativeOffset}s), words=${timings.length}`);
     }
     
     // Update cumulative offset for next chunk
     cumulativeOffset += result.duration;
   }
 
-  // Convert all word alignments to TranscriptData
-  if (allWordAlignments.length > 0) {
-    transcriptData = convertWordAlignmentsToTranscriptData(allWordAlignments);
-    console.log(`Generated transcript with ${transcriptData.segments.length} segments from ${allWordAlignments.length} chunks`);
+  // Convert all word timings to TranscriptData
+  if (allWordTimings.length > 0) {
+    transcriptData = wordTimingsToTranscriptData(allWordTimings);
+    console.log(`Generated transcript with ${transcriptData.segments.length} segments from ${sortedResults.length} chunks`);
   }
 
   // Call VPS to concatenate chunks
