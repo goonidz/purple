@@ -698,19 +698,16 @@ const Index = () => {
       return;
     }
     
-    // Only show modal after project data has been loaded at least once
-    if (!projectDataLoadedRef.current) return;
+    // Check if configure=true param is set (e.g., from Inworld TTS with timestamps)
+    const shouldConfigure = searchParams.get("configure") === "true";
     
     // Don't show if prompts already exist - project is already complete
     if (generatedPrompts.length > 0) {
       return;
     }
     
-    // Check if configure=true param is set (e.g., from Inworld TTS with timestamps)
-    const shouldConfigure = searchParams.get("configure") === "true";
-    
+    // Force open modal when configure param is present (bypass projectDataLoaded check)
     if (shouldConfigure && transcriptData && scenes.length === 0 && currentProjectId && !hasShownConfigModalRef.current) {
-      // Force open modal when configure param is present
       const timer = setTimeout(() => {
         setShowConfigurationModal(true);
         hasShownConfigModalRef.current = true;
@@ -721,6 +718,9 @@ const Index = () => {
       }, 500);
       return () => clearTimeout(timer);
     }
+    
+    // Only show modal after project data has been loaded at least once (for normal flow)
+    if (!projectDataLoadedRef.current) return;
     
     if (transcriptData && scenes.length === 0 && currentProjectId && !hasActiveJob('transcription') && !hasShownConfigModalRef.current) {
       // Small delay to allow UI to settle
