@@ -15,6 +15,49 @@ const corsHeaders = {
 // We cap at 1200 chars to keep timestamps consistent.
 const MAX_CHUNK_SIZE = 1200;
 
+// Inworld rate limit: 21 requests/second (per job invocation)
+const INWORLD_RATE_LIMIT_RPS = 21;
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Ensures we don't START more than N requests per second.
+// Note: this is best-effort per Edge Function invocation (can't coordinate across instances).
+function createPerSecondRateLimiter(maxPerSecond: number) {
+  let startTimestamps: number[] = [];
+  let gate: Promise<void> = Promise.resolve();
+
+  async function acquireSlot() {
+    while (true) {
+      const now = Date.now();
+      startTimestamps = startTimestamps.filter((t) => now - t < 1000);
+      if (startTimestamps.length < maxPerSecond) {
+        startTimestamps.push(now);
+        return;
+      }
+      const earliest = Math.min(...startTimestamps);
+      const waitMs = Math.max(0, 1000 - (now - earliest) + 5);
+      await sleep(waitMs);
+    }
+  }
+
+  return async function schedule<T>(fn: () => Promise<T>): Promise<T> {
+    // Serialize slot acquisition to avoid races; execution stays concurrent.
+    let release!: () => void;
+    const next = new Promise<void>((r) => (release = r));
+    const prev = gate;
+    gate = next;
+    await prev;
+    try {
+      await acquireSlot();
+    } finally {
+      release();
+    }
+    return await fn();
+  };
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -443,13 +486,16 @@ async function generateAndAssembleAudio(
 
   // Multiple chunks - generate ALL in parallel for speed
   const timestamp = Date.now();
-  console.log(`Generating ${chunks.length} chunks in parallel...`);
+  console.log(`Generating ${chunks.length} chunks with rate limit ${INWORLD_RATE_LIMIT_RPS}/sec...`);
+  const scheduleInworld = createPerSecondRateLimiter(INWORLD_RATE_LIMIT_RPS);
 
   const results = await Promise.all(
     chunks.map(async (chunk, index) => {
       console.log(`Starting chunk ${index + 1}/${chunks.length} (${chunk.length} chars)`);
       
-      const { audioBytes, timestamps, duration } = await generateInworldAudio(apiKey, chunk, voiceId);
+      const { audioBytes, timestamps, duration } = await scheduleInworld(() =>
+        generateInworldAudio(apiKey, chunk, voiceId)
+      );
       
       const chunkFilename = `${userId}/${projectId || 'temp'}/${timestamp}_inworld_chunk_${index}.mp3`;
       
