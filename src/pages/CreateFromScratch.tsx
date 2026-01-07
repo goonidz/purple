@@ -1733,7 +1733,7 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                       <p className="text-xs text-muted-foreground">
                         Ce prompt sera envoyé à {scriptModel === "gpt5" ? "GPT-5.1" : scriptModel === "claude-thinking" ? "Claude Opus 4.5 (Anthropic)" : "Claude"} pour générer le script. Incluez tous les détails: sujet, durée, style, langue, etc.
                         <br />
-                        <span className="font-semibold">Variables disponibles:</span> <code className="bg-primary/20 text-primary px-1 rounded font-semibold">{"{{projectName}}"}</code> sera automatiquement remplacé par le nom du projet.
+                        <span className="font-semibold">Variables disponibles:</span> <code className="bg-primary/20 text-primary px-1 rounded font-semibold">{"{{projectName}}"}</code> sera remplacé par le nom du projet, <code className="bg-primary/20 text-primary px-1 rounded font-semibold">{"{{sourceTranscript}}"}</code> par la transcription de la vidéo source (si disponible depuis le calendrier).
                       </p>
                     </CollapsibleContent>
                   </Collapsible>
