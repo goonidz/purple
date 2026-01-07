@@ -516,14 +516,21 @@ export default function CalendarVideoModal({
     const scrapeResult = await scrapeYouTubeUrl(url);
     
     // Immediately launch transcript scraping after title/thumbnail are scraped
+    // Launch in background without awaiting - it will continue even if user leaves
     // If entry exists, use it; otherwise create it automatically
     if (entry?.id) {
-      // Entry exists, launch transcript scraping immediately
-      scrapeTranscript(url, entry.id);
+      // Entry exists, launch transcript scraping immediately (fire and forget)
+      scrapeTranscript(url, entry.id).catch(err => {
+        console.error("Transcript scraping error (background):", err);
+        // Don't show error to user if they've left the page
+      });
     } else {
       // Entry doesn't exist yet, create it automatically with available data
       // Use scraped title if available, or current title, or placeholder
-      await createEntryAndScrapeTranscript(url, scrapeResult?.title);
+      createEntryAndScrapeTranscript(url, scrapeResult?.title).catch(err => {
+        console.error("Error creating entry and scraping transcript (background):", err);
+        // Don't show error to user if they've left the page
+      });
     }
   };
 
@@ -573,8 +580,12 @@ export default function CalendarVideoModal({
         
         // Update the entry state so future saves will update instead of create
         // Note: We can't directly set entry state, but we can track the ID
-        // For now, just launch transcript scraping
-        scrapeTranscript(url, data.id);
+        // Launch transcript scraping in background (fire and forget)
+        // It will continue even if user leaves the page
+        scrapeTranscript(url, data.id).catch(err => {
+          console.error("Transcript scraping error (background):", err);
+          // Don't show error to user if they've left the page
+        });
       }
     } catch (error) {
       console.error("Error creating entry for transcript:", error);
