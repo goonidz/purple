@@ -251,7 +251,7 @@ const CreateFromScratch = () => {
   const [uploadedBytes, setUploadedBytes] = useState(0);
   const [totalBytes, setTotalBytes] = useState(0);
   const [uploadFileName, setUploadFileName] = useState("");
-  const [isGenerationOpen, setIsGenerationOpen] = useState(false);
+  const [isGenerationOpen, setIsGenerationOpen] = useState(true);
   const audioInputRef = useRef<HTMLInputElement>(null);
   
   // TTS Preset management
@@ -645,10 +645,13 @@ const CreateFromScratch = () => {
       const presetsData = (data || []) as TtsPreset[];
       setTtsPresets(presetsData);
 
-      // Auto-select a default preset if none selected yet (prefer Inworld)
+      // Auto-select a default preset if none selected yet (prefer Inworld).
+      // IMPORTANT: Keep Inworld as the default provider; do not auto-apply a MiniMax preset.
       if (!selectedTtsPresetId && presetsData.length > 0) {
-        const defaultPreset = presetsData.find(p => p.provider === "inworld") ?? presetsData[0];
-        applyTtsPreset(defaultPreset, { silent: true });
+        const defaultInworldPreset = presetsData.find(p => p.provider === "inworld");
+        if (defaultInworldPreset) {
+          applyTtsPreset(defaultInworldPreset, { silent: true });
+        }
       }
     } catch (error) {
       console.error("Error loading TTS presets:", error);
