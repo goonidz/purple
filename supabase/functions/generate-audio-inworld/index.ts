@@ -438,8 +438,8 @@ async function generateInworldAudio(
 ): Promise<Uint8Array> {
   console.log(`Calling Inworld TTS API for ${text.length} chars with voice: ${voiceId}`);
 
-  // Inworld uses Basic auth with the API key
-  const authHeader = `Basic ${btoa(apiKey + ':')}`;
+  // Inworld provides a pre-encoded Base64 key, use it directly
+  const authHeader = `Basic ${apiKey}`;
 
   const response = await fetch('https://api.inworld.ai/tts/v1/synthesize', {
     method: 'POST',
