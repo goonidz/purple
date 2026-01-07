@@ -40,67 +40,70 @@ const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null;
 
-function splitIntoSentences(text) {
-  if (!text) return [];
-  // Split while keeping punctuation at end of sentence
-  const parts = text
-    .replace(/\s+/g, " ")
-    .trim()
-    .split(/(?<=[.!?])\s+/);
-  return parts.map(s => s.trim()).filter(Boolean);
-}
+async function tryUpdateProjectTranscriptFromElevenLabs({ projectId, userId, audioPath, audioUrl }) {
+  if (!supabase || !projectId || !userId || !audioPath) return;
 
-function buildTranscriptJsonFromText(text, totalDurationSeconds) {
-  const script = (text || "").trim();
-  const duration = typeof totalDurationSeconds === "number" && totalDurationSeconds > 0
-    ? totalDurationSeconds
-    : Math.max(1, script.split(/\s+/).filter(Boolean).length / 2.5);
-
-  const sentences = splitIntoSentences(script);
-  const units = sentences.length > 0 ? sentences : [script];
-
-  const weights = units.map(u => Math.max(1, u.length));
-  const totalWeight = weights.reduce((a, b) => a + b, 0);
-
-  let t = 0;
-  const segments = units.map((u, i) => {
-    const segDur = duration * (weights[i] / totalWeight);
-    const start = t;
-    const end = i === units.length - 1 ? duration : t + segDur;
-    t = end;
-    return { text: u, start_time: start, end_time: end };
-  });
-
-  return { segments, language_code: "en" };
-}
-
-async function tryUpdateProjectTranscriptFromText({ projectId, totalDurationSeconds }) {
-  if (!supabase || !projectId) return;
   try {
-    const { data: project, error } = await supabase
-      .from("projects")
-      .select("summary, transcript_json")
-      .eq("id", projectId)
-      .single();
-    if (error) throw error;
+    // Fetch user's ElevenLabs API key from Vault
+    const { data: apiKey, error: apiKeyError } = await supabase.rpc('get_user_api_key_for_service', {
+      target_user_id: userId,
+      key_name: 'eleven_labs',
+    });
 
-    const scriptText = project?.summary || "";
-    if (!scriptText.trim()) {
-      console.warn(`[transcript] No script text (summary) for project ${projectId}`);
+    if (apiKeyError || !apiKey) {
+      console.warn(`[transcript] ElevenLabs key missing for user ${userId}; cannot transcribe on VPS`);
       return;
     }
 
-    const transcriptJson = buildTranscriptJsonFromText(scriptText, totalDurationSeconds);
+    const audioBuffer = fs.readFileSync(audioPath);
+    const blob = new Blob([audioBuffer], { type: 'audio/mpeg' });
+    const formData = new FormData();
+    formData.append('file', blob, 'audio.mp3');
+    formData.append('model_id', 'scribe_v1');
+    formData.append('diarize', 'true');
+    formData.append('timestamps_granularity', 'word');
 
-    const { error: updateError } = await supabase
-      .from("projects")
-      .update({ transcript_json: transcriptJson, updated_at: new Date().toISOString() })
-      .eq("id", projectId);
-    if (updateError) throw updateError;
+    console.log(`[transcript] Sending audio to ElevenLabs STT for project ${projectId}...`);
 
-    console.log(`[transcript] Updated transcript_json for project ${projectId} (${transcriptJson.segments.length} segments, duration≈${totalDurationSeconds}s)`);
+    const resp = await fetch('https://api.elevenlabs.io/v1/speech-to-text', {
+      method: 'POST',
+      headers: {
+        'xi-api-key': apiKey,
+      },
+      body: formData,
+    });
+
+    if (!resp.ok) {
+      const errText = await resp.text();
+      throw new Error(`ElevenLabs STT error ${resp.status}: ${errText}`);
+    }
+
+    const transcriptionData = await resp.json();
+
+    const formattedTranscript = {
+      segments: (transcriptionData.words || [])
+        .filter((w) => w && w.type === 'word')
+        .map((w) => ({
+          text: w.text,
+          start_time: w.start,
+          end_time: w.end,
+        })),
+      language_code: transcriptionData.language_code || 'en',
+      full_text: transcriptionData.text || '',
+    };
+
+    await supabase
+      .from('projects')
+      .update({
+        transcript_json: formattedTranscript,
+        audio_url: audioUrl || null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', projectId);
+
+    console.log(`[transcript] Updated transcript_json from ElevenLabs for project ${projectId} (segments=${formattedTranscript.segments.length})`);
   } catch (e) {
-    console.error(`[transcript] Failed to update transcript_json for project ${projectId}:`, e.message || e);
+    console.error(`[transcript] Failed ElevenLabs transcription for project ${projectId}:`, e.message || e);
   }
 }
 
@@ -1877,14 +1880,17 @@ app.post('/concat-audio', async (req, res) => {
       totalDuration: audioDurations.reduce((sum, d) => sum + (typeof d === 'number' ? d : 0), 0),
     });
 
-    // Best-effort: overwrite transcript_json after Edge Function writes its version.
-    // Inworld timestamps can be empty for some chunks; we synthesize an ordered transcript from the original script
-    // and the measured audio duration.
-    const totalDurationSeconds = audioDurations.reduce((sum, d) => sum + (typeof d === 'number' ? d : 0), 0);
-    if (projectId && supabase) {
+    // Best-effort: produce a reliable transcript_json via ElevenLabs STT on the VPS.
+    // This avoids Inworld timestamp flakiness (wordAlignment sometimes returns empty arrays).
+    if (projectId && userId && supabase) {
       setTimeout(() => {
-        tryUpdateProjectTranscriptFromText({ projectId, totalDurationSeconds });
-      }, 4000);
+        tryUpdateProjectTranscriptFromElevenLabs({
+          projectId,
+          userId,
+          audioPath: outputPath,
+          audioUrl: publicUrl,
+        });
+      }, 1500);
     }
 
   } catch (error) {
