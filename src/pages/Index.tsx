@@ -2850,6 +2850,10 @@ const Index = () => {
                   <Type className="h-3 w-3 sm:h-4 sm:w-4" />
                   <span className="hidden md:inline">Script</span>
                 </TabsTrigger>
+                <TabsTrigger value="audio" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm px-2 sm:px-3">
+                  <Play className="h-3 w-3 sm:h-4 sm:w-4" />
+                  <span className="hidden md:inline">Audio</span>
+                </TabsTrigger>
                 <TabsTrigger value="preview" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm px-2 sm:px-3">
                   <Play className="h-3 w-3 sm:h-4 sm:w-4" />
                   <span className="hidden md:inline">Aperçu</span>
@@ -3836,6 +3840,40 @@ const Index = () => {
                   </Card>
                 )}
               </TabsContent>
+
+            <TabsContent value="audio" className="space-y-6 m-0">
+              <Card className="p-6">
+                <div className="flex items-center justify-between gap-4 flex-wrap">
+                  <h2 className="text-lg font-semibold">Audio</h2>
+                  {audioUrl && (
+                    <Button asChild variant="outline">
+                      <a href={audioUrl} download target="_blank" rel="noopener noreferrer">
+                        <Download className="h-4 w-4 mr-2" />
+                        Télécharger
+                      </a>
+                    </Button>
+                  )}
+                </div>
+
+                <div className="mt-4">
+                  {!audioUrl ? (
+                    <p className="text-sm text-muted-foreground">
+                      Aucun audio disponible pour ce projet.
+                    </p>
+                  ) : (
+                    <div className="space-y-3">
+                      <audio controls className="w-full">
+                        <source src={audioUrl} />
+                        Votre navigateur ne supporte pas l'audio.
+                      </audio>
+                      <p className="text-xs text-muted-foreground break-all">
+                        {audioUrl}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </Card>
+            </TabsContent>
 
               <TabsContent value="thumbnails" className="m-0">
                 <div className="max-w-5xl mx-auto">

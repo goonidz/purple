@@ -76,6 +76,7 @@ serve(async (req) => {
     const { 
       script, 
       voice = 'Dennis', 
+      speed: rawSpeed,
       projectId,
       jobId,
       userId: passedUserId
@@ -108,7 +109,21 @@ serve(async (req) => {
       throw new Error("Script is required");
     }
 
-    console.log("Generating audio with Inworld, script length:", script.length, "voice:", voice, "jobId:", jobId);
+    const speakingRate =
+      typeof rawSpeed === "number" && Number.isFinite(rawSpeed) && rawSpeed > 0
+        ? rawSpeed
+        : 0.9;
+
+    console.log(
+      "Generating audio with Inworld, script length:",
+      script.length,
+      "voice:",
+      voice,
+      "speakingRate:",
+      speakingRate,
+      "jobId:",
+      jobId
+    );
 
     // Get user's Inworld API key from Vault
     const supabaseAdmin = createClient(
@@ -154,7 +169,8 @@ serve(async (req) => {
         userId,
         script,
         apiKeyData,
-        voice
+        voice,
+        speakingRate
       ));
       
       return new Response(
@@ -174,7 +190,8 @@ serve(async (req) => {
       projectId,
       script,
       apiKeyData,
-      voice
+      voice,
+      speakingRate
     );
 
     return new Response(
@@ -199,7 +216,8 @@ async function processAudioInBackground(
   userId: string,
   script: string,
   apiKey: string,
-  voiceId: string
+  voiceId: string,
+  speakingRate: number
 ) {
   try {
     console.log(`Background processing started for job ${jobId}`);
@@ -218,7 +236,8 @@ async function processAudioInBackground(
       projectId,
       script,
       apiKey,
-      voiceId
+      voiceId,
+      speakingRate
     );
 
     // Update project with audio URL and transcript_json (if available and reliable)
@@ -427,7 +446,8 @@ async function generateAndAssembleAudio(
   projectId: string | null,
   script: string,
   apiKey: string,
-  voiceId: string
+  voiceId: string,
+  speakingRate: number
 ): Promise<{ audioUrl: string; transcriptData?: any; needsFallbackTranscription: boolean; badChunks: number[] }> {
   // Split script into chunks
   const chunks = splitTextIntoChunks(script, MAX_CHUNK_SIZE);
@@ -440,7 +460,7 @@ async function generateAndAssembleAudio(
 
   if (chunks.length === 1) {
     // Single chunk - direct generation
-    const { audioBytes, timestamps } = await generateInworldAudio(apiKey, chunks[0], voiceId);
+    const { audioBytes, timestamps } = await generateInworldAudio(apiKey, chunks[0], voiceId, speakingRate);
     
     const timestamp = Date.now();
     const filename = `${userId}/${projectId || 'temp'}/${timestamp}_inworld_generated.mp3`;
@@ -494,7 +514,7 @@ async function generateAndAssembleAudio(
       console.log(`Starting chunk ${index + 1}/${chunks.length} (${chunk.length} chars)`);
       
       const { audioBytes, timestamps, duration } = await scheduleInworld(() =>
-        generateInworldAudio(apiKey, chunk, voiceId)
+        generateInworldAudio(apiKey, chunk, voiceId, speakingRate)
       );
       
       const chunkFilename = `${userId}/${projectId || 'temp'}/${timestamp}_inworld_chunk_${index}.mp3`;
@@ -705,9 +725,10 @@ function splitByWords(text: string, maxLength: number): string[] {
 async function generateInworldAudio(
   apiKey: string,
   text: string,
-  voiceId: string
+  voiceId: string,
+  speakingRate: number
 ): Promise<{ audioBytes: Uint8Array; timestamps?: any; duration?: number }> {
-  console.log(`Calling Inworld TTS API for ${text.length} chars with voice: ${voiceId}`);
+  console.log(`Calling Inworld TTS API for ${text.length} chars with voice: ${voiceId}, speakingRate: ${speakingRate}`);
   console.log(`API key length: ${apiKey?.length}, starts with: ${apiKey?.substring(0, 10)}...`);
 
   // Inworld provides a pre-encoded Base64 key, use it directly
@@ -718,7 +739,10 @@ async function generateInworldAudio(
     text: text,
     voiceId: voiceId,
     modelId: 'inworld-tts-1-max',
-    timestampType: 'WORD' // Request word-level timestamps
+    timestampType: 'WORD', // Request word-level timestamps
+    audioConfig: {
+      speaking_rate: typeof speakingRate === "number" && Number.isFinite(speakingRate) ? speakingRate : 0.9,
+    },
   };
   console.log("Request body:", JSON.stringify(requestBody));
 

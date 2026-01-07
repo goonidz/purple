@@ -235,6 +235,7 @@ const CreateFromScratch = () => {
   const [ttsProvider, setTtsProvider] = useState<"minimax" | "inworld">("inworld");
   const [selectedVoice, setSelectedVoice] = useState("English_expressive_narrator");
   const [inworldVoiceId, setInworldVoiceId] = useState("Dennis");
+  const [inworldSpeakingRate, setInworldSpeakingRate] = useState(0.9);
   const [minimaxModel, setMinimaxModel] = useState("speech-2.6-hd");
   const [minimaxSpeed, setMinimaxSpeed] = useState(1.0);
   const [minimaxPitch, setMinimaxPitch] = useState(0);
@@ -670,6 +671,7 @@ const CreateFromScratch = () => {
     // Load voice ID based on provider
     if (preset.provider === "inworld") {
       setInworldVoiceId(preset.voice_id);
+      setInworldSpeakingRate(typeof preset.speed === "number" && Number.isFinite(preset.speed) ? preset.speed : 0.9);
     } else {
       setSelectedVoice(preset.voice_id);
       if (preset.model) setMinimaxModel(preset.model);
@@ -710,7 +712,7 @@ const CreateFromScratch = () => {
           provider: ttsProvider,
           voice_id: ttsProvider === "inworld" ? inworldVoiceId : selectedVoice,
           model: ttsProvider === "minimax" ? minimaxModel : null,
-          speed: minimaxSpeed,
+          speed: ttsProvider === "inworld" ? inworldSpeakingRate : minimaxSpeed,
           pitch: minimaxPitch,
           volume: minimaxVolume,
           language_boost: minimaxLanguageBoost,
@@ -802,7 +804,7 @@ const CreateFromScratch = () => {
           provider: ttsProvider,
           voice_id: ttsProvider === "inworld" ? inworldVoiceId : selectedVoice,
           model: ttsProvider === "minimax" ? minimaxModel : null,
-          speed: minimaxSpeed,
+          speed: ttsProvider === "inworld" ? inworldSpeakingRate : minimaxSpeed,
           pitch: minimaxPitch,
           volume: minimaxVolume,
           language_boost: minimaxLanguageBoost,
@@ -1352,7 +1354,7 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
             script: generatedScript,
             voice: ttsProvider === "inworld" ? inworldVoiceId : selectedVoice,
             model: minimaxModel,
-            speed: minimaxSpeed,
+            speed: ttsProvider === "inworld" ? inworldSpeakingRate : minimaxSpeed,
             pitch: minimaxPitch,
             volume: minimaxVolume,
             languageBoost: minimaxLanguageBoost,
@@ -2254,6 +2256,22 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                                 Liste des voix
                               </a>
                             </p>
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Talking speed ({inworldSpeakingRate.toFixed(2)}x)</Label>
+                            <input
+                              type="range"
+                              min="0.5"
+                              max="1.5"
+                              step="0.05"
+                              value={inworldSpeakingRate}
+                              onChange={(e) => setInworldSpeakingRate(parseFloat(e.target.value))}
+                              className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
+                            />
+                            <div className="flex justify-between text-xs text-muted-foreground">
+                              <span>0.5x</span>
+                              <span>1.5x</span>
+                            </div>
                           </div>
                           <p className="text-xs text-amber-600">
                             Note : Inworld TTS supporte max 2000 caractères par requête. Les scripts longs seront automatiquement découpés et assemblés.
