@@ -125,7 +125,7 @@ serve(async (req) => {
     }
 
     // Synchronous mode (not recommended for long scripts)
-    const { audioUrl, transcriptData } = await generateAndAssembleAudio(
+    const { audioUrl, transcriptData, needsFallbackTranscription, badChunks } = await generateAndAssembleAudio(
       supabaseAdmin,
       userId,
       projectId,
@@ -135,7 +135,7 @@ serve(async (req) => {
     );
 
     return new Response(
-      JSON.stringify({ audioUrl, transcriptData }),
+      JSON.stringify({ audioUrl, transcriptData, needsFallbackTranscription, badChunks }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
 
@@ -169,7 +169,7 @@ async function processAudioInBackground(
       })
       .eq('id', jobId);
 
-    const { audioUrl, transcriptData } = await generateAndAssembleAudio(
+    const { audioUrl, transcriptData, needsFallbackTranscription, badChunks } = await generateAndAssembleAudio(
       adminClient,
       userId,
       projectId,
@@ -178,23 +178,61 @@ async function processAudioInBackground(
       voiceId
     );
 
-    // Update project with audio URL and transcript_json (if available)
+    // Update project with audio URL and transcript_json (if available and reliable)
     if (projectId) {
       const updateData: any = { 
         audio_url: audioUrl,
         updated_at: new Date().toISOString()
       };
       
-      // Store transcript_json if timestamps were generated
-      if (transcriptData) {
+      // Store transcript_json only if we are NOT falling back to transcription
+      if (!needsFallbackTranscription && transcriptData) {
         updateData.transcript_json = transcriptData;
         console.log(`Storing transcript_json with ${transcriptData.segments.length} segments`);
+      } else if (needsFallbackTranscription) {
+        // Ensure transcript_json is cleared so the normal flow considers it missing
+        updateData.transcript_json = null;
+        console.log(`Inworld timestamps incomplete; cleared transcript_json and will trigger ElevenLabs transcription. badChunks=${JSON.stringify(badChunks)}`);
       }
       
       await adminClient
         .from('projects')
         .update(updateData)
         .eq('id', projectId);
+    }
+
+    // If timestamps were incomplete, trigger the existing transcription workflow (ElevenLabs STT)
+    if (needsFallbackTranscription) {
+      const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+      const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+      if (supabaseUrl && serviceKey) {
+        console.log(`Triggering transcription fallback via start-generation-job for project ${projectId}`);
+        const resp = await fetch(`${supabaseUrl}/functions/v1/start-generation-job`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${serviceKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            projectId,
+            jobType: 'transcription',
+            userId,
+            metadata: {
+              audioUrl,
+              source: 'inworld_timestamp_fallback',
+              badChunks,
+            },
+          }),
+        });
+        if (!resp.ok) {
+          console.error(`Failed to start transcription fallback (${resp.status}):`, await resp.text());
+        } else {
+          const data = await resp.json().catch(() => ({}));
+          console.log(`Transcription fallback job started:`, JSON.stringify(data));
+        }
+      } else {
+        console.warn('Cannot trigger transcription fallback: missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY');
+      }
     }
 
     // Update job as completed
@@ -204,7 +242,9 @@ async function processAudioInBackground(
         status: 'completed',
         progress: 1,
         metadata: {
-          audioUrl: audioUrl
+          audioUrl: audioUrl,
+          inworldTimestampFallback: needsFallbackTranscription,
+          badChunks,
         },
         completed_at: new Date().toISOString()
       })
@@ -345,7 +385,7 @@ async function generateAndAssembleAudio(
   script: string,
   apiKey: string,
   voiceId: string
-): Promise<{ audioUrl: string; transcriptData?: any }> {
+): Promise<{ audioUrl: string; transcriptData?: any; needsFallbackTranscription: boolean; badChunks: number[] }> {
   // Split script into chunks
   const chunks = splitTextIntoChunks(script, MAX_CHUNK_SIZE);
   console.log(`Script length: ${script.length}, split into ${chunks.length} chunk(s)`);
@@ -377,21 +417,28 @@ async function generateAndAssembleAudio(
       .from('audio-files')
       .getPublicUrl(filename);
 
-    // Convert timestamps to TranscriptData if available
+    // Convert timestamps to TranscriptData only if alignment looks valid.
+    // If empty, we'll trigger ElevenLabs transcription fallback.
     let transcriptData = null;
     const wordsLen = (timestamps as any)?.words?.length ?? 0;
-    if (timestamps && wordsLen > 0) {
+    const startLen = (timestamps as any)?.wordStartTimeSeconds?.length ?? 0;
+    const endLen = (timestamps as any)?.wordEndTimeSeconds?.length ?? 0;
+    const timestampsOk = wordsLen > 0 && wordsLen === startLen && wordsLen === endLen;
+
+    const needsFallbackTranscription = !timestampsOk;
+    const badChunks = needsFallbackTranscription ? [0] : [];
+
+    console.log(
+      `Inworld timestamps check (single chunk): words=${wordsLen}, starts=${startLen}, ends=${endLen}, ok=${timestampsOk}`
+    );
+
+    if (timestampsOk) {
       const wordTimings = alignmentToWordTimings(timestamps as InworldWordAlignment, 0);
       transcriptData = wordTimingsToTranscriptData(wordTimings);
       console.log(`Generated transcript with ${transcriptData.segments.length} segments (single chunk, aligned)`);
-    } else {
-      // Fallback: synthesize timings from text using estimated duration
-      const synthesized = synthesizeWordTimingsFromText(chunks[0], 0, 0);
-      transcriptData = wordTimingsToTranscriptData(synthesized);
-      console.log(`Generated transcript with ${transcriptData.segments.length} segments (single chunk, synthesized-estimate)`);
     }
 
-    return { audioUrl: publicUrl, transcriptData };
+    return { audioUrl: publicUrl, transcriptData, needsFallbackTranscription, badChunks };
   }
 
   // Multiple chunks - generate ALL in parallel for speed
@@ -433,6 +480,19 @@ async function generateAndAssembleAudio(
   console.log(`All ${chunkUrls.length} chunks generated in parallel, concatenating on VPS...`);
   console.log(`URLs to concatenate:`, JSON.stringify(chunkUrls, null, 2));
 
+  // Validate timestamps across chunks; if any chunk missing alignment, trigger fallback transcription.
+  const badChunks: number[] = [];
+  for (const r of sortedResults) {
+    const t: any = r.timestamps;
+    const wl = t?.words?.length ?? 0;
+    const sl = t?.wordStartTimeSeconds?.length ?? 0;
+    const el = t?.wordEndTimeSeconds?.length ?? 0;
+    const ok = wl > 0 && wl === sl && wl === el;
+    if (!ok) badChunks.push(r.index);
+    console.log(`Inworld timestamps check (chunk ${r.index}): words=${wl}, starts=${sl}, ends=${el}, ok=${ok}`);
+  }
+  const needsFallbackTranscription = badChunks.length > 0;
+
   // Call VPS to concatenate chunks
   const ffmpegServiceUrl = Deno.env.get('FFMPEG_SERVICE_URL');
   if (!ffmpegServiceUrl) {
@@ -465,38 +525,25 @@ async function generateAndAssembleAudio(
 
   console.log("Concatenation complete:", concatResult.audioUrl);
 
-  // Build transcript using timestamps when available, otherwise synthesize timings from text.
-  // Note: Inworld sometimes returns empty wordAlignment arrays; we fall back to estimated timings.
+  // Build transcript only if all chunks had valid alignment.
+  // If any chunk is missing alignment, we rely on ElevenLabs transcription fallback.
   let transcriptData = null;
-  const allWordTimings: WordTiming[] = [];
-  let cumulativeOffset = 0;
-
-  for (const result of sortedResults) {
-    const idx = result.index;
-    const alignment = result.timestamps as any;
-    const alignedWordsLen = alignment?.words?.length ?? 0;
-
-    // Prefer real duration when we have alignment; otherwise estimate from word count.
-    const estimatedDuration = Math.max(1, textToWordTokens(result.text || "").length / 2.5);
-    const durationSeconds =
-      (typeof result.duration === "number" && result.duration > 0 ? result.duration : 0) || estimatedDuration;
-
-    if (alignment && alignedWordsLen > 0) {
+  if (!needsFallbackTranscription) {
+    const allWordTimings: WordTiming[] = [];
+    let cumulativeOffset = 0;
+    for (const result of sortedResults) {
+      const alignment = result.timestamps as any;
       const timings = alignmentToWordTimings(alignment as InworldWordAlignment, cumulativeOffset);
       allWordTimings.push(...timings);
-      console.log(`Chunk ${idx} transcript: aligned words=${timings.length}, offset=${cumulativeOffset}s`);
-    } else {
-      const synthesized = synthesizeWordTimingsFromText(result.text || "", cumulativeOffset, durationSeconds);
-      allWordTimings.push(...synthesized);
-      console.log(`Chunk ${idx} transcript: SYNTHESIZED words=${synthesized.length}, offset=${cumulativeOffset}s, duration≈${durationSeconds}s`);
+      const durationSeconds =
+        (typeof result.duration === "number" && result.duration > 0 ? result.duration : 0) ||
+        Math.max(1, textToWordTokens(result.text || "").length / 2.5);
+      cumulativeOffset += durationSeconds;
     }
-
-    cumulativeOffset += durationSeconds;
-  }
-
-  if (allWordTimings.length > 0) {
     transcriptData = wordTimingsToTranscriptData(allWordTimings);
-    console.log(`Generated transcript with ${transcriptData.segments.length} segments from ${sortedResults.length} chunks (aligned+fallback)`);
+    console.log(`Generated transcript with ${transcriptData.segments.length} segments from ${sortedResults.length} chunks (aligned)`);
+  } else {
+    console.log(`Inworld timestamps incomplete; will trigger transcription fallback. badChunks=${JSON.stringify(badChunks)}`);
   }
 
   // Clean up chunk files (optional - can be done async)
@@ -511,7 +558,7 @@ async function generateAndAssembleAudio(
     }
   }
 
-  return { audioUrl: concatResult.audioUrl, transcriptData };
+  return { audioUrl: concatResult.audioUrl, transcriptData, needsFallbackTranscription, badChunks };
 }
 
 // Split text into chunks without cutting sentences

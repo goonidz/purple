@@ -21,31 +21,57 @@ serve(async (req) => {
       });
     }
 
-    // Initialize Supabase client
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-      { global: { headers: { Authorization: authHeader } } }
-    );
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
 
-    // Get user
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
-    if (userError || !user) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+    const body = await req.json();
+    const { audioUrl, userId: bodyUserId } = body as { audioUrl?: string; userId?: string };
+
+    if (!audioUrl) {
+      throw new Error("audioUrl is required");
+    }
+
+    // Allow internal calls using service role key + explicit userId
+    const isInternalCall = authHeader === `Bearer ${supabaseServiceKey}`;
+
+    // Initialize Supabase client
+    let targetUserId: string;
+    if (isInternalCall) {
+      if (!bodyUserId) {
+        return new Response(JSON.stringify({ error: 'userId required for internal calls' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      targetUserId = bodyUserId;
+      console.log(`Internal transcribe-audio call for user ${targetUserId}`);
+    } else {
+      const supabase = createClient(
+        supabaseUrl,
+        supabaseAnonKey,
+        { global: { headers: { Authorization: authHeader } } }
+      );
+
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError || !user) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      targetUserId = user.id;
     }
 
     // Get user's API key from Supabase Vault using service role
     const supabaseService = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+      supabaseUrl,
+      supabaseServiceKey
     );
 
     const { data: apiKey, error: apiKeyError } = await supabaseService
       .rpc('get_user_api_key_for_service', {
-        target_user_id: user.id,
+        target_user_id: targetUserId,
         key_name: 'eleven_labs'
       });
 
@@ -60,12 +86,6 @@ serve(async (req) => {
     }
 
     const ELEVEN_LABS_API_KEY = apiKey;
-
-    const { audioUrl } = await req.json();
-    
-    if (!audioUrl) {
-      throw new Error("audioUrl is required");
-    }
 
     console.log("Fetching audio from:", audioUrl);
 

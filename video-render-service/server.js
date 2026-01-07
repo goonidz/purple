@@ -40,6 +40,70 @@ const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null;
 
+function splitIntoSentences(text) {
+  if (!text) return [];
+  // Split while keeping punctuation at end of sentence
+  const parts = text
+    .replace(/\s+/g, " ")
+    .trim()
+    .split(/(?<=[.!?])\s+/);
+  return parts.map(s => s.trim()).filter(Boolean);
+}
+
+function buildTranscriptJsonFromText(text, totalDurationSeconds) {
+  const script = (text || "").trim();
+  const duration = typeof totalDurationSeconds === "number" && totalDurationSeconds > 0
+    ? totalDurationSeconds
+    : Math.max(1, script.split(/\s+/).filter(Boolean).length / 2.5);
+
+  const sentences = splitIntoSentences(script);
+  const units = sentences.length > 0 ? sentences : [script];
+
+  const weights = units.map(u => Math.max(1, u.length));
+  const totalWeight = weights.reduce((a, b) => a + b, 0);
+
+  let t = 0;
+  const segments = units.map((u, i) => {
+    const segDur = duration * (weights[i] / totalWeight);
+    const start = t;
+    const end = i === units.length - 1 ? duration : t + segDur;
+    t = end;
+    return { text: u, start_time: start, end_time: end };
+  });
+
+  return { segments, language_code: "en" };
+}
+
+async function tryUpdateProjectTranscriptFromText({ projectId, totalDurationSeconds }) {
+  if (!supabase || !projectId) return;
+  try {
+    const { data: project, error } = await supabase
+      .from("projects")
+      .select("summary, transcript_json")
+      .eq("id", projectId)
+      .single();
+    if (error) throw error;
+
+    const scriptText = project?.summary || "";
+    if (!scriptText.trim()) {
+      console.warn(`[transcript] No script text (summary) for project ${projectId}`);
+      return;
+    }
+
+    const transcriptJson = buildTranscriptJsonFromText(scriptText, totalDurationSeconds);
+
+    const { error: updateError } = await supabase
+      .from("projects")
+      .update({ transcript_json: transcriptJson, updated_at: new Date().toISOString() })
+      .eq("id", projectId);
+    if (updateError) throw updateError;
+
+    console.log(`[transcript] Updated transcript_json for project ${projectId} (${transcriptJson.segments.length} segments, duration≈${totalDurationSeconds}s)`);
+  } catch (e) {
+    console.error(`[transcript] Failed to update transcript_json for project ${projectId}:`, e.message || e);
+  }
+}
+
 // Job status storage (in-memory, could be moved to Redis/DB for production)
 const jobs = new Map();
 
@@ -1735,11 +1799,27 @@ app.post('/concat-audio', async (req, res) => {
 
     // Download all audio files
     const audioFiles = [];
+    const audioDurations = [];
     for (let i = 0; i < audioUrls.length; i++) {
       const audioPath = path.join(workDir, `audio_${i}.mp3`);
       console.log(`[${jobId}] Downloading audio ${i + 1}/${audioUrls.length}: ${audioUrls[i].substring(0, 100)}...`);
       await downloadFile(audioUrls[i], audioPath);
       audioFiles.push(audioPath);
+
+      // Get duration for each chunk (seconds)
+      const duration = await new Promise((resolve) => {
+        ffmpeg.ffprobe(audioPath, (err, metadata) => {
+          if (err) {
+            console.error(`[${jobId}] ffprobe error for audio_${i}.mp3:`, err.message || err);
+            resolve(null);
+            return;
+          }
+          const d = metadata?.format?.duration;
+          resolve(typeof d === 'number' ? d : (d ? parseFloat(d) : null));
+        });
+      });
+      audioDurations.push(duration);
+      console.log(`[${jobId}] Audio ${i + 1}/${audioUrls.length} duration: ${duration ?? 'unknown'}s`);
     }
 
     // Create concat file for FFmpeg
@@ -1792,8 +1872,20 @@ app.post('/concat-audio', async (req, res) => {
     res.json({
       success: true,
       audioUrl: publicUrl,
-      filename: outputFilename
+      filename: outputFilename,
+      durations: audioDurations,
+      totalDuration: audioDurations.reduce((sum, d) => sum + (typeof d === 'number' ? d : 0), 0),
     });
+
+    // Best-effort: overwrite transcript_json after Edge Function writes its version.
+    // Inworld timestamps can be empty for some chunks; we synthesize an ordered transcript from the original script
+    // and the measured audio duration.
+    const totalDurationSeconds = audioDurations.reduce((sum, d) => sum + (typeof d === 'number' ? d : 0), 0);
+    if (projectId && supabase) {
+      setTimeout(() => {
+        tryUpdateProjectTranscriptFromText({ projectId, totalDurationSeconds });
+      }, 4000);
+    }
 
   } catch (error) {
     console.error(`[${jobId}] Concatenation error:`, error);
@@ -1814,6 +1906,53 @@ app.post('/concat-audio', async (req, res) => {
     res.status(500).json({
       error: error.message || 'Audio concatenation failed'
     });
+  }
+});
+
+// Probe audio duration (used when timestamps are missing)
+app.post('/probe-audio-duration', async (req, res) => {
+  const { audioUrl } = req.body || {};
+  if (!audioUrl || typeof audioUrl !== 'string') {
+    return res.status(400).json({ error: 'audioUrl is required' });
+  }
+
+  const jobId = `probe_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+  const workDir = path.join(TEMP_DIR, jobId);
+  const audioPath = path.join(workDir, 'audio.mp3');
+
+  try {
+    await mkdir(workDir, { recursive: true });
+    console.log(`[${jobId}] Probing audio duration: ${audioUrl.substring(0, 120)}...`);
+
+    await downloadFile(audioUrl, audioPath);
+
+    const duration = await new Promise((resolve, reject) => {
+      ffmpeg.ffprobe(audioPath, (err, metadata) => {
+        if (err) return reject(err);
+        const d = metadata?.format?.duration;
+        resolve(typeof d === 'number' ? d : (d ? parseFloat(d) : null));
+      });
+    });
+
+    // Cleanup best-effort
+    try {
+      await unlink(audioPath);
+      fs.rmdirSync(workDir);
+    } catch (_) {}
+
+    res.json({ success: true, duration });
+  } catch (error) {
+    console.error(`[${jobId}] Probe error:`, error.message || error);
+    try {
+      if (fs.existsSync(workDir)) {
+        const files = fs.readdirSync(workDir);
+        for (const file of files) {
+          await unlink(path.join(workDir, file)).catch(() => {});
+        }
+        fs.rmdirSync(workDir);
+      }
+    } catch (_) {}
+    res.status(500).json({ error: error.message || 'Probe failed' });
   }
 });
 
