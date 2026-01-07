@@ -11,8 +11,9 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-// Inworld TTS has a limit of 2000 characters per request
-const MAX_CHUNK_SIZE = 2000;
+// Inworld TTS hard limit is 2000 chars, but wordAlignment becomes unreliable near the limit.
+// We cap at 1200 chars to keep timestamps consistent.
+const MAX_CHUNK_SIZE = 1200;
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -262,6 +263,28 @@ function alignmentToWordTimings(alignment: InworldWordAlignment, offsetSeconds: 
   return out;
 }
 
+function textToWordTokens(text: string): string[] {
+  return (text || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .split(" ")
+    .filter(Boolean);
+}
+
+function synthesizeWordTimingsFromText(text: string, offsetSeconds: number, durationSeconds: number): WordTiming[] {
+  const tokens = textToWordTokens(text);
+  if (tokens.length === 0) return [];
+
+  const dur = Number.isFinite(durationSeconds) && durationSeconds > 0 ? durationSeconds : Math.max(1, tokens.length / 2.5);
+  const step = dur / tokens.length;
+
+  return tokens.map((word, i) => {
+    const start = offsetSeconds + i * step;
+    const end = offsetSeconds + (i + 1) * step;
+    return { word, start, end };
+  });
+}
+
 // Convert word timings to TranscriptData format (bucketed segments, ordered)
 function wordTimingsToTranscriptData(
   wordTimings: WordTiming[],
@@ -356,10 +379,16 @@ async function generateAndAssembleAudio(
 
     // Convert timestamps to TranscriptData if available
     let transcriptData = null;
-    if (timestamps) {
+    const wordsLen = (timestamps as any)?.words?.length ?? 0;
+    if (timestamps && wordsLen > 0) {
       const wordTimings = alignmentToWordTimings(timestamps as InworldWordAlignment, 0);
       transcriptData = wordTimingsToTranscriptData(wordTimings);
-      console.log(`Generated transcript with ${transcriptData.segments.length} segments (single chunk)`);
+      console.log(`Generated transcript with ${transcriptData.segments.length} segments (single chunk, aligned)`);
+    } else {
+      // Fallback: synthesize timings from text using estimated duration
+      const synthesized = synthesizeWordTimingsFromText(chunks[0], 0, 0);
+      transcriptData = wordTimingsToTranscriptData(synthesized);
+      console.log(`Generated transcript with ${transcriptData.segments.length} segments (single chunk, synthesized-estimate)`);
     }
 
     return { audioUrl: publicUrl, transcriptData };
@@ -393,7 +422,7 @@ async function generateAndAssembleAudio(
         .getPublicUrl(chunkFilename);
 
       console.log(`Chunk ${index + 1}/${chunks.length} completed, duration: ${duration || 'unknown'}s`);
-      return { index, url: publicUrl, timestamps, duration: duration || 0 };
+      return { index, url: publicUrl, timestamps, duration: duration || 0, text: chunk };
     })
   );
 
@@ -403,28 +432,6 @@ async function generateAndAssembleAudio(
 
   console.log(`All ${chunkUrls.length} chunks generated in parallel, concatenating on VPS...`);
   console.log(`URLs to concatenate:`, JSON.stringify(chunkUrls, null, 2));
-
-  // Process timestamps with offsets for concatenation
-  let transcriptData = null;
-  const allWordTimings: WordTiming[] = [];
-  let cumulativeOffset = 0;
-
-  for (const result of sortedResults) {
-    if (result.timestamps) {
-      const timings = alignmentToWordTimings(result.timestamps as InworldWordAlignment, cumulativeOffset);
-      allWordTimings.push(...timings);
-      console.log(`Chunk ${result.index} timestamps merged (+${cumulativeOffset}s), words=${timings.length}`);
-    }
-    
-    // Update cumulative offset for next chunk
-    cumulativeOffset += result.duration;
-  }
-
-  // Convert all word timings to TranscriptData
-  if (allWordTimings.length > 0) {
-    transcriptData = wordTimingsToTranscriptData(allWordTimings);
-    console.log(`Generated transcript with ${transcriptData.segments.length} segments from ${sortedResults.length} chunks`);
-  }
 
   // Call VPS to concatenate chunks
   const ffmpegServiceUrl = Deno.env.get('FFMPEG_SERVICE_URL');
@@ -457,6 +464,40 @@ async function generateAndAssembleAudio(
   }
 
   console.log("Concatenation complete:", concatResult.audioUrl);
+
+  // Build transcript using timestamps when available, otherwise synthesize timings from text.
+  // Note: Inworld sometimes returns empty wordAlignment arrays; we fall back to estimated timings.
+  let transcriptData = null;
+  const allWordTimings: WordTiming[] = [];
+  let cumulativeOffset = 0;
+
+  for (const result of sortedResults) {
+    const idx = result.index;
+    const alignment = result.timestamps as any;
+    const alignedWordsLen = alignment?.words?.length ?? 0;
+
+    // Prefer real duration when we have alignment; otherwise estimate from word count.
+    const estimatedDuration = Math.max(1, textToWordTokens(result.text || "").length / 2.5);
+    const durationSeconds =
+      (typeof result.duration === "number" && result.duration > 0 ? result.duration : 0) || estimatedDuration;
+
+    if (alignment && alignedWordsLen > 0) {
+      const timings = alignmentToWordTimings(alignment as InworldWordAlignment, cumulativeOffset);
+      allWordTimings.push(...timings);
+      console.log(`Chunk ${idx} transcript: aligned words=${timings.length}, offset=${cumulativeOffset}s`);
+    } else {
+      const synthesized = synthesizeWordTimingsFromText(result.text || "", cumulativeOffset, durationSeconds);
+      allWordTimings.push(...synthesized);
+      console.log(`Chunk ${idx} transcript: SYNTHESIZED words=${synthesized.length}, offset=${cumulativeOffset}s, duration≈${durationSeconds}s`);
+    }
+
+    cumulativeOffset += durationSeconds;
+  }
+
+  if (allWordTimings.length > 0) {
+    transcriptData = wordTimingsToTranscriptData(allWordTimings);
+    console.log(`Generated transcript with ${transcriptData.segments.length} segments from ${sortedResults.length} chunks (aligned+fallback)`);
+  }
 
   // Clean up chunk files (optional - can be done async)
   for (const url of chunkUrls) {
@@ -607,6 +648,40 @@ async function generateInworldAudio(
   // Response is JSON with audioContent as base64
   const jsonResponse = await response.json();
   console.log("Inworld response received, audioContent length:", jsonResponse.audioContent?.length);
+
+  // Debug (safe): log timestampInfo structure without audioContent
+  try {
+    const ts = jsonResponse?.timestampInfo;
+    const wa = ts?.wordAlignment;
+    const ca = ts?.characterAlignment;
+    console.log(
+      "Inworld timestampInfo debug:",
+      JSON.stringify(
+        {
+          hasTimestampInfo: !!ts,
+          timestampInfoKeys: ts ? Object.keys(ts) : [],
+          wordAlignment: wa
+            ? {
+                wordsLen: wa?.words?.length ?? 0,
+                startLen: wa?.wordStartTimeSeconds?.length ?? 0,
+                endLen: wa?.wordEndTimeSeconds?.length ?? 0,
+              }
+            : null,
+          characterAlignment: ca
+            ? {
+                charsLen: ca?.characters?.length ?? 0,
+                startLen: ca?.characterStartTimeSeconds?.length ?? 0,
+                endLen: ca?.characterEndTimeSeconds?.length ?? 0,
+              }
+            : null,
+        },
+        null,
+        2
+      )
+    );
+  } catch (e) {
+    console.log("Inworld timestampInfo debug failed:", e?.message ?? String(e));
+  }
   
   if (!jsonResponse.audioContent) {
     throw new Error("No audioContent in Inworld response");
