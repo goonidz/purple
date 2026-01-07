@@ -1702,7 +1702,13 @@ async function cleanupOldJobs(maxAgeHours = 1) {
 
 // Generate script endpoint - calls Anthropic API without timeout
 app.post('/generate-script', async (req, res) => {
-  const { anthropicApiKey, customPrompt, model = 'claude-opus-4-5-20251101' } = req.body;
+  const {
+    anthropicApiKey,
+    customPrompt,
+    model = 'claude-opus-4-5-20251101',
+    thinkingBudgetTokens,
+    maxTokens,
+  } = req.body;
   
   if (!anthropicApiKey) {
     return res.status(400).json({ error: 'Anthropic API key required' });
@@ -1725,10 +1731,25 @@ RÈGLE CRITIQUE SUR LA LONGUEUR:
 
   try {
     const startTime = Date.now();
-    
-    const anthropicResponse = await axios.post('https://api.anthropic.com/v1/messages', {
+
+    // Extended thinking (if requested)
+    const parsedThinkingBudget = Number(thinkingBudgetTokens);
+    const enableThinking = Number.isFinite(parsedThinkingBudget) && parsedThinkingBudget > 0;
+
+    // We treat maxTokens as the desired output budget (excluding thinking) and add thinking budget on top,
+    // since Anthropic subtracts thinking tokens from max_tokens.
+    const desiredOutputMaxTokens = Number.isFinite(Number(maxTokens)) && Number(maxTokens) > 0 ? Number(maxTokens) : 16000;
+    const totalMaxTokens = enableThinking ? desiredOutputMaxTokens + parsedThinkingBudget : desiredOutputMaxTokens;
+
+    if (enableThinking) {
+      console.log(`[generate-script] Extended thinking enabled (budget_tokens=${parsedThinkingBudget}, max_tokens=${totalMaxTokens})`);
+    } else {
+      console.log(`[generate-script] Extended thinking disabled (max_tokens=${totalMaxTokens})`);
+    }
+
+    const requestBody = {
       model: model,
-      max_tokens: 16000,
+      max_tokens: totalMaxTokens,
       system: systemPrompt,
       messages: [
         {
@@ -1736,11 +1757,21 @@ RÈGLE CRITIQUE SUR LA LONGUEUR:
           content: customPrompt
         }
       ]
-    }, {
+    };
+
+    if (enableThinking) {
+      requestBody.thinking = {
+        type: 'enabled',
+        budget_tokens: parsedThinkingBudget
+      };
+    }
+    
+    const anthropicResponse = await axios.post('https://api.anthropic.com/v1/messages', requestBody, {
       headers: {
         'Content-Type': 'application/json',
         'x-api-key': anthropicApiKey,
-        'anthropic-version': '2023-06-01'
+        'anthropic-version': '2023-06-01',
+        ...(enableThinking ? { 'anthropic-beta': 'interleaved-thinking-2025-05-14' } : {})
       },
       timeout: 600000 // 10 minutes timeout
     });

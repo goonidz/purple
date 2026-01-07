@@ -1097,63 +1097,67 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
       // Replace variables in prompt before sending
       const finalPrompt = replacePromptVariables(promptToUse, tempProjectName);
 
-      // If using Anthropic direct (claude-thinking), call VPS directly to avoid Supabase timeout
-      if (scriptModel === "claude-thinking") {
-        // Get Anthropic API key from Supabase
-        const { data: apiKeyData, error: apiKeyError } = await supabase.rpc('get_user_api_key', {
-          key_name: 'anthropic'
+      // Default: use VPS + Anthropic direct for Claude (supports extended thinking + no Supabase timeout)
+      const wantsVpsClaude = scriptModel === "claude" || scriptModel === "claude-thinking";
+      if (wantsVpsClaude) {
+        // Get user's Anthropic API key from Supabase
+        const { data: apiKeyData, error: apiKeyError } = await supabase.rpc("get_user_api_key", {
+          key_name: "anthropic",
         });
-        
+
         if (apiKeyError || !apiKeyData) {
-          throw new Error("Clé API Anthropic non configurée. Allez dans Profil pour l'ajouter.");
+          console.warn("Anthropic API key not configured; falling back to Replicate flow.", apiKeyError);
+          toast.info("Clé Anthropic manquante : bascule sur le mode via Replicate.");
+        } else {
+          // Call VPS directly (no timeout)
+          // Use HTTPS if available, fallback to HTTP for development
+          const VPS_URL = import.meta.env.VITE_VPS_URL || "https://purpleai.duckdns.org/api/render";
+          const vpsModel = scriptModel === "claude" ? "claude-4.5-sonnet" : "claude-opus-4-5-20251101";
+          // Keep output capacity roughly equivalent by using a generous thinking budget for Sonnet 4.5.
+          const thinkingBudgetTokens = scriptModel === "claude" ? 8000 : 0;
+
+          const response = await fetch(`${VPS_URL}/generate-script`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              anthropicApiKey: apiKeyData,
+              customPrompt: finalPrompt,
+              model: vpsModel,
+              thinkingBudgetTokens,
+            }),
+          });
+
+          clearInterval(progressInterval);
+
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.error || `Erreur VPS: ${response.status}`);
+          }
+
+          const result = await response.json();
+
+          // Save script to project
+          const { error: updateError } = await supabase
+            .from("projects")
+            .update({ script: result.script })
+            .eq("id", tempProject.id);
+
+          if (updateError) throw updateError;
+
+          // Update calendar entry status if linked
+          if (entryIdToLink) {
+            await supabase.from("content_calendar").update({ status: "script_ready" }).eq("id", entryIdToLink);
+          }
+
+          setGeneratedScript(result.script);
+          setGenerationProgress(100);
+          setIsGeneratingScript(false);
+          setStep("script");
+          toast.success(`Script généré ! (${result.wordCount} mots, ${result.generationTime}s)`);
+          return;
         }
-
-        // Call VPS directly (no timeout)
-        // Use HTTPS if available, fallback to HTTP for development
-        const VPS_URL = import.meta.env.VITE_VPS_URL || "https://purpleai.duckdns.org/api/render";
-        const response = await fetch(`${VPS_URL}/generate-script`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            anthropicApiKey: apiKeyData,
-            customPrompt: finalPrompt,
-            model: 'claude-opus-4-5-20251101'
-          })
-        });
-
-        clearInterval(progressInterval);
-
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.error || `Erreur VPS: ${response.status}`);
-        }
-
-        const result = await response.json();
-        
-        // Save script to project
-        const { error: updateError } = await supabase
-          .from("projects")
-          .update({ script: result.script })
-          .eq("id", tempProject.id);
-
-        if (updateError) throw updateError;
-
-        // Update calendar entry status if linked
-        if (entryIdToLink) {
-          await supabase
-            .from("content_calendar")
-            .update({ status: 'script_ready' })
-            .eq("id", entryIdToLink);
-        }
-
-        setGeneratedScript(result.script);
-        setGenerationProgress(100);
-        setIsGeneratingScript(false);
-        setStep("script");
-        toast.success(`Script généré ! (${result.wordCount} mots, ${result.generationTime}s)`);
-        return;
       }
 
       // For other models, use the standard Supabase Edge Function flow
@@ -1163,7 +1167,8 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
           jobType: 'script_generation',
           metadata: {
             customPrompt: finalPrompt,
-            scriptModel
+            // If user selected an Anthropic-direct-only option but has no key, fall back to Replicate Claude.
+            scriptModel: scriptModel === "claude-thinking" ? "claude" : scriptModel
           }
         }
       });
@@ -1218,6 +1223,54 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
       // Replace variables in prompt before sending
       const finalPrompt = replacePromptVariables(customPrompt, projectNameValue);
 
+      // Prefer VPS + Anthropic direct for Claude (Sonnet 4.5 thinking)
+      const wantsVpsClaude = scriptModel === "claude" || scriptModel === "claude-thinking";
+      if (wantsVpsClaude) {
+        const { data: apiKeyData, error: apiKeyError } = await supabase.rpc("get_user_api_key", {
+          key_name: "anthropic",
+        });
+
+        if (apiKeyError || !apiKeyData) {
+          console.warn("Anthropic API key not configured; falling back to Replicate flow.", apiKeyError);
+          toast.info("Clé Anthropic manquante : bascule sur le mode via Replicate.");
+        } else {
+          const VPS_URL = import.meta.env.VITE_VPS_URL || "https://purpleai.duckdns.org/api/render";
+          const vpsModel = scriptModel === "claude" ? "claude-4.5-sonnet" : "claude-opus-4-5-20251101";
+          const thinkingBudgetTokens = scriptModel === "claude" ? 8000 : 0;
+
+          const response = await fetch(`${VPS_URL}/generate-script`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              anthropicApiKey: apiKeyData,
+              customPrompt: finalPrompt,
+              model: vpsModel,
+              thinkingBudgetTokens,
+            }),
+          });
+
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.error || `Erreur VPS: ${response.status}`);
+          }
+
+          const result = await response.json();
+
+          const { error: updateError } = await supabase
+            .from("projects")
+            .update({ script: result.script })
+            .eq("id", projectId);
+          if (updateError) throw updateError;
+
+          setGeneratedScript(result.script);
+          setGenerationProgress(100);
+          setIsGeneratingScript(false);
+          setStep("script");
+          toast.success(`Script régénéré ! (${result.wordCount} mots, ${result.generationTime}s)`);
+          return;
+        }
+      }
+
       // Start the script generation job via backend
       const { data, error } = await supabase.functions.invoke('start-generation-job', {
         body: {
@@ -1225,7 +1278,7 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
           jobType: 'script_generation',
           metadata: {
             customPrompt: finalPrompt,
-            scriptModel
+            scriptModel: scriptModel === "claude-thinking" ? "claude" : scriptModel
           }
         }
       });
@@ -1423,9 +1476,51 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (!projectId) {
-      toast.error("Erreur: projet non trouvé");
-      return;
+    let currentProjectId = projectId;
+    // Create project if it doesn't exist yet (common when coming from calendar with prefilled script)
+    if (!currentProjectId) {
+      try {
+        const fallbackName = projectName.trim() || `Audio-${Date.now()}`;
+        const { data: newProject, error: createError } = await supabase
+          .from("projects")
+          .insert([{
+            user_id: user!.id,
+            name: fallbackName,
+            summary: generatedScript?.trim() ? generatedScript : null,
+          }])
+          .select()
+          .single();
+
+        if (createError) throw createError;
+
+        currentProjectId = newProject.id;
+        setProjectId(currentProjectId);
+
+        // Link calendar entry to project if coming from calendar
+        const entryIdToLink = calendarEntryId || sessionStorage.getItem("calendar_entry_id");
+        if (entryIdToLink) {
+          const { error: linkError } = await supabase
+            .from("content_calendar")
+            .update({
+              project_id: currentProjectId,
+              // If we already have a script, keep it in sync
+              script: generatedScript?.trim() ? generatedScript : null,
+            })
+            .eq("id", entryIdToLink);
+
+          if (linkError) {
+            console.error("Failed to link calendar entry (audio upload):", linkError);
+          } else {
+            sessionStorage.removeItem("calendar_entry_id");
+          }
+        }
+      } catch (err: any) {
+        console.error("Error creating project before audio upload:", err);
+        toast.error(err?.message || "Erreur lors de la création du projet");
+        // Reset input so user can retry
+        if (audioInputRef.current) audioInputRef.current.value = "";
+        return;
+      }
     }
 
     // Validate file type
@@ -1451,7 +1546,7 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
     try {
       const timestamp = Date.now();
       const cleanFileName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
-      const filePath = `${user!.id}/${projectId}/${timestamp}_${cleanFileName}`;
+      const filePath = `${user!.id}/${currentProjectId}/${timestamp}_${cleanFileName}`;
 
       // Get Supabase session for auth
       const { data: { session } } = await supabase.auth.getSession();
@@ -1535,7 +1630,27 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
       await supabase
         .from("projects")
         .update({ audio_url: urlData.publicUrl })
-        .eq("id", projectId);
+        .eq("id", currentProjectId);
+
+      // If linked to calendar, persist audio URL + status
+      const entryIdToLink = calendarEntryId || sessionStorage.getItem("calendar_entry_id");
+      if (entryIdToLink) {
+        const { error: calendarUpdateError } = await supabase
+          .from("content_calendar")
+          .update({
+            project_id: currentProjectId,
+            audio_url: urlData.publicUrl,
+            status: "audio_ready",
+            script: generatedScript?.trim() ? generatedScript : null,
+          })
+          .eq("id", entryIdToLink);
+
+        if (calendarUpdateError) {
+          console.error("Failed to update calendar audio_url (audio upload):", calendarUpdateError);
+        } else {
+          sessionStorage.removeItem("calendar_entry_id");
+        }
+      }
 
       setAudioUrl(urlData.publicUrl);
       setStep("audio");
@@ -1649,7 +1764,12 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                 <div className="text-center mb-8">
                   <h2 className="text-2xl font-bold mb-2">Définissez votre vidéo</h2>
                   <p className="text-muted-foreground">
-                    {scriptModel === "gpt5" ? "GPT-5.1" : "Claude Sonnet 4.5"} va générer un script professionnel basé sur votre sujet
+                    {(scriptModel === "gpt5"
+                      ? "GPT-5.1"
+                      : scriptModel === "claude-thinking"
+                        ? "Claude Opus 4.5"
+                        : "Claude Sonnet 4.5 Thinking")}{" "}
+                    va générer un script professionnel basé sur votre sujet
                   </p>
                 </div>
 
@@ -1809,7 +1929,13 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                         </div>
                       )}
                       <p className="text-xs text-muted-foreground">
-                        Ce prompt sera envoyé à {scriptModel === "gpt5" ? "GPT-5.1" : scriptModel === "claude-thinking" ? "Claude Opus 4.5 (Anthropic)" : "Claude"} pour générer le script. Incluez tous les détails: sujet, durée, style, langue, etc.
+                        Ce prompt sera envoyé à{" "}
+                        {scriptModel === "gpt5"
+                          ? "GPT-5.1"
+                          : scriptModel === "claude-thinking"
+                            ? "Claude Opus 4.5 (Anthropic)"
+                            : "Claude Sonnet 4.5 Thinking (Anthropic)"}{" "}
+                        pour générer le script. Incluez tous les détails: sujet, durée, style, langue, etc.
                         <br />
                         <span className="font-semibold">Variables disponibles:</span> <code className="bg-primary/20 text-primary px-1 rounded font-semibold">{"{{projectName}}"}</code> sera remplacé par le nom du projet, <code className="bg-primary/20 text-primary px-1 rounded font-semibold">{"{{sourceTranscript}}"}</code> par la transcription de la vidéo source (si disponible depuis le calendrier).
                       </p>
@@ -1826,8 +1952,9 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                       <SelectContent className="min-w-[400px]">
                         <SelectItem value="claude">
                           <div className="flex flex-col">
-                            <span className="font-medium">Claude Sonnet 4.5</span>
-                            <span className="text-xs text-muted-foreground">Via Replicate (nécessite clé API)</span>
+                            <span className="font-medium">Claude Sonnet 4.5 Thinking</span>
+                            <span className="text-xs text-muted-foreground">Via Anthropic API directe (nécessite clé API Anthropic)</span>
+                            <span className="text-xs text-primary mt-1 whitespace-normal break-words">✨ Extended thinking activé (meilleure qualité de script)</span>
                           </div>
                         </SelectItem>
                         <SelectItem value="claude-thinking">

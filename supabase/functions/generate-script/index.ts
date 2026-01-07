@@ -79,9 +79,9 @@ serve(async (req) => {
     const selectedModel = scriptModel || "claude";
     console.log(`Generating script with model: ${selectedModel}, useWebhook: ${useWebhook}`);
 
-    // Handle Claude with Extended Thinking via Anthropic API
+    // Handle Claude via Anthropic API direct (Supabase Edge Function)
     if (selectedModel === "claude-thinking") {
-      console.log("Using Claude Sonnet 4 with Extended Thinking via Anthropic API...");
+      console.log("Using Claude Sonnet 4 via Anthropic API direct...");
 
       // Get user's Anthropic API key from Vault
       const { data: apiKeyData, error: apiKeyError } = await supabaseAdmin.rpc(
@@ -103,9 +103,7 @@ RÈGLE CRITIQUE SUR LA LONGUEUR:
 - Si l'utilisateur demande un certain nombre de mots, tu DOIS atteindre ce nombre MINIMUM
 - Ne t'arrête JAMAIS avant d'avoir atteint le nombre de mots demandé
 - Développe chaque section en profondeur pour atteindre la longueur requise
-- Ajoute des détails, des exemples, des transitions, des descriptions riches
-
-IMPORTANT: Utilise ton extended thinking pour réfléchir en profondeur avant de répondre. Vérifie les faits, structure bien le contenu, et assure-toi de la qualité.`;
+- Ajoute des détails, des exemples, des transitions, des descriptions riches`;
 
       try {
         // Call Anthropic API directly (Claude Sonnet 4)
