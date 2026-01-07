@@ -2586,9 +2586,8 @@ const Index = () => {
             } else {
               console.log('✅ Job created successfully (fallback):', newJob?.id);
               // Force a refresh of jobs to ensure it's picked up immediately
-              setTimeout(() => {
-                refreshVideoRenderJobs();
-              }, 500);
+              setTimeout(() => refreshVideoRenderJobs(), 500);
+              setTimeout(() => refreshVideoRenderJobs(), 2000);
             }
           } else {
             console.log('Job already exists in database:', existingJob.id);
@@ -2596,6 +2595,9 @@ const Index = () => {
         }
 
         toast.success("Rendu vidéo démarré. Vous pouvez quitter cette page.");
+        // Ensure the new render job appears without manual page refresh
+        setTimeout(() => refreshVideoRenderJobs(), 500);
+        setTimeout(() => refreshVideoRenderJobs(), 2000);
       } else {
         toast.error(result.error || "Erreur lors du démarrage du rendu vidéo");
       }
