@@ -459,6 +459,9 @@ async function renderVideoScene(videoPath, outputPath, duration, width, height, 
           .videoFilters([scaleFilter])
           .output(outputPath);
       }
+      
+      // Add event handlers after conditional setup
+      sceneFfmpegCommand
         .on('start', (cmd) => {
           console.log(`[${jobId}] Scene ${sceneIndex} FFmpeg (video): ${cmd}`);
         })
@@ -1781,8 +1784,8 @@ app.post('/concat-audio', async (req, res) => {
       console.warn(`[${jobId}] Cleanup warning:`, cleanupError.message);
     }
 
-    // Generate public URL
-    const publicUrl = `${process.env.PUBLIC_URL || `http://localhost:${PORT}`}/videos/${outputFilename}`;
+    // Generate public URL (use VPS_PUBLIC_URL from env)
+    const publicUrl = `${process.env.VPS_PUBLIC_URL || `http://localhost:${PORT}`}/videos/${outputFilename}`;
     
     console.log(`[${jobId}] Audio concatenation complete: ${publicUrl}`);
 

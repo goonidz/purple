@@ -7,12 +7,13 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Progress } from "@/components/ui/progress";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Loader2, Sparkles, FileText, Mic, ArrowRight, Check, RefreshCw, ChevronDown, Save, Trash2, FolderOpen, Pencil, Copy, Upload, X, ClipboardCopy, ExternalLink } from "lucide-react";
+import { Loader2, Sparkles, FileText, Mic, ArrowRight, ArrowLeft, Check, RefreshCw, ChevronDown, Save, Trash2, FolderOpen, Pencil, Copy, Upload, X, ClipboardCopy, ExternalLink } from "lucide-react";
 import AppHeader from "@/components/AppHeader";
 import { toast } from "sonner";
 
@@ -227,6 +228,8 @@ const CreateFromScratch = () => {
   const [wordCount, setWordCount] = useState(0);
   const [estimatedDuration, setEstimatedDuration] = useState(0);
   const [scriptModel, setScriptModel] = useState<"claude" | "claude-thinking" | "gpt5">("claude");
+  const [useOwnText, setUseOwnText] = useState(false);
+  const [customScriptText, setCustomScriptText] = useState("");
   
   // Audio step
   const [ttsProvider, setTtsProvider] = useState<"minimax" | "inworld">("minimax");
@@ -1528,8 +1531,8 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
         .single();
       
       if (project?.transcript_json && Object.keys(project.transcript_json).length > 0) {
-        // Already transcribed, go directly to project
-        navigate(`/project?project=${projectId}`);
+        // Already transcribed (e.g., with Inworld timestamps), go to project with configure flag to open modal
+        navigate(`/project?project=${projectId}&configure=true`);
         return;
       }
       
@@ -1802,6 +1805,52 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                   </div>
                 </div>
 
+                {/* My own text option */}
+                <div className="space-y-3 border-t pt-4">
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id="useOwnText"
+                      checked={useOwnText}
+                      onCheckedChange={(checked) => {
+                        setUseOwnText(checked as boolean);
+                        if (checked) {
+                          // When enabling, clear custom prompt focus
+                          setIsPromptOpen(false);
+                        }
+                      }}
+                    />
+                    <Label
+                      htmlFor="useOwnText"
+                      className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                    >
+                      My own text
+                    </Label>
+                  </div>
+                  {useOwnText && (
+                    <div className="space-y-2">
+                      <Label htmlFor="customScriptText">Collez votre texte ici</Label>
+                      <Textarea
+                        id="customScriptText"
+                        value={customScriptText}
+                        onChange={(e) => {
+                          setCustomScriptText(e.target.value);
+                          // Update generatedScript when custom text changes
+                          setGeneratedScript(e.target.value);
+                          // Calculate word count and duration
+                          const words = e.target.value.trim().split(/\s+/).filter(w => w.length > 0);
+                          setWordCount(words.length);
+                          setEstimatedDuration(Math.ceil(words.length / 2.5)); // ~2.5 words per second
+                        }}
+                        className="min-h-[300px] font-mono text-sm"
+                        placeholder="Collez votre script ici..."
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        {customScriptText.trim() ? `${wordCount} mots • ~${estimatedDuration}s de lecture` : "Le texte collé sera utilisé comme script"}
+                      </p>
+                    </div>
+                  )}
+                </div>
+
                 {isGeneratingAxes || isGeneratingScript ? (
                   <div className="w-full space-y-4 p-6 rounded-lg border bg-card">
                     <div className="flex items-center gap-3">
@@ -1823,6 +1872,35 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                         </p>
                       </>
                     )}
+                  </div>
+                ) : useOwnText ? (
+                  <div className="flex gap-3">
+                    <Button 
+                      onClick={() => {
+                        if (customScriptText.trim()) {
+                          setGeneratedScript(customScriptText.trim());
+                          setStep("script");
+                        } else {
+                          toast.error("Veuillez coller votre texte");
+                        }
+                      }}
+                      disabled={!customScriptText.trim() || !projectName.trim()}
+                      className="flex-1"
+                      size="lg"
+                    >
+                      <ArrowRight className="mr-2 h-4 w-4" />
+                      Continuer avec mon texte
+                    </Button>
+                    <Button 
+                      variant="outline"
+                      onClick={() => {
+                        setUseOwnText(false);
+                        setCustomScriptText("");
+                      }}
+                      size="lg"
+                    >
+                      Annuler
+                    </Button>
                   </div>
                 ) : (
                   <div className="flex gap-3">
@@ -2428,14 +2506,24 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                   </p>
                 </div>
 
-                <Button 
-                  onClick={handleContinueToVideo}
-                  className="w-full"
-                  size="lg"
-                >
-                  <ArrowRight className="mr-2 h-4 w-4" />
-                  Continuer vers la création vidéo
-                </Button>
+                <div className="flex gap-3">
+                  <Button 
+                    onClick={() => setStep("script")}
+                    variant="outline"
+                    size="lg"
+                  >
+                    <ArrowLeft className="mr-2 h-4 w-4" />
+                    Retour
+                  </Button>
+                  <Button 
+                    onClick={handleContinueToVideo}
+                    className="flex-1"
+                    size="lg"
+                  >
+                    <ArrowRight className="mr-2 h-4 w-4" />
+                    Continuer vers la création vidéo
+                  </Button>
+                </div>
               </div>
             </Card>
           )}

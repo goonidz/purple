@@ -259,14 +259,16 @@ PORT=3000
 
 **Commandes** :
 ```bash
-# Utiliser l'IP directe (recommandé pour le service vidéo)
-npx supabase secrets set FFMPEG_SERVICE_URL=http://51.91.158.233:3000
+# Utiliser HTTPS avec le domaine (recommandé après configuration HTTPS)
+npx supabase secrets set FFMPEG_SERVICE_URL=https://purpleai.duckdns.org/api/render
 
-# Ou utiliser le domaine DuckDNS (si nginx proxy le port 3000)
-# npx supabase secrets set FFMPEG_SERVICE_URL=http://purpleai.duckdns.org:3000
+# Ou utiliser l'IP directe en HTTP (développement uniquement)
+# npx supabase secrets set FFMPEG_SERVICE_URL=http://51.91.158.233:3000
 
 npx supabase secrets set FFMPEG_SERVICE_API_KEY=votre_api_key_optional
 ```
+
+**Note** : Après avoir configuré HTTPS (voir [HTTPS_SETUP.md](docs/HTTPS_SETUP.md)), utilisez l'URL HTTPS.
 
 **Note** : Le service de rendu vidéo fonctionne actuellement avec l'IP directe (`51.91.158.233:3000`). Le domaine DuckDNS (`purpleai.duckdns.org`) est utilisé pour le frontend web. Les deux fonctionnent en parallèle.
 

@@ -77,6 +77,8 @@ serve(async (req) => {
       { target_user_id: userId, key_name: 'inworld' }
     );
 
+    console.log("API key retrieved, length:", apiKeyData?.length, "starts with:", apiKeyData?.substring(0, 5), "ends with:", apiKeyData?.substring(apiKeyData?.length - 5));
+
     if (apiKeyError || !apiKeyData) {
       console.error("Error fetching Inworld API key:", apiKeyError);
       
@@ -122,7 +124,7 @@ serve(async (req) => {
     }
 
     // Synchronous mode (not recommended for long scripts)
-    const audioUrl = await generateAndAssembleAudio(
+    const { audioUrl, transcriptData } = await generateAndAssembleAudio(
       supabaseAdmin,
       userId,
       projectId,
@@ -132,7 +134,7 @@ serve(async (req) => {
     );
 
     return new Response(
-      JSON.stringify({ audioUrl }),
+      JSON.stringify({ audioUrl, transcriptData }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
 
@@ -166,7 +168,7 @@ async function processAudioInBackground(
       })
       .eq('id', jobId);
 
-    const audioUrl = await generateAndAssembleAudio(
+    const { audioUrl, transcriptData } = await generateAndAssembleAudio(
       adminClient,
       userId,
       projectId,
@@ -175,14 +177,22 @@ async function processAudioInBackground(
       voiceId
     );
 
-    // Update project with audio URL
+    // Update project with audio URL and transcript_json (if available)
     if (projectId) {
+      const updateData: any = { 
+        audio_url: audioUrl,
+        updated_at: new Date().toISOString()
+      };
+      
+      // Store transcript_json if timestamps were generated
+      if (transcriptData) {
+        updateData.transcript_json = transcriptData;
+        console.log(`Storing transcript_json with ${transcriptData.segments.length} segments`);
+      }
+      
       await adminClient
         .from('projects')
-        .update({ 
-          audio_url: audioUrl,
-          updated_at: new Date().toISOString()
-        })
+        .update(updateData)
         .eq('id', projectId);
     }
 
@@ -215,6 +225,70 @@ async function processAudioInBackground(
   }
 }
 
+// Convert word alignments to TranscriptData format (grouping words into sentence segments)
+function convertWordAlignmentsToTranscriptData(
+  wordAlignments: Array<{ words: string[]; wordStartTimeSeconds: number[]; wordEndTimeSeconds: number[] }>
+): { segments: Array<{ text: string; start_time: number; end_time: number }>; language_code?: string } {
+  const segments: Array<{ text: string; start_time: number; end_time: number }> = [];
+  
+  for (const alignment of wordAlignments) {
+    if (!alignment.words || alignment.words.length === 0) continue;
+    
+    const words = alignment.words;
+    const starts = alignment.wordStartTimeSeconds;
+    const ends = alignment.wordEndTimeSeconds;
+    
+    let currentSegmentText = "";
+    let currentSegmentStart = starts[0];
+    let currentSegmentEnd = ends[0];
+    
+    for (let i = 0; i < words.length; i++) {
+      const word = words[i];
+      const wordStart = starts[i];
+      const wordEnd = ends[i];
+      
+      // Add word to current segment
+      if (currentSegmentText) {
+        currentSegmentText += " ";
+      }
+      currentSegmentText += word;
+      currentSegmentEnd = wordEnd;
+      
+      // Check if word ends with sentence-ending punctuation
+      const trimmedWord = word.trim();
+      if (trimmedWord.match(/[.!?]$/)) {
+        // End of sentence - save segment
+        segments.push({
+          text: currentSegmentText.trim(),
+          start_time: currentSegmentStart,
+          end_time: currentSegmentEnd
+        });
+        
+        // Start new segment
+        if (i < words.length - 1) {
+          currentSegmentText = "";
+          currentSegmentStart = starts[i + 1];
+          currentSegmentEnd = ends[i + 1];
+        }
+      }
+    }
+    
+    // Don't forget the last segment if it doesn't end with punctuation
+    if (currentSegmentText.trim()) {
+      segments.push({
+        text: currentSegmentText.trim(),
+        start_time: currentSegmentStart,
+        end_time: currentSegmentEnd
+      });
+    }
+  }
+  
+  return {
+    segments,
+    language_code: 'en' // Inworld timestamps are English-only for now
+  };
+}
+
 // Main function to generate and assemble audio
 async function generateAndAssembleAudio(
   adminClient: any,
@@ -223,14 +297,19 @@ async function generateAndAssembleAudio(
   script: string,
   apiKey: string,
   voiceId: string
-): Promise<string> {
+): Promise<{ audioUrl: string; transcriptData?: any }> {
   // Split script into chunks
   const chunks = splitTextIntoChunks(script, MAX_CHUNK_SIZE);
-  console.log(`Script split into ${chunks.length} chunk(s)`);
+  console.log(`Script length: ${script.length}, split into ${chunks.length} chunk(s)`);
+  
+  // Debug: log first 50 chars of each chunk to detect duplicates
+  chunks.forEach((chunk, i) => {
+    console.log(`Chunk ${i}: "${chunk.substring(0, 50)}..." (${chunk.length} chars)`);
+  });
 
   if (chunks.length === 1) {
     // Single chunk - direct generation
-    const audioBytes = await generateInworldAudio(apiKey, chunks[0], voiceId);
+    const { audioBytes, timestamps } = await generateInworldAudio(apiKey, chunks[0], voiceId);
     
     const timestamp = Date.now();
     const filename = `${userId}/${projectId || 'temp'}/${timestamp}_inworld_generated.mp3`;
@@ -250,7 +329,14 @@ async function generateAndAssembleAudio(
       .from('audio-files')
       .getPublicUrl(filename);
 
-    return publicUrl;
+    // Convert timestamps to TranscriptData if available
+    let transcriptData = null;
+    if (timestamps) {
+      transcriptData = convertWordAlignmentsToTranscriptData([timestamps]);
+      console.log(`Generated transcript with ${transcriptData.segments.length} segments`);
+    }
+
+    return { audioUrl: publicUrl, transcriptData };
   }
 
   // Multiple chunks - generate ALL in parallel for speed
@@ -261,7 +347,7 @@ async function generateAndAssembleAudio(
     chunks.map(async (chunk, index) => {
       console.log(`Starting chunk ${index + 1}/${chunks.length} (${chunk.length} chars)`);
       
-      const audioBytes = await generateInworldAudio(apiKey, chunk, voiceId);
+      const { audioBytes, timestamps, duration } = await generateInworldAudio(apiKey, chunk, voiceId);
       
       const chunkFilename = `${userId}/${projectId || 'temp'}/${timestamp}_inworld_chunk_${index}.mp3`;
       
@@ -280,15 +366,49 @@ async function generateAndAssembleAudio(
         .from('audio-files')
         .getPublicUrl(chunkFilename);
 
-      console.log(`Chunk ${index + 1}/${chunks.length} completed`);
-      return { index, url: publicUrl };
+      console.log(`Chunk ${index + 1}/${chunks.length} completed, duration: ${duration || 'unknown'}s`);
+      return { index, url: publicUrl, timestamps, duration: duration || 0 };
     })
   );
 
   // Sort by index to preserve order for concatenation
-  const chunkUrls = results.sort((a, b) => a.index - b.index).map(r => r.url);
+  const sortedResults = results.sort((a, b) => a.index - b.index);
+  const chunkUrls = sortedResults.map(r => r.url);
 
   console.log(`All ${chunkUrls.length} chunks generated in parallel, concatenating on VPS...`);
+  console.log(`URLs to concatenate:`, JSON.stringify(chunkUrls, null, 2));
+
+  // Process timestamps with offsets for concatenation
+  let transcriptData = null;
+  const allWordAlignments: Array<{ words: string[]; wordStartTimeSeconds: number[]; wordEndTimeSeconds: number[] }> = [];
+  let cumulativeOffset = 0;
+
+  for (const result of sortedResults) {
+    if (result.timestamps) {
+      const { words, wordStartTimeSeconds, wordEndTimeSeconds } = result.timestamps;
+      
+      // Apply offset to timestamps (add cumulative duration of previous chunks)
+      const offsetStarts = wordStartTimeSeconds.map(t => t + cumulativeOffset);
+      const offsetEnds = wordEndTimeSeconds.map(t => t + cumulativeOffset);
+      
+      allWordAlignments.push({
+        words,
+        wordStartTimeSeconds: offsetStarts,
+        wordEndTimeSeconds: offsetEnds
+      });
+      
+      console.log(`Chunk ${result.index} timestamps offset by ${cumulativeOffset}s`);
+    }
+    
+    // Update cumulative offset for next chunk
+    cumulativeOffset += result.duration;
+  }
+
+  // Convert all word alignments to TranscriptData
+  if (allWordAlignments.length > 0) {
+    transcriptData = convertWordAlignmentsToTranscriptData(allWordAlignments);
+    console.log(`Generated transcript with ${transcriptData.segments.length} segments from ${allWordAlignments.length} chunks`);
+  }
 
   // Call VPS to concatenate chunks
   const ffmpegServiceUrl = Deno.env.get('FFMPEG_SERVICE_URL');
@@ -334,7 +454,7 @@ async function generateAndAssembleAudio(
     }
   }
 
-  return concatResult.audioUrl;
+  return { audioUrl: concatResult.audioUrl, transcriptData };
 }
 
 // Split text into chunks without cutting sentences
@@ -349,15 +469,16 @@ function splitTextIntoChunks(text: string, maxLength: number): string[] {
   const sentenceRegex = /[^.!?]*[.!?]+\s*/g;
   const sentences: string[] = [];
   let match;
+  let lastMatchEnd = 0; // Track end position manually (lastIndex resets to 0 after loop)
   
   while ((match = sentenceRegex.exec(text)) !== null) {
     sentences.push(match[0]);
+    lastMatchEnd = sentenceRegex.lastIndex;
   }
   
   // Handle any remaining text without sentence-ending punctuation
-  const lastIndex = sentenceRegex.lastIndex || 0;
-  if (lastIndex < text.length) {
-    const remaining = text.slice(lastIndex).trim();
+  if (lastMatchEnd < text.length) {
+    const remaining = text.slice(lastMatchEnd).trim();
     if (remaining) {
       sentences.push(remaining);
     }
@@ -435,32 +556,64 @@ async function generateInworldAudio(
   apiKey: string,
   text: string,
   voiceId: string
-): Promise<Uint8Array> {
+): Promise<{ audioBytes: Uint8Array; timestamps?: any; duration?: number }> {
   console.log(`Calling Inworld TTS API for ${text.length} chars with voice: ${voiceId}`);
+  console.log(`API key length: ${apiKey?.length}, starts with: ${apiKey?.substring(0, 10)}...`);
 
   // Inworld provides a pre-encoded Base64 key, use it directly
   const authHeader = `Basic ${apiKey}`;
+  console.log(`Auth header: Basic ${apiKey?.substring(0, 10)}...`);
 
-  const response = await fetch('https://api.inworld.ai/tts/v1/synthesize', {
+  const requestBody = {
+    text: text,
+    voiceId: voiceId,
+    modelId: 'inworld-tts-1-max',
+    timestampType: 'WORD' // Request word-level timestamps
+  };
+  console.log("Request body:", JSON.stringify(requestBody));
+
+  const response = await fetch('https://api.inworld.ai/tts/v1/voice', {
     method: 'POST',
     headers: {
       'Authorization': authHeader,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({
-      text: text,
-      voiceId: voiceId,
-      modelId: 'inworld-tts-1'
-    }),
+    body: JSON.stringify(requestBody),
   });
 
   if (!response.ok) {
     const errorText = await response.text();
     console.error("Inworld API error:", response.status, errorText);
+    console.error("Response headers:", JSON.stringify(Object.fromEntries(response.headers.entries())));
     throw new Error(`Inworld API error: ${response.status} - ${errorText}`);
   }
 
-  // Response is audio binary
-  const audioBuffer = await response.arrayBuffer();
-  return new Uint8Array(audioBuffer);
+  // Response is JSON with audioContent as base64
+  const jsonResponse = await response.json();
+  console.log("Inworld response received, audioContent length:", jsonResponse.audioContent?.length);
+  
+  if (!jsonResponse.audioContent) {
+    throw new Error("No audioContent in Inworld response");
+  }
+
+  // Decode base64 to binary
+  const binaryString = atob(jsonResponse.audioContent);
+  const audioBytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    audioBytes[i] = binaryString.charCodeAt(i);
+  }
+
+  // Extract timestamps if available
+  const timestamps = jsonResponse.timestampInfo?.wordAlignment || null;
+  const duration = timestamps && timestamps.wordEndTimeSeconds?.length > 0
+    ? timestamps.wordEndTimeSeconds[timestamps.wordEndTimeSeconds.length - 1]
+    : null;
+
+  if (timestamps) {
+    console.log(`Timestamps received: ${timestamps.words?.length || 0} words`);
+  } else {
+    console.log("No timestamps in response");
+  }
+  
+  return { audioBytes, timestamps, duration };
 }

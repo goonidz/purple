@@ -706,6 +706,22 @@ const Index = () => {
       return;
     }
     
+    // Check if configure=true param is set (e.g., from Inworld TTS with timestamps)
+    const shouldConfigure = searchParams.get("configure") === "true";
+    
+    if (shouldConfigure && transcriptData && scenes.length === 0 && currentProjectId && !hasShownConfigModalRef.current) {
+      // Force open modal when configure param is present
+      const timer = setTimeout(() => {
+        setShowConfigurationModal(true);
+        hasShownConfigModalRef.current = true;
+        // Remove the configure param from URL
+        const newParams = new URLSearchParams(searchParams);
+        newParams.delete("configure");
+        navigate(`/project?${newParams.toString()}`, { replace: true });
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+    
     if (transcriptData && scenes.length === 0 && currentProjectId && !hasActiveJob('transcription') && !hasShownConfigModalRef.current) {
       // Small delay to allow UI to settle
       const timer = setTimeout(() => {
@@ -714,7 +730,7 @@ const Index = () => {
       }, 500);
       return () => clearTimeout(timer);
     }
-  }, [transcriptData, scenes, generatedPrompts, currentProjectId, hasActiveJob, searchParams]);
+  }, [transcriptData, scenes, generatedPrompts, currentProjectId, hasActiveJob, searchParams, navigate]);
   
   // Reset the flag when project changes
   useEffect(() => {
