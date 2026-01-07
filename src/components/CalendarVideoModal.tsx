@@ -345,27 +345,6 @@ export default function CalendarVideoModal({
         toast.success(entry ? "Vidéo mise à jour" : "Vidéo planifiée");
       }
 
-      // Launch transcript scraping if source URL exists and transcript not already loaded
-      let savedEntryId = entry?.id;
-      if (!savedEntryId) {
-        // If entry was just created, fetch its ID
-        const { data: newEntry } = await supabase
-          .from("content_calendar")
-          .select("id")
-          .eq("user_id", userId)
-          .eq("scheduled_date", format(scheduledDate, "yyyy-MM-dd"))
-          .eq("title", title.trim())
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .single();
-        savedEntryId = newEntry?.id;
-      }
-
-      if (savedEntryId && sourceUrl && !sourceTranscript) {
-        // Launch transcript scraping in background
-        scrapeTranscript(sourceUrl, savedEntryId);
-      }
-
       // If this entry is linked to a project, also update the project name
       if (projectId && title.trim()) {
         const { error: projectUpdateError } = await supabase
@@ -446,9 +425,6 @@ export default function CalendarVideoModal({
           setSourceThumbnailUrl(data.thumbnailUrl);
         }
         toast.success(`Informations récupérées : ${data.title}`);
-        
-        // Note: Transcript scraping will be launched after entry is saved
-        // (see handleSave function)
       }
     } catch (error: any) {
       console.error("Error scraping YouTube:", error);
@@ -514,13 +490,88 @@ export default function CalendarVideoModal({
   const handleSourceUrlChange = async (url: string) => {
     setSourceUrl(url);
     
-    // Clear thumbnail if URL is empty
+    // Clear thumbnail and transcript if URL is empty
     if (!url.trim()) {
       setSourceThumbnailUrl(null);
+      setSourceTranscript(null);
       return;
     }
     
+    // Verify URL is a valid YouTube URL before proceeding
+    const youtubePattern = /(?:youtube\.com\/(?:watch\?v=|embed\/|v\/|shorts\/)|youtu\.be\/|^)([a-zA-Z0-9_-]{11})/;
+    if (!youtubePattern.test(url)) {
+      // Not a valid YouTube URL, don't scrape
+      return;
+    }
+    
+    // Scrape title and thumbnail first
     await scrapeYouTubeUrl(url);
+    
+    // Then launch transcript scraping immediately
+    // If entry exists, use it; otherwise create a temporary entry
+    if (entry?.id) {
+      // Entry exists, launch transcript scraping immediately
+      scrapeTranscript(url, entry.id);
+    } else if (title.trim() && scheduledDate) {
+      // Entry doesn't exist yet, create it first then scrape
+      await createEntryAndScrapeTranscript(url);
+    } else {
+      // Not enough info to create entry, wait for user to save
+      // But we can still try to scrape if we have minimal info
+      // For now, we'll wait - user will need to save first
+      console.log("Waiting for entry to be saved before scraping transcript");
+    }
+  };
+
+  const createEntryAndScrapeTranscript = async (url: string): Promise<void> => {
+    if (!title.trim() || !scheduledDate) {
+      return;
+    }
+
+    try {
+      const dataToSave = {
+        user_id: userId,
+        title: title.trim(),
+        scheduled_date: format(scheduledDate, "yyyy-MM-dd"),
+        status,
+        script: script.trim() || null,
+        notes: notes.trim() || null,
+        audio_url: audioUrl,
+        youtube_url: youtubeUrl.trim() || null,
+        source_url: sourceUrl.trim() || null,
+        source_thumbnail_url: sourceThumbnailUrl || null,
+        project_id: projectId,
+        channel_id: channelId,
+      };
+
+      const { data, error } = await supabase
+        .from("content_calendar")
+        .insert(dataToSave)
+        .select()
+        .single();
+
+      if (error) {
+        console.error("Error creating entry for transcript:", error);
+        return;
+      }
+      
+      if (data?.id) {
+        // Update local entry state to reflect the created entry
+        // This will allow future updates to work correctly
+        const newEntry = { 
+          ...dataToSave, 
+          id: data.id, 
+          created_at: data.created_at, 
+          updated_at: data.updated_at,
+          source_transcript: null
+        } as ContentCalendarEntry;
+        
+        // Launch transcript scraping
+        scrapeTranscript(url, data.id);
+      }
+    } catch (error) {
+      console.error("Error creating entry for transcript:", error);
+    }
   };
 
   const handleYoutubeUrlChange = (url: string) => {
@@ -604,10 +655,11 @@ export default function CalendarVideoModal({
         </DialogHeader>
 
         <Tabs defaultValue="info" className="mt-4">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="info">Informations</TabsTrigger>
             <TabsTrigger value="script">Script</TabsTrigger>
             <TabsTrigger value="audio">Audio</TabsTrigger>
+            <TabsTrigger value="transcript">Source Transcript</TabsTrigger>
           </TabsList>
 
           <TabsContent value="info" className="space-y-4 mt-4">
@@ -828,46 +880,6 @@ export default function CalendarVideoModal({
                 </div>
               )}
             </div>
-
-            {/* Source Video Transcript */}
-            <div className="space-y-2">
-              <Label>Source Video Transcript</Label>
-              {isScrapingTranscript ? (
-                <div className="flex items-center gap-2 p-4 border rounded-lg bg-muted/50">
-                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                  <span className="text-sm text-muted-foreground">
-                    Récupération de la transcription en cours...
-                  </span>
-                </div>
-              ) : sourceTranscript ? (
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-xs text-muted-foreground">
-                      Transcription disponible ({sourceTranscript.length} caractères)
-                    </p>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={copyTranscriptToClipboard}
-                      className="shrink-0"
-                    >
-                      {transcriptCopied ? (
-                        <Check className="h-4 w-4 text-green-500" />
-                      ) : (
-                        <Copy className="h-4 w-4" />
-                      )}
-                    </Button>
-                  </div>
-                  <div className="p-4 border rounded-lg bg-muted/50 max-h-64 overflow-y-auto">
-                    <p className="text-sm whitespace-pre-wrap">{sourceTranscript}</p>
-                  </div>
-                </div>
-              ) : sourceUrl && !isScrapingTranscript ? (
-                <p className="text-xs text-muted-foreground">
-                  La transcription sera récupérée automatiquement après la sauvegarde de l'entrée.
-                </p>
-              ) : null}
-            </div>
           </TabsContent>
 
           <TabsContent value="script" className="space-y-4 mt-4">
@@ -953,6 +965,55 @@ export default function CalendarVideoModal({
             <p className="text-xs text-muted-foreground">
               L'audio sera transcrit automatiquement lors de la génération des scènes.
             </p>
+          </TabsContent>
+
+          <TabsContent value="transcript" className="space-y-4 mt-4">
+            <div className="space-y-2">
+              <Label>Source Video Transcript</Label>
+              {isScrapingTranscript ? (
+                <div className="flex items-center gap-2 p-4 border rounded-lg bg-muted/50">
+                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                  <span className="text-sm text-muted-foreground">
+                    Récupération de la transcription en cours...
+                  </span>
+                </div>
+              ) : sourceTranscript ? (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs text-muted-foreground">
+                      Transcription disponible ({sourceTranscript.length} caractères)
+                    </p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={copyTranscriptToClipboard}
+                      className="shrink-0"
+                    >
+                      {transcriptCopied ? (
+                        <Check className="h-4 w-4 text-green-500" />
+                      ) : (
+                        <Copy className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </div>
+                  <div className="p-4 border rounded-lg bg-muted/50 max-h-96 overflow-y-auto">
+                    <p className="text-sm whitespace-pre-wrap">{sourceTranscript}</p>
+                  </div>
+                </div>
+              ) : sourceUrl && !isScrapingTranscript ? (
+                <div className="p-4 border rounded-lg bg-muted/50">
+                  <p className="text-sm text-muted-foreground">
+                    La transcription sera récupérée automatiquement après la sauvegarde de l'entrée avec une Source URL.
+                  </p>
+                </div>
+              ) : (
+                <div className="p-4 border rounded-lg bg-muted/50">
+                  <p className="text-sm text-muted-foreground">
+                    Aucune transcription disponible. Ajoutez une Source URL dans l'onglet Informations pour récupérer la transcription.
+                  </p>
+                </div>
+              )}
+            </div>
           </TabsContent>
         </Tabs>
 
