@@ -11,9 +11,9 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-// Inworld TTS hard limit is 2000 chars, but wordAlignment becomes unreliable near the limit.
-// We cap at 1200 chars to keep timestamps consistent.
-const MAX_CHUNK_SIZE = 1200;
+// Inworld TTS hard limit is 2000 chars, but timestamps can be flaky.
+// We cap at 500 chars to maximize timestamp reliability.
+const MAX_CHUNK_SIZE = 500;
 
 // Inworld rate limit: 20 requests/second (per job invocation)
 const INWORLD_RATE_LIMIT_RPS = 20;
