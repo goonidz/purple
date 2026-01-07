@@ -229,8 +229,9 @@ const CreateFromScratch = () => {
   const [scriptModel, setScriptModel] = useState<"claude" | "claude-thinking" | "gpt5">("claude");
   
   // Audio step
-  const [ttsProvider] = useState<"minimax">("minimax");
+  const [ttsProvider, setTtsProvider] = useState<"minimax" | "inworld">("minimax");
   const [selectedVoice, setSelectedVoice] = useState("English_expressive_narrator");
+  const [inworldVoiceId, setInworldVoiceId] = useState("Dennis");
   const [minimaxModel, setMinimaxModel] = useState("speech-2.6-hd");
   const [minimaxSpeed, setMinimaxSpeed] = useState(1.0);
   const [minimaxPitch, setMinimaxPitch] = useState(0);
@@ -646,19 +647,28 @@ const CreateFromScratch = () => {
   const handleLoadTtsPreset = (presetId: string) => {
     const preset = ttsPresets.find(p => p.id === presetId);
     if (preset) {
-      // Only load MiniMax presets (ElevenLabs removed)
-      if (preset.provider !== "minimax") {
+      // Load provider
+      if (preset.provider === "minimax" || preset.provider === "inworld") {
+        setTtsProvider(preset.provider);
+      } else {
         toast.error("Ce preset utilise un fournisseur non supporté");
         return;
       }
-      setSelectedVoice(preset.voice_id);
-      if (preset.model) setMinimaxModel(preset.model);
-      setMinimaxSpeed(preset.speed);
-      setMinimaxPitch(preset.pitch);
-      setMinimaxVolume(preset.volume);
-      setMinimaxLanguageBoost(preset.language_boost);
-      setMinimaxEnglishNormalization(preset.english_normalization);
-      setMinimaxEmotion(preset.emotion);
+      
+      // Load voice ID based on provider
+      if (preset.provider === "inworld") {
+        setInworldVoiceId(preset.voice_id);
+      } else {
+        setSelectedVoice(preset.voice_id);
+        if (preset.model) setMinimaxModel(preset.model);
+        setMinimaxSpeed(preset.speed);
+        setMinimaxPitch(preset.pitch);
+        setMinimaxVolume(preset.volume);
+        setMinimaxLanguageBoost(preset.language_boost);
+        setMinimaxEnglishNormalization(preset.english_normalization);
+        setMinimaxEmotion(preset.emotion);
+      }
+      
       setSelectedTtsPresetId(presetId);
       toast.success(`Preset TTS "${preset.name}" chargé`);
     }
@@ -678,7 +688,7 @@ const CreateFromScratch = () => {
           user_id: user!.id,
           name: newTtsPresetName.trim(),
           provider: ttsProvider,
-          voice_id: selectedVoice,
+          voice_id: ttsProvider === "inworld" ? inworldVoiceId : selectedVoice,
           model: ttsProvider === "minimax" ? minimaxModel : null,
           speed: minimaxSpeed,
           pitch: minimaxPitch,
@@ -732,19 +742,28 @@ const CreateFromScratch = () => {
     if (!preset) return;
     setEditingTtsPresetId(presetId);
     setEditTtsPresetName(preset.name);
-    // Load preset values into current state for editing (MiniMax only)
-    if (preset.provider !== "minimax") {
+    
+    // Load provider
+    if (preset.provider === "minimax" || preset.provider === "inworld") {
+      setTtsProvider(preset.provider);
+    } else {
       toast.error("Ce preset utilise un fournisseur non supporté");
       return;
     }
-    setSelectedVoice(preset.voice_id);
-    if (preset.model) setMinimaxModel(preset.model);
-    setMinimaxSpeed(preset.speed);
-    setMinimaxPitch(preset.pitch);
-    setMinimaxVolume(preset.volume);
-    setMinimaxLanguageBoost(preset.language_boost);
-    setMinimaxEnglishNormalization(preset.english_normalization);
-    setMinimaxEmotion(preset.emotion);
+    
+    // Load voice ID based on provider
+    if (preset.provider === "inworld") {
+      setInworldVoiceId(preset.voice_id);
+    } else {
+      setSelectedVoice(preset.voice_id);
+      if (preset.model) setMinimaxModel(preset.model);
+      setMinimaxSpeed(preset.speed);
+      setMinimaxPitch(preset.pitch);
+      setMinimaxVolume(preset.volume);
+      setMinimaxLanguageBoost(preset.language_boost);
+      setMinimaxEnglishNormalization(preset.english_normalization);
+      setMinimaxEmotion(preset.emotion);
+    }
     setEditTtsPresetDialogOpen(true);
   };
 
@@ -761,7 +780,7 @@ const CreateFromScratch = () => {
         .update({
           name: editTtsPresetName.trim(),
           provider: ttsProvider,
-          voice_id: selectedVoice,
+          voice_id: ttsProvider === "inworld" ? inworldVoiceId : selectedVoice,
           model: ttsProvider === "minimax" ? minimaxModel : null,
           speed: minimaxSpeed,
           pitch: minimaxPitch,
@@ -1064,7 +1083,8 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
         }
 
         // Call VPS directly (no timeout)
-        const VPS_URL = "http://51.91.158.233:3000";
+        // Use HTTPS if available, fallback to HTTP for development
+        const VPS_URL = import.meta.env.VITE_VPS_URL || "https://purpleai.duckdns.org/api/render";
         const response = await fetch(`${VPS_URL}/generate-script`, {
           method: 'POST',
           headers: {
@@ -1310,7 +1330,7 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
           jobType: 'audio_generation',
           metadata: {
             script: generatedScript,
-            voice: selectedVoice,
+            voice: ttsProvider === "inworld" ? inworldVoiceId : selectedVoice,
             model: minimaxModel,
             speed: minimaxSpeed,
             pitch: minimaxPitch,
@@ -2104,7 +2124,7 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                                       >
                                         <p className="font-medium text-sm">{preset.name}</p>
                                         <p className="text-xs text-muted-foreground">
-                                          {preset.provider === "minimax" ? "MiniMax (API Officielle)" : "ElevenLabs (Replicate)"} - {preset.voice_id}
+                                          {preset.provider === "minimax" ? "MiniMax" : preset.provider === "inworld" ? "Inworld" : "ElevenLabs"} - {preset.voice_id}
                                         </p>
                                       </div>
                                       <div className="flex gap-1">
@@ -2160,150 +2180,189 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                         </div>
                       </div>
 
-                      <div className="p-3 bg-muted/50 rounded-lg">
-                        <p className="text-sm font-medium">Fournisseur TTS</p>
-                        <p className="text-sm text-muted-foreground">MiniMax (API Officielle)</p>
-                      </div>
-
                       <div className="space-y-4">
-                        <Label>Modèle MiniMax</Label>
-                        <Select value={minimaxModel} onValueChange={setMinimaxModel}>
+                        <Label>Fournisseur TTS</Label>
+                        <Select value={ttsProvider} onValueChange={(value: "minimax" | "inworld") => setTtsProvider(value)}>
                           <SelectTrigger>
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            {MINIMAX_MODEL_OPTIONS.map((model) => (
-                              <SelectItem key={model.id} value={model.id}>
-                                {model.name}
-                              </SelectItem>
-                            ))}
+                            <SelectItem value="minimax">MiniMax (API Officielle)</SelectItem>
+                            <SelectItem value="inworld">Inworld AI (TTS 1 Max)</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
 
-                      <div className="space-y-4">
-                        <Label>Langue prioritaire</Label>
-                        <Select value={minimaxLanguageBoost} onValueChange={setMinimaxLanguageBoost}>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="auto">Auto-détection</SelectItem>
-                            <SelectItem value="English">Anglais</SelectItem>
-                            <SelectItem value="French">Français</SelectItem>
-                            <SelectItem value="Spanish">Espagnol</SelectItem>
-                            <SelectItem value="German">Allemand</SelectItem>
-                            <SelectItem value="Italian">Italien</SelectItem>
-                            <SelectItem value="Portuguese">Portugais</SelectItem>
-                            <SelectItem value="Chinese">Chinois</SelectItem>
-                            <SelectItem value="Japanese">Japonais</SelectItem>
-                            <SelectItem value="Korean">Coréen</SelectItem>
-                            <SelectItem value="Arabic">Arabe</SelectItem>
-                            <SelectItem value="Russian">Russe</SelectItem>
-                            <SelectItem value="Hindi">Hindi</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      <div className="grid grid-cols-3 gap-4">
-                        <div className="space-y-2">
-                          <Label>Vitesse ({minimaxSpeed.toFixed(1)}x)</Label>
-                          <input
-                            type="range"
-                            min="0.5"
-                            max="2.0"
-                            step="0.1"
-                            value={minimaxSpeed}
-                            onChange={(e) => setMinimaxSpeed(parseFloat(e.target.value))}
-                            className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
-                          />
-                          <div className="flex justify-between text-xs text-muted-foreground">
-                            <span>0.5x</span>
-                            <span>2.0x</span>
+                      {ttsProvider === "inworld" && (
+                        <div className="space-y-4 p-4 bg-muted/50 rounded-lg">
+                          <div className="space-y-2">
+                            <Label>Voice ID Inworld</Label>
+                            <Input
+                              value={inworldVoiceId}
+                              onChange={(e) => setInworldVoiceId(e.target.value)}
+                              placeholder="Ex: Dennis, Alex, Ashley..."
+                            />
+                            <p className="text-xs text-muted-foreground">
+                              Entrez le Voice ID Inworld. Exemples : Dennis, Alex, Ashley.{" "}
+                              <a
+                                href="https://docs.inworld.ai/api-reference/ttsAPI/texttospeech/list-voices"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-primary hover:underline"
+                              >
+                                Liste des voix
+                              </a>
+                            </p>
                           </div>
-                        </div>
-                        
-                        <div className="space-y-2">
-                          <Label>Pitch ({minimaxPitch > 0 ? '+' : ''}{minimaxPitch})</Label>
-                          <input
-                            type="range"
-                            min="-12"
-                            max="12"
-                            step="1"
-                            value={minimaxPitch}
-                            onChange={(e) => setMinimaxPitch(parseInt(e.target.value))}
-                            className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
-                          />
-                          <div className="flex justify-between text-xs text-muted-foreground">
-                            <span>Grave</span>
-                            <span>Aigu</span>
-                          </div>
-                        </div>
-                        
-                        <div className="space-y-2">
-                          <Label>Volume ({Math.round(minimaxVolume * 100)}%)</Label>
-                          <input
-                            type="range"
-                            min="10"
-                            max="100"
-                            step="10"
-                            value={Math.round(minimaxVolume * 100)}
-                            onChange={(e) => setMinimaxVolume(parseInt(e.target.value) / 100)}
-                            className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
-                          />
-                          <div className="flex justify-between text-xs text-muted-foreground">
-                            <span>10%</span>
-                            <span>100%</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg">
-                        <div className="space-y-0.5">
-                          <Label className="text-base">Normalisation des nombres</Label>
-                          <p className="text-sm text-muted-foreground">
-                            Améliore la lecture des nombres, dates et unités
+                          <p className="text-xs text-amber-600">
+                            Note : Inworld TTS supporte max 2000 caractères par requête. Les scripts longs seront automatiquement découpés et assemblés.
                           </p>
                         </div>
-                        <input
-                          type="checkbox"
-                          checked={minimaxEnglishNormalization}
-                          onChange={(e) => setMinimaxEnglishNormalization(e.target.checked)}
-                          className="h-5 w-5 rounded border-gray-300 text-primary focus:ring-primary"
-                        />
-                      </div>
+                      )}
 
-                      <div className="space-y-4">
-                        <Label>Émotion</Label>
-                        <Select value={minimaxEmotion} onValueChange={setMinimaxEmotion}>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {MINIMAX_EMOTIONS.map((emotion) => (
-                              <SelectItem key={emotion.id} value={emotion.id}>
-                                {emotion.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
+                      {ttsProvider === "minimax" && (
+                        <>
+                          <div className="space-y-4">
+                            <Label>Modèle MiniMax</Label>
+                            <Select value={minimaxModel} onValueChange={setMinimaxModel}>
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {MINIMAX_MODEL_OPTIONS.map((model) => (
+                                  <SelectItem key={model.id} value={model.id}>
+                                    {model.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
 
-                      <div className="space-y-4">
-                        <Label>Voix pour l'audio</Label>
-                        <Select value={selectedVoice} onValueChange={setSelectedVoice}>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {MINIMAX_VOICE_OPTIONS.map((voice) => (
-                              <SelectItem key={voice.id} value={voice.id}>
-                                {voice.name} ({voice.language.toUpperCase()})
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
+                          <div className="space-y-4">
+                            <Label>Langue prioritaire</Label>
+                            <Select value={minimaxLanguageBoost} onValueChange={setMinimaxLanguageBoost}>
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="auto">Auto-détection</SelectItem>
+                                <SelectItem value="English">Anglais</SelectItem>
+                                <SelectItem value="French">Français</SelectItem>
+                                <SelectItem value="Spanish">Espagnol</SelectItem>
+                                <SelectItem value="German">Allemand</SelectItem>
+                                <SelectItem value="Italian">Italien</SelectItem>
+                                <SelectItem value="Portuguese">Portugais</SelectItem>
+                                <SelectItem value="Chinese">Chinois</SelectItem>
+                                <SelectItem value="Japanese">Japonais</SelectItem>
+                                <SelectItem value="Korean">Coréen</SelectItem>
+                                <SelectItem value="Arabic">Arabe</SelectItem>
+                                <SelectItem value="Russian">Russe</SelectItem>
+                                <SelectItem value="Hindi">Hindi</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          <div className="grid grid-cols-3 gap-4">
+                            <div className="space-y-2">
+                              <Label>Vitesse ({minimaxSpeed.toFixed(1)}x)</Label>
+                              <input
+                                type="range"
+                                min="0.5"
+                                max="2.0"
+                                step="0.1"
+                                value={minimaxSpeed}
+                                onChange={(e) => setMinimaxSpeed(parseFloat(e.target.value))}
+                                className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
+                              />
+                              <div className="flex justify-between text-xs text-muted-foreground">
+                                <span>0.5x</span>
+                                <span>2.0x</span>
+                              </div>
+                            </div>
+                            
+                            <div className="space-y-2">
+                              <Label>Pitch ({minimaxPitch > 0 ? '+' : ''}{minimaxPitch})</Label>
+                              <input
+                                type="range"
+                                min="-12"
+                                max="12"
+                                step="1"
+                                value={minimaxPitch}
+                                onChange={(e) => setMinimaxPitch(parseInt(e.target.value))}
+                                className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
+                              />
+                              <div className="flex justify-between text-xs text-muted-foreground">
+                                <span>Grave</span>
+                                <span>Aigu</span>
+                              </div>
+                            </div>
+                            
+                            <div className="space-y-2">
+                              <Label>Volume ({Math.round(minimaxVolume * 100)}%)</Label>
+                              <input
+                                type="range"
+                                min="10"
+                                max="100"
+                                step="10"
+                                value={Math.round(minimaxVolume * 100)}
+                                onChange={(e) => setMinimaxVolume(parseInt(e.target.value) / 100)}
+                                className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
+                              />
+                              <div className="flex justify-between text-xs text-muted-foreground">
+                                <span>10%</span>
+                                <span>100%</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg">
+                            <div className="space-y-0.5">
+                              <Label className="text-base">Normalisation des nombres</Label>
+                              <p className="text-sm text-muted-foreground">
+                                Améliore la lecture des nombres, dates et unités
+                              </p>
+                            </div>
+                            <input
+                              type="checkbox"
+                              checked={minimaxEnglishNormalization}
+                              onChange={(e) => setMinimaxEnglishNormalization(e.target.checked)}
+                              className="h-5 w-5 rounded border-gray-300 text-primary focus:ring-primary"
+                            />
+                          </div>
+
+                          <div className="space-y-4">
+                            <Label>Émotion</Label>
+                            <Select value={minimaxEmotion} onValueChange={setMinimaxEmotion}>
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {MINIMAX_EMOTIONS.map((emotion) => (
+                                  <SelectItem key={emotion.id} value={emotion.id}>
+                                    {emotion.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          <div className="space-y-4">
+                            <Label>Voix pour l'audio</Label>
+                            <Select value={selectedVoice} onValueChange={setSelectedVoice}>
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {MINIMAX_VOICE_OPTIONS.map((voice) => (
+                                  <SelectItem key={voice.id} value={voice.id}>
+                                    {voice.name} ({voice.language.toUpperCase()})
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </>
+                      )}
 
                       <Button 
                         onClick={handleGenerateAudio} 
@@ -2319,7 +2378,7 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                         ) : (
                           <>
                             <Mic className="mr-2 h-4 w-4" />
-                            Générer l'audio avec MiniMax
+                            Générer l'audio avec {ttsProvider === "inworld" ? "Inworld" : "MiniMax"}
                           </>
                         )}
                       </Button>
@@ -2502,8 +2561,8 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
             <div className="p-4 bg-muted rounded-lg text-sm">
               <p className="font-medium mb-2">Configuration actuelle :</p>
               <ul className="space-y-1 text-muted-foreground">
-                <li>Fournisseur : {ttsProvider === "minimax" ? "MiniMax" : "ElevenLabs"}</li>
-                <li>Voix : {selectedVoice}</li>
+                <li>Fournisseur : {ttsProvider === "minimax" ? "MiniMax" : ttsProvider === "inworld" ? "Inworld AI" : "ElevenLabs"}</li>
+                <li>Voix : {ttsProvider === "inworld" ? inworldVoiceId : selectedVoice}</li>
                 {ttsProvider === "minimax" && (
                   <>
                     <li>Modèle : {minimaxModel}</li>
@@ -2546,24 +2605,38 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Fournisseur</Label>
-                <div className="p-3 bg-muted/50 rounded-lg">
-                  <p className="text-sm font-medium">Fournisseur: MiniMax (API Officielle)</p>
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label>Voix</Label>
-                <Select value={selectedVoice} onValueChange={setSelectedVoice}>
+                <Select value={ttsProvider} onValueChange={(value: "minimax" | "inworld") => setTtsProvider(value)}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {MINIMAX_VOICE_OPTIONS.map((voice) => (
-                      <SelectItem key={voice.id} value={voice.id}>
-                        {voice.name} ({voice.language.toUpperCase()})
-                      </SelectItem>
-                    ))}
+                    <SelectItem value="minimax">MiniMax (API Officielle)</SelectItem>
+                    <SelectItem value="inworld">Inworld AI (TTS 1 Max)</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Voix</Label>
+                {ttsProvider === "inworld" ? (
+                  <Input
+                    value={inworldVoiceId}
+                    onChange={(e) => setInworldVoiceId(e.target.value)}
+                    placeholder="Ex: Dennis, Alex, Ashley..."
+                  />
+                ) : (
+                  <Select value={selectedVoice} onValueChange={setSelectedVoice}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {MINIMAX_VOICE_OPTIONS.map((voice) => (
+                        <SelectItem key={voice.id} value={voice.id}>
+                          {voice.name} ({voice.language.toUpperCase()})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
               </div>
             </div>
             {ttsProvider === "minimax" && (

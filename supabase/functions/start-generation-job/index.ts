@@ -2984,8 +2984,15 @@ async function processAudioGenerationJob(
   
   console.log(`Starting audio generation job ${jobId}, provider: ${provider || 'minimax'}`);
   
-  // Call the generate-audio-minimax function with jobId for background processing
-  const functionName = provider === 'elevenlabs' ? 'generate-audio-tts' : 'generate-audio-minimax';
+  // Call the appropriate TTS function based on provider
+  let functionName: string;
+  if (provider === 'inworld') {
+    functionName = 'generate-audio-inworld';
+  } else if (provider === 'elevenlabs') {
+    functionName = 'generate-audio-tts';
+  } else {
+    functionName = 'generate-audio-minimax';
+  }
   
   // Use service role key for internal calls to avoid auth token expiration issues
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';

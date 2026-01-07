@@ -22,6 +22,7 @@ const Profile = () => {
   const [braveApiKey, setBraveApiKey] = useState("");
   const [keiApiKey, setKeiApiKey] = useState("");
   const [apifyApiKey, setApifyApiKey] = useState("");
+  const [inworldApiKey, setInworldApiKey] = useState("");
   
   // Track original values to detect changes
   const [originalKeys, setOriginalKeys] = useState({
@@ -31,7 +32,8 @@ const Profile = () => {
     anthropic: "",
     brave: "",
     kei: "",
-    apify: ""
+    apify: "",
+    inworld: ""
   });
   const [showKeys, setShowKeys] = useState({
     replicate: false,
@@ -40,7 +42,8 @@ const Profile = () => {
     anthropic: false,
     brave: false,
     kei: false,
-    apify: false
+    apify: false,
+    inworld: false
   });
 
   useEffect(() => {
@@ -69,7 +72,7 @@ const Profile = () => {
     setIsLoading(true);
     try {
       // Try to get API keys from Vault
-      const [replicateResult, elevenLabsResult, minimaxResult, anthropicResult, braveResult, keiResult, apifyResult] = await Promise.all([
+      const [replicateResult, elevenLabsResult, minimaxResult, anthropicResult, braveResult, keiResult, apifyResult, inworldResult] = await Promise.all([
         supabase.rpc('get_user_api_key', { key_name: 'replicate' }),
         supabase.rpc('get_user_api_key', { key_name: 'eleven_labs' }),
         supabase.rpc('get_user_api_key', { key_name: 'minimax' }),
@@ -77,6 +80,7 @@ const Profile = () => {
         supabase.rpc('get_user_api_key', { key_name: 'brave' }),
         supabase.rpc('get_user_api_key', { key_name: 'kei' }),
         supabase.rpc('get_user_api_key', { key_name: 'apify' }),
+        supabase.rpc('get_user_api_key', { key_name: 'inworld' }),
       ]);
 
       const replicateValue = replicateResult.data || "";
@@ -86,6 +90,7 @@ const Profile = () => {
       const braveValue = braveResult.data || "";
       const keiValue = keiResult.data || "";
       const apifyValue = apifyResult.data || "";
+      const inworldValue = inworldResult.data || "";
 
       // Set current values
       setReplicateApiKey(replicateValue);
@@ -95,6 +100,7 @@ const Profile = () => {
       setBraveApiKey(braveValue);
       setKeiApiKey(keiValue);
       setApifyApiKey(apifyValue);
+      setInworldApiKey(inworldValue);
       
       // Store original values to track changes
       setOriginalKeys({
@@ -104,7 +110,8 @@ const Profile = () => {
         anthropic: anthropicValue,
         brave: braveValue,
         kei: keiValue,
-        apify: apifyValue
+        apify: apifyValue,
+        inworld: inworldValue
       });
       
       if (replicateResult.error && !replicateResult.error.message?.includes('not found')) {
@@ -154,6 +161,9 @@ const Profile = () => {
     if (apifyApiKey.trim() !== originalKeys.apify) {
       changedKeys.push({ key_name: 'apify', key_value: apifyApiKey.trim() });
     }
+    if (inworldApiKey.trim() !== originalKeys.inworld) {
+      changedKeys.push({ key_name: 'inworld', key_value: inworldApiKey.trim() });
+    }
 
     if (changedKeys.length === 0) {
       toast.info("Aucune modification détectée");
@@ -183,7 +193,8 @@ const Profile = () => {
         anthropic: anthropicApiKey.trim(),
         brave: braveApiKey.trim(),
         kei: keiApiKey.trim(),
-        apify: apifyApiKey.trim()
+        apify: apifyApiKey.trim(),
+        inworld: inworldApiKey.trim()
       });
 
       toast.success("Clés API sauvegardées avec succès !");
@@ -502,11 +513,47 @@ const Profile = () => {
                       </a>
                     </p>
                   </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="inworld-key">
+                      Inworld AI API Key
+                    </Label>
+                    <div className="relative">
+                      <Input
+                        id="inworld-key"
+                        type={showKeys.inworld ? "text" : "password"}
+                        value={inworldApiKey}
+                        onChange={(e) => setInworldApiKey(e.target.value)}
+                        placeholder="..."
+                        className="pr-10"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                        onClick={() => setShowKeys(prev => ({ ...prev, inworld: !prev.inworld }))}
+                      >
+                        {showKeys.inworld ? <EyeOff className="h-4 w-4 text-muted-foreground" /> : <Eye className="h-4 w-4 text-muted-foreground" />}
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Utilisée pour la génération vocale TTS avec Inworld.{" "}
+                      <a
+                        href="https://platform.inworld.ai/v2/documentation"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary hover:underline"
+                      >
+                        Obtenir une clé
+                      </a>
+                    </p>
+                  </div>
                 </div>
 
                 <Button
                   onClick={handleSave}
-                  disabled={isSaving || (!replicateApiKey.trim() && !elevenLabsApiKey.trim() && !minimaxApiKey.trim() && !anthropicApiKey.trim() && !braveApiKey.trim() && !keiApiKey.trim() && !apifyApiKey.trim())}
+                  disabled={isSaving || (!replicateApiKey.trim() && !elevenLabsApiKey.trim() && !minimaxApiKey.trim() && !anthropicApiKey.trim() && !braveApiKey.trim() && !keiApiKey.trim() && !apifyApiKey.trim() && !inworldApiKey.trim())}
                   className="w-full"
                   size="lg"
                 >

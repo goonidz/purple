@@ -1713,6 +1713,107 @@ app.post('/cleanup', async (req, res) => {
   }
 });
 
+// Concatenate multiple audio files into one
+app.post('/concat-audio', async (req, res) => {
+  const { audioUrls, userId, projectId } = req.body;
+  
+  if (!audioUrls || !Array.isArray(audioUrls) || audioUrls.length === 0) {
+    return res.status(400).json({ error: 'audioUrls array is required' });
+  }
+
+  const jobId = `concat_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+  const workDir = path.join(TEMP_DIR, jobId);
+  
+  console.log(`[${jobId}] Starting audio concatenation for ${audioUrls.length} files`);
+
+  try {
+    // Create work directory
+    await mkdir(workDir, { recursive: true });
+
+    // Download all audio files
+    const audioFiles = [];
+    for (let i = 0; i < audioUrls.length; i++) {
+      const audioPath = path.join(workDir, `audio_${i}.mp3`);
+      console.log(`[${jobId}] Downloading audio ${i + 1}/${audioUrls.length}: ${audioUrls[i].substring(0, 100)}...`);
+      await downloadFile(audioUrls[i], audioPath);
+      audioFiles.push(audioPath);
+    }
+
+    // Create concat file for FFmpeg
+    const concatFilePath = path.join(workDir, 'concat.txt');
+    const concatContent = audioFiles.map(f => `file '${f}'`).join('\n');
+    await writeFile(concatFilePath, concatContent);
+
+    // Output file
+    const outputFilename = `${userId || 'unknown'}_${projectId || 'temp'}_${Date.now()}_concat.mp3`;
+    const outputPath = path.join(TEMP_DIR, outputFilename);
+
+    // Run FFmpeg concatenation
+    await new Promise((resolve, reject) => {
+      ffmpeg()
+        .input(concatFilePath)
+        .inputOptions(['-f', 'concat', '-safe', '0'])
+        .audioCodec('libmp3lame')
+        .audioBitrate('192k')
+        .output(outputPath)
+        .on('start', (cmd) => {
+          console.log(`[${jobId}] FFmpeg command: ${cmd}`);
+        })
+        .on('error', (err) => {
+          console.error(`[${jobId}] FFmpeg error:`, err);
+          reject(err);
+        })
+        .on('end', () => {
+          console.log(`[${jobId}] FFmpeg concatenation complete`);
+          resolve();
+        })
+        .run();
+    });
+
+    // Clean up work directory
+    try {
+      const files = fs.readdirSync(workDir);
+      for (const file of files) {
+        await unlink(path.join(workDir, file));
+      }
+      fs.rmdirSync(workDir);
+    } catch (cleanupError) {
+      console.warn(`[${jobId}] Cleanup warning:`, cleanupError.message);
+    }
+
+    // Generate public URL
+    const publicUrl = `${process.env.PUBLIC_URL || `http://localhost:${PORT}`}/videos/${outputFilename}`;
+    
+    console.log(`[${jobId}] Audio concatenation complete: ${publicUrl}`);
+
+    res.json({
+      success: true,
+      audioUrl: publicUrl,
+      filename: outputFilename
+    });
+
+  } catch (error) {
+    console.error(`[${jobId}] Concatenation error:`, error);
+    
+    // Clean up on error
+    try {
+      if (fs.existsSync(workDir)) {
+        const files = fs.readdirSync(workDir);
+        for (const file of files) {
+          await unlink(path.join(workDir, file)).catch(() => {});
+        }
+        fs.rmdirSync(workDir);
+      }
+    } catch (cleanupError) {
+      console.warn(`[${jobId}] Cleanup error:`, cleanupError.message);
+    }
+
+    res.status(500).json({
+      error: error.message || 'Audio concatenation failed'
+    });
+  }
+});
+
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({ 
