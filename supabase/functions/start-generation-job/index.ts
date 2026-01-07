@@ -1659,6 +1659,72 @@ async function processImagesJob(
         .from('generation_jobs')
         .update({ progress: promptsToProcess.length })
         .eq('id', jobId);
+
+      // IMPORTANT: In continuity mode we don't rely on Replicate webhooks to chain chunks.
+      // So we must explicitly create & start the next chunk if images are still missing.
+      const { data: projectAfterContinuity } = await adminClient
+        .from('projects')
+        .select('prompts')
+        .eq('id', projectId)
+        .single();
+
+      const promptsAfterContinuity = (projectAfterContinuity?.prompts as any[]) || [];
+      const missingCountAfterContinuity = promptsAfterContinuity.filter((p: any) => p?.prompt && !p?.imageUrl).length;
+
+      console.log(`[processImagesJob] Continuity chunk complete. Project has ${missingCountAfterContinuity} images still missing`);
+
+      if (missingCountAfterContinuity > 0) {
+        // Prevent duplicate pending/processing images jobs
+        const { data: existingChunkJobs } = await adminClient
+          .from('generation_jobs')
+          .select('id')
+          .eq('project_id', projectId)
+          .eq('job_type', 'images')
+          .in('status', ['pending', 'processing'])
+          .limit(1);
+
+        const existingChunkJob = existingChunkJobs?.[0];
+        if (existingChunkJob) {
+          console.log(`[processImagesJob] Next chunk job ${existingChunkJob.id} already exists, skipping creation`);
+          return;
+        }
+
+        const { data: nextChunkJob, error: chunkError } = await adminClient
+          .from('generation_jobs')
+          .insert({
+            project_id: projectId,
+            user_id: userId,
+            job_type: 'images',
+            status: 'pending',
+            progress: 0,
+            total: Math.min(missingCountAfterContinuity, SUBSEQUENT_CHUNK_SIZE),
+            metadata: {
+              ...metadata,
+              skipExisting: true,
+              isChunkContinuation: true
+            }
+          })
+          .select()
+          .single();
+
+        if (chunkError) {
+          console.error(`[processImagesJob] Error creating next continuity chunk job:`, chunkError);
+        } else {
+          console.log(`[processImagesJob] Created next continuity chunk job ${nextChunkJob.id} (${Math.min(missingCountAfterContinuity, SUBSEQUENT_CHUNK_SIZE)} images)`);
+          EdgeRuntime.waitUntil(
+            processJob(
+              nextChunkJob.id,
+              projectId,
+              'images',
+              userId,
+              { ...metadata, skipExisting: true, isChunkContinuation: true },
+              authHeader
+            )
+          );
+        }
+
+        return;
+      }
       
       return; // Skip normal flow
     } catch (continuityError) {
