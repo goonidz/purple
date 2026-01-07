@@ -400,11 +400,11 @@ export default function CalendarVideoModal({
     setIsPlaying(!isPlaying);
   };
 
-  const scrapeYouTubeUrl = async (url: string) => {
+  const scrapeYouTubeUrl = async (url: string): Promise<{ title?: string; thumbnailUrl?: string } | null> => {
     // Check if it's a YouTube URL
     const youtubePattern = /(?:youtube\.com\/(?:watch\?v=|embed\/|v\/|shorts\/)|youtu\.be\/|^)([a-zA-Z0-9_-]{11})/;
     if (!youtubePattern.test(url)) {
-      return;
+      return null;
     }
 
     setIsScrapingSource(true);
@@ -425,10 +425,18 @@ export default function CalendarVideoModal({
           setSourceThumbnailUrl(data.thumbnailUrl);
         }
         toast.success(`Informations récupérées : ${data.title}`);
+        
+        // Return scraped data for immediate use
+        return {
+          title: data.title,
+          thumbnailUrl: data.thumbnailUrl
+        };
       }
+      return null;
     } catch (error: any) {
       console.error("Error scraping YouTube:", error);
       toast.error(error.message || "Erreur lors de la récupération des informations");
+      return null;
     } finally {
       setIsScrapingSource(false);
     }
@@ -505,35 +513,31 @@ export default function CalendarVideoModal({
     }
     
     // Scrape title and thumbnail first
-    await scrapeYouTubeUrl(url);
+    const scrapeResult = await scrapeYouTubeUrl(url);
     
-    // Then launch transcript scraping immediately
-    // If entry exists, use it; otherwise create a temporary entry
+    // Immediately launch transcript scraping after title/thumbnail are scraped
+    // If entry exists, use it; otherwise create it automatically
     if (entry?.id) {
       // Entry exists, launch transcript scraping immediately
       scrapeTranscript(url, entry.id);
-    } else if (title.trim() && scheduledDate) {
-      // Entry doesn't exist yet, create it first then scrape
-      await createEntryAndScrapeTranscript(url);
     } else {
-      // Not enough info to create entry, wait for user to save
-      // But we can still try to scrape if we have minimal info
-      // For now, we'll wait - user will need to save first
-      console.log("Waiting for entry to be saved before scraping transcript");
+      // Entry doesn't exist yet, create it automatically with available data
+      // Use scraped title if available, or current title, or placeholder
+      await createEntryAndScrapeTranscript(url, scrapeResult?.title);
     }
   };
 
-  const createEntryAndScrapeTranscript = async (url: string): Promise<void> => {
-    if (!title.trim() || !scheduledDate) {
-      return;
-    }
-
+  const createEntryAndScrapeTranscript = async (url: string, scrapedTitle?: string): Promise<void> => {
     try {
+      // Use scraped title if available, then current title, otherwise use a placeholder
+      const entryTitle = scrapedTitle || title.trim() || "Nouvelle vidéo";
+      const entryDate = scheduledDate || new Date();
+      
       const dataToSave = {
         user_id: userId,
-        title: title.trim(),
-        scheduled_date: format(scheduledDate, "yyyy-MM-dd"),
-        status,
+        title: entryTitle,
+        scheduled_date: format(entryDate, "yyyy-MM-dd"),
+        status: status || "planned",
         script: script.trim() || null,
         notes: notes.trim() || null,
         audio_url: audioUrl,
@@ -563,10 +567,13 @@ export default function CalendarVideoModal({
           id: data.id, 
           created_at: data.created_at, 
           updated_at: data.updated_at,
-          source_transcript: null
+          source_transcript: null,
+          user_id: userId
         } as ContentCalendarEntry;
         
-        // Launch transcript scraping
+        // Update the entry state so future saves will update instead of create
+        // Note: We can't directly set entry state, but we can track the ID
+        // For now, just launch transcript scraping
         scrapeTranscript(url, data.id);
       }
     } catch (error) {
