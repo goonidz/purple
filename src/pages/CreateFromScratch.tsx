@@ -1329,7 +1329,7 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
       if (entryIdToLink) {
         const { error: linkError } = await supabase
           .from("content_calendar")
-          .update({ project_id: currentProjectId, status: 'generating' })
+          .update({ project_id: currentProjectId, status: 'generating', script: generatedScript })
           .eq("id", entryIdToLink);
         
         if (linkError) {
@@ -1348,6 +1348,25 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
         .from("projects")
         .update({ name: projectName.trim() })
         .eq("id", currentProjectId);
+
+      // If this run comes from the content calendar, persist the exact script sent to TTS
+      const entryIdToLink = calendarEntryId || sessionStorage.getItem("calendar_entry_id");
+      if (entryIdToLink) {
+        const { error: calendarUpdateError } = await supabase
+          .from("content_calendar")
+          .update({
+            script: generatedScript,
+            project_id: currentProjectId,
+            status: "generating",
+          })
+          .eq("id", entryIdToLink);
+
+        if (calendarUpdateError) {
+          console.error("Failed to update calendar script:", calendarUpdateError);
+        } else {
+          sessionStorage.removeItem("calendar_entry_id");
+        }
+      }
 
       // Start audio generation job via backend
       const { data, error } = await supabase.functions.invoke('start-generation-job', {
