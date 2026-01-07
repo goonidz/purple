@@ -269,6 +269,7 @@ const CreateFromScratch = () => {
   const [calendarEntryId, setCalendarEntryId] = useState<string | null>(null);
   const [calendarChannelName, setCalendarChannelName] = useState<string | null>(null);
   const [calendarChannelColor, setCalendarChannelColor] = useState<string | null>(null);
+  const [sourceTranscript, setSourceTranscript] = useState<string | null>(null);
   
   // Script saving
   const [isSavingScript, setIsSavingScript] = useState(false);
@@ -405,6 +406,8 @@ const CreateFromScratch = () => {
           }
           if (calendarEntryIdValue) {
             setCalendarEntryId(calendarEntryIdValue);
+            // Load source transcript from calendar entry
+            loadSourceTranscript(calendarEntryIdValue);
           }
           
           // Load channel info
@@ -963,13 +966,35 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
     await generateScriptWithPrompt(enhancedPrompt);
   };
 
+  // Load source transcript from calendar entry
+  const loadSourceTranscript = async (entryId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from("content_calendar")
+        .select("source_transcript")
+        .eq("id", entryId)
+        .single();
+
+      if (error) throw error;
+
+      if (data?.source_transcript) {
+        setSourceTranscript(data.source_transcript);
+      }
+    } catch (error) {
+      console.error("Error loading source transcript:", error);
+    }
+  };
+
   // Function to replace variables in prompt
   const replacePromptVariables = (prompt: string, projectNameValue: string): string => {
+    const transcriptValue = sourceTranscript || "";
     return prompt
       .replace(/\{\{projectName\}\}/g, projectNameValue)
       .replace(/\{\{project_name\}\}/g, projectNameValue)
       .replace(/\{\{title\}\}/g, projectNameValue)
-      .replace(/\{\{videoTitle\}\}/g, projectNameValue);
+      .replace(/\{\{videoTitle\}\}/g, projectNameValue)
+      .replace(/\{\{sourceTranscript\}\}/g, transcriptValue)
+      .replace(/\{\{source_transcript\}\}/g, transcriptValue);
   };
 
   const generateScriptWithPrompt = async (promptToUse: string) => {

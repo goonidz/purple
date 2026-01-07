@@ -21,6 +21,7 @@ const Profile = () => {
   const [anthropicApiKey, setAnthropicApiKey] = useState("");
   const [braveApiKey, setBraveApiKey] = useState("");
   const [keiApiKey, setKeiApiKey] = useState("");
+  const [apifyApiKey, setApifyApiKey] = useState("");
   
   // Track original values to detect changes
   const [originalKeys, setOriginalKeys] = useState({
@@ -29,7 +30,8 @@ const Profile = () => {
     minimax: "",
     anthropic: "",
     brave: "",
-    kei: ""
+    kei: "",
+    apify: ""
   });
   const [showKeys, setShowKeys] = useState({
     replicate: false,
@@ -37,7 +39,8 @@ const Profile = () => {
     minimax: false,
     anthropic: false,
     brave: false,
-    kei: false
+    kei: false,
+    apify: false
   });
 
   useEffect(() => {
@@ -66,13 +69,14 @@ const Profile = () => {
     setIsLoading(true);
     try {
       // Try to get API keys from Vault
-      const [replicateResult, elevenLabsResult, minimaxResult, anthropicResult, braveResult, keiResult] = await Promise.all([
+      const [replicateResult, elevenLabsResult, minimaxResult, anthropicResult, braveResult, keiResult, apifyResult] = await Promise.all([
         supabase.rpc('get_user_api_key', { key_name: 'replicate' }),
         supabase.rpc('get_user_api_key', { key_name: 'eleven_labs' }),
         supabase.rpc('get_user_api_key', { key_name: 'minimax' }),
         supabase.rpc('get_user_api_key', { key_name: 'anthropic' }),
         supabase.rpc('get_user_api_key', { key_name: 'brave' }),
         supabase.rpc('get_user_api_key', { key_name: 'kei' }),
+        supabase.rpc('get_user_api_key', { key_name: 'apify' }),
       ]);
 
       const replicateValue = replicateResult.data || "";
@@ -81,6 +85,7 @@ const Profile = () => {
       const anthropicValue = anthropicResult.data || "";
       const braveValue = braveResult.data || "";
       const keiValue = keiResult.data || "";
+      const apifyValue = apifyResult.data || "";
 
       // Set current values
       setReplicateApiKey(replicateValue);
@@ -89,6 +94,7 @@ const Profile = () => {
       setAnthropicApiKey(anthropicValue);
       setBraveApiKey(braveValue);
       setKeiApiKey(keiValue);
+      setApifyApiKey(apifyValue);
       
       // Store original values to track changes
       setOriginalKeys({
@@ -97,7 +103,8 @@ const Profile = () => {
         minimax: minimaxValue,
         anthropic: anthropicValue,
         brave: braveValue,
-        kei: keiValue
+        kei: keiValue,
+        apify: apifyValue
       });
       
       if (replicateResult.error && !replicateResult.error.message?.includes('not found')) {
@@ -144,6 +151,9 @@ const Profile = () => {
     if (keiApiKey.trim() !== originalKeys.kei) {
       changedKeys.push({ key_name: 'kei', key_value: keiApiKey.trim() });
     }
+    if (apifyApiKey.trim() !== originalKeys.apify) {
+      changedKeys.push({ key_name: 'apify', key_value: apifyApiKey.trim() });
+    }
 
     if (changedKeys.length === 0) {
       toast.info("Aucune modification détectée");
@@ -172,7 +182,8 @@ const Profile = () => {
         minimax: minimaxApiKey.trim(),
         anthropic: anthropicApiKey.trim(),
         brave: braveApiKey.trim(),
-        kei: keiApiKey.trim()
+        kei: keiApiKey.trim(),
+        apify: apifyApiKey.trim()
       });
 
       toast.success("Clés API sauvegardées avec succès !");
@@ -455,11 +466,47 @@ const Profile = () => {
                       </a>
                     </p>
                   </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="apify-key">
+                      Apify API Key
+                    </Label>
+                    <div className="relative">
+                      <Input
+                        id="apify-key"
+                        type={showKeys.apify ? "text" : "password"}
+                        value={apifyApiKey}
+                        onChange={(e) => setApifyApiKey(e.target.value)}
+                        placeholder="apify_api_..."
+                        className="pr-10"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                        onClick={() => setShowKeys(prev => ({ ...prev, apify: !prev.apify }))}
+                      >
+                        {showKeys.apify ? <EyeOff className="h-4 w-4 text-muted-foreground" /> : <Eye className="h-4 w-4 text-muted-foreground" />}
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Utilisée pour récupérer les transcriptions YouTube.{" "}
+                      <a
+                        href="https://console.apify.com/account/integrations"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary hover:underline"
+                      >
+                        Obtenir une clé
+                      </a>
+                    </p>
+                  </div>
                 </div>
 
                 <Button
                   onClick={handleSave}
-                  disabled={isSaving || (!replicateApiKey.trim() && !elevenLabsApiKey.trim() && !minimaxApiKey.trim() && !anthropicApiKey.trim() && !braveApiKey.trim() && !keiApiKey.trim())}
+                  disabled={isSaving || (!replicateApiKey.trim() && !elevenLabsApiKey.trim() && !minimaxApiKey.trim() && !anthropicApiKey.trim() && !braveApiKey.trim() && !keiApiKey.trim() && !apifyApiKey.trim())}
                   className="w-full"
                   size="lg"
                 >

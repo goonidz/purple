@@ -181,6 +181,7 @@ serve(async (req) => {
         format: 'mp4',
       },
       projectId,
+      projectName: project.name || 'video', // Pass project name for output filename
       userId: user.id,
       effectType: effectType || 'zoom', // Pass effect type to VPS service (ensure it's never undefined)
       renderMethod: renderMethod || 'standard', // Pass render method to VPS service

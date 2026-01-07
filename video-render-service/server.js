@@ -753,6 +753,7 @@ async function processRenderJob(jobId, renderData) {
       subtitleSettings,
       videoSettings = {},
       projectId,
+      projectName,
       userId,
       effectType = 'zoom', // 'zoom' for Ken Burns, 'pan' for pan effects
       renderMethod = 'standard' // 'standard' = 6x upscale, 'lanczos' = 2x upscale with Lanczos
@@ -997,7 +998,14 @@ async function processRenderJob(jobId, renderData) {
 
     // Step 6: Concatenate all segments and add audio
     addStep('Concaténation des segments et ajout de l\'audio...', 70, true);
-    const outputPath = path.join(workDir, `output.${format}`);
+    
+    // Sanitize project name for filename (remove invalid characters)
+    const sanitizedProjectName = (projectName || 'video')
+      .replace(/[^a-zA-Z0-9\s\-_]/g, '') // Remove invalid filename characters
+      .replace(/\s+/g, '_') // Replace spaces with underscores
+      .substring(0, 100); // Limit length
+    
+    const outputPath = path.join(workDir, `${sanitizedProjectName}.${format}`);
     
     // Log concat file content for debugging
     const concatFileContent = fs.readFileSync(concatPath, 'utf8');

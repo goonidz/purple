@@ -15,7 +15,7 @@ import { toast } from "sonner";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
 import { cn } from "@/lib/utils";
-import { CalendarIcon, Upload, Trash2, Loader2, Play, Pause, Rocket, ExternalLink, FolderOpen, Link2, Mic, PenTool, Plus } from "lucide-react";
+import { CalendarIcon, Upload, Trash2, Loader2, Play, Pause, Rocket, ExternalLink, FolderOpen, Link2, Mic, PenTool, Plus, Copy, Check } from "lucide-react";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import ChannelManager from "@/components/ChannelManager";
 
@@ -40,6 +40,7 @@ interface ContentCalendarEntry {
   channel_id: string | null;
   source_url: string | null;
   source_thumbnail_url: string | null;
+  source_transcript: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -92,7 +93,10 @@ export default function CalendarVideoModal({
   const [youtubeUrl, setYoutubeUrl] = useState("");
   const [sourceUrl, setSourceUrl] = useState("");
   const [sourceThumbnailUrl, setSourceThumbnailUrl] = useState<string | null>(null);
+  const [sourceTranscript, setSourceTranscript] = useState<string | null>(null);
   const [isScrapingSource, setIsScrapingSource] = useState(false);
+  const [isScrapingTranscript, setIsScrapingTranscript] = useState(false);
+  const [transcriptCopied, setTranscriptCopied] = useState(false);
   const [projectId, setProjectId] = useState<string | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [isLoadingProjects, setIsLoadingProjects] = useState(false);
@@ -106,6 +110,35 @@ export default function CalendarVideoModal({
   const [isPlaying, setIsPlaying] = useState(false);
   const [showLaunchDialog, setShowLaunchDialog] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  // Subscribe to realtime updates for transcript
+  useEffect(() => {
+    if (!entry?.id) return;
+
+    const channel = supabase
+      .channel(`calendar-transcript-${entry.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'content_calendar',
+          filter: `id=eq.${entry.id}`
+        },
+        (payload) => {
+          if (payload.new && (payload.new as any).source_transcript) {
+            setSourceTranscript((payload.new as any).source_transcript);
+            setIsScrapingTranscript(false);
+            toast.success("Transcription mise à jour");
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [entry?.id]);
 
   // Load user's projects
   useEffect(() => {
@@ -168,6 +201,7 @@ export default function CalendarVideoModal({
       setYoutubeUrl(entry.youtube_url || "");
       setSourceUrl(entry.source_url || "");
       setSourceThumbnailUrl(entry.source_thumbnail_url || null);
+      setSourceTranscript(entry.source_transcript || null);
       setProjectId(entry.project_id);
       setChannelId(entry.channel_id);
     } else if (selectedDate) {
@@ -180,6 +214,7 @@ export default function CalendarVideoModal({
       setYoutubeUrl("");
       setSourceUrl(initialSourceUrl || "");
       setSourceThumbnailUrl(initialSourceThumbnailUrl || null);
+      setSourceTranscript(null);
       setProjectId(null);
       setChannelId(null);
     }
@@ -262,6 +297,7 @@ export default function CalendarVideoModal({
         youtube_url: youtubeUrl.trim() || null,
         source_url: sourceUrl.trim() || null,
         source_thumbnail_url: sourceThumbnailUrl || null,
+        source_transcript: sourceTranscript || null,
         project_id: projectId,
         channel_id: channelId,
       };
@@ -307,6 +343,27 @@ export default function CalendarVideoModal({
         throw error;
       } else {
         toast.success(entry ? "Vidéo mise à jour" : "Vidéo planifiée");
+      }
+
+      // Launch transcript scraping if source URL exists and transcript not already loaded
+      let savedEntryId = entry?.id;
+      if (!savedEntryId) {
+        // If entry was just created, fetch its ID
+        const { data: newEntry } = await supabase
+          .from("content_calendar")
+          .select("id")
+          .eq("user_id", userId)
+          .eq("scheduled_date", format(scheduledDate, "yyyy-MM-dd"))
+          .eq("title", title.trim())
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .single();
+        savedEntryId = newEntry?.id;
+      }
+
+      if (savedEntryId && sourceUrl && !sourceTranscript) {
+        // Launch transcript scraping in background
+        scrapeTranscript(sourceUrl, savedEntryId);
       }
 
       // If this entry is linked to a project, also update the project name
@@ -389,12 +446,68 @@ export default function CalendarVideoModal({
           setSourceThumbnailUrl(data.thumbnailUrl);
         }
         toast.success(`Informations récupérées : ${data.title}`);
+        
+        // Note: Transcript scraping will be launched after entry is saved
+        // (see handleSave function)
       }
     } catch (error: any) {
       console.error("Error scraping YouTube:", error);
       toast.error(error.message || "Erreur lors de la récupération des informations");
     } finally {
       setIsScrapingSource(false);
+    }
+  };
+
+
+  const scrapeTranscript = async (url: string, calendarEntryId: string) => {
+    setIsScrapingTranscript(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("scrape-youtube-transcript", {
+        body: { url, calendarEntryId }
+      });
+
+      if (error) throw error;
+
+      if (data.success) {
+        setSourceTranscript(data.transcript);
+        toast.success("Transcription récupérée avec succès");
+      }
+    } catch (error: any) {
+      console.error("Error scraping transcript:", error);
+      toast.error(error.message || "Erreur lors de la récupération de la transcription");
+    } finally {
+      setIsScrapingTranscript(false);
+    }
+  };
+
+  const copyTranscriptToClipboard = async () => {
+    if (!sourceTranscript) return;
+    
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(sourceTranscript);
+        setTranscriptCopied(true);
+        toast.success("Transcription copiée !");
+        setTimeout(() => setTranscriptCopied(false), 2000);
+      } else {
+        // Fallback for older browsers
+        const textArea = document.createElement("textarea");
+        textArea.value = sourceTranscript;
+        textArea.style.position = "fixed";
+        textArea.style.opacity = "0";
+        document.body.appendChild(textArea);
+        textArea.select();
+        const successful = document.execCommand('copy');
+        document.body.removeChild(textArea);
+        if (successful) {
+          setTranscriptCopied(true);
+          toast.success("Transcription copiée !");
+          setTimeout(() => setTranscriptCopied(false), 2000);
+        }
+      }
+    } catch (error) {
+      console.error("Error copying transcript:", error);
+      toast.error("Erreur lors de la copie");
     }
   };
 
@@ -714,6 +827,46 @@ export default function CalendarVideoModal({
                   />
                 </div>
               )}
+            </div>
+
+            {/* Source Video Transcript */}
+            <div className="space-y-2">
+              <Label>Source Video Transcript</Label>
+              {isScrapingTranscript ? (
+                <div className="flex items-center gap-2 p-4 border rounded-lg bg-muted/50">
+                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                  <span className="text-sm text-muted-foreground">
+                    Récupération de la transcription en cours...
+                  </span>
+                </div>
+              ) : sourceTranscript ? (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs text-muted-foreground">
+                      Transcription disponible ({sourceTranscript.length} caractères)
+                    </p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={copyTranscriptToClipboard}
+                      className="shrink-0"
+                    >
+                      {transcriptCopied ? (
+                        <Check className="h-4 w-4 text-green-500" />
+                      ) : (
+                        <Copy className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </div>
+                  <div className="p-4 border rounded-lg bg-muted/50 max-h-64 overflow-y-auto">
+                    <p className="text-sm whitespace-pre-wrap">{sourceTranscript}</p>
+                  </div>
+                </div>
+              ) : sourceUrl && !isScrapingTranscript ? (
+                <p className="text-xs text-muted-foreground">
+                  La transcription sera récupérée automatiquement après la sauvegarde de l'entrée.
+                </p>
+              ) : null}
             </div>
           </TabsContent>
 

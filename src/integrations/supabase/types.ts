@@ -196,6 +196,7 @@ export type Database = {
           scheduled_date: string
           script: string | null
           source_thumbnail_url: string | null
+          source_transcript: string | null
           source_url: string | null
           status: string
           title: string
@@ -213,6 +214,7 @@ export type Database = {
           scheduled_date: string
           script?: string | null
           source_thumbnail_url?: string | null
+          source_transcript?: string | null
           source_url?: string | null
           status?: string
           title: string
@@ -230,6 +232,7 @@ export type Database = {
           scheduled_date?: string
           script?: string | null
           source_thumbnail_url?: string | null
+          source_transcript?: string | null
           source_url?: string | null
           status?: string
           title?: string
