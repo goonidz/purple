@@ -13,6 +13,16 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Progress } from "@/components/ui/progress";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Loader2, Sparkles, FileText, Mic, ArrowRight, ArrowLeft, Check, RefreshCw, ChevronDown, Save, Trash2, FolderOpen, Pencil, Copy, Upload, X, ClipboardCopy, ExternalLink } from "lucide-react";
 import AppHeader from "@/components/AppHeader";
 import { toast } from "sonner";
@@ -262,6 +272,7 @@ const CreateFromScratch = () => {
   const [saveTtsPresetDialogOpen, setSaveTtsPresetDialogOpen] = useState(false);
   const [editTtsPresetDialogOpen, setEditTtsPresetDialogOpen] = useState(false);
   const [duplicateTtsPresetDialogOpen, setDuplicateTtsPresetDialogOpen] = useState(false);
+  const [confirmGenerateAudioOpen, setConfirmGenerateAudioOpen] = useState(false);
   const [newTtsPresetName, setNewTtsPresetName] = useState("");
   const [editTtsPresetName, setEditTtsPresetName] = useState("");
   const [editingTtsPresetId, setEditingTtsPresetId] = useState<string | null>(null);
@@ -2589,7 +2600,7 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                       )}
 
                       <Button 
-                        onClick={handleGenerateAudio} 
+                        onClick={() => setConfirmGenerateAudioOpen(true)} 
                         disabled={isGeneratingAudio || !generatedScript.trim()}
                         className="w-full"
                         size="lg"
@@ -2606,6 +2617,31 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                           </>
                         )}
                       </Button>
+
+                      <AlertDialog open={confirmGenerateAudioOpen} onOpenChange={setConfirmGenerateAudioOpen}>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle className="text-destructive">
+                              ⚠️ Êtes-vous sûr de vouloir générer l'audio et non de l'importer ?
+                            </AlertDialogTitle>
+                            <AlertDialogDescription className="text-base">
+                              L'import audio est souvent préférable si vous avez déjà une voix/offline, ou si vous voulez éviter les coûts de TTS.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Annuler</AlertDialogCancel>
+                            <AlertDialogAction
+                              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                              onClick={async () => {
+                                setConfirmGenerateAudioOpen(false);
+                                await handleGenerateAudio();
+                              }}
+                            >
+                              Oui, générer l'audio
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
                     </CollapsibleContent>
                   </Collapsible>
 

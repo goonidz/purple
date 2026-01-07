@@ -33,6 +33,7 @@ export function useVideoRenderJobs({ projectId, onJobComplete, onJobFailed }: Us
   const [activeJobs, setActiveJobs] = useState<VideoRenderJob[]>([]);
   const [allJobs, setAllJobs] = useState<VideoRenderJob[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const vpsBaseUrl = (import.meta as any)?.env?.VITE_VPS_URL as string | undefined;
 
   // Use refs to avoid stale closures
   const onJobCompleteRef = useRef(onJobComplete);
@@ -96,10 +97,17 @@ export function useVideoRenderJobs({ projectId, onJobComplete, onJobFailed }: Us
       if (!activeJobsFromDb || activeJobsFromDb.length === 0) return;
       
       for (const job of activeJobsFromDb) {
-        if (!job.status_url) continue;
+        // Prefer the frontend-configured VPS URL to avoid mixed-content and stale hosts.
+        // Fallback to the stored status_url when VITE_VPS_URL is not set.
+        const effectiveStatusUrl =
+          vpsBaseUrl && job.job_id
+            ? `${vpsBaseUrl.replace(/\/$/, '')}/status/${job.job_id}`
+            : job.status_url;
+
+        if (!effectiveStatusUrl) continue;
 
         try {
-          const response = await fetch(job.status_url);
+          const response = await fetch(effectiveStatusUrl);
           if (!response.ok) continue;
           
           const data = await response.json();
