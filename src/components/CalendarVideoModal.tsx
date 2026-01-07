@@ -109,6 +109,7 @@ export default function CalendarVideoModal({
   const [isUploading, setIsUploading] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [showLaunchDialog, setShowLaunchDialog] = useState(false);
+  const [tempCreatedEntryId, setTempCreatedEntryId] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   // Subscribe to realtime updates for transcript
@@ -304,11 +305,14 @@ export default function CalendarVideoModal({
 
       // Try saving with thumbnail first
       let error: any = null;
-      if (entry) {
+      const existingEntryId = entry?.id || tempCreatedEntryId;
+      
+      if (existingEntryId) {
+        // Update existing entry (either from prop or temp created)
         const result = await supabase
           .from("content_calendar")
           .update(dataWithThumbnail)
-          .eq("id", entry.id);
+          .eq("id", existingEntryId);
         error = result.error;
       } else {
         const result = await supabase
@@ -323,11 +327,11 @@ export default function CalendarVideoModal({
         const dataWithoutThumbnail = { ...dataWithThumbnail };
         delete (dataWithoutThumbnail as any).source_thumbnail_url;
         
-        if (entry) {
+        if (existingEntryId) {
           const retryResult = await supabase
             .from("content_calendar")
             .update(dataWithoutThumbnail)
-            .eq("id", entry.id);
+            .eq("id", existingEntryId);
           if (retryResult.error) throw retryResult.error;
         } else {
           const retryResult = await supabase
@@ -336,14 +340,17 @@ export default function CalendarVideoModal({
           if (retryResult.error) throw retryResult.error;
         }
         
-        toast.success(entry ? "Vidéo mise à jour (miniature non sauvegardée - cache en cours de mise à jour)" : "Vidéo planifiée (miniature non sauvegardée - cache en cours de mise à jour)", {
+        toast.success(existingEntryId ? "Vidéo mise à jour (miniature non sauvegardée - cache en cours de mise à jour)" : "Vidéo planifiée (miniature non sauvegardée - cache en cours de mise à jour)", {
           duration: 4000
         });
       } else if (error) {
         throw error;
       } else {
-        toast.success(entry ? "Vidéo mise à jour" : "Vidéo planifiée");
+        toast.success(existingEntryId ? "Vidéo mise à jour" : "Vidéo planifiée");
       }
+      
+      // Clear temp entry tracking since we've saved successfully
+      setTempCreatedEntryId(null);
 
       // If this entry is linked to a project, also update the project name
       if (projectId && title.trim()) {
@@ -388,6 +395,24 @@ export default function CalendarVideoModal({
     } finally {
       setIsDeleting(false);
     }
+  };
+
+  // Handle close - delete temp entry if user didn't save
+  const handleClose = async () => {
+    if (tempCreatedEntryId) {
+      // User is closing without saving - delete the temp entry
+      try {
+        await supabase
+          .from("content_calendar")
+          .delete()
+          .eq("id", tempCreatedEntryId);
+        console.log("Deleted temp calendar entry:", tempCreatedEntryId);
+      } catch (error) {
+        console.error("Error deleting temp entry:", error);
+      }
+      setTempCreatedEntryId(null);
+    }
+    onClose();
   };
 
   const toggleAudio = () => {
@@ -567,19 +592,9 @@ export default function CalendarVideoModal({
       }
       
       if (data?.id) {
-        // Update local entry state to reflect the created entry
-        // This will allow future updates to work correctly
-        const newEntry = { 
-          ...dataToSave, 
-          id: data.id, 
-          created_at: data.created_at, 
-          updated_at: data.updated_at,
-          source_transcript: null,
-          user_id: userId
-        } as ContentCalendarEntry;
+        // Track this as a temporary entry - will be deleted if user cancels
+        setTempCreatedEntryId(data.id);
         
-        // Update the entry state so future saves will update instead of create
-        // Note: We can't directly set entry state, but we can track the ID
         // Launch transcript scraping in background (fire and forget)
         // It will continue even if user leaves the page
         scrapeTranscript(url, data.id).catch(err => {
@@ -657,7 +672,7 @@ export default function CalendarVideoModal({
 
   return (
     <>
-    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+    <Dialog open={isOpen} onOpenChange={(open) => !open && handleClose()}>
       <DialogContent className="max-w-2xl max-h-[90vh] w-[95vw] sm:w-full flex flex-col p-0">
         <div className="overflow-y-auto flex-1 px-6 pt-6 pb-4">
         <DialogHeader>
@@ -1095,7 +1110,7 @@ export default function CalendarVideoModal({
                 Lancer la génération
               </Button>
             )}
-            <Button variant="outline" onClick={onClose}>
+            <Button variant="outline" onClick={handleClose}>
               Annuler
             </Button>
             <Button onClick={handleSave} disabled={isLoading}>
