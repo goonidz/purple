@@ -2710,11 +2710,11 @@ const Index = () => {
           <>
             <span className="text-muted-foreground hidden sm:inline">/</span>
             {isEditingProjectName ? (
-              <div className="flex items-center gap-2 flex-1 min-w-0">
+              <div className="flex items-center gap-1 sm:gap-2 flex-1 min-w-0">
                 <Input
                   value={editingProjectNameValue}
                   onChange={(e) => setEditingProjectNameValue(e.target.value)}
-                  className="h-8 w-full sm:w-64"
+                  className="h-8 w-full sm:w-64 min-w-0"
                   autoFocus
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
@@ -2726,11 +2726,20 @@ const Index = () => {
                     }
                   }}
                 />
-                <Button size="sm" onClick={handleSaveProjectName} className="flex-shrink-0">Enregistrer</Button>
+                <Button size="sm" onClick={handleSaveProjectName} className="flex-shrink-0 hidden sm:inline-flex">Enregistrer</Button>
                 <Button size="sm" variant="ghost" onClick={() => {
                   setIsEditingProjectName(false);
                   setEditingProjectNameValue("");
-                }} className="flex-shrink-0">Annuler</Button>
+                }} className="flex-shrink-0 hidden sm:inline-flex">Annuler</Button>
+                <Button size="icon" onClick={handleSaveProjectName} className="flex-shrink-0 sm:hidden h-8 w-8">
+                  <Check className="h-4 w-4" />
+                </Button>
+                <Button size="icon" variant="ghost" onClick={() => {
+                  setIsEditingProjectName(false);
+                  setEditingProjectNameValue("");
+                }} className="flex-shrink-0 sm:hidden h-8 w-8">
+                  <X className="h-4 w-4" />
+                </Button>
               </div>
             ) : (
               <div className="group min-w-0">

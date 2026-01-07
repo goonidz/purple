@@ -16,30 +16,32 @@ export default function AppHeader({ title, children }: AppHeaderProps) {
   return (
     <header className="border-b bg-card/50 backdrop-blur-sm sticky top-0 z-40">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
+        <div className="flex items-center justify-between gap-2 sm:gap-4">
+          <div className="flex items-center gap-2 sm:gap-4 min-w-0 flex-1">
             <Link 
               to="/"
-              className="flex items-center gap-2 hover:opacity-80 transition-opacity"
+              className="flex items-center gap-2 hover:opacity-80 transition-opacity flex-shrink-0"
             >
               <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center">
                 <Sparkles className="h-5 w-5 text-primary-foreground" />
               </div>
-              <span className="font-semibold text-lg bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
+              <span className="font-semibold text-base sm:text-lg bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent hidden sm:inline">
                 {title || "VideoFlow"}
               </span>
             </Link>
-            {children}
+            <div className="min-w-0 flex-1">
+              {children}
+            </div>
           </div>
-          <nav className="flex items-center gap-1">
+          <nav className="flex items-center gap-1 flex-shrink-0">
             <Link to="/calendar">
               <Button 
                 variant={isActive("/calendar") ? "secondary" : "ghost"} 
                 size="sm"
                 className={cn(isActive("/calendar") && "bg-primary/10")}
               >
-                <Calendar className="h-4 w-4 mr-2" />
-                Calendrier
+                <Calendar className="h-4 w-4 sm:mr-2" />
+                <span className="hidden sm:inline">Calendrier</span>
               </Button>
             </Link>
             <Link to="/competitors">
@@ -48,8 +50,8 @@ export default function AppHeader({ title, children }: AppHeaderProps) {
                 size="sm"
                 className={cn(isActive("/competitors") && "bg-primary/10")}
               >
-                <Users className="h-4 w-4 mr-2" />
-                Competitors
+                <Users className="h-4 w-4 sm:mr-2" />
+                <span className="hidden sm:inline">Competitors</span>
               </Button>
             </Link>
             <Link to="/projects">
@@ -58,8 +60,8 @@ export default function AppHeader({ title, children }: AppHeaderProps) {
                 size="sm"
                 className={cn(isActive("/projects") && "bg-primary/10")}
               >
-                <FolderOpen className="h-4 w-4 mr-2" />
-                Projets
+                <FolderOpen className="h-4 w-4 sm:mr-2" />
+                <span className="hidden sm:inline">Projets</span>
               </Button>
             </Link>
             <Link to="/profile">
@@ -68,8 +70,8 @@ export default function AppHeader({ title, children }: AppHeaderProps) {
                 size="sm"
                 className={cn(isActive("/profile") && "bg-primary/10")}
               >
-                <User className="h-4 w-4 mr-2" />
-                Profil
+                <User className="h-4 w-4 sm:mr-2" />
+                <span className="hidden sm:inline">Profil</span>
               </Button>
             </Link>
           </nav>
