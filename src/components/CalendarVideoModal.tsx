@@ -672,36 +672,6 @@ export default function CalendarVideoModal({
           </DialogDescription>
         </DialogHeader>
 
-        {/* Transcript scraping notification */}
-        {isScrapingTranscript && (
-          <div className="mt-4 p-3 bg-orange-100 dark:bg-orange-900/30 border border-orange-300 dark:border-orange-700 rounded-lg flex items-center gap-3">
-            <Loader2 className="h-5 w-5 animate-spin text-orange-600 dark:text-orange-400" />
-            <div className="flex-1">
-              <p className="text-sm font-medium text-orange-800 dark:text-orange-200">
-                Récupération de la transcription en cours...
-              </p>
-              <p className="text-xs text-orange-600 dark:text-orange-400">
-                Vous pouvez quitter, elle sera disponible automatiquement.
-              </p>
-            </div>
-          </div>
-        )}
-
-        {/* Transcript ready notification */}
-        {sourceTranscript && !isScrapingTranscript && (
-          <div className="mt-4 p-3 bg-green-100 dark:bg-green-900/30 border border-green-300 dark:border-green-700 rounded-lg flex items-center gap-3">
-            <Check className="h-5 w-5 text-green-600 dark:text-green-400" />
-            <div className="flex-1">
-              <p className="text-sm font-medium text-green-800 dark:text-green-200">
-                Transcription disponible !
-              </p>
-              <p className="text-xs text-green-600 dark:text-green-400">
-                Vous pouvez lancer la génération du script avec la variable {`{{sourceTranscript}}`}.
-              </p>
-            </div>
-          </div>
-        )}
-
         <Tabs defaultValue="info" className="mt-4">
           <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="info">Informations</TabsTrigger>
@@ -1066,6 +1036,37 @@ export default function CalendarVideoModal({
         </Tabs>
 
         </div>
+
+        {/* Transcript scraping notification - at bottom */}
+        {isScrapingTranscript && (
+          <div className="mx-6 mb-2 p-3 bg-orange-100 dark:bg-orange-900/30 border border-orange-300 dark:border-orange-700 rounded-lg flex items-center gap-3">
+            <Loader2 className="h-5 w-5 animate-spin text-orange-600 dark:text-orange-400" />
+            <div className="flex-1">
+              <p className="text-sm font-medium text-orange-800 dark:text-orange-200">
+                Récupération de la transcription en cours...
+              </p>
+              <p className="text-xs text-orange-600 dark:text-orange-400">
+                Vous pouvez quitter, elle sera disponible automatiquement.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Transcript ready notification - at bottom */}
+        {sourceTranscript && !isScrapingTranscript && (
+          <div className="mx-6 mb-2 p-3 bg-green-100 dark:bg-green-900/30 border border-green-300 dark:border-green-700 rounded-lg flex items-center gap-3">
+            <Check className="h-5 w-5 text-green-600 dark:text-green-400" />
+            <div className="flex-1">
+              <p className="text-sm font-medium text-green-800 dark:text-green-200">
+                Transcription disponible !
+              </p>
+              <p className="text-xs text-green-600 dark:text-green-400">
+                Utilisez {`{{sourceTranscript}}`} dans le prompt de génération.
+              </p>
+            </div>
+          </div>
+        )}
+
         <div className="flex items-center justify-between p-4 border-t bg-background flex-shrink-0">
           <div>
             {entry && (
