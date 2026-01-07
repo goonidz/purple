@@ -671,7 +671,10 @@ const CreateFromScratch = () => {
     // Load voice ID based on provider
     if (preset.provider === "inworld") {
       setInworldVoiceId(preset.voice_id);
-      setInworldSpeakingRate(typeof preset.speed === "number" && Number.isFinite(preset.speed) ? preset.speed : 0.9);
+      // Keep UI default (0.9) on silent auto-select; apply saved speed only on explicit user selection.
+      if (!opts?.silent) {
+        setInworldSpeakingRate(typeof preset.speed === "number" && Number.isFinite(preset.speed) ? preset.speed : 0.9);
+      }
     } else {
       setSelectedVoice(preset.voice_id);
       if (preset.model) setMinimaxModel(preset.model);
