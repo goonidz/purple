@@ -240,6 +240,7 @@ const CreateFromScratch = () => {
   const [scriptModel, setScriptModel] = useState<"claude" | "claude-thinking" | "gpt5">("claude");
   const [useOwnText, setUseOwnText] = useState(false);
   const [customScriptText, setCustomScriptText] = useState("");
+  const [vpsScriptJobId, setVpsScriptJobId] = useState<string | null>(null);
   
   // Audio step
   const [ttsProvider, setTtsProvider] = useState<"minimax" | "inworld">("inworld");
@@ -970,6 +971,82 @@ const CreateFromScratch = () => {
     return () => clearInterval(pollInterval);
   }, [scriptJobId, isGeneratingScript]);
 
+  // Poll for VPS script job completion (async Anthropic direct flow)
+  useEffect(() => {
+    if (!vpsScriptJobId || !isGeneratingScript) return;
+
+    const VPS_URL = import.meta.env.VITE_VPS_URL || "https://purpleai.duckdns.org/api/render";
+    const pollInterval = setInterval(async () => {
+      try {
+        const resp = await fetch(`${VPS_URL}/generate-script/status/${vpsScriptJobId}`);
+        if (!resp.ok) return;
+        const data = await resp.json().catch(() => null);
+        if (!data?.success) return;
+
+        if (data.status === "completed") {
+          clearInterval(pollInterval);
+          setIsGeneratingScript(false);
+          setGenerationProgress(100);
+          setGenerationMessage("Script terminé !");
+          if (data.result?.script) {
+            setGeneratedScript(data.result.script);
+            setWordCount(data.result.wordCount || 0);
+            setEstimatedDuration(data.result.estimatedDuration || 0);
+            setStep("script");
+            toast.success("Script généré avec succès !");
+          } else {
+            // Script is saved server-side; fetch from Supabase as fallback
+            if (projectId) {
+              const { data: projectData } = await supabase
+                .from("projects")
+                .select("script")
+                .eq("id", projectId)
+                .single();
+              if (projectData?.script) {
+                setGeneratedScript(projectData.script);
+                setStep("script");
+                toast.success("Script généré avec succès !");
+              }
+            }
+          }
+          try {
+            if (projectId) localStorage.removeItem(`vps_script_job_${projectId}`);
+          } catch (_) {}
+          setVpsScriptJobId(null);
+        } else if (data.status === "failed") {
+          clearInterval(pollInterval);
+          setIsGeneratingScript(false);
+          toast.error(data.error || "Erreur lors de la génération du script");
+          try {
+            if (projectId) localStorage.removeItem(`vps_script_job_${projectId}`);
+          } catch (_) {}
+          setVpsScriptJobId(null);
+        } else {
+          setGenerationProgress((prev) => Math.min(prev + 2, 85));
+        }
+      } catch (e) {
+        // ignore polling errors
+      }
+    }, 3000);
+
+    return () => clearInterval(pollInterval);
+  }, [vpsScriptJobId, isGeneratingScript, projectId]);
+
+  // Resume VPS script job polling after refresh/navigation (job is saved server-side)
+  useEffect(() => {
+    if (!projectId) return;
+    try {
+      const saved = localStorage.getItem(`vps_script_job_${projectId}`);
+      if (saved && !vpsScriptJobId) {
+        setIsGeneratingScript(true);
+        setGenerationProgress(10);
+        setGenerationMessage("Génération du script en cours...");
+        setVpsScriptJobId(saved);
+      }
+    } catch (_) {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId]);
+
   // Generate video axes via Gemini
   const handleGenerateAxes = async () => {
     if (!customPrompt.trim()) {
@@ -1120,7 +1197,7 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
           console.warn("Anthropic API key not configured; falling back to Replicate flow.", apiKeyError);
           toast.info("Clé Anthropic manquante : bascule sur le mode via Replicate.");
         } else {
-          // Call VPS directly (no timeout)
+          // Call VPS directly in ASYNC mode (no timeout + safe to leave page)
           // Use HTTPS if available, fallback to HTTP for development
           const VPS_URL = import.meta.env.VITE_VPS_URL || "https://purpleai.duckdns.org/api/render";
           // Use a stable alias for Sonnet 4.5; the VPS will resolve it to an exact Anthropic model id if needed.
@@ -1138,6 +1215,9 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
               customPrompt: finalPrompt,
               model: vpsModel,
               thinkingBudgetTokens,
+              async: true,
+              projectId: tempProject.id,
+              userId: user!.id,
             }),
           });
 
@@ -1149,26 +1229,17 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
           }
 
           const result = await response.json();
-
-          // Save script to project
-          const { error: updateError } = await supabase
-            .from("projects")
-            .update({ script: result.script })
-            .eq("id", tempProject.id);
-
-          if (updateError) throw updateError;
-
-          // Update calendar entry status if linked
-          if (entryIdToLink) {
-            await supabase.from("content_calendar").update({ status: "script_ready" }).eq("id", entryIdToLink);
+          if (result?.jobId) {
+            setVpsScriptJobId(result.jobId);
+            try {
+              localStorage.setItem(`vps_script_job_${tempProject.id}`, result.jobId);
+            } catch (_) {}
+            setStep("script");
+            toast.info("Génération du script en cours... Vous pouvez quitter cette page, le script sera sauvegardé.");
+            return;
           }
 
-          setGeneratedScript(result.script);
-          setGenerationProgress(100);
-          setIsGeneratingScript(false);
-          setStep("script");
-          toast.success(`Script généré ! (${result.wordCount} mots, ${result.generationTime}s)`);
-          return;
+          throw new Error("Pas de job ID reçu du VPS");
         }
       }
 
@@ -1259,6 +1330,9 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
               customPrompt: finalPrompt,
               model: vpsModel,
               thinkingBudgetTokens,
+              async: true,
+              projectId,
+              userId: user!.id,
             }),
           });
 
@@ -1268,19 +1342,16 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
           }
 
           const result = await response.json();
+          if (result?.jobId) {
+            setVpsScriptJobId(result.jobId);
+            try {
+              localStorage.setItem(`vps_script_job_${projectId}`, result.jobId);
+            } catch (_) {}
+            toast.info("Régénération du script en cours... Vous pouvez quitter cette page, le script sera sauvegardé.");
+            return;
+          }
 
-          const { error: updateError } = await supabase
-            .from("projects")
-            .update({ script: result.script })
-            .eq("id", projectId);
-          if (updateError) throw updateError;
-
-          setGeneratedScript(result.script);
-          setGenerationProgress(100);
-          setIsGeneratingScript(false);
-          setStep("script");
-          toast.success(`Script régénéré ! (${result.wordCount} mots, ${result.generationTime}s)`);
-          return;
+          throw new Error("Pas de job ID reçu du VPS");
         }
       }
 

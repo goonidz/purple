@@ -214,6 +214,179 @@ async function shouldTranscribeWithElevenLabs({ projectId }) {
 // Job status storage (in-memory, could be moved to Redis/DB for production)
 const jobs = new Map();
 
+function scheduleJobEviction(jobId, ms) {
+  try {
+    setTimeout(() => {
+      const job = jobs.get(jobId);
+      // Only evict completed/failed/cancelled jobs (keep active ones)
+      if (job && (job.status === 'completed' || job.status === 'failed' || job.status === 'cancelled')) {
+        jobs.delete(jobId);
+      }
+    }, ms);
+  } catch (_) {}
+}
+
+async function saveScriptToSupabase({ projectId, script, model, generationTime, wordCount, estimatedDuration }) {
+  if (!supabase || !projectId || !script) return;
+  try {
+    const { error } = await supabase
+      .from('projects')
+      .update({
+        script,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', projectId);
+    if (error) throw error;
+    console.log(`[generate-script] Saved script to Supabase for project ${projectId} (words=${wordCount}, model=${model}, gen=${generationTime}s)`);
+  } catch (e) {
+    console.error(`[generate-script] Failed to save script to Supabase for project ${projectId}:`, e.message || e);
+  }
+}
+
+async function processGenerateScriptJob(jobId, payload) {
+  const startTime = Date.now();
+  const {
+    anthropicApiKey,
+    customPrompt,
+    model = 'claude-opus-4-5-20251101',
+    thinkingBudgetTokens,
+    maxTokens,
+    projectId,
+    userId,
+  } = payload || {};
+
+  // Update job to processing
+  jobs.set(jobId, {
+    status: 'processing',
+    progress: 5,
+    createdAt: new Date().toISOString(),
+    startedAt: new Date().toISOString(),
+    projectId: projectId || null,
+    userId: userId || null,
+    currentStep: 'Initialisation...',
+    type: 'script',
+  });
+
+  try {
+    const resolvedModel = await resolveAnthropicModelId({ apiKey: anthropicApiKey, requestedModel: model });
+    if (resolvedModel !== model) {
+      console.log(`[generate-script] Model alias resolved: "${model}" -> "${resolvedModel}"`);
+    }
+
+    console.log(`[generate-script] [${jobId}] Starting script generation with model: ${resolvedModel}`);
+    console.log(`[generate-script] [${jobId}] Prompt length: ${String(customPrompt || '').length} characters`);
+
+    const systemPrompt = `Tu es un assistant d'écriture professionnel. Tu génères exactement ce que l'utilisateur demande, sans commentaires ni explications supplémentaires. Réponds uniquement avec le contenu demandé.
+
+RÈGLE CRITIQUE SUR LA LONGUEUR:
+- Si l'utilisateur demande un certain nombre de mots, tu DOIS atteindre ce nombre MINIMUM
+- Ne t'arrête JAMAIS avant d'avoir atteint le nombre de mots demandé
+- Développe chaque section en profondeur pour atteindre la longueur requise
+- Ajoute des détails, des exemples, des transitions, des descriptions riches`;
+
+    // Extended thinking (if requested)
+    const parsedThinkingBudget = Number(thinkingBudgetTokens);
+    const enableThinking = Number.isFinite(parsedThinkingBudget) && parsedThinkingBudget > 0;
+
+    // We treat maxTokens as the desired output budget (excluding thinking) and add thinking budget on top,
+    // since Anthropic subtracts thinking tokens from max_tokens.
+    const desiredOutputMaxTokens = Number.isFinite(Number(maxTokens)) && Number(maxTokens) > 0 ? Number(maxTokens) : 16000;
+    const totalMaxTokens = enableThinking ? desiredOutputMaxTokens + parsedThinkingBudget : desiredOutputMaxTokens;
+
+    jobs.set(jobId, {
+      ...jobs.get(jobId),
+      progress: 15,
+      currentStep: enableThinking ? 'Claude réfléchit (thinking)...' : 'Génération en cours...',
+      model: resolvedModel,
+    });
+
+    if (enableThinking) {
+      console.log(`[generate-script] [${jobId}] Extended thinking enabled (budget_tokens=${parsedThinkingBudget}, max_tokens=${totalMaxTokens})`);
+    } else {
+      console.log(`[generate-script] [${jobId}] Extended thinking disabled (max_tokens=${totalMaxTokens})`);
+    }
+
+    const requestBody = {
+      model: resolvedModel,
+      max_tokens: totalMaxTokens,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: customPrompt }],
+    };
+
+    if (enableThinking) {
+      requestBody.thinking = { type: 'enabled', budget_tokens: parsedThinkingBudget };
+    }
+
+    const anthropicResponse = await axios.post('https://api.anthropic.com/v1/messages', requestBody, {
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': anthropicApiKey,
+        'anthropic-version': '2023-06-01',
+        ...(enableThinking ? { 'anthropic-beta': 'interleaved-thinking-2025-05-14' } : {}),
+      },
+      timeout: 600000,
+    });
+
+    const duration = ((Date.now() - startTime) / 1000).toFixed(2);
+    console.log(`[generate-script] [${jobId}] API call completed in ${duration}s`);
+
+    let script = '';
+    if (anthropicResponse.data.content && anthropicResponse.data.content.length > 0) {
+      script = anthropicResponse.data.content
+        .filter((block) => block.type === 'text')
+        .map((block) => block.text)
+        .join('\n\n');
+    }
+
+    if (!script) throw new Error('No script content returned from Anthropic API');
+
+    const wordCount = script.split(/\s+/).filter((w) => w.length > 0).length;
+    const estimatedDuration = Math.round(wordCount / 2.5);
+
+    console.log(`[generate-script] [${jobId}] Script generated: ${wordCount} words`);
+
+    // Save to Supabase so the user can leave the page and come back later.
+    await saveScriptToSupabase({
+      projectId,
+      script,
+      model: resolvedModel,
+      generationTime: parseFloat(duration),
+      wordCount,
+      estimatedDuration,
+    });
+
+    jobs.set(jobId, {
+      ...jobs.get(jobId),
+      status: 'completed',
+      progress: 100,
+      currentStep: 'Terminé',
+      completedAt: new Date().toISOString(),
+      result: {
+        script,
+        wordCount,
+        estimatedDuration,
+        model: resolvedModel,
+        generationTime: parseFloat(duration),
+      },
+    });
+
+    // Evict completed jobs after 2 hours to avoid unbounded memory growth
+    scheduleJobEviction(jobId, 2 * 60 * 60 * 1000);
+  } catch (error) {
+    console.error('[generate-script] Error:', error.response?.data || error.message);
+    const errorMessage = error.response?.data?.error?.message || error.message;
+    jobs.set(jobId, {
+      ...jobs.get(jobId),
+      status: 'failed',
+      progress: 100,
+      currentStep: 'Erreur',
+      error: `Anthropic API error: ${errorMessage}`,
+      failedAt: new Date().toISOString(),
+    });
+    scheduleJobEviction(jobId, 2 * 60 * 60 * 1000);
+  }
+}
+
 // Helper function to download file
 async function downloadFile(url, filepath) {
   const response = await axios({
@@ -1787,6 +1960,9 @@ app.post('/generate-script', async (req, res) => {
     model = 'claude-opus-4-5-20251101',
     thinkingBudgetTokens,
     maxTokens,
+    async: asyncMode,
+    projectId,
+    userId,
   } = req.body;
   
   if (!anthropicApiKey) {
@@ -1795,6 +1971,52 @@ app.post('/generate-script', async (req, res) => {
   
   if (!customPrompt) {
     return res.status(400).json({ error: 'Custom prompt required' });
+  }
+
+  // Async job mode: return immediately and do the generation in background.
+  // This allows the user to leave the page and come back later (script is saved to Supabase).
+  if (asyncMode === true || projectId) {
+    const jobId = `script_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
+    jobs.set(jobId, {
+      status: 'pending',
+      progress: 0,
+      createdAt: new Date().toISOString(),
+      currentStep: 'En attente...',
+      type: 'script',
+      projectId: projectId || null,
+      userId: userId || null,
+    });
+
+    // Fire and forget
+    processGenerateScriptJob(jobId, {
+      anthropicApiKey,
+      customPrompt,
+      model,
+      thinkingBudgetTokens,
+      maxTokens,
+      projectId,
+      userId,
+    }).catch((e) => {
+      console.error(`[generate-script] Background job error for ${jobId}:`, e.message || e);
+      jobs.set(jobId, {
+        ...jobs.get(jobId),
+        status: 'failed',
+        progress: 100,
+        currentStep: 'Erreur',
+        error: e.message || 'Unknown error',
+        failedAt: new Date().toISOString(),
+      });
+      scheduleJobEviction(jobId, 2 * 60 * 60 * 1000);
+    });
+
+    const vpsPublicUrl = process.env.VPS_PUBLIC_URL || `http://51.91.158.233:${PORT}`;
+    return res.json({
+      success: true,
+      jobId,
+      status: 'pending',
+      statusUrl: `${vpsPublicUrl}/generate-script/status/${jobId}`,
+      message: 'Script generation started',
+    });
   }
   
   const resolvedModel = await resolveAnthropicModelId({ apiKey: anthropicApiKey, requestedModel: model });
@@ -1895,6 +2117,25 @@ RÈGLE CRITIQUE SUR LA LONGUEUR:
       error: `Anthropic API error: ${errorMessage}` 
     });
   }
+});
+
+// Script status endpoint (for async mode)
+app.get('/generate-script/status/:jobId', (req, res) => {
+  const { jobId } = req.params;
+  const job = jobs.get(jobId);
+  if (!job) {
+    return res.status(404).json({ success: false, error: 'Job not found' });
+  }
+  res.json({
+    success: true,
+    jobId,
+    status: job.status,
+    progress: job.progress ?? null,
+    currentStep: job.currentStep ?? null,
+    error: job.error ?? null,
+    result: job.result ?? null,
+    projectId: job.projectId ?? null,
+  });
 });
 
 // Cleanup endpoint - manually trigger cleanup of old files
