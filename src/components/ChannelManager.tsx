@@ -248,10 +248,10 @@ export default function ChannelManager({
 
   const handleConfigurePresets = (channel: Channel) => {
     setConfiguringChannelId(channel.id);
-    setSelectedScriptPresetId(channel.script_preset_id || "");
-    setSelectedTtsPresetId(channel.tts_preset_id || "");
-    setSelectedProjectPresetId(channel.project_preset_id || "");
-    setSelectedThumbnailPresetId(channel.thumbnail_preset_id || "");
+    setSelectedScriptPresetId(channel.script_preset_id || "none");
+    setSelectedTtsPresetId(channel.tts_preset_id || "none");
+    setSelectedProjectPresetId(channel.project_preset_id || "none");
+    setSelectedThumbnailPresetId(channel.thumbnail_preset_id || "none");
     setThumbnailPresetEnabled(channel.thumbnail_preset_enabled ?? true);
   };
 
@@ -263,10 +263,10 @@ export default function ChannelManager({
       const { error } = await supabase
         .from("channels")
         .update({
-          script_preset_id: selectedScriptPresetId || null,
-          tts_preset_id: selectedTtsPresetId || null,
-          project_preset_id: selectedProjectPresetId || null,
-          thumbnail_preset_id: selectedThumbnailPresetId || null,
+          script_preset_id: selectedScriptPresetId === "none" ? null : selectedScriptPresetId,
+          tts_preset_id: selectedTtsPresetId === "none" ? null : selectedTtsPresetId,
+          project_preset_id: selectedProjectPresetId === "none" ? null : selectedProjectPresetId,
+          thumbnail_preset_id: selectedThumbnailPresetId === "none" ? null : selectedThumbnailPresetId,
           thumbnail_preset_enabled: thumbnailPresetEnabled,
         })
         .eq("id", configuringChannelId);
@@ -525,12 +525,12 @@ function PresetConfigDialog({
             {/* Script Preset */}
             <div className="space-y-2">
               <Label htmlFor="script-preset">Preset de script</Label>
-              <Select value={selectedScriptPresetId} onValueChange={setSelectedScriptPresetId}>
+              <Select value={selectedScriptPresetId || "none"} onValueChange={setSelectedScriptPresetId}>
                 <SelectTrigger id="script-preset">
                   <SelectValue placeholder="Sélectionner un preset de script (optionnel)" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Aucun</SelectItem>
+                  <SelectItem value="none">Aucun</SelectItem>
                   {scriptPresets.map((preset) => (
                     <SelectItem key={preset.id} value={preset.id}>
                       {preset.name}
@@ -546,12 +546,12 @@ function PresetConfigDialog({
             {/* TTS Preset */}
             <div className="space-y-2">
               <Label htmlFor="tts-preset">Preset TTS (voix)</Label>
-              <Select value={selectedTtsPresetId} onValueChange={setSelectedTtsPresetId}>
+              <Select value={selectedTtsPresetId || "none"} onValueChange={setSelectedTtsPresetId}>
                 <SelectTrigger id="tts-preset">
                   <SelectValue placeholder="Sélectionner un preset TTS (optionnel)" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Aucun</SelectItem>
+                  <SelectItem value="none">Aucun</SelectItem>
                   {ttsPresets.map((preset) => (
                     <SelectItem key={preset.id} value={preset.id}>
                       {preset.name}
@@ -567,12 +567,12 @@ function PresetConfigDialog({
             {/* Project Preset */}
             <div className="space-y-2">
               <Label htmlFor="project-preset">Preset projet</Label>
-              <Select value={selectedProjectPresetId} onValueChange={setSelectedProjectPresetId}>
+              <Select value={selectedProjectPresetId || "none"} onValueChange={setSelectedProjectPresetId}>
                 <SelectTrigger id="project-preset">
                   <SelectValue placeholder="Sélectionner un preset projet (optionnel)" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Aucun</SelectItem>
+                  <SelectItem value="none">Aucun</SelectItem>
                   {projectPresets.map((preset) => (
                     <SelectItem key={preset.id} value={preset.id}>
                       {preset.name}
@@ -601,7 +601,7 @@ function PresetConfigDialog({
                 </div>
               </div>
               <Select
-                value={selectedThumbnailPresetId}
+                value={selectedThumbnailPresetId || "none"}
                 onValueChange={setSelectedThumbnailPresetId}
                 disabled={!thumbnailPresetEnabled}
               >
@@ -609,7 +609,7 @@ function PresetConfigDialog({
                   <SelectValue placeholder="Sélectionner un preset miniatures (optionnel)" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Aucun</SelectItem>
+                  <SelectItem value="none">Aucun</SelectItem>
                   {thumbnailPresets.map((preset) => (
                     <SelectItem key={preset.id} value={preset.id}>
                       {preset.name}
