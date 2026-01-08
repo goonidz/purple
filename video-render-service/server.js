@@ -601,6 +601,60 @@ function getPanEffect(sceneIndex, duration, width, height, framerate) {
   };
 }
 
+// Generate Pan Experimental effect with constant speed (2.08%/s based on 4s scene)
+function getPanExperimentalEffect(sceneIndex, duration, width, height, framerate) {
+  const totalFrames = Math.max(1, Math.ceil(duration * framerate));
+  const zoomLevel = 1.2;
+  const maxPanAmount = (1 - 1 / zoomLevel) / 2; // 0.08333
+  
+  // Vitesse cible basée sur scène de 4s
+  const TARGET_SPEED = 0.02083; // 2.08% par seconde
+  
+  // Calculer la distance à parcourir
+  const targetDistance = TARGET_SPEED * duration;
+  
+  // Calculer le nombre de cycles nécessaires (1 cycle = 2 × panAmount)
+  const cyclesNeeded = targetDistance / (2 * maxPanAmount);
+  
+  // Limiter panAmount selon la durée
+  let panAmount;
+  if (duration < 5) {
+    panAmount = maxPanAmount * 1.0;
+  } else if (duration < 9) {
+    panAmount = maxPanAmount * 0.95;
+  } else {
+    panAmount = maxPanAmount;
+  }
+  
+  const centerXExpr = `(iw-iw/${zoomLevel})/2`;
+  const centerYExpr = `(ih-ih/${zoomLevel})/2`;
+  
+  // Choisir direction (alterné)
+  const useHorizontal = (sceneIndex % 2) === 0;
+  
+  const globalProgress = `on/${totalFrames}`;
+  const cycleProgress = `mod(${cyclesNeeded.toFixed(4)}*${globalProgress},1)`;
+  const triangularWave = `(1-abs(2*${cycleProgress}-1))`;
+  
+  let xExpr, yExpr, effect;
+  if (useHorizontal) {
+    xExpr = `${centerXExpr}+iw*${panAmount}*${triangularWave}`;
+    yExpr = centerYExpr;
+    effect = 'experimental_pan_horizontal';
+  } else {
+    xExpr = centerXExpr;
+    yExpr = `${centerYExpr}+ih*${panAmount}*${triangularWave}`;
+    effect = 'experimental_pan_vertical';
+  }
+  
+  console.log(`[PAN EXPERIMENTAL] Scene ${sceneIndex}: ${duration.toFixed(2)}s, ${cyclesNeeded.toFixed(2)} cycles, speed=${(TARGET_SPEED * 100).toFixed(2)}%/s`);
+  
+  return {
+    filter: `zoompan=z='${zoomLevel}':x='${xExpr}':y='${yExpr}':d=${totalFrames}:s=${width}x${height}:fps=${framerate}`,
+    effect: effect
+  };
+}
+
 // Generate Ken Burns effect parameters for a scene
 function getKenBurnsEffect(sceneIndex, duration, width, height, framerate, renderMethod = 'standard') {
   // Various zoom and pan directions for variety
@@ -881,10 +935,11 @@ async function renderSceneWithEffect(imagePath, outputPath, duration, width, hei
     console.log(`[${jobId}] Rendering scene ${sceneIndex} with effectType: "${effectType}" (type: ${typeof effectType})`);
     const normalizedEffectType = String(effectType || '').toLowerCase().trim();
     const isPan = normalizedEffectType === 'pan';
+    const isPanExperimental = /^pan[_\s-]?experimental$/i.test(normalizedEffectType);
     const isSubpixelZoom = normalizedEffectType === 'zoom_subpixel';
     const isNoEffect = normalizedEffectType === 'none';
     console.log(`[${jobId}] Normalized effectType: "${normalizedEffectType}"`);
-    console.log(`[${jobId}] Is pan effect? ${isPan}, Is subpixel zoom? ${isSubpixelZoom}, Is no effect? ${isNoEffect}`);
+    console.log(`[${jobId}] Is pan effect? ${isPan}, Is pan experimental? ${isPanExperimental}, Is subpixel zoom? ${isSubpixelZoom}, Is no effect? ${isNoEffect}`);
     
     // Check if FFmpeg subpixel fork is available (only for subpixel zoom)
     if (isSubpixelZoom && !fs.existsSync(FFMPEG_SUBPIXEL_PATH)) {
@@ -954,6 +1009,8 @@ async function renderSceneWithEffect(imagePath, outputPath, duration, width, hei
       } else {
         if (isPan) {
           ({ filter, effect } = getPanEffect(sceneIndex, duration, width, height, framerate));
+        } else if (isPanExperimental) {
+          ({ filter, effect } = getPanExperimentalEffect(sceneIndex, duration, width, height, framerate));
         } else if (isSubpixelZoom) {
           ({ filter, effect } = getSubpixelZoomEffect(sceneIndex, duration, width, height, framerate));
         } else {

@@ -3330,6 +3330,7 @@ const Index = () => {
                                         <SelectItem value="none">Aucun effet</SelectItem>
                                         <SelectItem value="zoom">Zoom (Ken Burns)</SelectItem>
                                         <SelectItem value="pan">Pan</SelectItem>
+                                        <SelectItem value="pan_experimental">Pan Expérimental (Vitesse constante)</SelectItem>
                                         <SelectItem value="zoom_subpixel">Zoom Subpixel (Exp.)</SelectItem>
                                       </SelectContent>
                                     </Select>
