@@ -369,6 +369,7 @@ const Index = () => {
       setRegeneratingPromptIndex(null);
     } else if (job.job_type === 'single_image') {
       const sceneIndex = job.metadata?.sceneIndex;
+      console.log(`[handleJobComplete] single_image job completed for scene ${sceneIndex}`);
       if (sceneIndex !== undefined && sceneIndex !== null) {
         removeGeneratingImageIndex(sceneIndex);
       }
@@ -412,6 +413,7 @@ const Index = () => {
           const regeneratedIndices = promptsWithGroups
             .map((p, idx) => p?.manually_regenerated ? idx : -1)
             .filter(idx => idx !== -1);
+          console.log(`[handleJobComplete] Reloaded regeneratedScenes from DB:`, regeneratedIndices);
           setRegeneratedScenes(new Set(regeneratedIndices));
           
           // Update audio URL
@@ -1893,10 +1895,15 @@ const Index = () => {
       return;
     }
 
+    console.log(`[generateImage] Starting regeneration for scene ${index}`);
     addGeneratingImageIndex(index);
     
     // Mark this scene as regenerated in state
-    setRegeneratedScenes(prev => new Set([...prev, index]));
+    setRegeneratedScenes(prev => {
+      const newSet = new Set([...prev, index]);
+      console.log(`[generateImage] Updated regeneratedScenes:`, Array.from(newSet));
+      return newSet;
+    });
     
     // Mark this scene as regenerated in database
     const updatedPrompts = [...generatedPrompts];
@@ -1905,6 +1912,7 @@ const Index = () => {
       manually_regenerated: true
     };
     setGeneratedPrompts(updatedPrompts);
+    console.log(`[generateImage] Marked scene ${index} as manually_regenerated in prompts`);
     
     // Persist to database
     try {
@@ -1912,6 +1920,7 @@ const Index = () => {
         .from('projects')
         .update({ prompts: updatedPrompts as any })
         .eq('id', currentProjectId);
+      console.log(`[generateImage] Saved manually_regenerated flag to DB for scene ${index}`);
     } catch (error) {
       console.error("Error saving manually_regenerated flag:", error);
     }
@@ -1919,7 +1928,10 @@ const Index = () => {
     // Start background job
     const result = await startJob('single_image', { sceneIndex: index });
     if (!result) {
+      console.error(`[generateImage] Failed to start job for scene ${index}`);
       removeGeneratingImageIndex(index);
+    } else {
+      console.log(`[generateImage] Started job for scene ${index}:`, result.jobId);
     }
   };
 
