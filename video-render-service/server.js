@@ -479,8 +479,9 @@ function createConcatFileForVideos(scenes, workDir) {
   return concat;
 }
 
-// Generate Pan effect parameters for a scene (no zoom, just movement)
-function getPanEffect(sceneIndex, duration, width, height, framerate) {
+// Generate Pan Old effect parameters for a scene (no zoom, just movement)
+// Original pan algorithm with 1.5 fixed cycles for long scenes
+function getPanOldEffect(sceneIndex, duration, width, height, framerate) {
   const totalFrames = Math.max(1, Math.ceil(duration * framerate)); // Ensure at least 1 frame
   
   // Log pan parameters for debugging (only for long scenes to avoid spam)
@@ -601,8 +602,9 @@ function getPanEffect(sceneIndex, duration, width, height, framerate) {
   };
 }
 
-// Generate Pan Experimental effect with constant speed (2.08%/s based on 4s scene)
-function getPanExperimentalEffect(sceneIndex, duration, width, height, framerate) {
+// Generate Pan effect with constant speed (2.08%/s based on 4s scene)
+// Default pan algorithm - maintains constant visual speed across all scene durations
+function getPanEffect(sceneIndex, duration, width, height, framerate) {
   const totalFrames = Math.max(1, Math.ceil(duration * framerate));
   const zoomLevel = 1.2;
   const maxPanAmount = (1 - 1 / zoomLevel) / 2; // 0.08333
@@ -640,14 +642,14 @@ function getPanExperimentalEffect(sceneIndex, duration, width, height, framerate
   if (useHorizontal) {
     xExpr = `${centerXExpr}+iw*${panAmount}*${triangularWave}`;
     yExpr = centerYExpr;
-    effect = 'experimental_pan_horizontal';
+    effect = 'pan_horizontal';
   } else {
     xExpr = centerXExpr;
     yExpr = `${centerYExpr}+ih*${panAmount}*${triangularWave}`;
-    effect = 'experimental_pan_vertical';
+    effect = 'pan_vertical';
   }
   
-  console.log(`[PAN EXPERIMENTAL] Scene ${sceneIndex}: ${duration.toFixed(2)}s, ${cyclesNeeded.toFixed(2)} cycles, speed=${(TARGET_SPEED * 100).toFixed(2)}%/s`);
+  console.log(`[PAN] Scene ${sceneIndex}: ${duration.toFixed(2)}s, ${cyclesNeeded.toFixed(2)} cycles, speed=${(TARGET_SPEED * 100).toFixed(2)}%/s`);
   
   return {
     filter: `zoompan=z='${zoomLevel}':x='${xExpr}':y='${yExpr}':d=${totalFrames}:s=${width}x${height}:fps=${framerate}`,
@@ -935,11 +937,11 @@ async function renderSceneWithEffect(imagePath, outputPath, duration, width, hei
     console.log(`[${jobId}] Rendering scene ${sceneIndex} with effectType: "${effectType}" (type: ${typeof effectType})`);
     const normalizedEffectType = String(effectType || '').toLowerCase().trim();
     const isPan = normalizedEffectType === 'pan';
-    const isPanExperimental = /^pan[_\s-]?experimental$/i.test(normalizedEffectType);
+    const isPanOld = /^pan[_\s-]?old$/i.test(normalizedEffectType);
     const isSubpixelZoom = normalizedEffectType === 'zoom_subpixel';
     const isNoEffect = normalizedEffectType === 'none';
     console.log(`[${jobId}] Normalized effectType: "${normalizedEffectType}"`);
-    console.log(`[${jobId}] Is pan effect? ${isPan}, Is pan experimental? ${isPanExperimental}, Is subpixel zoom? ${isSubpixelZoom}, Is no effect? ${isNoEffect}`);
+    console.log(`[${jobId}] Is pan effect? ${isPan}, Is pan old? ${isPanOld}, Is subpixel zoom? ${isSubpixelZoom}, Is no effect? ${isNoEffect}`);
     
     // Check if FFmpeg subpixel fork is available (only for subpixel zoom)
     if (isSubpixelZoom && !fs.existsSync(FFMPEG_SUBPIXEL_PATH)) {
@@ -1009,8 +1011,8 @@ async function renderSceneWithEffect(imagePath, outputPath, duration, width, hei
       } else {
         if (isPan) {
           ({ filter, effect } = getPanEffect(sceneIndex, duration, width, height, framerate));
-        } else if (isPanExperimental) {
-          ({ filter, effect } = getPanExperimentalEffect(sceneIndex, duration, width, height, framerate));
+        } else if (isPanOld) {
+          ({ filter, effect } = getPanOldEffect(sceneIndex, duration, width, height, framerate));
         } else if (isSubpixelZoom) {
           ({ filter, effect } = getSubpixelZoomEffect(sceneIndex, duration, width, height, framerate));
         } else {
