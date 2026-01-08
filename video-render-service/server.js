@@ -5,10 +5,12 @@ const axios = require('axios');
 const { createClient } = require('@supabase/supabase-js');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const { promisify } = require('util');
 const writeFile = promisify(fs.writeFile);
 const unlink = promisify(fs.unlink);
 const mkdir = promisify(fs.mkdir);
+const { execSync } = require('child_process');
 
 require('dotenv').config();
 
@@ -27,6 +29,17 @@ const TEMP_DIR = path.join(__dirname, 'temp');
 if (!fs.existsSync(TEMP_DIR)) {
   fs.mkdirSync(TEMP_DIR, { recursive: true });
 }
+
+// Queue configuration
+const QUEUE_FILE = path.join(__dirname, 'render-queue.json');
+
+// Resource limits for VPS (8 vCores, 24GB RAM)
+const RESOURCE_LIMITS = {
+  minFreeMemoryGB: 4,
+  maxLoadAverage: 6.0,
+  minFreeDiskGB: 2,
+  maxParallelJobs: 3
+};
 
 // Middleware
 app.use(cors());
@@ -248,6 +261,222 @@ function scheduleJobEviction(jobId, ms) {
       }
     }, ms);
   } catch (_) {}
+}
+
+// ============================================================================
+// RESOURCE CHECKING & QUEUE MANAGEMENT
+// ============================================================================
+
+/**
+ * Check if system resources are available to start a new render job
+ * @returns {Object} { available: boolean, reasons: string[], resources: Object }
+ */
+function checkResourcesAvailable() {
+  const reasons = [];
+  let available = true;
+
+  // 1. Check active jobs count
+  const activeJobsCount = Array.from(jobs.values()).filter(
+    j => j.status === 'processing' || j.status === 'pending'
+  ).length;
+  
+  if (activeJobsCount >= RESOURCE_LIMITS.maxParallelJobs) {
+    available = false;
+    reasons.push(`Max parallel jobs reached (${activeJobsCount}/${RESOURCE_LIMITS.maxParallelJobs})`);
+  }
+
+  // 2. Check free memory (in GB)
+  const freeMemoryGB = os.freemem() / (1024 ** 3);
+  if (freeMemoryGB < RESOURCE_LIMITS.minFreeMemoryGB) {
+    available = false;
+    reasons.push(`Insufficient RAM (${freeMemoryGB.toFixed(2)}GB free, need ${RESOURCE_LIMITS.minFreeMemoryGB}GB)`);
+  }
+
+  // 3. Check CPU load average (1 minute average)
+  const loadAvg = os.loadavg()[0];
+  if (loadAvg > RESOURCE_LIMITS.maxLoadAverage) {
+    available = false;
+    reasons.push(`High CPU load (${loadAvg.toFixed(2)}, max ${RESOURCE_LIMITS.maxLoadAverage})`);
+  }
+
+  // 4. Check free disk space (in GB)
+  let freeDiskGB = 0;
+  try {
+    const dfOutput = execSync(`df -BG ${TEMP_DIR} | tail -1 | awk '{print $4}'`).toString().trim();
+    freeDiskGB = parseInt(dfOutput.replace('G', ''));
+    
+    if (freeDiskGB < RESOURCE_LIMITS.minFreeDiskGB) {
+      available = false;
+      reasons.push(`Low disk space (${freeDiskGB}GB free, need ${RESOURCE_LIMITS.minFreeDiskGB}GB)`);
+    }
+  } catch (err) {
+    console.warn('[resources] Could not check disk space:', err.message);
+    // Don't block on disk check failure
+  }
+
+  return {
+    available,
+    reasons,
+    resources: {
+      activeJobs: activeJobsCount,
+      maxJobs: RESOURCE_LIMITS.maxParallelJobs,
+      freeMemoryGB: parseFloat(freeMemoryGB.toFixed(2)),
+      requiredMemoryGB: RESOURCE_LIMITS.minFreeMemoryGB,
+      loadAverage: parseFloat(loadAvg.toFixed(2)),
+      maxLoadAverage: RESOURCE_LIMITS.maxLoadAverage,
+      freeDiskGB,
+      requiredDiskGB: RESOURCE_LIMITS.minFreeDiskGB
+    }
+  };
+}
+
+/**
+ * Load render queue from persistent JSON file
+ * @returns {Array} Array of queued jobs
+ */
+function loadQueue() {
+  try {
+    if (fs.existsSync(QUEUE_FILE)) {
+      const data = fs.readFileSync(QUEUE_FILE, 'utf8');
+      const parsed = JSON.parse(data);
+      return parsed.queue || [];
+    }
+  } catch (err) {
+    console.error('[queue] Error loading queue:', err.message);
+  }
+  return [];
+}
+
+/**
+ * Save render queue to persistent JSON file
+ * @param {Array} queue - Array of queued jobs
+ */
+function saveQueue(queue) {
+  try {
+    const data = {
+      queue,
+      lastProcessed: new Date().toISOString()
+    };
+    fs.writeFileSync(QUEUE_FILE, JSON.stringify(data, null, 2), 'utf8');
+  } catch (err) {
+    console.error('[queue] Error saving queue:', err.message);
+  }
+}
+
+/**
+ * Add a job to the render queue
+ * @param {string} jobId - Job ID
+ * @param {Object} renderData - Render data
+ * @returns {number} Position in queue (1-indexed)
+ */
+function addToQueue(jobId, renderData) {
+  const queue = loadQueue();
+  
+  // Check if job already in queue
+  if (queue.find(j => j.jobId === jobId)) {
+    console.log(`[queue] Job ${jobId} already in queue`);
+    return queue.findIndex(j => j.jobId === jobId) + 1;
+  }
+  
+  queue.push({
+    jobId,
+    renderData,
+    queuedAt: new Date().toISOString(),
+    priority: 1
+  });
+  
+  saveQueue(queue);
+  
+  console.log(`[queue] Added job ${jobId} to queue (position ${queue.length})`);
+  return queue.length;
+}
+
+/**
+ * Remove a job from the queue
+ * @param {string} jobId - Job ID to remove
+ * @returns {boolean} True if removed, false if not found
+ */
+function removeFromQueue(jobId) {
+  const queue = loadQueue();
+  const index = queue.findIndex(j => j.jobId === jobId);
+  
+  if (index === -1) {
+    return false;
+  }
+  
+  queue.splice(index, 1);
+  saveQueue(queue);
+  
+  console.log(`[queue] Removed job ${jobId} from queue`);
+  return true;
+}
+
+/**
+ * Process the next job in queue if resources are available
+ * Called periodically and after each job completion
+ */
+async function processQueue() {
+  const resourceCheck = checkResourcesAvailable();
+  
+  if (!resourceCheck.available) {
+    console.log('[queue] Resources not available, skipping queue processing:', resourceCheck.reasons.join(', '));
+    return;
+  }
+  
+  const queue = loadQueue();
+  
+  if (queue.length === 0) {
+    return; // No jobs in queue
+  }
+  
+  // Get the first job in queue
+  const queuedJob = queue[0];
+  console.log(`[queue] Processing queued job ${queuedJob.jobId} (${queue.length} jobs in queue)`);
+  
+  // Remove from queue
+  removeFromQueue(queuedJob.jobId);
+  
+  // Update job status from queued to pending
+  jobs.set(queuedJob.jobId, { 
+    status: 'pending', 
+    progress: 0, 
+    steps: [], 
+    createdAt: queuedJob.queuedAt,
+    startedAt: new Date().toISOString()
+  });
+  
+  // Start processing the job in background
+  processRenderJob(queuedJob.jobId, queuedJob.renderData).catch((error) => {
+    console.error(`[${queuedJob.jobId}] Background job error:`, error);
+    jobs.set(queuedJob.jobId, {
+      status: 'failed',
+      error: error.message,
+      failedAt: new Date().toISOString()
+    });
+    
+    // Try to process next job in queue
+    setTimeout(() => processQueue(), 1000);
+  });
+}
+
+/**
+ * Start the queue processor that checks every 30 seconds
+ */
+function startQueueProcessor() {
+  console.log('[queue] Starting queue processor (checks every 30s)');
+  
+  setInterval(() => {
+    processQueue().catch(err => {
+      console.error('[queue] Error in queue processor:', err.message);
+    });
+  }, 30000); // Check every 30 seconds
+  
+  // Also check queue on startup (after 5 seconds to let server initialize)
+  setTimeout(() => {
+    processQueue().catch(err => {
+      console.error('[queue] Error in initial queue check:', err.message);
+    });
+  }, 5000);
 }
 
 async function saveScriptToSupabase({ projectId, script, model, generationTime, wordCount, estimatedDuration }) {
@@ -1699,6 +1928,13 @@ async function processRenderJob(jobId, renderData) {
               completedAt: new Date().toISOString()
             });
             
+            // Process next job in queue after successful completion
+            setTimeout(() => {
+              processQueue().catch(err => {
+                console.error('[queue] Error processing queue after job completion:', err.message);
+              });
+            }, 2000);
+            
             resolve();
           } catch (error) {
             await cleanup(workDir);
@@ -1792,6 +2028,13 @@ async function processRenderJob(jobId, renderData) {
       error: error.message,
       failedAt: new Date().toISOString()
     });
+    
+    // Process next job in queue after failure
+    setTimeout(() => {
+      processQueue().catch(err => {
+        console.error('[queue] Error processing queue after job failure:', err.message);
+      });
+    }, 2000);
   }
 }
 
@@ -1803,16 +2046,50 @@ app.post('/render', async (req, res) => {
   console.log(`[${jobId}] POST /render - Received effectType:`, req.body.effectType, '(type:', typeof req.body.effectType, ')');
   console.log(`[${jobId}] POST /render - Request body keys:`, Object.keys(req.body));
   
-  // Log current active jobs count
+  // Check if resources are available
+  const resourceCheck = checkResourcesAvailable();
+  console.log(`[${jobId}] Resource check:`, resourceCheck.available ? 'AVAILABLE' : 'INSUFFICIENT');
+  console.log(`[${jobId}] Resources:`, resourceCheck.resources);
+  
+  if (!resourceCheck.available) {
+    // Resources insufficient - add to queue
+    const position = addToQueue(jobId, req.body);
+    const queueLength = loadQueue().length;
+    
+    console.log(`[${jobId}] Added to queue at position ${position}/${queueLength}`);
+    console.log(`[${jobId}] Reasons: ${resourceCheck.reasons.join(', ')}`);
+    
+    // Initialize job status as queued
+    jobs.set(jobId, { 
+      status: 'queued', 
+      progress: 0, 
+      steps: [], 
+      createdAt: new Date().toISOString(),
+      queuePosition: position,
+      queueLength
+    });
+    
+    return res.json({
+      success: true,
+      jobId,
+      status: 'queued',
+      position,
+      queueLength,
+      message: `Job queued (position ${position}/${queueLength})`,
+      reasons: resourceCheck.reasons,
+      estimatedWait: `~${position * 3} min`
+    });
+  }
+  
+  // Resources available - start immediately
   const activeJobsCount = Array.from(jobs.values()).filter(j => j.status === 'processing' || j.status === 'pending').length;
-  console.log(`[${jobId}] Current active jobs: ${activeJobsCount}`);
+  console.log(`[${jobId}] Starting immediately. Current active jobs: ${activeJobsCount}`);
   console.log(`[${jobId}] Total jobs in memory: ${jobs.size}`);
 
   // Initialize job status
   jobs.set(jobId, { status: 'pending', progress: 0, steps: [], createdAt: new Date().toISOString() });
 
   // Start processing in background (don't await)
-  // Each job runs independently - no cancellation of other jobs
   processRenderJob(jobId, req.body).catch((error) => {
     console.error(`[${jobId}] Background job error:`, error);
     jobs.set(jobId, {
@@ -1820,6 +2097,9 @@ app.post('/render', async (req, res) => {
       error: error.message,
       failedAt: new Date().toISOString()
     });
+    
+    // Try to process next job in queue after failure
+    setTimeout(() => processQueue(), 1000);
   });
   
   // Return immediately
@@ -1850,6 +2130,63 @@ app.get('/status/:jobId', (req, res) => {
     success: true,
     jobId,
     ...jobData
+  });
+});
+
+// Get current queue status
+app.get('/queue', (req, res) => {
+  const queue = loadQueue();
+  const resourceCheck = checkResourcesAvailable();
+  
+  res.json({
+    success: true,
+    queue: queue.map((item, index) => ({
+      jobId: item.jobId,
+      position: index + 1,
+      queuedAt: item.queuedAt,
+      priority: item.priority
+    })),
+    queueLength: queue.length,
+    resources: resourceCheck.resources,
+    resourcesAvailable: resourceCheck.available,
+    reasons: resourceCheck.reasons
+  });
+});
+
+// Remove a job from the queue
+app.delete('/queue/:jobId', (req, res) => {
+  const { jobId } = req.params;
+  const removed = removeFromQueue(jobId);
+  
+  if (!removed) {
+    return res.status(404).json({
+      success: false,
+      error: 'Job not found in queue'
+    });
+  }
+  
+  // Also remove from jobs map if it exists
+  if (jobs.has(jobId)) {
+    jobs.delete(jobId);
+  }
+  
+  res.json({
+    success: true,
+    message: 'Job removed from queue',
+    jobId
+  });
+});
+
+// Get current system resources
+app.get('/resources', (req, res) => {
+  const resourceCheck = checkResourcesAvailable();
+  
+  res.json({
+    success: true,
+    available: resourceCheck.available,
+    reasons: resourceCheck.reasons,
+    resources: resourceCheck.resources,
+    timestamp: new Date().toISOString()
   });
 });
 
@@ -2463,4 +2800,8 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`Video Render Service running on port ${PORT}`);
   console.log(`Service Version: ${SERVICE_VERSION}`);
   console.log(`Health check: http://localhost:${PORT}/health`);
+  console.log(`Resource limits: ${RESOURCE_LIMITS.maxParallelJobs} parallel jobs, ${RESOURCE_LIMITS.minFreeMemoryGB}GB RAM, load < ${RESOURCE_LIMITS.maxLoadAverage}`);
+  
+  // Start the queue processor
+  startQueueProcessor();
 });
