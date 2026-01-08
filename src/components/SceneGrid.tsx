@@ -388,7 +388,7 @@ export function SceneGrid({
                   </div>
                   {/* Web search button - only visible when no video */}
                   {onSearchWeb && !prompt?.videoUrl && (
-                    <div className="absolute bottom-1 right-1">
+                    <div className="absolute bottom-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity">
                       <Button
                         variant="secondary"
                         size="sm"
