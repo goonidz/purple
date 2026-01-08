@@ -239,49 +239,65 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
   useEffect(() => {
     if (presets.length === 0 || standalone || hasAutoLoadedPreset) return;
     
+    console.log("[ThumbnailGenerator] Auto-load check:", { 
+      presetsCount: presets.length, 
+      projectId, 
+      selectedPresetId,
+      hasAutoLoadedPreset 
+    });
+    
     // Priority 1: Load from sessionStorage (new project from calendar)
     const autoLoadPresetId = sessionStorage.getItem("auto_load_thumbnail_preset_id");
     if (autoLoadPresetId) {
+      console.log("[ThumbnailGenerator] Loading from sessionStorage:", autoLoadPresetId);
       const preset = presets.find(p => p.id === autoLoadPresetId);
       if (preset) {
         loadPreset(autoLoadPresetId);
         setSelectedPresetId(autoLoadPresetId);
         setHasAutoLoadedPreset(true);
         toast.success(`Preset miniatures "${preset.name}" chargé automatiquement`);
-        // Clear after loading so it doesn't reload every time
         sessionStorage.removeItem("auto_load_thumbnail_preset_id");
         return;
       }
     }
     
     // Priority 2: Load from project database (existing project)
-    if (projectId && !selectedPresetId) {
+    if (projectId) {
       (async () => {
         try {
+          console.log("[ThumbnailGenerator] Fetching preset from project:", projectId);
           const { data, error } = await supabase
             .from("projects")
             .select("thumbnail_preset_id")
             .eq("id", projectId)
             .single();
           
-          if (error) throw error;
+          if (error) {
+            console.error("[ThumbnailGenerator] Error fetching project:", error);
+            throw error;
+          }
           
           const presetId = data?.thumbnail_preset_id;
+          console.log("[ThumbnailGenerator] Project thumbnail_preset_id:", presetId);
+          
           if (presetId) {
             const preset = presets.find(p => p.id === presetId);
+            console.log("[ThumbnailGenerator] Found preset:", preset?.name);
             if (preset) {
               loadPreset(presetId);
               setSelectedPresetId(presetId);
               setHasAutoLoadedPreset(true);
               toast.success(`Preset miniatures "${preset.name}" chargé depuis le projet`);
             }
+          } else {
+            console.log("[ThumbnailGenerator] No thumbnail_preset_id set for this project");
           }
         } catch (error) {
-          console.error("Error loading thumbnail preset from project:", error);
+          console.error("[ThumbnailGenerator] Error loading thumbnail preset from project:", error);
         }
       })();
     }
-  }, [presets, projectId, standalone, hasAutoLoadedPreset, selectedPresetId]);
+  }, [presets, projectId, standalone, hasAutoLoadedPreset]);
 
   useEffect(() => {
     if (standalone) return;
