@@ -181,6 +181,8 @@ const Projects = () => {
         if (thumbnailPresetId) {
           // Store for use in ThumbnailGenerator (UI loading)
           sessionStorage.setItem("auto_load_thumbnail_preset_id", thumbnailPresetId);
+          // Also set in state so it gets saved to the project database
+          setSelectedThumbnailPresetId(thumbnailPresetId);
         }
         
         // Transfer thumbnail chain enabled flag (for auto-generation behavior)
