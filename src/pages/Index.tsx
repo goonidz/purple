@@ -828,6 +828,12 @@ const Index = () => {
               const promptsWithGroups = calculateGroupsIfMissing(validPrompts);
               setGeneratedPrompts(promptsWithGroups);
       
+      // Load regenerated scenes state from prompts
+      const regeneratedIndices = promptsWithGroups
+        .map((p, idx) => p?.manually_regenerated ? idx : -1)
+        .filter(idx => idx !== -1);
+      setRegeneratedScenes(new Set(regeneratedIndices));
+      
       // Check if test has already been done (at least 2 scenes with images)
       // OR if there are already prompts/images in the project (meaning work has been done)
       const firstTwoWithImages = validPrompts.slice(0, 2).filter(p => p && p.imageUrl).length;
