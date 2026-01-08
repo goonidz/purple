@@ -14,7 +14,14 @@ import {
   Clock,
   Search,
   Video,
+  RotateCcw,
 } from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface Scene {
   startTime: number;
@@ -41,6 +48,7 @@ interface SceneGridProps {
   regeneratingPromptIndex: number | null;
   generatingPromptIndex: number | null;
   generatingImageIndices: Set<number>;
+  regeneratedScenes?: Set<number>;
   animatingSceneIndex: number | null;
   copiedIndex: number | null;
   handleEditScene: (index: number) => void;
@@ -68,6 +76,7 @@ export function SceneGrid({
   regeneratingPromptIndex,
   generatingPromptIndex,
   generatingImageIndices,
+  regeneratedScenes = new Set(),
   animatingSceneIndex,
   copiedIndex,
   handleEditScene,
@@ -319,6 +328,21 @@ export function SceneGrid({
                     className="w-full h-full object-contain cursor-pointer"
                     onClick={() => setImagePreviewUrl(prompt.imageUrl || null)}
                   />
+                  {/* Regenerated badge */}
+                  {regeneratedScenes.has(index) && (
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <div className="absolute bottom-2 right-2 bg-orange-500 text-white rounded-full p-1.5 shadow-lg z-20">
+                            <RotateCcw className="h-3 w-3" />
+                          </div>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>Image régénérée manuellement</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  )}
                   <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     <Button
                       variant="secondary"

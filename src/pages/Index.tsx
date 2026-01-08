@@ -190,6 +190,7 @@ const Index = () => {
   const [isGeneratingImages, setIsGeneratingImages] = useState(false);
   const [generatingImageIndices, setGeneratingImageIndices] = useState<Set<number>>(new Set());
   const [generatingPromptIndex, setGeneratingPromptIndex] = useState<number | null>(null);
+  const [regeneratedScenes, setRegeneratedScenes] = useState<Set<number>>(new Set());
   
   // Helpers for managing generating image indices
   const addGeneratingImageIndex = (index: number) => {
@@ -1872,6 +1873,9 @@ const Index = () => {
     }
 
     addGeneratingImageIndex(index);
+    
+    // Mark this scene as regenerated
+    setRegeneratedScenes(prev => new Set([...prev, index]));
     
     // Start background job
     const result = await startJob('single_image', { sceneIndex: index });
@@ -3815,6 +3819,7 @@ const Index = () => {
                       regeneratingPromptIndex={regeneratingPromptIndex}
                       generatingPromptIndex={generatingPromptIndex}
                       generatingImageIndices={generatingImageIndices}
+                      regeneratedScenes={regeneratedScenes}
                       copiedIndex={copiedIndex}
                       handleEditScene={handleEditScene}
                       handleEditPrompt={handleEditPrompt}
