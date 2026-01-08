@@ -1671,11 +1671,22 @@ async function processRenderJob(jobId, renderData) {
     
     // Sanitize project name for filename (remove invalid characters)
     const sanitizedProjectName = (projectName || 'video')
-      .replace(/[^a-zA-Z0-9\s\-_]/g, '') // Remove invalid filename characters
+      .replace(/[^a-zA-Z0-9\s\-_àâäéèêëïîôùûüçÀÂÄÉÈÊËÏÎÔÙÛÜÇ]/g, '') // Remove invalid filename characters (keep accents)
       .replace(/\s+/g, '_') // Replace spaces with underscores
-      .substring(0, 100); // Limit length
+      .substring(0, 80); // Limit length (shorter to leave room for datetime)
     
-    const outputPath = path.join(workDir, `${sanitizedProjectName}.${format}`);
+    // Generate datetime string for filename (format: 2025-01-08_20h30)
+    const now = new Date();
+    const dateStr = now.toISOString().split('T')[0]; // 2025-01-08
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    const timeStr = `${hours}h${minutes}`; // 20h30
+    
+    // Final filename: Mon_Projet_2025-01-08_20h30.mp4
+    const outputFilename = `${sanitizedProjectName}_${dateStr}_${timeStr}.${format}`;
+    const outputPath = path.join(workDir, outputFilename);
+    
+    console.log(`[${jobId}] Output filename: ${outputFilename}`);
     
     // Log concat file content for debugging
     const concatFileContent = fs.readFileSync(concatPath, 'utf8');
