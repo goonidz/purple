@@ -2658,7 +2658,7 @@ const Index = () => {
     if (parsedUrls.length > 0) {
       setUploadedStyleImageUrl(parsedUrls[0]);
     }
-    // Clean up sessionStorage after auto-load
+    // Clean up sessionStorage after auto-load (toast is handled by PresetManager)
     sessionStorage.removeItem("auto_load_project_preset_id");
   };
 

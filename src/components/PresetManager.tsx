@@ -156,9 +156,12 @@ export const PresetManager = ({ currentConfig, onLoadPreset, autoLoadPresetId }:
     if (autoLoadPresetId && presets.length > 0) {
       const preset = presets.find(p => p.id === autoLoadPresetId);
       if (preset) {
-        // Trigger the load
-        onLoadPreset(preset);
-        toast.success(`Preset projet "${preset.name}" chargé automatiquement`);
+        // Delay to ensure parent component is ready
+        setTimeout(() => {
+          setSelectedPresetId(autoLoadPresetId); // Update visual selection
+          onLoadPreset(preset);
+          toast.success(`Preset projet "${preset.name}" chargé automatiquement`);
+        }, 300);
       }
     }
   }, [autoLoadPresetId, presets, onLoadPreset]);

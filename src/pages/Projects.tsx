@@ -918,8 +918,12 @@ const Projects = () => {
                           setPromptSystemMessage(preset.prompt_system_message || "");
                           setActivePresetName(preset.name);
                           // Clean up sessionStorage after auto-load
+                          const wasAutoLoaded = sessionStorage.getItem("auto_load_project_preset_id");
                           sessionStorage.removeItem("auto_load_project_preset_id");
-                          toast.success("Preset chargé !");
+                          // Only show toast for manual loads (PresetManager handles auto-load toast)
+                          if (!wasAutoLoaded) {
+                            toast.success("Preset chargé !");
+                          }
                         }}
                       />
                       {activePresetName && (
