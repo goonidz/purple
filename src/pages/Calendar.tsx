@@ -70,9 +70,11 @@ export default function Calendar() {
     }
   }, [user, currentMonth]);
 
-  // Subscribe to realtime updates for calendar entries and projects
+  // Subscribe to realtime updates for calendar entries, projects, and channels
   useEffect(() => {
     if (!user) return;
+
+    console.log('[Calendar] Setting up real-time subscriptions');
 
     // Subscribe to content_calendar changes
     const calendarChannel = supabase
@@ -86,7 +88,7 @@ export default function Calendar() {
           filter: `user_id=eq.${user.id}`
         },
         (payload) => {
-          console.log('Calendar entry changed:', payload);
+          console.log('[Calendar] Entry changed:', payload.eventType, payload);
           // Refresh entries when calendar changes
           fetchEntries();
         }
@@ -100,7 +102,7 @@ export default function Calendar() {
           filter: `user_id=eq.${user.id}`
         },
         (payload) => {
-          console.log('Project changed:', payload);
+          console.log('[Calendar] Project changed:', payload.eventType);
           // If a project name changed, update corresponding calendar entry
           if (payload.eventType === 'UPDATE' && payload.new) {
             const project = payload.new as any;
@@ -118,10 +120,41 @@ export default function Calendar() {
           }
         }
       )
-      .subscribe();
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'channels',
+          filter: `user_id=eq.${user.id}`
+        },
+        (payload) => {
+          console.log('[Calendar] Channel changed:', payload.eventType);
+          // Refresh channels list when a channel is added/updated/deleted
+          fetchChannels();
+          // Also refresh entries in case channel info changed
+          fetchEntries();
+        }
+      )
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.log('[Calendar] ✅ Real-time subscriptions active');
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error('[Calendar] ❌ Real-time subscription error');
+        }
+      });
+
+    // Polling fallback: refresh every 30 seconds to catch any missed updates
+    const pollInterval = setInterval(() => {
+      console.log('[Calendar] Polling for updates...');
+      fetchEntries();
+      fetchChannels();
+    }, 30000); // 30 seconds
 
     return () => {
+      console.log('[Calendar] Cleaning up subscriptions');
       supabase.removeChannel(calendarChannel);
+      clearInterval(pollInterval);
     };
   }, [user]);
 
