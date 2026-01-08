@@ -438,32 +438,6 @@ const CreateFromScratch = () => {
             setCalendarChannelColor(channelColor);
           }
           
-          // Load and apply channel presets
-          const scriptPresetId = sessionStorage.getItem("calendar_script_preset_id");
-          const ttsPresetId = sessionStorage.getItem("calendar_tts_preset_id");
-          
-          if (scriptPresetId) {
-            // Will be applied once presets are loaded
-            setTimeout(() => {
-              const preset = presets.find(p => p.id === scriptPresetId);
-              if (preset) {
-                setCustomPrompt(preset.custom_prompt || "");
-                setSelectedPresetId(scriptPresetId);
-                toast.success(`Preset de script "${preset.name}" chargé automatiquement`);
-              }
-            }, 500);
-          }
-          
-          if (ttsPresetId) {
-            // Will be applied once TTS presets are loaded
-            setTimeout(() => {
-              const preset = ttsPresets.find(p => p.id === ttsPresetId);
-              if (preset) {
-                applyTtsPreset(preset, { silent: true });
-              }
-            }, 500);
-          }
-          
           // Store project and thumbnail presets for later use in ProjectConfigurationModal
           const projectPresetId = sessionStorage.getItem("calendar_project_preset_id");
           const thumbnailPresetId = sessionStorage.getItem("calendar_thumbnail_preset_id");
@@ -475,14 +449,12 @@ const CreateFromScratch = () => {
             sessionStorage.setItem("auto_load_thumbnail_preset_id", thumbnailPresetId);
           }
           
-          // Clean up sessionStorage
+          // Clean up calendar sessionStorage (but keep preset IDs for the useEffect below)
           sessionStorage.removeItem("calendar_title");
           sessionStorage.removeItem("calendar_script");
           sessionStorage.removeItem("calendar_entry_id");
           sessionStorage.removeItem("calendar_channel_name");
           sessionStorage.removeItem("calendar_channel_color");
-          sessionStorage.removeItem("calendar_script_preset_id");
-          sessionStorage.removeItem("calendar_tts_preset_id");
           sessionStorage.removeItem("calendar_project_preset_id");
           sessionStorage.removeItem("calendar_thumbnail_preset_id");
         }
@@ -498,6 +470,34 @@ const CreateFromScratch = () => {
 
     return () => subscription.unsubscribe();
   }, [navigate, searchParams]);
+
+  // Auto-apply channel presets once they're loaded
+  useEffect(() => {
+    // Only run if we have presets loaded and calendar preset IDs in sessionStorage
+    const scriptPresetId = sessionStorage.getItem("calendar_script_preset_id");
+    const ttsPresetId = sessionStorage.getItem("calendar_tts_preset_id");
+    
+    if (scriptPresetId && presets.length > 0) {
+      const preset = presets.find(p => p.id === scriptPresetId);
+      if (preset) {
+        setCustomPrompt(preset.custom_prompt || "");
+        setSelectedPresetId(scriptPresetId);
+        toast.success(`Preset de script "${preset.name}" chargé automatiquement`);
+        // Clean up after applying
+        sessionStorage.removeItem("calendar_script_preset_id");
+      }
+    }
+    
+    if (ttsPresetId && ttsPresets.length > 0) {
+      const preset = ttsPresets.find(p => p.id === ttsPresetId);
+      if (preset) {
+        applyTtsPreset(preset, { silent: false });
+        toast.success(`Preset TTS "${preset.name}" chargé automatiquement`);
+        // Clean up after applying
+        sessionStorage.removeItem("calendar_tts_preset_id");
+      }
+    }
+  }, [presets, ttsPresets]); // Run when presets are loaded
 
   // Load existing project with script (continue workflow)
   const loadExistingProject = async (projectIdToLoad: string) => {
