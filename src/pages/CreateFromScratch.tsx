@@ -241,6 +241,8 @@ const CreateFromScratch = () => {
   const [useOwnText, setUseOwnText] = useState(false);
   const [customScriptText, setCustomScriptText] = useState("");
   const [vpsScriptJobId, setVpsScriptJobId] = useState<string | null>(null);
+  const [useWebSearch, setUseWebSearch] = useState(false);
+  const [webSearchQuery, setWebSearchQuery] = useState("");
   
   // Audio step
   const [ttsProvider, setTtsProvider] = useState<"minimax" | "inworld">("inworld");
@@ -1218,6 +1220,11 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
               async: true,
               projectId: tempProject.id,
               userId: user!.id,
+              webSearch: {
+                enabled: useWebSearch,
+                query: (webSearchQuery || projectName || tempProjectName || "").trim(),
+                maxResults: 5,
+              },
             }),
           });
 
@@ -1333,6 +1340,11 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
               async: true,
               projectId,
               userId: user!.id,
+              webSearch: {
+                enabled: useWebSearch,
+                query: (webSearchQuery || projectNameValue || "").trim(),
+                maxResults: 5,
+              },
             }),
           });
 
@@ -2057,6 +2069,33 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                       </SelectContent>
                     </Select>
                   </div>
+
+                  {/* Web search toggle (Claude only) */}
+                  {scriptModel !== "gpt5" && (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <Label>Recherche web (faits à jour)</Label>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-muted-foreground">Off/On</span>
+                          <Checkbox
+                            id="useWebSearch"
+                            checked={useWebSearch}
+                            onCheckedChange={(checked) => setUseWebSearch(!!checked)}
+                          />
+                        </div>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Si activé, le VPS récupère des sources web et les injecte dans le prompt (nécessite une clé serveur de recherche).
+                      </p>
+                      {useWebSearch && (
+                        <Input
+                          value={webSearchQuery}
+                          onChange={(e) => setWebSearchQuery(e.target.value)}
+                          placeholder="Requête (ex: 'ETF retirement 2026 US statistics') — par défaut: titre du projet"
+                        />
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {/* My own text option */}

@@ -40,6 +40,47 @@ const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null;
 
+async function fetchWebContext({ query, maxResults = 5 }) {
+  const q = String(query || '').trim();
+  if (!q) return null;
+
+  const tavilyKey = process.env.TAVILY_API_KEY;
+  if (!tavilyKey) {
+    console.warn('[generate-script] Web search requested but TAVILY_API_KEY is not set; skipping web context.');
+    return null;
+  }
+
+  try {
+    const resp = await axios.post(
+      'https://api.tavily.com/search',
+      {
+        api_key: tavilyKey,
+        query: q,
+        max_results: Math.max(1, Math.min(10, Number(maxResults) || 5)),
+        include_answer: false,
+        include_raw_content: false,
+      },
+      { timeout: 20000 }
+    );
+
+    const results = Array.isArray(resp?.data?.results) ? resp.data.results : [];
+    const normalized = results
+      .map((r) => ({
+        title: String(r?.title || '').trim(),
+        url: String(r?.url || '').trim(),
+        content: String(r?.content || r?.snippet || '').trim(),
+      }))
+      .filter((r) => r.url && (r.title || r.content))
+      .slice(0, Math.max(1, Math.min(10, Number(maxResults) || 5)));
+
+    if (normalized.length === 0) return null;
+    return { provider: 'tavily', query: q, results: normalized };
+  } catch (e) {
+    console.warn('[generate-script] Web search failed; skipping web context.', e.response?.data || e.message || e);
+    return null;
+  }
+}
+
 async function resolveAnthropicModelId({ apiKey, requestedModel }) {
   const model = String(requestedModel || '').trim();
   if (!model) return model;
@@ -253,6 +294,7 @@ async function processGenerateScriptJob(jobId, payload) {
     maxTokens,
     projectId,
     userId,
+    webSearch,
   } = payload || {};
 
   // Update job to processing
@@ -276,13 +318,29 @@ async function processGenerateScriptJob(jobId, payload) {
     console.log(`[generate-script] [${jobId}] Starting script generation with model: ${resolvedModel}`);
     console.log(`[generate-script] [${jobId}] Prompt length: ${String(customPrompt || '').length} characters`);
 
-    const systemPrompt = `Tu es un assistant d'écriture professionnel. Tu génères exactement ce que l'utilisateur demande, sans commentaires ni explications supplémentaires. Réponds uniquement avec le contenu demandé.
+    let systemPrompt = `Tu es un assistant d'écriture professionnel. Tu génères exactement ce que l'utilisateur demande, sans commentaires ni explications supplémentaires. Réponds uniquement avec le contenu demandé.
 
 RÈGLE CRITIQUE SUR LA LONGUEUR:
 - Si l'utilisateur demande un certain nombre de mots, tu DOIS atteindre ce nombre MINIMUM
 - Ne t'arrête JAMAIS avant d'avoir atteint le nombre de mots demandé
 - Développe chaque section en profondeur pour atteindre la longueur requise
 - Ajoute des détails, des exemples, des transitions, des descriptions riches`;
+
+    // Optional web search context (for up-to-date facts)
+    const wantsWeb = !!(webSearch && webSearch.enabled);
+    if (wantsWeb) {
+      jobs.set(jobId, { ...jobs.get(jobId), progress: 10, currentStep: 'Recherche web...' });
+      const webQuery = webSearch.query || projectId || '';
+      const webContext = await fetchWebContext({ query: webQuery, maxResults: webSearch.maxResults || 5 });
+      if (webContext?.results?.length) {
+        console.log(`[generate-script] [${jobId}] Web search ok (provider=${webContext.provider}, results=${webContext.results.length}) query="${webContext.query}"`);
+        const lines = webContext.results.map((r, i) => `(${i + 1}) ${r.title || 'Untitled'}\nURL: ${r.url}\nSnippet: ${r.content || ''}`.trim());
+        systemPrompt += `\n\nCONTEXTE WEB (utilise uniquement pour les faits à jour; ne cite pas d'URL dans la réponse finale):\n${lines.join('\n\n')}`;
+      } else {
+        console.warn(`[generate-script] [${jobId}] Web search enabled but no results (or missing API key).`);
+        systemPrompt += `\n\nNOTE: La recherche web était demandée mais aucune source n'a été récupérée. Ne pas inventer de faits récents; rester général.`;
+      }
+    }
 
     // Extended thinking (if requested)
     const parsedThinkingBudget = Number(thinkingBudgetTokens);
@@ -1963,6 +2021,7 @@ app.post('/generate-script', async (req, res) => {
     async: asyncMode,
     projectId,
     userId,
+    webSearch,
   } = req.body;
   
   if (!anthropicApiKey) {
@@ -1996,6 +2055,7 @@ app.post('/generate-script', async (req, res) => {
       maxTokens,
       projectId,
       userId,
+      webSearch,
     }).catch((e) => {
       console.error(`[generate-script] Background job error for ${jobId}:`, e.message || e);
       jobs.set(jobId, {
