@@ -328,27 +328,6 @@ export function SceneGrid({
                     className="w-full h-full object-contain cursor-pointer"
                     onClick={() => setImagePreviewUrl(prompt.imageUrl || null)}
                   />
-                  {/* Regenerated badge */}
-                  {(() => {
-                    const isRegenerated = regeneratedScenes.has(index);
-                    if (index === 0) {
-                      console.log(`[SceneGrid] Scene ${index}: regeneratedScenes =`, Array.from(regeneratedScenes), `has(${index}) =`, isRegenerated);
-                    }
-                    return isRegenerated ? (
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <div className="absolute bottom-2 right-2 bg-orange-500 text-white rounded-full p-1.5 shadow-lg z-20">
-                              <RotateCcw className="h-3 w-3" />
-                            </div>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            <p>Image régénérée manuellement</p>
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                    ) : null;
-                  })()}
                   <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     <Button
                       variant="secondary"
@@ -455,8 +434,8 @@ export function SceneGrid({
               ) : null}
             </div>
 
-            {/* Copy action (desktop only, mobile integrated in prompt section) */}
-            <div className="hidden md:flex items-start">
+            {/* Copy action + Regenerated badge (desktop only, mobile integrated in prompt section) */}
+            <div className="hidden md:flex items-start gap-1">
               {prompt?.prompt && (
                 <Button
                   variant="ghost"
@@ -471,6 +450,21 @@ export function SceneGrid({
                     <Copy className="h-4 w-4" />
                   )}
                 </Button>
+              )}
+              {/* Regenerated badge */}
+              {regeneratedScenes.has(index) && (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div className="bg-orange-500 text-white rounded-full p-1.5 shadow-md">
+                        <RotateCcw className="h-3 w-3" />
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Image régénérée manuellement</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
               )}
             </div>
           </Card>
