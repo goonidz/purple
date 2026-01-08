@@ -100,6 +100,39 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
   const [userIdea, setUserIdea] = useState<string>("");
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [avoidPreviousPrompts, setAvoidPreviousPrompts] = useState<boolean>(false);
+  const [sourceVideoUrl, setSourceVideoUrl] = useState<string | null>(null);
+  const [sourceVideoThumbnailUrl, setSourceVideoThumbnailUrl] = useState<string | null>(null);
+
+  const extractYouTubeId = (url: string): string | null => {
+    try {
+      const u = new URL(url);
+      const host = u.hostname.replace(/^www\./, "");
+      if (host === "youtu.be") {
+        const id = u.pathname.split("/").filter(Boolean)[0];
+        return id || null;
+      }
+      if (host === "youtube.com" || host === "m.youtube.com" || host === "music.youtube.com") {
+        const v = u.searchParams.get("v");
+        if (v) return v;
+        const parts = u.pathname.split("/").filter(Boolean);
+        // /shorts/:id, /embed/:id
+        if (parts[0] === "shorts" || parts[0] === "embed") {
+          return parts[1] || null;
+        }
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  };
+
+  const computeYouTubeThumbnailUrls = (youtubeId: string) => {
+    // maxresdefault may 404 for some videos; we'll fallback onError to hqdefault
+    return {
+      maxres: `https://img.youtube.com/vi/${youtubeId}/maxresdefault.jpg`,
+      hq: `https://img.youtube.com/vi/${youtubeId}/hqdefault.jpg`,
+    };
+  };
 
   // Background job management for thumbnails
   const handleJobComplete = useCallback(async (job: GenerationJob) => {
@@ -195,6 +228,108 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
     loadPresets();
     loadThumbnailHistory();
   }, []);
+
+  useEffect(() => {
+    if (standalone) return;
+    if (!projectId) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data, error } = await supabase
+          .from("content_calendar")
+          .select("source_url, created_at")
+          .eq("project_id", projectId)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (cancelled) return;
+        if (error) throw error;
+
+        const url = (data as any)?.source_url as string | null;
+        setSourceVideoUrl(url || null);
+
+        if (url) {
+          const ytId = extractYouTubeId(url);
+          if (ytId) {
+            const { maxres } = computeYouTubeThumbnailUrls(ytId);
+            setSourceVideoThumbnailUrl(maxres);
+          } else {
+            setSourceVideoThumbnailUrl(null);
+          }
+        } else {
+          setSourceVideoThumbnailUrl(null);
+        }
+      } catch (e: any) {
+        // Non-blocking
+        console.warn("Failed to load source video URL:", e?.message || e);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId, standalone]);
+
+  const youtubeId = sourceVideoUrl ? extractYouTubeId(sourceVideoUrl) : null;
+  const youtubeThumbs = youtubeId ? computeYouTubeThumbnailUrls(youtubeId) : null;
+
+  const SourceVideoCard = () => {
+    if (standalone) return null;
+    if (!sourceVideoUrl) return null;
+
+    return (
+      <Card className="p-4 mb-6">
+        <div className="flex items-start gap-4">
+          <div className="w-[240px] max-w-[40%] shrink-0">
+            {youtubeThumbs?.maxres ? (
+              <a href={sourceVideoUrl} target="_blank" rel="noopener noreferrer" className="block">
+                <img
+                  src={sourceVideoThumbnailUrl || youtubeThumbs.maxres}
+                  alt="Miniature de la vidéo source"
+                  className="w-full rounded-md border object-cover"
+                  onError={() => {
+                    // Fallback to hq thumbnail if maxres isn't available
+                    if (youtubeThumbs?.hq) setSourceVideoThumbnailUrl(youtubeThumbs.hq);
+                  }}
+                />
+              </a>
+            ) : (
+              <div className="w-full aspect-video rounded-md border flex items-center justify-center text-xs text-muted-foreground">
+                Miniature indisponible
+              </div>
+            )}
+          </div>
+
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center justify-between gap-3">
+              <div className="space-y-1 min-w-0">
+                <div className="text-sm font-semibold">Vidéo source</div>
+                <div className="text-xs text-muted-foreground truncate">
+                  <a href={sourceVideoUrl} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2">
+                    {sourceVideoUrl}
+                  </a>
+                </div>
+              </div>
+              <Button asChild variant="outline" size="sm">
+                <a href={sourceVideoUrl} target="_blank" rel="noopener noreferrer">
+                  Ouvrir
+                </a>
+              </Button>
+            </div>
+
+            {!youtubeId && (
+              <div className="mt-2 text-xs text-muted-foreground">
+                Pour l’instant, on affiche automatiquement la miniature uniquement pour les URLs YouTube.
+              </div>
+            )}
+          </div>
+        </div>
+      </Card>
+    );
+  };
 
   const loadPresets = async () => {
     try {
@@ -810,6 +945,8 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
   return (
     <div className="space-y-6">
       <h3 className="text-lg font-semibold">Générer des miniatures YouTube</h3>
+
+      <SourceVideoCard />
       
       <Tabs defaultValue="generate" className="w-full">
         <TabsList className="grid w-full grid-cols-2">
