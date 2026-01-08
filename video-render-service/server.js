@@ -974,7 +974,8 @@ async function renderSceneWithEffect(imagePath, outputPath, duration, width, hei
         // Strategy: First downscale/upscale to fit within target dimensions (maintains aspect ratio)
         // Then crop only the minimum necessary to reach exact dimensions and avoid black bars
         // This minimizes content loss while ensuring the frame is filled
-        const preprocessFilter = `scale=${width}:${height}:force_original_aspect_ratio=decrease,crop=${width}:${height}`;
+        // Using Lanczos interpolation for high-quality scaling (especially important for downscaling high-res images)
+        const preprocessFilter = `scale=${width}:${height}:force_original_aspect_ratio=decrease:flags=lanczos,crop=${width}:${height}`;
         
         // Combine preprocessing with the effect filter
         finalFilter = `${preprocessFilter},${filter}`;
