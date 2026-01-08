@@ -450,6 +450,12 @@ const CreateFromScratch = () => {
             sessionStorage.setItem("auto_load_thumbnail_preset_id", thumbnailPresetId);
           }
           
+          // Transfer thumbnail chain enabled flag (for auto-generation behavior)
+          const thumbnailChainEnabled = sessionStorage.getItem("calendar_thumbnail_chain_enabled");
+          if (thumbnailChainEnabled) {
+            sessionStorage.setItem("auto_thumbnail_chain_enabled", thumbnailChainEnabled);
+          }
+          
           // Clean up calendar sessionStorage (but keep preset IDs for the useEffect below)
           sessionStorage.removeItem("calendar_title");
           sessionStorage.removeItem("calendar_script");
@@ -458,6 +464,7 @@ const CreateFromScratch = () => {
           sessionStorage.removeItem("calendar_channel_color");
           sessionStorage.removeItem("calendar_project_preset_id");
           sessionStorage.removeItem("calendar_thumbnail_preset_id");
+          sessionStorage.removeItem("calendar_thumbnail_chain_enabled");
         }
       }
     });

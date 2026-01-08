@@ -229,6 +229,21 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
     loadThumbnailHistory();
   }, []);
 
+  // Auto-load preset from sessionStorage (from calendar channel)
+  useEffect(() => {
+    const autoLoadPresetId = sessionStorage.getItem("auto_load_thumbnail_preset_id");
+    if (autoLoadPresetId && presets.length > 0) {
+      const preset = presets.find(p => p.id === autoLoadPresetId);
+      if (preset) {
+        loadPreset(autoLoadPresetId);
+        setSelectedPresetId(autoLoadPresetId);
+        toast.success(`Preset miniatures "${preset.name}" chargé automatiquement`);
+        // Clear after loading so it doesn't reload every time
+        sessionStorage.removeItem("auto_load_thumbnail_preset_id");
+      }
+    }
+  }, [presets]);
+
   useEffect(() => {
     if (standalone) return;
     if (!projectId) return;

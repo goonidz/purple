@@ -650,8 +650,15 @@ export default function CalendarVideoModal({
         if (selectedChannel.project_preset_id) {
           sessionStorage.setItem("calendar_project_preset_id", selectedChannel.project_preset_id);
         }
-        if (selectedChannel.thumbnail_preset_id && selectedChannel.thumbnail_preset_enabled) {
+        // Always store thumbnail preset ID (for UI loading), regardless of enabled state
+        if (selectedChannel.thumbnail_preset_id) {
           sessionStorage.setItem("calendar_thumbnail_preset_id", selectedChannel.thumbnail_preset_id);
+        }
+        // Store enabled state separately (for auto-chaining behavior)
+        if (selectedChannel.thumbnail_preset_enabled) {
+          sessionStorage.setItem("calendar_thumbnail_chain_enabled", "true");
+        } else {
+          sessionStorage.removeItem("calendar_thumbnail_chain_enabled");
         }
       }
     } else {
@@ -684,8 +691,15 @@ export default function CalendarVideoModal({
           if (selectedChannel.project_preset_id) {
             sessionStorage.setItem("calendar_project_preset_id", selectedChannel.project_preset_id);
           }
-          if (selectedChannel.thumbnail_preset_id && selectedChannel.thumbnail_preset_enabled) {
+          // Always store thumbnail preset ID (for UI loading), regardless of enabled state
+          if (selectedChannel.thumbnail_preset_id) {
             sessionStorage.setItem("calendar_thumbnail_preset_id", selectedChannel.thumbnail_preset_id);
+          }
+          // Store enabled state separately (for auto-chaining behavior)
+          if (selectedChannel.thumbnail_preset_enabled) {
+            sessionStorage.setItem("calendar_thumbnail_chain_enabled", "true");
+          } else {
+            sessionStorage.removeItem("calendar_thumbnail_chain_enabled");
           }
         }
       } else {

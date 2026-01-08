@@ -179,8 +179,14 @@ const Projects = () => {
           sessionStorage.setItem("auto_load_project_preset_id", projectPresetId);
         }
         if (thumbnailPresetId) {
-          // Store for use in semi-auto mode
+          // Store for use in ThumbnailGenerator (UI loading)
           sessionStorage.setItem("auto_load_thumbnail_preset_id", thumbnailPresetId);
+        }
+        
+        // Transfer thumbnail chain enabled flag (for auto-generation behavior)
+        const thumbnailChainEnabled = sessionStorage.getItem("calendar_thumbnail_chain_enabled");
+        if (thumbnailChainEnabled) {
+          sessionStorage.setItem("auto_thumbnail_chain_enabled", thumbnailChainEnabled);
         }
         
         // Clear sessionStorage after passing data to function
@@ -190,6 +196,7 @@ const Projects = () => {
         sessionStorage.removeItem("calendar_entry_id");
         sessionStorage.removeItem("calendar_project_preset_id");
         sessionStorage.removeItem("calendar_thumbnail_preset_id");
+        sessionStorage.removeItem("calendar_thumbnail_chain_enabled");
         
         // Clear URL params
         navigate("/projects", { replace: true });

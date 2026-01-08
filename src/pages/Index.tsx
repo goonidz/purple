@@ -265,6 +265,18 @@ const Index = () => {
 
   // Ref to store thumbnail preset ID for semi-auto mode
   const thumbnailPresetIdRef = useRef<string | null>(null);
+  // Ref to store whether thumbnail auto-chaining is enabled
+  const thumbnailChainEnabledRef = useRef<boolean>(false);
+
+  // Load thumbnail chain enabled flag from sessionStorage on mount
+  useEffect(() => {
+    const chainEnabled = sessionStorage.getItem("auto_thumbnail_chain_enabled");
+    if (chainEnabled === "true") {
+      thumbnailChainEnabledRef.current = true;
+      // Clear after loading so it doesn't persist beyond the current session
+      sessionStorage.removeItem("auto_thumbnail_chain_enabled");
+    }
+  }, []);
 
   // Set page title based on project name
   useEffect(() => {
@@ -335,11 +347,12 @@ const Index = () => {
       if (isLastChunk) {
         setIsGeneratingImages(false);
         
-        // Semi-auto: backend already chains to thumbnails job if preset is set
-        if (isSemiAuto && thumbnailPresetId) {
+        // Semi-auto: backend already chains to thumbnails job if preset is set AND chaining is enabled
+        if (isSemiAuto && thumbnailPresetId && thumbnailChainEnabledRef.current) {
           toast.info("Génération des miniatures en cours...");
-        } else if (isSemiAuto && !thumbnailPresetId) {
-          toast.success("🎉 Génération semi-automatique terminée (sans miniatures - aucun preset sélectionné) !");
+        } else if (isSemiAuto && (!thumbnailPresetId || !thumbnailChainEnabledRef.current)) {
+          const reason = !thumbnailPresetId ? "aucun preset sélectionné" : "génération automatique désactivée";
+          toast.success(`🎉 Génération semi-automatique terminée (sans miniatures - ${reason}) !`);
         }
       }
     } else if (job.job_type === 'thumbnails') {
@@ -5306,7 +5319,8 @@ Remember: Use temporal context to understand the topic, but the query must be PR
                         const result = await startJob('prompts', { 
                           regenerate: false,
                           semiAutoMode: true,
-                          thumbnailPresetId: thumbnailPresetIdRef.current
+                          // Only pass thumbnailPresetId if auto-chaining is enabled
+                          thumbnailPresetId: thumbnailChainEnabledRef.current ? thumbnailPresetIdRef.current : null
                         });
                         
                         if (result) {
