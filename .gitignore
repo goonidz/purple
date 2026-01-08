@@ -30,3 +30,20 @@ supabase/.temp/
 *.njsproj
 *.sln
 *.sw?
+
+# CosyVoice test files
+cosyvoice-test/pretrained_models/
+cosyvoice-test/samples/*.wav
+cosyvoice-test/samples/*.json
+cosyvoice-test/third_party/
+cosyvoice-test/*.wav
+cosyvoice-test/venv/
+cosyvoice-test/__pycache__/
+cosyvoice-test/*.pyc
+
+# Soprano test files
+soprano-test/venv/
+soprano-test/soprano/
+soprano-test/__pycache__/
+soprano-test/*.wav
+soprano-test/*.pyc

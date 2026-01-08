@@ -224,6 +224,116 @@ serve(async (req) => {
           }
         }
         
+        // For upscale job, check if there are more images to upscale (chunk continuation)
+        if (job.job_type === 'upscale') {
+          const { data: project } = await adminClient
+            .from('projects')
+            .select('prompts')
+            .eq('id', job.project_id)
+            .single();
+          
+          const prompts = (project?.prompts as any[]) || [];
+          
+          // Get indices of images upscaled in this job
+          const { data: completedPredictions } = await adminClient
+            .from('pending_predictions')
+            .select('scene_index')
+            .eq('job_id', job.id)
+            .eq('status', 'completed');
+          
+          const justUpscaledIndices = (completedPredictions || []).map((p: any) => p.scene_index);
+          const previouslyUpscaled = job.metadata?.upscaledIndices || [];
+          const allUpscaledIndices = [...new Set([...previouslyUpscaled, ...justUpscaledIndices])];
+          
+          // Count images that still need upscaling
+          const remainingToUpscale = prompts
+            .map((prompt: any, index: number) => ({ prompt, index }))
+            .filter(({ prompt, index }: any) => {
+              if (!prompt || !prompt.imageUrl) return false;
+              if (prompt.isUpscaled === true) return false;
+              if (allUpscaledIndices.includes(index)) return false;
+              return true;
+            });
+          
+          console.log(`Job ${job.id}: Upscale chunk complete. ${remainingToUpscale.length} images still need upscaling`);
+          
+          if (remainingToUpscale.length > 0) {
+            console.log(`Job ${job.id}: Creating next upscale chunk for ${remainingToUpscale.length} images`);
+            
+            // Check for existing upscale chunk job to prevent duplicates
+            const { data: existingChunkJobs } = await adminClient
+              .from('generation_jobs')
+              .select('id, status')
+              .eq('project_id', job.project_id)
+              .eq('job_type', 'upscale')
+              .in('status', ['pending', 'processing'])
+              .limit(1);
+
+            const existingChunkJob = existingChunkJobs?.[0];
+
+            if (!existingChunkJob) {
+              const calculatedTotal = allUpscaledIndices.length + remainingToUpscale.length;
+              const totalGlobal = job.metadata?.totalGlobal || job.total || calculatedTotal;
+              
+              const { data: nextChunkJob } = await adminClient
+                .from('generation_jobs')
+                .insert({
+                  project_id: job.project_id,
+                  user_id: job.user_id,
+                  job_type: 'upscale',
+                  status: 'pending',
+                  progress: allUpscaledIndices.length,
+                  total: totalGlobal,
+                  metadata: {
+                    ...job.metadata,
+                    upscaledIndices: allUpscaledIndices,
+                    isChunkContinuation: true,
+                    totalGlobal
+                  }
+                })
+                .select()
+                .single();
+              
+              if (nextChunkJob) {
+                console.log(`Created next upscale chunk job ${nextChunkJob.id}`);
+                
+                // Start the next chunk job
+                const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+                const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+                
+                fetch(`${supabaseUrl}/functions/v1/start-generation-job`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${supabaseServiceKey}`
+                  },
+                  body: JSON.stringify({
+                    jobId: nextChunkJob.id,
+                    projectId: job.project_id,
+                    userId: job.user_id,
+                    jobType: 'upscale',
+                    metadata: {
+                      ...job.metadata,
+                      upscaledIndices: allUpscaledIndices,
+                      isChunkContinuation: true
+                    }
+                  })
+                }).catch(err => console.error("Error starting next upscale chunk:", err));
+                
+                results.push({ 
+                  jobId: job.id, 
+                  action: 'upscale_chunk_continued',
+                  nextChunkId: nextChunkJob.id,
+                  remainingImages: remainingToUpscale.length
+                });
+                continue; // Don't chain to thumbnails yet
+              }
+            } else {
+              console.log(`Job ${job.id}: Upscale chunk job ${existingChunkJob.id} (status: ${existingChunkJob.status}) already exists`);
+            }
+          }
+        }
+        
         // Chain next job if needed - check both semiAutoMode and semiAutonomous for backwards compatibility
         if (finalStatus === 'completed' && (job.metadata?.semiAutoMode || job.metadata?.semiAutonomous)) {
           console.log(`Job ${job.id} completed - attempting to chain next job`);

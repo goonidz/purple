@@ -2251,6 +2251,8 @@ const Index = () => {
     const isZImage = imageModel === 'z-image-turbo' || imageModel === 'z-image-turbo-lora';
     const is16x9 = aspectRatio === '16:9';
     
+    console.log(`[generateUpscale] Checking conditions: isZImage=${isZImage}, is16x9=${is16x9}`);
+    
     if (!isZImage || !is16x9) {
       toast.error("L'upscaling automatique est uniquement disponible pour Z-Image en format 16:9");
       return;
@@ -2258,21 +2260,97 @@ const Index = () => {
 
     // Check if images exist
     const imagesWithUrl = generatedPrompts.filter((p: any) => p && p.imageUrl).length;
+    const imagesUpscaled = generatedPrompts.filter((p: any) => p && p.imageUrl && p.isUpscaled === true).length;
+    const needsUpscale = imagesWithUrl - imagesUpscaled;
+    
+    console.log(`[generateUpscale] Images status: ${imagesWithUrl} total, ${imagesUpscaled} upscaled, ${needsUpscale} need upscaling`);
+    
     if (imagesWithUrl === 0) {
       toast.error("Aucune image à upscaler. Générez d'abord les images.");
+      return;
+    }
+    
+    if (needsUpscale === 0) {
+      toast.info("✅ Toutes les images sont déjà upscalées !");
       return;
     }
 
     // Check if already has active upscale job
     if (hasActiveJob('upscale')) {
+      console.log(`[generateUpscale] Active upscale job already exists, skipping`);
       toast.info("Un upscaling est déjà en cours");
       return;
     }
 
     // Start background job
+    console.log(`[generateUpscale] Starting upscale job for ${needsUpscale} images`);
     const result = await startJob('upscale', {});
     if (result) {
-      toast.info("Upscaling lancé en arrière-plan. Vous pouvez quitter cette page.");
+      toast.info(`Upscaling de ${needsUpscale} image(s) lancé en arrière-plan.`);
+    }
+  };
+  
+  const forceUpscale = async () => {
+    if (!currentProjectId) {
+      toast.error("Veuillez d'abord sélectionner ou créer un projet");
+      return;
+    }
+
+    // Check if Z-Image 16:9
+    const isZImage = imageModel === 'z-image-turbo' || imageModel === 'z-image-turbo-lora';
+    const is16x9 = aspectRatio === '16:9';
+    
+    if (!isZImage || !is16x9) {
+      toast.error("L'upscaling automatique est uniquement disponible pour Z-Image en format 16:9");
+      return;
+    }
+
+    // Count images to upscale
+    const imagesWithUrl = generatedPrompts.filter((p: any) => p && p.imageUrl).length;
+    const imagesUpscaled = generatedPrompts.filter((p: any) => p && p.imageUrl && p.isUpscaled === true).length;
+    const needsUpscale = imagesWithUrl - imagesUpscaled;
+    
+    if (imagesWithUrl === 0) {
+      toast.error("Aucune image à upscaler. Générez d'abord les images.");
+      return;
+    }
+    
+    console.log(`[forceUpscale] Forcing upscale for ${needsUpscale} images, canceling existing jobs`);
+
+    try {
+      // Cancel any existing upscale jobs
+      const { data: existingJobs } = await supabase
+        .from('generation_jobs')
+        .select('id')
+        .eq('project_id', currentProjectId)
+        .eq('job_type', 'upscale')
+        .in('status', ['pending', 'processing']);
+
+      if (existingJobs && existingJobs.length > 0) {
+        console.log(`[forceUpscale] Found ${existingJobs.length} existing upscale jobs, marking as failed`);
+        
+        for (const job of existingJobs) {
+          await supabase
+            .from('generation_jobs')
+            .update({ 
+              status: 'failed', 
+              error_message: 'Cancelled by user (forced restart)',
+              completed_at: new Date().toISOString()
+            })
+            .eq('id', job.id);
+        }
+        
+        toast.info(`${existingJobs.length} job(s) existant(s) annulé(s)`);
+      }
+
+      // Start new upscale job
+      const result = await startJob('upscale', {});
+      if (result) {
+        toast.success(`Upscaling forcé lancé pour ${needsUpscale} image(s) !`);
+      }
+    } catch (error) {
+      console.error("[forceUpscale] Error:", error);
+      toast.error("Erreur lors du forçage de l'upscaling");
     }
   };
 
@@ -3568,7 +3646,30 @@ const Index = () => {
                           )}
                           {generatedPrompts.length > 0 && !isGeneratingImages && (imageModel === 'z-image-turbo' || imageModel === 'z-image-turbo-lora') && aspectRatio === '16:9' && (
                             <Button
-                              onClick={() => {
+                              onClick={async () => {
+                                // First, check for stuck jobs and resolve them
+                                if (currentProjectId) {
+                                  try {
+                                    console.log("[Vérifier upscale] Checking for stuck upscale jobs...");
+                                    const response = await supabase.functions.invoke('check-stuck-jobs', {
+                                      body: { projectId: currentProjectId }
+                                    });
+                                    
+                                    if (response.data?.results) {
+                                      const stuckResults = response.data.results.filter((r: any) => 
+                                        r.action === 'completed' || r.action === 'marked_failed' || r.action === 'upscale_chunk_continued'
+                                      );
+                                      if (stuckResults.length > 0) {
+                                        console.log("[Vérifier upscale] Resolved stuck jobs:", stuckResults);
+                                        toast.info(`${stuckResults.length} job(s) bloqué(s) résolu(s)`);
+                                      }
+                                    }
+                                  } catch (error) {
+                                    console.error("[Vérifier upscale] Error checking stuck jobs:", error);
+                                  }
+                                }
+                                
+                                // Then check upscale status
                                 const imagesWithUrl = generatedPrompts.filter((p: any) => p && p.imageUrl);
                                 
                                 let needsUpscale = 0;
@@ -3622,6 +3723,17 @@ const Index = () => {
                             >
                               <Maximize2 className="mr-2 h-4 w-4" />
                               Vérifier upscale
+                            </Button>
+                          )}
+                          {generatedPrompts.length > 0 && !isGeneratingImages && (imageModel === 'z-image-turbo' || imageModel === 'z-image-turbo-lora') && aspectRatio === '16:9' && generatedPrompts.some((p: any) => p && p.imageUrl) && (
+                            <Button
+                              onClick={forceUpscale}
+                              variant="secondary"
+                              size="sm"
+                              title="Annuler les jobs existants et relancer l'upscaling"
+                            >
+                              <RefreshCw className="mr-2 h-4 w-4" />
+                              Forcer upscale
                             </Button>
                           )}
                           {generatedPrompts.length > 0 && selectedScenes.size > 0 && (

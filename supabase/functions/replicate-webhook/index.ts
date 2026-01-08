@@ -320,7 +320,7 @@ async function updateUpscaledImage(adminClient: any, prediction: any, imageUrl: 
   if (rpcError) {
     console.error(`Failed to update scene ${sceneIndex + 1} with upscaled image via RPC:`, rpcError);
   } else if (result === true) {
-    console.log(`Updated scene ${sceneIndex + 1} with upscaled image and marked as isUpscaled=true (atomic)`);
+    console.log(`✅ Scene ${sceneIndex + 1} upscaled to 1920x1088 and marked as isUpscaled=true`);
   } else {
     console.error(`Scene ${sceneIndex + 1} not found or project missing`);
   }
@@ -838,7 +838,7 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
         }
       }
       
-      // All upscales done - update project dimensions
+      // All upscales done - update project dimensions and verify flags
       const imageModel = fullProject.image_model || '';
       const isZImage = imageModel === 'z-image-turbo' || imageModel === 'z-image-turbo-lora';
       
@@ -856,6 +856,35 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
           console.error(`Job ${jobId}: Failed to update dimensions:`, updateError);
         } else {
           console.log(`Job ${jobId}: Project ${job.project_id} dimensions updated to 1920x1088`);
+        }
+        
+        // Verify and fix any missing isUpscaled flags
+        const upscaledWithoutFlag = prompts.filter((p: any) => 
+          p && p.imageUrl && p.isUpscaled !== true && 
+          (!p.imageWidth || !p.imageHeight || (p.imageWidth >= 1920 && p.imageHeight >= 1080))
+        );
+        
+        if (upscaledWithoutFlag.length > 0) {
+          console.log(`Job ${jobId}: Found ${upscaledWithoutFlag.length} images without isUpscaled flag, fixing...`);
+          
+          // Update all images to have isUpscaled flag if they have high-res dimensions
+          const fixedPrompts = prompts.map((p: any) => {
+            if (p && p.imageUrl && p.isUpscaled !== true) {
+              const imgWidth = p.imageWidth || 0;
+              const imgHeight = p.imageHeight || 0;
+              if (imgWidth >= 1920 && imgHeight >= 1080) {
+                return { ...p, isUpscaled: true };
+              }
+            }
+            return p;
+          });
+          
+          await adminClient
+            .from('projects')
+            .update({ prompts: fixedPrompts })
+            .eq('id', job.project_id);
+          
+          console.log(`Job ${jobId}: Fixed ${upscaledWithoutFlag.length} missing isUpscaled flags`);
         }
       }
       
