@@ -242,7 +242,6 @@ const CreateFromScratch = () => {
   const [customScriptText, setCustomScriptText] = useState("");
   const [vpsScriptJobId, setVpsScriptJobId] = useState<string | null>(null);
   const [useWebSearch, setUseWebSearch] = useState(false);
-  const [webSearchQuery, setWebSearchQuery] = useState("");
   
   // Audio step
   const [ttsProvider, setTtsProvider] = useState<"minimax" | "inworld">("inworld");
@@ -1222,8 +1221,7 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
               userId: user!.id,
               webSearch: {
                 enabled: useWebSearch,
-                query: (webSearchQuery || projectName || tempProjectName || "").trim(),
-                maxResults: 5,
+                maxUses: 5,
               },
             }),
           });
@@ -1342,8 +1340,7 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
               userId: user!.id,
               webSearch: {
                 enabled: useWebSearch,
-                query: (webSearchQuery || projectNameValue || "").trim(),
-                maxResults: 5,
+                maxUses: 5,
               },
             }),
           });
@@ -2074,7 +2071,7 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                   {scriptModel !== "gpt5" && (
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
-                        <Label>Recherche web (faits à jour)</Label>
+                        <Label>Recherche web (Anthropic)</Label>
                         <div className="flex items-center gap-2">
                           <span className="text-xs text-muted-foreground">Off/On</span>
                           <Checkbox
@@ -2085,15 +2082,8 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                         </div>
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        Si activé, le VPS récupère des sources web et les injecte dans le prompt (nécessite une clé serveur de recherche).
+                        Si activé, Claude peut utiliser l’outil “web_search” natif d’Anthropic et ajouter des citations automatiquement (nécessite activation dans la Console Anthropic).
                       </p>
-                      {useWebSearch && (
-                        <Input
-                          value={webSearchQuery}
-                          onChange={(e) => setWebSearchQuery(e.target.value)}
-                          placeholder="Requête (ex: 'ETF retirement 2026 US statistics') — par défaut: titre du projet"
-                        />
-                      )}
                     </div>
                   )}
                 </div>
