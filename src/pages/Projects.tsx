@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { parseStyleReferenceUrls, serializeStyleReferenceUrls } from "@/lib/styleReferenceHelpers";
 import { parseTranscriptToScenes } from "@/lib/sceneParser";
 import { DurationRange, DEFAULT_DURATION_RANGES, SHORT_FORM_DURATION_RANGES, convertLegacyToRanges } from "@/lib/durationRanges";
+import { sanitizeProjectName } from "@/lib/utils";
 import { useNavigate, Link, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -742,7 +743,7 @@ const Projects = () => {
                     <Input
                       placeholder="Nom du projet"
                       value={newProjectName}
-                      onChange={(e) => setNewProjectName(e.target.value)}
+                      onChange={(e) => setNewProjectName(sanitizeProjectName(e.target.value))}
                       disabled={isCreating}
                     />
                     <div
@@ -1288,7 +1289,7 @@ const Projects = () => {
                       <div className="flex items-center gap-2 flex-1" onClick={(e) => e.stopPropagation()}>
                         <Input
                           value={editingProjectName}
-                          onChange={(e) => setEditingProjectName(e.target.value)}
+                          onChange={(e) => setEditingProjectName(sanitizeProjectName(e.target.value))}
                           className="h-8"
                           autoFocus
                           onKeyDown={(e) => {

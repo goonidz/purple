@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { sanitizeProjectName } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import {
   Dialog,
@@ -151,7 +152,7 @@ export const ProjectSelector = ({
               <Input
                 placeholder="Nom du projet"
                 value={newProjectName}
-                onChange={(e) => setNewProjectName(e.target.value)}
+                onChange={(e) => setNewProjectName(sanitizeProjectName(e.target.value))}
                 maxLength={100}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {

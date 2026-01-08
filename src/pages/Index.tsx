@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { parseStyleReferenceUrls, serializeStyleReferenceUrls } from "@/lib/styleReferenceHelpers";
 import { parseTranscriptToScenes, TranscriptData, TranscriptSegment, Scene } from "@/lib/sceneParser";
 import { DurationRange, DEFAULT_DURATION_RANGES, convertLegacyToRanges } from "@/lib/durationRanges";
+import { sanitizeProjectName } from "@/lib/utils";
 import { useNavigate, useSearchParams, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -2737,7 +2738,7 @@ const Index = () => {
               <div className="flex items-center gap-1 sm:gap-2 flex-1 min-w-0">
                 <Input
                   value={editingProjectNameValue}
-                  onChange={(e) => setEditingProjectNameValue(e.target.value)}
+                  onChange={(e) => setEditingProjectNameValue(sanitizeProjectName(e.target.value))}
                   className="h-8 w-full sm:w-64 min-w-0"
                   autoFocus
                   onKeyDown={(e) => {

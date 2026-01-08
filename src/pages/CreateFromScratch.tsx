@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, Link, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import type { User } from "@supabase/supabase-js";
+import { sanitizeProjectName } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -1995,7 +1996,7 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                       id="projectName"
                       placeholder="Ma super vidéo..."
                       value={projectName}
-                      onChange={(e) => setProjectName(e.target.value)}
+                      onChange={(e) => setProjectName(sanitizeProjectName(e.target.value))}
                     />
                   </div>
 
