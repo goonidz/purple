@@ -261,25 +261,58 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
       }
     }
     
-    // Priority 2: Load from project database (existing project)
+    // Priority 2: Load from channel (via content_calendar relation)
     if (projectId) {
       (async () => {
         try {
-          console.log("[ThumbnailGenerator] Fetching preset from project:", projectId);
-          const { data, error } = await supabase
+          console.log("[ThumbnailGenerator] Fetching channel preset for project:", projectId);
+          
+          // First, try to get preset from project.thumbnail_preset_id (direct assignment)
+          const { data: projectData, error: projectError } = await supabase
             .from("projects")
             .select("thumbnail_preset_id")
             .eq("id", projectId)
             .single();
           
-          if (error) {
-            console.error("[ThumbnailGenerator] Error fetching project:", error);
-            throw error;
+          if (projectError) {
+            console.error("[ThumbnailGenerator] Error fetching project:", projectError);
           }
           
-          const presetId = data?.thumbnail_preset_id;
+          let presetId = projectData?.thumbnail_preset_id;
           console.log("[ThumbnailGenerator] Project thumbnail_preset_id:", presetId);
           
+          // If no direct preset, try to get it from the linked channel
+          if (!presetId) {
+            console.log("[ThumbnailGenerator] No direct preset, checking channel via calendar...");
+            const { data: calendarData, error: calendarError } = await supabase
+              .from("content_calendar")
+              .select(`
+                channel_id,
+                channels!inner (
+                  thumbnail_preset_id,
+                  thumbnail_preset_enabled,
+                  name
+                )
+              `)
+              .eq("project_id", projectId)
+              .maybeSingle();
+            
+            if (calendarError) {
+              console.error("[ThumbnailGenerator] Error fetching calendar:", calendarError);
+            } else if (calendarData) {
+              const channelData = (calendarData as any).channels;
+              presetId = channelData?.thumbnail_preset_id;
+              console.log("[ThumbnailGenerator] Channel preset:", {
+                channelName: channelData?.name,
+                presetId,
+                enabled: channelData?.thumbnail_preset_enabled
+              });
+            } else {
+              console.log("[ThumbnailGenerator] No calendar entry found for this project");
+            }
+          }
+          
+          // Load the preset if found
           if (presetId) {
             const preset = presets.find(p => p.id === presetId);
             console.log("[ThumbnailGenerator] Found preset:", preset?.name);
@@ -287,13 +320,13 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
               loadPreset(presetId);
               setSelectedPresetId(presetId);
               setHasAutoLoadedPreset(true);
-              toast.success(`Preset miniatures "${preset.name}" chargé depuis le projet`);
+              toast.success(`Preset miniatures "${preset.name}" chargé depuis le channel`);
             }
           } else {
-            console.log("[ThumbnailGenerator] No thumbnail_preset_id set for this project");
+            console.log("[ThumbnailGenerator] No thumbnail preset found (project or channel)");
           }
         } catch (error) {
-          console.error("[ThumbnailGenerator] Error loading thumbnail preset from project:", error);
+          console.error("[ThumbnailGenerator] Error loading thumbnail preset:", error);
         }
       })();
     }
