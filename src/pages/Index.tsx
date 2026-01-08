@@ -89,6 +89,7 @@ interface GeneratedPrompt {
   imageUrl?: string;
   videoUrl?: string;
   continuityGroupId?: number | null;
+  manually_regenerated?: boolean;
 }
 
 // Fonction pour calculer les groupes si continuityGroupId manquant (rétrocompatibilité)
@@ -393,6 +394,12 @@ const Index = () => {
           // Calculer les groupes si manquants (rétrocompatibilité)
           const promptsWithGroups = calculateGroupsIfMissing(validPrompts);
           setGeneratedPrompts(promptsWithGroups);
+          
+          // Load regenerated scenes state from prompts
+          const regeneratedIndices = promptsWithGroups
+            .map((p, idx) => p?.manually_regenerated ? idx : -1)
+            .filter(idx => idx !== -1);
+          setRegeneratedScenes(new Set(regeneratedIndices));
           
           // Update audio URL
           if (data.audio_url) {
@@ -1875,8 +1882,26 @@ const Index = () => {
 
     addGeneratingImageIndex(index);
     
-    // Mark this scene as regenerated
+    // Mark this scene as regenerated in state
     setRegeneratedScenes(prev => new Set([...prev, index]));
+    
+    // Mark this scene as regenerated in database
+    const updatedPrompts = [...generatedPrompts];
+    updatedPrompts[index] = {
+      ...updatedPrompts[index],
+      manually_regenerated: true
+    };
+    setGeneratedPrompts(updatedPrompts);
+    
+    // Persist to database
+    try {
+      await supabase
+        .from('projects')
+        .update({ prompts: updatedPrompts as any })
+        .eq('id', currentProjectId);
+    } catch (error) {
+      console.error("Error saving manually_regenerated flag:", error);
+    }
     
     // Start background job
     const result = await startJob('single_image', { sceneIndex: index });
@@ -5270,6 +5295,9 @@ Remember: Use temporal context to understand the topic, but the query must be PR
                       console.log("Scenes count:", generatedScenes.length);
                       console.log("Verified scenes in DB:", (verifyProject.scenes as any[]).length);
                       console.log("Current project ID:", currentProjectId);
+                      
+                      // Reset all manually_regenerated flags for full regeneration
+                      setRegeneratedScenes(new Set());
                       
                       toast.info("Mode semi-automatique activé. Génération des prompts en cours...");
                       
