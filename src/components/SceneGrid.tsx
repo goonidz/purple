@@ -14,7 +14,7 @@ import {
   Clock,
   Search,
   Video,
-  RotateCcw,
+  Info,
 } from "lucide-react";
 import {
   Tooltip,
@@ -435,7 +435,7 @@ export function SceneGrid({
             </div>
 
             {/* Copy action + Regenerated badge (desktop only, mobile integrated in prompt section) */}
-            <div className="hidden md:flex items-start gap-1">
+            <div className="hidden md:flex flex-col items-center gap-1">
               {prompt?.prompt && (
                 <Button
                   variant="ghost"
@@ -456,8 +456,8 @@ export function SceneGrid({
                 <TooltipProvider>
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <div className="bg-orange-500 text-white rounded-full p-1.5 shadow-md">
-                        <RotateCcw className="h-3 w-3" />
+                      <div className="bg-orange-500 text-white rounded-full p-1 shadow-md cursor-help">
+                        <Info className="h-3.5 w-3.5" />
                       </div>
                     </TooltipTrigger>
                     <TooltipContent>
