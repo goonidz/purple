@@ -1,9 +1,6 @@
 # Configuration locale (contient les clés Supabase)
 config.js
 
-# Icônes générées
-icons/*.png
-
 # Fichiers temporaires
 *.log
 .DS_Store
