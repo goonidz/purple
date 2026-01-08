@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "VideoFlow Calendar",
+  "version": "1.0.0",
+  "description": "Ajoutez des vidéos YouTube à votre calendrier VideoFlow d'un clic droit",
+  "permissions": [
+    "contextMenus",
+    "storage",
+    "notifications"
+  ],
+  "host_permissions": [
+    "https://www.youtube.com/*",
+    "https://*.supabase.co/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "48": "icons/icon48.png"
+    }
+  },
+  "icons": {
+    "48": "icons/icon48.png"
+  }
+}

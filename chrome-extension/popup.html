@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="popup.css">
+  <title>VideoFlow Calendar</title>
+</head>
+<body>
+  <div id="app">
+    <!-- Loading state -->
+    <div id="loading-state" class="state">
+      <div class="spinner"></div>
+      <p>Chargement...</p>
+    </div>
+
+    <!-- Not logged in state -->
+    <div id="login-state" class="state" style="display: none;">
+      <div class="header">
+        <h2>VideoFlow</h2>
+      </div>
+      <p class="info-text">Connectez-vous pour ajouter des vidéos à votre calendrier</p>
+      <div class="form-group">
+        <label for="email">Email</label>
+        <input type="email" id="email" placeholder="votre@email.com" />
+      </div>
+      <div class="form-group">
+        <label for="password">Mot de passe</label>
+        <input type="password" id="password" placeholder="••••••••" />
+      </div>
+      <button id="login-btn" class="primary-btn">Se connecter</button>
+      <p id="login-error" class="error-text" style="display: none;"></p>
+    </div>
+
+    <!-- Add video form (when pending video exists) -->
+    <div id="add-video-form" class="state" style="display: none;">
+      <div class="header">
+        <h2>Ajouter au calendrier</h2>
+      </div>
+      <div class="form-group">
+        <label for="video-title">Titre</label>
+        <input type="text" id="video-title" placeholder="Titre de la vidéo" />
+      </div>
+      <div class="form-group">
+        <label for="video-url">URL</label>
+        <input type="text" id="video-url" readonly />
+      </div>
+      <div class="form-group">
+        <label for="channel-select">Chaîne YouTube</label>
+        <select id="channel-select">
+          <option value="">Sans chaîne</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="scheduled-date">Date</label>
+        <input type="date" id="scheduled-date" />
+      </div>
+      <div class="button-group">
+        <button id="add-btn" class="primary-btn">Ajouter</button>
+        <button id="cancel-btn" class="secondary-btn">Annuler</button>
+      </div>
+      <p id="add-error" class="error-text" style="display: none;"></p>
+    </div>
+
+    <!-- Success state -->
+    <div id="success-state" class="state" style="display: none;">
+      <div class="header">
+        <h2>✅ Ajouté !</h2>
+      </div>
+      <p class="info-text">La vidéo a été ajoutée à votre calendrier</p>
+      <button id="open-calendar-btn" class="primary-btn">Ouvrir le calendrier</button>
+      <button id="close-btn" class="secondary-btn">Fermer</button>
+    </div>
+
+    <!-- Default view (no pending video) -->
+    <div id="default-view" class="state" style="display: none;">
+      <div class="header">
+        <h2>VideoFlow</h2>
+        <button id="logout-btn" class="icon-btn" title="Se déconnecter">🚪</button>
+      </div>
+      <p class="info-text">Faites un clic droit sur une URL YouTube pour l'ajouter à votre calendrier</p>
+      <button id="open-calendar-btn-default" class="primary-btn">Ouvrir le calendrier</button>
+    </div>
+  </div>
+
+  <!-- Supabase JS SDK from CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  
+  <!-- Configuration -->
+  <script src="config.js"></script>
+  
+  <!-- Popup logic -->
+  <script src="popup.js"></script>
+</body>
+</html>
