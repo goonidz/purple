@@ -1751,10 +1751,34 @@ async function processImagesJob(
   
   // Process in batches
   for (let batchStart = 0; batchStart < promptsToProcess.length; batchStart += BATCH_SIZE) {
+    // Check if job was cancelled before processing batch
+    const { data: jobStatus } = await adminClient
+      .from('generation_jobs')
+      .select('status')
+      .eq('id', jobId)
+      .single();
+    
+    if (jobStatus?.status === 'cancelled') {
+      console.log(`Job ${jobId} was cancelled, stopping image generation`);
+      return;
+    }
+    
     const batch = promptsToProcess.slice(batchStart, batchStart + BATCH_SIZE);
     console.log(`Processing batch ${Math.floor(batchStart / BATCH_SIZE) + 1}/${Math.ceil(promptsToProcess.length / BATCH_SIZE)} (${batch.length} images)`);
     
     for (let i = 0; i < batch.length; i++) {
+      // Check if job was cancelled before each image request
+      const { data: currentJobStatus } = await adminClient
+        .from('generation_jobs')
+        .select('status')
+        .eq('id', jobId)
+        .single();
+      
+      if (currentJobStatus?.status === 'cancelled') {
+        console.log(`Job ${jobId} was cancelled, stopping image generation`);
+        return;
+      }
+      
       const { prompt, index } = batch[i];
       
       try {
@@ -1835,6 +1859,18 @@ async function processImagesJob(
         let success = false;
         
         for (let retry = 0; retry <= MAX_RETRIES; retry++) {
+          // Check if job was cancelled before retry attempt
+          const { data: retryJobStatus } = await adminClient
+            .from('generation_jobs')
+            .select('status')
+            .eq('id', jobId)
+            .single();
+          
+          if (retryJobStatus?.status === 'cancelled') {
+            console.log(`Job ${jobId} was cancelled, stopping retry attempts for scene ${index + 1}`);
+            return;
+          }
+          
           const startResponse = await fetch(`${supabaseUrl}/functions/v1/generate-image-seedream`, {
             method: 'POST',
             headers: {
