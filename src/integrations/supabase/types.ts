@@ -162,6 +162,11 @@ export type Database = {
           icon: string | null
           id: string
           name: string
+          project_preset_id: string | null
+          script_preset_id: string | null
+          thumbnail_preset_enabled: boolean | null
+          thumbnail_preset_id: string | null
+          tts_preset_id: string | null
           updated_at: string
           user_id: string
         }
@@ -171,6 +176,11 @@ export type Database = {
           icon?: string | null
           id?: string
           name: string
+          project_preset_id?: string | null
+          script_preset_id?: string | null
+          thumbnail_preset_enabled?: boolean | null
+          thumbnail_preset_id?: string | null
+          tts_preset_id?: string | null
           updated_at?: string
           user_id: string
         }
@@ -180,10 +190,44 @@ export type Database = {
           icon?: string | null
           id?: string
           name?: string
+          project_preset_id?: string | null
+          script_preset_id?: string | null
+          thumbnail_preset_enabled?: boolean | null
+          thumbnail_preset_id?: string | null
+          tts_preset_id?: string | null
           updated_at?: string
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "channels_project_preset_id_fkey"
+            columns: ["project_preset_id"]
+            isOneToOne: false
+            referencedRelation: "presets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "channels_script_preset_id_fkey"
+            columns: ["script_preset_id"]
+            isOneToOne: false
+            referencedRelation: "script_presets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "channels_thumbnail_preset_id_fkey"
+            columns: ["thumbnail_preset_id"]
+            isOneToOne: false
+            referencedRelation: "thumbnail_presets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "channels_tts_preset_id_fkey"
+            columns: ["tts_preset_id"]
+            isOneToOne: false
+            referencedRelation: "tts_presets"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       content_calendar: {
         Row: {

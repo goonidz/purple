@@ -15,7 +15,7 @@ import { toast } from "sonner";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
 import { cn } from "@/lib/utils";
-import { CalendarIcon, Upload, Trash2, Loader2, Play, Pause, Rocket, ExternalLink, FolderOpen, Link2, Mic, PenTool, Plus, Copy, Check } from "lucide-react";
+import { CalendarIcon, Upload, Trash2, Loader2, Play, Pause, Rocket, ExternalLink, FolderOpen, Link2, Mic, PenTool, Plus, Copy, Check, Settings } from "lucide-react";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import ChannelManager from "@/components/ChannelManager";
 
@@ -24,6 +24,11 @@ interface Channel {
   name: string;
   color: string;
   icon: string | null;
+  script_preset_id: string | null;
+  tts_preset_id: string | null;
+  project_preset_id: string | null;
+  thumbnail_preset_id: string | null;
+  thumbnail_preset_enabled: boolean | null;
 }
 
 interface ContentCalendarEntry {
@@ -634,10 +639,28 @@ export default function CalendarVideoModal({
       if (selectedChannel) {
         sessionStorage.setItem("calendar_channel_name", selectedChannel.name);
         sessionStorage.setItem("calendar_channel_color", selectedChannel.color);
+        
+        // Store channel preset IDs for auto-loading
+        if (selectedChannel.script_preset_id) {
+          sessionStorage.setItem("calendar_script_preset_id", selectedChannel.script_preset_id);
+        }
+        if (selectedChannel.tts_preset_id) {
+          sessionStorage.setItem("calendar_tts_preset_id", selectedChannel.tts_preset_id);
+        }
+        if (selectedChannel.project_preset_id) {
+          sessionStorage.setItem("calendar_project_preset_id", selectedChannel.project_preset_id);
+        }
+        if (selectedChannel.thumbnail_preset_id && selectedChannel.thumbnail_preset_enabled) {
+          sessionStorage.setItem("calendar_thumbnail_preset_id", selectedChannel.thumbnail_preset_id);
+        }
       }
     } else {
       sessionStorage.removeItem("calendar_channel_name");
       sessionStorage.removeItem("calendar_channel_color");
+      sessionStorage.removeItem("calendar_script_preset_id");
+      sessionStorage.removeItem("calendar_tts_preset_id");
+      sessionStorage.removeItem("calendar_project_preset_id");
+      sessionStorage.removeItem("calendar_thumbnail_preset_id");
     }
     onClose();
     window.location.href = "/create-from-scratch?from_calendar=true";
@@ -656,10 +679,20 @@ export default function CalendarVideoModal({
         if (selectedChannel) {
           sessionStorage.setItem("calendar_channel_name", selectedChannel.name);
           sessionStorage.setItem("calendar_channel_color", selectedChannel.color);
+          
+          // Store channel preset IDs for auto-loading
+          if (selectedChannel.project_preset_id) {
+            sessionStorage.setItem("calendar_project_preset_id", selectedChannel.project_preset_id);
+          }
+          if (selectedChannel.thumbnail_preset_id && selectedChannel.thumbnail_preset_enabled) {
+            sessionStorage.setItem("calendar_thumbnail_preset_id", selectedChannel.thumbnail_preset_id);
+          }
         }
       } else {
         sessionStorage.removeItem("calendar_channel_name");
         sessionStorage.removeItem("calendar_channel_color");
+        sessionStorage.removeItem("calendar_project_preset_id");
+        sessionStorage.removeItem("calendar_thumbnail_preset_id");
       }
       onClose();
       window.location.href = "/projects?from_calendar=true";
@@ -733,9 +766,9 @@ export default function CalendarVideoModal({
                   variant="outline"
                   size="icon"
                   onClick={() => setShowChannelManager(true)}
-                  title="Gérer les chaînes"
+                  title="Gérer les chaînes et configurer les presets"
                 >
-                  <Plus className="h-4 w-4" />
+                  <Settings className="h-4 w-4" />
                 </Button>
               </div>
             </div>

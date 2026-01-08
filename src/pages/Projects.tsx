@@ -169,11 +169,26 @@ const Projects = () => {
         // Pass the calendarEntryId directly since state might not be updated yet
         startCalendarTranscription(calendarAudioUrl, calendarTitle, calendarEntryIdStored);
         
+        // Load and store channel preset IDs for later use
+        const projectPresetId = sessionStorage.getItem("calendar_project_preset_id");
+        const thumbnailPresetId = sessionStorage.getItem("calendar_thumbnail_preset_id");
+        
+        if (projectPresetId) {
+          // Store for use in ProjectConfigurationModal
+          sessionStorage.setItem("auto_load_project_preset_id", projectPresetId);
+        }
+        if (thumbnailPresetId) {
+          // Store for use in semi-auto mode
+          sessionStorage.setItem("auto_load_thumbnail_preset_id", thumbnailPresetId);
+        }
+        
         // Clear sessionStorage after passing data to function
         sessionStorage.removeItem("calendar_script");
         sessionStorage.removeItem("calendar_audio_url");
         sessionStorage.removeItem("calendar_title");
         sessionStorage.removeItem("calendar_entry_id");
+        sessionStorage.removeItem("calendar_project_preset_id");
+        sessionStorage.removeItem("calendar_thumbnail_preset_id");
         
         // Clear URL params
         navigate("/projects", { replace: true });

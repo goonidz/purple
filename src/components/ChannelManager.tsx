@@ -3,9 +3,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Loader2, Trash2, Plus, Check } from "lucide-react";
+import { Loader2, Trash2, Plus, Check, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface Channel {
@@ -13,6 +15,31 @@ interface Channel {
   name: string;
   color: string;
   icon: string | null;
+  script_preset_id: string | null;
+  tts_preset_id: string | null;
+  project_preset_id: string | null;
+  thumbnail_preset_id: string | null;
+  thumbnail_preset_enabled: boolean | null;
+}
+
+interface ScriptPreset {
+  id: string;
+  name: string;
+}
+
+interface TtsPreset {
+  id: string;
+  name: string;
+}
+
+interface ProjectPreset {
+  id: string;
+  name: string;
+}
+
+interface ThumbnailPreset {
+  id: string;
+  name: string;
 }
 
 interface ChannelManagerProps {
@@ -55,10 +82,25 @@ export default function ChannelManager({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
   const [editingColor, setEditingColor] = useState("");
+  
+  // Preset configuration
+  const [configuringChannelId, setConfiguringChannelId] = useState<string | null>(null);
+  const [scriptPresets, setScriptPresets] = useState<ScriptPreset[]>([]);
+  const [ttsPresets, setTtsPresets] = useState<TtsPreset[]>([]);
+  const [projectPresets, setProjectPresets] = useState<ProjectPreset[]>([]);
+  const [thumbnailPresets, setThumbnailPresets] = useState<ThumbnailPreset[]>([]);
+  const [selectedScriptPresetId, setSelectedScriptPresetId] = useState<string>("");
+  const [selectedTtsPresetId, setSelectedTtsPresetId] = useState<string>("");
+  const [selectedProjectPresetId, setSelectedProjectPresetId] = useState<string>("");
+  const [selectedThumbnailPresetId, setSelectedThumbnailPresetId] = useState<string>("");
+  const [thumbnailPresetEnabled, setThumbnailPresetEnabled] = useState<boolean>(true);
+  const [isLoadingPresets, setIsLoadingPresets] = useState(false);
+  const [isSavingPresets, setIsSavingPresets] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
       loadChannels();
+      loadPresets();
     }
   }, [isOpen]);
 
@@ -176,7 +218,77 @@ export default function ChannelManager({
     setEditingColor(channel.color);
   };
 
+  const loadPresets = async () => {
+    setIsLoadingPresets(true);
+    try {
+      // Load all preset types
+      const [scriptData, ttsData, projectData, thumbnailData] = await Promise.all([
+        supabase.from("script_presets").select("id, name").order("name"),
+        supabase.from("tts_presets").select("id, name").order("name"),
+        supabase.from("presets").select("id, name").order("name"),
+        supabase.from("thumbnail_presets").select("id, name").order("name"),
+      ]);
+
+      if (scriptData.error) throw scriptData.error;
+      if (ttsData.error) throw ttsData.error;
+      if (projectData.error) throw projectData.error;
+      if (thumbnailData.error) throw thumbnailData.error;
+
+      setScriptPresets(scriptData.data || []);
+      setTtsPresets(ttsData.data || []);
+      setProjectPresets(projectData.data || []);
+      setThumbnailPresets(thumbnailData.data || []);
+    } catch (error) {
+      console.error("Error loading presets:", error);
+      toast.error("Erreur lors du chargement des presets");
+    } finally {
+      setIsLoadingPresets(false);
+    }
+  };
+
+  const handleConfigurePresets = (channel: Channel) => {
+    setConfiguringChannelId(channel.id);
+    setSelectedScriptPresetId(channel.script_preset_id || "");
+    setSelectedTtsPresetId(channel.tts_preset_id || "");
+    setSelectedProjectPresetId(channel.project_preset_id || "");
+    setSelectedThumbnailPresetId(channel.thumbnail_preset_id || "");
+    setThumbnailPresetEnabled(channel.thumbnail_preset_enabled ?? true);
+  };
+
+  const handleSavePresets = async () => {
+    if (!configuringChannelId) return;
+
+    setIsSavingPresets(true);
+    try {
+      const { error } = await supabase
+        .from("channels")
+        .update({
+          script_preset_id: selectedScriptPresetId || null,
+          tts_preset_id: selectedTtsPresetId || null,
+          project_preset_id: selectedProjectPresetId || null,
+          thumbnail_preset_id: selectedThumbnailPresetId || null,
+          thumbnail_preset_enabled: thumbnailPresetEnabled,
+        })
+        .eq("id", configuringChannelId);
+
+      if (error) throw error;
+
+      toast.success("Presets configurés !");
+      setConfiguringChannelId(null);
+      loadChannels();
+      onChannelsUpdated();
+    } catch (error) {
+      console.error("Error saving presets:", error);
+      toast.error("Erreur lors de la sauvegarde des presets");
+    } finally {
+      setIsSavingPresets(false);
+    }
+  };
+
+  const configuringChannel = channels.find(c => c.id === configuringChannelId);
+
   return (
+    <>
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-w-md">
         <DialogHeader>
@@ -294,6 +406,15 @@ export default function ChannelManager({
                         <Button
                           size="icon"
                           variant="ghost"
+                          className="h-8 w-8"
+                          onClick={() => handleConfigurePresets(channel)}
+                          title="Configurer les presets"
+                        >
+                          <Settings className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          size="icon"
+                          variant="ghost"
                           className="h-8 w-8 text-destructive hover:text-destructive"
                           onClick={() => handleDeleteChannel(channel.id)}
                         >
@@ -311,6 +432,211 @@ export default function ChannelManager({
         <div className="flex justify-end mt-4">
           <Button variant="outline" onClick={onClose}>
             Fermer
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+
+    <PresetConfigDialog
+      isOpen={!!configuringChannelId}
+      onClose={() => setConfiguringChannelId(null)}
+      channelName={configuringChannel?.name || ""}
+      scriptPresets={scriptPresets}
+      ttsPresets={ttsPresets}
+      projectPresets={projectPresets}
+      thumbnailPresets={thumbnailPresets}
+      selectedScriptPresetId={selectedScriptPresetId}
+      setSelectedScriptPresetId={setSelectedScriptPresetId}
+      selectedTtsPresetId={selectedTtsPresetId}
+      setSelectedTtsPresetId={setSelectedTtsPresetId}
+      selectedProjectPresetId={selectedProjectPresetId}
+      setSelectedProjectPresetId={setSelectedProjectPresetId}
+      selectedThumbnailPresetId={selectedThumbnailPresetId}
+      setSelectedThumbnailPresetId={setSelectedThumbnailPresetId}
+      thumbnailPresetEnabled={thumbnailPresetEnabled}
+      setThumbnailPresetEnabled={setThumbnailPresetEnabled}
+      isLoadingPresets={isLoadingPresets}
+      isSavingPresets={isSavingPresets}
+      onSave={handleSavePresets}
+    />
+    </>
+  );
+}
+
+function PresetConfigDialog({
+  isOpen,
+  onClose,
+  channelName,
+  scriptPresets,
+  ttsPresets,
+  projectPresets,
+  thumbnailPresets,
+  selectedScriptPresetId,
+  setSelectedScriptPresetId,
+  selectedTtsPresetId,
+  setSelectedTtsPresetId,
+  selectedProjectPresetId,
+  setSelectedProjectPresetId,
+  selectedThumbnailPresetId,
+  setSelectedThumbnailPresetId,
+  thumbnailPresetEnabled,
+  setThumbnailPresetEnabled,
+  isLoadingPresets,
+  isSavingPresets,
+  onSave,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  channelName: string;
+  scriptPresets: ScriptPreset[];
+  ttsPresets: TtsPreset[];
+  projectPresets: ProjectPreset[];
+  thumbnailPresets: ThumbnailPreset[];
+  selectedScriptPresetId: string;
+  setSelectedScriptPresetId: (id: string) => void;
+  selectedTtsPresetId: string;
+  setSelectedTtsPresetId: (id: string) => void;
+  selectedProjectPresetId: string;
+  setSelectedProjectPresetId: (id: string) => void;
+  selectedThumbnailPresetId: string;
+  setSelectedThumbnailPresetId: (id: string) => void;
+  thumbnailPresetEnabled: boolean;
+  setThumbnailPresetEnabled: (enabled: boolean) => void;
+  isLoadingPresets: boolean;
+  isSavingPresets: boolean;
+  onSave: () => void;
+}) {
+  return (
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Configurer les presets - {channelName}</DialogTitle>
+          <DialogDescription>
+            Sélectionnez les presets par défaut pour cette chaîne. Ils seront automatiquement appliqués lors du lancement d'une génération depuis le calendrier.
+          </DialogDescription>
+        </DialogHeader>
+
+        {isLoadingPresets ? (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          </div>
+        ) : (
+          <div className="space-y-6 mt-4">
+            {/* Script Preset */}
+            <div className="space-y-2">
+              <Label htmlFor="script-preset">Preset de script</Label>
+              <Select value={selectedScriptPresetId} onValueChange={setSelectedScriptPresetId}>
+                <SelectTrigger id="script-preset">
+                  <SelectValue placeholder="Sélectionner un preset de script (optionnel)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Aucun</SelectItem>
+                  {scriptPresets.map((preset) => (
+                    <SelectItem key={preset.id} value={preset.id}>
+                      {preset.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Définit le style et la structure du script généré
+              </p>
+            </div>
+
+            {/* TTS Preset */}
+            <div className="space-y-2">
+              <Label htmlFor="tts-preset">Preset TTS (voix)</Label>
+              <Select value={selectedTtsPresetId} onValueChange={setSelectedTtsPresetId}>
+                <SelectTrigger id="tts-preset">
+                  <SelectValue placeholder="Sélectionner un preset TTS (optionnel)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Aucun</SelectItem>
+                  {ttsPresets.map((preset) => (
+                    <SelectItem key={preset.id} value={preset.id}>
+                      {preset.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Définit la voix et les paramètres audio (Inworld/Minimax)
+              </p>
+            </div>
+
+            {/* Project Preset */}
+            <div className="space-y-2">
+              <Label htmlFor="project-preset">Preset projet</Label>
+              <Select value={selectedProjectPresetId} onValueChange={setSelectedProjectPresetId}>
+                <SelectTrigger id="project-preset">
+                  <SelectValue placeholder="Sélectionner un preset projet (optionnel)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Aucun</SelectItem>
+                  {projectPresets.map((preset) => (
+                    <SelectItem key={preset.id} value={preset.id}>
+                      {preset.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Définit les durées de scènes, prompts exemples, modèle d'image et LoRA
+              </p>
+            </div>
+
+            {/* Thumbnail Preset */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="thumbnail-preset">Preset miniatures</Label>
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="thumbnail-enabled" className="text-sm font-normal cursor-pointer">
+                    Activer
+                  </Label>
+                  <Switch
+                    id="thumbnail-enabled"
+                    checked={thumbnailPresetEnabled}
+                    onCheckedChange={setThumbnailPresetEnabled}
+                  />
+                </div>
+              </div>
+              <Select
+                value={selectedThumbnailPresetId}
+                onValueChange={setSelectedThumbnailPresetId}
+                disabled={!thumbnailPresetEnabled}
+              >
+                <SelectTrigger id="thumbnail-preset">
+                  <SelectValue placeholder="Sélectionner un preset miniatures (optionnel)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Aucun</SelectItem>
+                  {thumbnailPresets.map((preset) => (
+                    <SelectItem key={preset.id} value={preset.id}>
+                      {preset.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Définit les images d'exemple et le style pour la génération de miniatures
+              </p>
+            </div>
+          </div>
+        )}
+
+        <div className="flex justify-end gap-2 mt-6">
+          <Button variant="outline" onClick={onClose} disabled={isSavingPresets}>
+            Annuler
+          </Button>
+          <Button onClick={onSave} disabled={isSavingPresets || isLoadingPresets}>
+            {isSavingPresets ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                Enregistrement...
+              </>
+            ) : (
+              "Enregistrer"
+            )}
           </Button>
         </div>
       </DialogContent>
