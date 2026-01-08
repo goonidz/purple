@@ -102,6 +102,7 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
   const [avoidPreviousPrompts, setAvoidPreviousPrompts] = useState<boolean>(false);
   const [sourceVideoUrl, setSourceVideoUrl] = useState<string | null>(null);
   const [sourceVideoThumbnailUrl, setSourceVideoThumbnailUrl] = useState<string | null>(null);
+  const [hasAutoLoadedPreset, setHasAutoLoadedPreset] = useState<boolean>(false);
 
   const extractYouTubeId = (url: string): string | null => {
     try {
@@ -229,20 +230,58 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
     loadThumbnailHistory();
   }, []);
 
-  // Auto-load preset from sessionStorage (from calendar channel)
+  // Reset auto-load flag when project changes
   useEffect(() => {
+    setHasAutoLoadedPreset(false);
+  }, [projectId]);
+
+  // Auto-load preset from sessionStorage (from calendar channel) or from project DB
+  useEffect(() => {
+    if (presets.length === 0 || standalone || hasAutoLoadedPreset) return;
+    
+    // Priority 1: Load from sessionStorage (new project from calendar)
     const autoLoadPresetId = sessionStorage.getItem("auto_load_thumbnail_preset_id");
-    if (autoLoadPresetId && presets.length > 0) {
+    if (autoLoadPresetId) {
       const preset = presets.find(p => p.id === autoLoadPresetId);
       if (preset) {
         loadPreset(autoLoadPresetId);
         setSelectedPresetId(autoLoadPresetId);
+        setHasAutoLoadedPreset(true);
         toast.success(`Preset miniatures "${preset.name}" chargé automatiquement`);
         // Clear after loading so it doesn't reload every time
         sessionStorage.removeItem("auto_load_thumbnail_preset_id");
+        return;
       }
     }
-  }, [presets]);
+    
+    // Priority 2: Load from project database (existing project)
+    if (projectId && !selectedPresetId) {
+      (async () => {
+        try {
+          const { data, error } = await supabase
+            .from("projects")
+            .select("thumbnail_preset_id")
+            .eq("id", projectId)
+            .single();
+          
+          if (error) throw error;
+          
+          const presetId = data?.thumbnail_preset_id;
+          if (presetId) {
+            const preset = presets.find(p => p.id === presetId);
+            if (preset) {
+              loadPreset(presetId);
+              setSelectedPresetId(presetId);
+              setHasAutoLoadedPreset(true);
+              toast.success(`Preset miniatures "${preset.name}" chargé depuis le projet`);
+            }
+          }
+        } catch (error) {
+          console.error("Error loading thumbnail preset from project:", error);
+        }
+      })();
+    }
+  }, [presets, projectId, standalone, hasAutoLoadedPreset, selectedPresetId]);
 
   useEffect(() => {
     if (standalone) return;
