@@ -254,7 +254,7 @@ const CreateFromScratch = () => {
   const [minimaxLanguageBoost, setMinimaxLanguageBoost] = useState("auto");
   const [minimaxEnglishNormalization, setMinimaxEnglishNormalization] = useState(true);
   const [minimaxEmotion, setMinimaxEmotion] = useState("neutral");
-  const [showAudioImport, setShowAudioImport] = useState(false);
+  const [showAudioImport, setShowAudioImport] = useState(true);
   const [isGeneratingAudio, setIsGeneratingAudio] = useState(false);
   const [audioUrl, setAudioUrl] = useState("");
   const [isUploadingAudio, setIsUploadingAudio] = useState(false);
@@ -263,7 +263,7 @@ const CreateFromScratch = () => {
   const [uploadedBytes, setUploadedBytes] = useState(0);
   const [totalBytes, setTotalBytes] = useState(0);
   const [uploadFileName, setUploadFileName] = useState("");
-  const [isGenerationOpen, setIsGenerationOpen] = useState(true);
+  const [isGenerationOpen, setIsGenerationOpen] = useState(false);
   const audioInputRef = useRef<HTMLInputElement>(null);
   
   // TTS Preset management
