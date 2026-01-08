@@ -83,7 +83,34 @@ Interface du dialog de configuration :
 - Affichage de toasts de confirmation
 - Nettoyage des clés auto-load après utilisation
 
-### 8. Documentation
+### 8. Composant PresetManager
+
+**Fichier modifié** : `src/components/PresetManager.tsx`
+
+- Ajout d'une prop optionnelle `autoLoadPresetId` pour l'auto-chargement
+- Ajout d'un useEffect pour détecter et charger automatiquement un preset
+- Affichage d'un toast de confirmation lors de l'auto-chargement
+- Utilisé par Index.tsx et Projects.tsx pour la configuration des scènes
+
+### 9. Page Index (Configuration des scènes)
+
+**Fichier modifié** : `src/pages/Index.tsx`
+
+- Ajout de la prop `autoLoadPresetId` au composant PresetManager
+- Lecture de `auto_load_project_preset_id` depuis sessionStorage
+- Nettoyage du sessionStorage après le chargement dans `handleLoadPreset()`
+- Permet l'auto-chargement des presets de chaîne dans la configuration des scènes
+
+### 10. Page Projects (Workflow avec audio)
+
+**Fichier modifié** : `src/pages/Projects.tsx`
+
+- Ajout de la prop `autoLoadPresetId` au composant PresetManager
+- Lecture de `auto_load_project_preset_id` depuis sessionStorage
+- Nettoyage du sessionStorage après le chargement
+- Permet l'auto-chargement des presets de chaîne dans le workflow avec audio
+
+### 11. Documentation
 
 **Nouveaux fichiers** :
 - `docs/CHANNEL_PRESETS.md` : Guide utilisateur complet

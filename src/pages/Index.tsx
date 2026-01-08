@@ -2658,6 +2658,8 @@ const Index = () => {
     if (parsedUrls.length > 0) {
       setUploadedStyleImageUrl(parsedUrls[0]);
     }
+    // Clean up sessionStorage after auto-load
+    sessionStorage.removeItem("auto_load_project_preset_id");
   };
 
   const handleGenerateScenesClick = async () => {
@@ -4279,6 +4281,7 @@ const Index = () => {
                     loraUrl,
                     loraSteps,
                   }}
+                  autoLoadPresetId={sessionStorage.getItem("auto_load_project_preset_id") || undefined}
                   onLoadPreset={handleLoadPreset}
                 />
               </div>

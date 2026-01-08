@@ -893,6 +893,7 @@ const Projects = () => {
                           loraUrl,
                           loraSteps,
                         }}
+                        autoLoadPresetId={sessionStorage.getItem("auto_load_project_preset_id") || undefined}
                         onLoadPreset={(preset) => {
                           // Convert legacy format to durationRanges if needed
                           if (preset.duration_ranges && Array.isArray(preset.duration_ranges)) {
@@ -916,6 +917,8 @@ const Projects = () => {
                           setStyleReferenceUrls(parseStyleReferenceUrls(preset.style_reference_url));
                           setPromptSystemMessage(preset.prompt_system_message || "");
                           setActivePresetName(preset.name);
+                          // Clean up sessionStorage after auto-load
+                          sessionStorage.removeItem("auto_load_project_preset_id");
                           toast.success("Preset chargé !");
                         }}
                       />

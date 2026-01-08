@@ -99,9 +99,10 @@ interface PresetManagerProps {
     loraSteps?: number;
   };
   onLoadPreset: (preset: Preset) => void;
+  autoLoadPresetId?: string; // Optional: preset ID to auto-load from sessionStorage
 }
 
-export const PresetManager = ({ currentConfig, onLoadPreset }: PresetManagerProps) => {
+export const PresetManager = ({ currentConfig, onLoadPreset, autoLoadPresetId }: PresetManagerProps) => {
   const [presets, setPresets] = useState<Preset[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -149,6 +150,18 @@ export const PresetManager = ({ currentConfig, onLoadPreset }: PresetManagerProp
     loadPresets();
     loadLoraPresets();
   }, []);
+
+  // Auto-load preset from sessionStorage if autoLoadPresetId is provided
+  useEffect(() => {
+    if (autoLoadPresetId && presets.length > 0) {
+      const preset = presets.find(p => p.id === autoLoadPresetId);
+      if (preset) {
+        // Trigger the load
+        onLoadPreset(preset);
+        toast.success(`Preset projet "${preset.name}" chargé automatiquement`);
+      }
+    }
+  }, [autoLoadPresetId, presets, onLoadPreset]);
 
   const loadLoraPresets = async () => {
     try {
