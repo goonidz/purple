@@ -40,6 +40,85 @@ const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null;
 
+async function resolveAnthropicModelId({ apiKey, requestedModel }) {
+  const model = String(requestedModel || '').trim();
+  if (!model) return model;
+
+  // Fast-path: if it's already a dated model id, don't try to resolve.
+  // (Anthropic model ids typically end with a YYYYMMDD-ish suffix.)
+  if (/\d{8}$/.test(model)) return model;
+
+  // Normalize a few legacy / UI-friendly aliases.
+  // - The frontend may send friendly aliases like "claude-sonnet-4-5"
+  // - Older builds may have sent "claude-4.5-sonnet" (invalid)
+  const normalized = model
+    .replace(/^claude-4\.5-sonnet$/i, 'claude-sonnet-4-5')
+    .replace(/^claude-4\.5-opus$/i, 'claude-opus-4-5');
+
+  // Optional explicit overrides (lets us pin exact Anthropic model ids server-side)
+  if (/claude-sonnet-4-5/i.test(normalized) && process.env.ANTHROPIC_SONNET_4_5_MODEL_ID) {
+    return process.env.ANTHROPIC_SONNET_4_5_MODEL_ID;
+  }
+  if (/claude-opus-4-5/i.test(normalized) && process.env.ANTHROPIC_OPUS_4_5_MODEL_ID) {
+    return process.env.ANTHROPIC_OPUS_4_5_MODEL_ID;
+  }
+
+  // Slow-path: ask Anthropic for available models and pick the best match.
+  // This makes the system resilient to model-id changes (date suffix rotations).
+  try {
+    const resp = await axios.get('https://api.anthropic.com/v1/models', {
+      headers: {
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      timeout: 15000,
+    });
+
+    const data = resp?.data;
+    const models = Array.isArray(data?.data) ? data.data : Array.isArray(data?.models) ? data.models : [];
+    const ids = models
+      .map((m) => (typeof m === 'string' ? m : (m?.id || m?.model || '')))
+      .filter(Boolean)
+      .map((s) => String(s));
+
+    if (ids.length === 0) return normalized;
+
+    const wantSonnet45 = /sonnet/i.test(normalized) && /4[-_. ]?5/i.test(normalized);
+    const wantOpus45 = /opus/i.test(normalized) && /4[-_. ]?5/i.test(normalized);
+
+    const pickLatest = (candidates) => {
+      const withDate = candidates
+        .map((id) => ({ id, date: parseInt((id.match(/(\d{8})$/) || [])[1] || '0', 10) }))
+        .sort((a, b) => b.date - a.date);
+      return withDate[0]?.id || candidates[0];
+    };
+
+    if (wantSonnet45) {
+      const candidates = ids.filter((id) => /sonnet/i.test(id) && /4[-_. ]?5/i.test(id));
+      if (candidates.length > 0) return pickLatest(candidates);
+    }
+    if (wantOpus45) {
+      const candidates = ids.filter((id) => /opus/i.test(id) && /4[-_. ]?5/i.test(id));
+      if (candidates.length > 0) return pickLatest(candidates);
+    }
+
+    // Fallback: if user sent "claude-sonnet-4-5" but we can't find 4.5, try best Sonnet.
+    if (/sonnet/i.test(normalized)) {
+      const candidates = ids.filter((id) => /sonnet/i.test(id));
+      if (candidates.length > 0) return pickLatest(candidates);
+    }
+    if (/opus/i.test(normalized)) {
+      const candidates = ids.filter((id) => /opus/i.test(id));
+      if (candidates.length > 0) return pickLatest(candidates);
+    }
+
+    return normalized;
+  } catch (e) {
+    console.warn('[generate-script] Failed to resolve model via /v1/models; using requested model.', e.response?.data || e.message || e);
+    return normalized;
+  }
+}
+
 async function tryUpdateProjectTranscriptFromElevenLabs({ projectId, userId, audioPath, audioUrl }) {
   if (!supabase || !projectId || !userId || !audioPath) return;
 
@@ -1718,7 +1797,12 @@ app.post('/generate-script', async (req, res) => {
     return res.status(400).json({ error: 'Custom prompt required' });
   }
   
-  console.log(`[generate-script] Starting script generation with model: ${model}`);
+  const resolvedModel = await resolveAnthropicModelId({ apiKey: anthropicApiKey, requestedModel: model });
+  if (resolvedModel !== model) {
+    console.log(`[generate-script] Model alias resolved: "${model}" -> "${resolvedModel}"`);
+  }
+
+  console.log(`[generate-script] Starting script generation with model: ${resolvedModel}`);
   console.log(`[generate-script] Prompt length: ${customPrompt.length} characters`);
   
   const systemPrompt = `Tu es un assistant d'écriture professionnel. Tu génères exactement ce que l'utilisateur demande, sans commentaires ni explications supplémentaires. Réponds uniquement avec le contenu demandé.
@@ -1748,7 +1832,7 @@ RÈGLE CRITIQUE SUR LA LONGUEUR:
     }
 
     const requestBody = {
-      model: model,
+      model: resolvedModel,
       max_tokens: totalMaxTokens,
       system: systemPrompt,
       messages: [
@@ -1799,7 +1883,7 @@ RÈGLE CRITIQUE SUR LA LONGUEUR:
       script,
       wordCount,
       estimatedDuration: Math.round(wordCount / 2.5),
-      model,
+      model: resolvedModel,
       generationTime: parseFloat(duration)
     });
     

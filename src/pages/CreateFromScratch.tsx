@@ -1123,7 +1123,8 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
           // Call VPS directly (no timeout)
           // Use HTTPS if available, fallback to HTTP for development
           const VPS_URL = import.meta.env.VITE_VPS_URL || "https://purpleai.duckdns.org/api/render";
-          const vpsModel = scriptModel === "claude" ? "claude-4.5-sonnet" : "claude-opus-4-5-20251101";
+          // Use a stable alias for Sonnet 4.5; the VPS will resolve it to an exact Anthropic model id if needed.
+          const vpsModel = scriptModel === "claude" ? "claude-sonnet-4-5" : "claude-opus-4-5-20251101";
           // Keep output capacity roughly equivalent by using a generous thinking budget for Sonnet 4.5.
           const thinkingBudgetTokens = scriptModel === "claude" ? 8000 : 0;
 
@@ -1246,7 +1247,8 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
           toast.info("Clé Anthropic manquante : bascule sur le mode via Replicate.");
         } else {
           const VPS_URL = import.meta.env.VITE_VPS_URL || "https://purpleai.duckdns.org/api/render";
-          const vpsModel = scriptModel === "claude" ? "claude-4.5-sonnet" : "claude-opus-4-5-20251101";
+          // Use a stable alias for Sonnet 4.5; the VPS will resolve it to an exact Anthropic model id if needed.
+          const vpsModel = scriptModel === "claude" ? "claude-sonnet-4-5" : "claude-opus-4-5-20251101";
           const thinkingBudgetTokens = scriptModel === "claude" ? 8000 : 0;
 
           const response = await fetch(`${VPS_URL}/generate-script`, {

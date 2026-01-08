@@ -113,6 +113,19 @@ ssh ubuntu@51.91.158.233 "curl --max-time 3 -s http://localhost:3000/health"
 ### App smoke test
 - Trigger a script generation from the UI and confirm the logs on the VPS show the expected model / thinking settings (if applicable).
 
+#### Vérifier “Sonnet 4.5 thinking” (Anthropic direct)
+La génération de script “Anthropic direct” passe par le **service VPS** (`/api/render/generate-script`), donc **il n’y aura pas de logs dans Supabase** pour ce flux.
+
+Sur le VPS, vérifie les logs PM2 :
+
+```bash
+ssh ubuntu@51.91.158.233 "pm2 logs video-render --lines 200 --nostream | egrep '\\[generate-script\\]|Starting script generation|Extended thinking' -n"
+```
+
+À voir dans les logs :
+- `Starting script generation with model: ...sonnet...`
+- `Extended thinking enabled (budget_tokens=...)`
+
 ---
 
 ## Troubleshooting
