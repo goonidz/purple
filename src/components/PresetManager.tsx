@@ -576,8 +576,8 @@ export const PresetManager = ({ currentConfig, onLoadPreset, autoLoadPresetId }:
       return;
     }
 
-    console.log('[handleUpdatePreset] qaPrompt length:', editFormData.qaPrompt?.length || 0);
-    console.log('[handleUpdatePreset] qaPrompt contains SYMBOLES:', editFormData.qaPrompt?.includes('SYMBOLES ICONOGRAPHIQUES'));
+    console.log('[handleUpdatePreset] qaPrompt length:', (editFormData.qaPrompt || '').length);
+    console.log('[handleUpdatePreset] qaPrompt contains SYMBOLES:', (editFormData.qaPrompt || '').includes('SYMBOLES ICONOGRAPHIQUES'));
 
     setIsUpdating(true);
     try {
