@@ -242,6 +242,10 @@ serve(async (req) => {
       // Count images that need upscaling (Z-Image 16:9 images)
       const prompts = (project?.prompts as any[]) || [];
       total = prompts.filter((p: any) => p && p.imageUrl).length;
+    } else if (jobType === 'qa') {
+      // Count images to check for quality
+      const prompts = (project?.prompts as any[]) || [];
+      total = prompts.filter((p: any) => p && p.imageUrl).length;
     }
 
     // Create the job record (use null for project_id in standalone mode)
