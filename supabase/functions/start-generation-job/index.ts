@@ -3489,11 +3489,19 @@ async function processQAJob(
         });
 
         if (!response.ok) {
-          console.error(`[processQAJob] QA error for scene ${index + 1}: HTTP ${response.status}`);
-          return { index, status: 'ERROR' };
+          const errorText = await response.text();
+          console.error(`[processQAJob] QA error for scene ${index + 1}: HTTP ${response.status}`, errorText);
+          return { index, status: 'ERROR', error: errorText };
         }
 
         const qaResult = await response.json();
+        
+        // Check if the response contains an error (500 errors return JSON with error field)
+        if (qaResult.error || qaResult.status === 'ERROR') {
+          console.error(`[processQAJob] QA error for scene ${index + 1}:`, qaResult.error || qaResult.explication);
+          return { index, status: 'ERROR', error: qaResult.error };
+        }
+        
         console.log(`[processQAJob] Scene ${index + 1}: ${qaResult.status}`);
 
         return {
@@ -3560,12 +3568,19 @@ async function processQAJob(
 
   console.log(`[processQAJob] QA complete: ${okCount} OK, ${rejectCount} rejected, ${errorCount} errors`);
 
+  // Determine status and error message
+  const hasErrors = errorCount > 0;
+  const errorMessage = hasErrors 
+    ? `${okCount} OK, ${rejectCount} rejetées, ${errorCount} erreurs (vérifiez votre clé API Gemini)`
+    : null;
+
   // Mark job as completed
   await adminClient
     .from('generation_jobs')
     .update({ 
       status: 'completed',
       progress: imagesToCheck.length,
+      error_message: errorMessage,
       completed_at: new Date().toISOString()
     })
     .eq('id', jobId);

@@ -330,9 +330,14 @@ const Index = () => {
         'single_image': 'Image générée !',
         'single_animation': 'Scène animée avec succès !',
         'upscale': 'Images upscalées en 1920x1088 !',
-        'qa': `✅ Vérification QA terminée ! (${job.total} images vérifiées)`
+        'qa': job.error_message ? `⚠️ QA terminé avec erreurs : ${job.error_message}` : `✅ Vérification QA terminée ! (${job.total} images vérifiées)`
       };
-      toast.success(messages[job.job_type] || 'Génération terminée !');
+      
+      if (job.job_type === 'qa' && job.error_message) {
+        toast.warning(messages[job.job_type]);
+      } else {
+        toast.success(messages[job.job_type] || 'Génération terminée !');
+      }
     }
     
     // Reset generating states
