@@ -182,6 +182,7 @@ const Index = () => {
   const [preferSentenceBoundaries, setPreferSentenceBoundaries] = useState(true);
   const [promptSystemMessage, setPromptSystemMessage] = useState<string>("");
   const [qaPrompt, setQaPrompt] = useState<string>("");
+  const [showQAConfirmDialog, setShowQAConfirmDialog] = useState(false);
   const [scriptGenerationPrompt, setScriptGenerationPrompt] = useState<string | null>(null);
   const [isScriptCollapsed, setIsScriptCollapsed] = useState(false);
   const [isPromptCollapsed, setIsPromptCollapsed] = useState(false);
@@ -2365,10 +2366,58 @@ const Index = () => {
       return;
     }
 
+    // Check if QA has already been done
+    const alreadyChecked = generatedPrompts.some((p: any) => p && p.qa_checked);
+    if (alreadyChecked) {
+      // Show confirmation dialog
+      setShowQAConfirmDialog(true);
+      return;
+    }
+
     // Start background QA job
     const result = await startJob('qa', {});
     if (result) {
       toast.info(`Vérification qualité de ${imagesToCheck.length} image(s) lancée en arrière-plan.`);
+    }
+  };
+
+  const confirmAndRunQA = async () => {
+    setShowQAConfirmDialog(false);
+
+    if (!currentProjectId) return;
+
+    // Reset all QA flags in the database
+    const updatedPrompts = generatedPrompts.map((p: any) => {
+      if (!p) return p;
+      return {
+        ...p,
+        qa_checked: false,
+        qa_status: undefined,
+        qa_explication: undefined,
+        qa_regenerated: false
+      };
+    });
+
+    try {
+      await supabase
+        .from('projects')
+        .update({ prompts: updatedPrompts as any })
+        .eq('id', currentProjectId);
+
+      console.log('[confirmAndRunQA] Reset QA flags in database');
+
+      // Update local state
+      setGeneratedPrompts(updatedPrompts);
+
+      // Start QA job
+      const imagesToCheck = updatedPrompts.filter((p: any) => p && p.imageUrl);
+      const result = await startJob('qa', {});
+      if (result) {
+        toast.info(`Vérification qualité de ${imagesToCheck.length} image(s) relancée en arrière-plan.`);
+      }
+    } catch (error) {
+      console.error('[confirmAndRunQA] Error resetting QA flags:', error);
+      toast.error("Erreur lors de la réinitialisation du QA");
     }
   };
 
@@ -4461,6 +4510,26 @@ const Index = () => {
                 }
               }}>
                 Animer
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* QA confirmation dialog */}
+        <AlertDialog open={showQAConfirmDialog} onOpenChange={setShowQAConfirmDialog}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Vérification déjà effectuée</AlertDialogTitle>
+              <AlertDialogDescription>
+                Une vérification qualité a déjà été effectuée sur ce projet. 
+                <br /><br />
+                Voulez-vous la relancer ? Les résultats précédents seront écrasés et les badges QA actuels seront réinitialisés.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Annuler</AlertDialogCancel>
+              <AlertDialogAction onClick={confirmAndRunQA}>
+                Relancer la vérification
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
