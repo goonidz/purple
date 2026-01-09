@@ -43,6 +43,15 @@ RÈGLE SUR L'ANATOMIE
 - Personnage sans visage ou simplifié = PAS UN BUG = status: "OK"
 
 ========================================
+RÈGLE SUR LE CADRAGE
+========================================
+
+- Bandes NOIRES sur les côtés, en haut ou en bas = BUG = status: "REJECT"
+- L'image doit prendre TOUT l'écran, pas de letterbox/pillarbox
+- Marges blanches/colorées normales = OK
+- Seules les bandes NOIRES épaisses sont un problème
+
+========================================
 FORMAT DE RÉPONSE JSON
 ========================================
 
