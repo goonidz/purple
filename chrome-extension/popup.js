@@ -1,47 +1,12 @@
-// Import configuration
-// Note: Config will be loaded via script tag in popup.html
+// API URLs for Supabase Edge Functions
+const API_BASE_URL = 'https://laqgmqyjstisipsbljha.supabase.co/functions/v1';
+const ADD_CALENDAR_ENTRY_URL = `${API_BASE_URL}/add-calendar-entry`;
+const GET_USER_CHANNELS_URL = `${API_BASE_URL}/get-user-channels`;
+const AUTH_PAGE_URL = 'https://purpleai.duckdns.org/auth';
+const CALENDAR_URL = 'https://purpleai.duckdns.org/calendar';
 
-let supabaseClient = null;
-
-// Initialize Supabase client
-async function initSupabase() {
-  // Load Supabase from CDN (script loaded in popup.html)
-  if (typeof supabase === 'undefined') {
-    console.error('[VideoFlow] Supabase not loaded');
-    return null;
-  }
-  
-  if (!CONFIG || !CONFIG.SUPABASE_URL || !CONFIG.SUPABASE_ANON_KEY) {
-    console.error('[VideoFlow] Config not found');
-    return null;
-  }
-  
-  if (CONFIG.SUPABASE_URL === 'VOTRE_SUPABASE_URL') {
-    showError('Configuration manquante ! Veuillez éditer config.js');
-    return null;
-  }
-  
-  supabaseClient = supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY, {
-    auth: {
-      storage: {
-        getItem: async (key) => {
-          const result = await chrome.storage.local.get([key]);
-          return result[key] || null;
-        },
-        setItem: async (key, value) => {
-          await chrome.storage.local.set({ [key]: value });
-        },
-        removeItem: async (key) => {
-          await chrome.storage.local.remove([key]);
-        }
-      },
-      autoRefreshToken: true,
-      persistSession: true
-    }
-  });
-  
-  return supabaseClient;
-}
+// Session storage key
+const SESSION_KEY = 'videoflow_session';
 
 // Show/hide states
 function showState(stateId) {
@@ -73,21 +38,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   
   showState('loading-state');
   
-  // Initialize Supabase
-  const client = await initSupabase();
-  if (!client) {
-    showState('login-state');
-    return;
-  }
+  // Check if user is logged in
+  const { session } = await chrome.storage.local.get(SESSION_KEY);
   
-  // Check auth state
-  const { data: { session } } = await client.auth.getSession();
-  
-  if (session) {
-    console.log('[VideoFlow] User logged in:', session.user.email);
+  if (session && session.access_token) {
+    console.log('[VideoFlow] User has session token');
     await handleLoggedIn();
   } else {
-    console.log('[VideoFlow] User not logged in');
+    console.log('[VideoFlow] No session found');
     showState('login-state');
   }
   
@@ -121,46 +79,54 @@ async function showAddVideoForm(video) {
 }
 
 async function loadChannels() {
-  if (!supabaseClient) return;
+  const { session } = await chrome.storage.local.get(SESSION_KEY);
   
-  const { data: { session } } = await supabaseClient.auth.getSession();
-  if (!session) return;
-  
-  const { data: channels, error } = await supabaseClient
-    .from('channels')
-    .select('id, name, color')
-    .eq('user_id', session.user.id)
-    .order('name', { ascending: true });
-  
-  if (error) {
-    console.error('[VideoFlow] Error loading channels:', error);
+  if (!session || !session.access_token) {
+    console.error('[VideoFlow] No session token for loading channels');
     return;
   }
   
-  const select = document.getElementById('channel-select');
-  select.innerHTML = '<option value="">Sans chaîne</option>';
-  
-  if (channels) {
-    channels.forEach(channel => {
-      const option = document.createElement('option');
-      option.value = channel.id;
-      option.textContent = channel.name;
-      select.appendChild(option);
+  try {
+    const response = await fetch(GET_USER_CHANNELS_URL, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${session.access_token}`,
+        'Content-Type': 'application/json'
+      }
     });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+    }
+    
+    const result = await response.json();
+    
+    if (!result.success) {
+      throw new Error(result.error || 'Failed to load channels');
+    }
+    
+    const select = document.getElementById('channel-select');
+    select.innerHTML = '<option value="">Sans chaîne</option>';
+    
+    if (result.channels && result.channels.length > 0) {
+      result.channels.forEach(channel => {
+        const option = document.createElement('option');
+        option.value = channel.id;
+        option.textContent = channel.name;
+        select.appendChild(option);
+      });
+    }
+    
+    console.log('[VideoFlow] Loaded', result.channels?.length || 0, 'channels');
+  } catch (error) {
+    console.error('[VideoFlow] Error loading channels:', error);
+    showError('Erreur lors du chargement des chaînes', 'add-error');
   }
-  
-  console.log('[VideoFlow] Loaded', channels?.length || 0, 'channels');
 }
 
 function setupEventListeners() {
-  // Login
-  document.getElementById('login-btn').addEventListener('click', handleLogin);
-  document.getElementById('email').addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') document.getElementById('password').focus();
-  });
-  document.getElementById('password').addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') handleLogin();
-  });
+  // Login (redirect to auth page)
+  document.getElementById('login-btn').addEventListener('click', redirectToAuth);
   
   // Logout
   document.getElementById('logout-btn').addEventListener('click', handleLogout);
@@ -177,43 +143,36 @@ function setupEventListeners() {
   document.getElementById('close-btn').addEventListener('click', () => window.close());
 }
 
-async function handleLogin() {
-  const email = document.getElementById('email').value.trim();
-  const password = document.getElementById('password').value;
+function redirectToAuth() {
+  // Open the auth page with a flag indicating it's from the extension
+  chrome.tabs.create({ 
+    url: `${AUTH_PAGE_URL}?extension=true&return=popup` 
+  });
   
-  if (!email || !password) {
-    showError('Veuillez remplir tous les champs', 'login-error');
-    return;
-  }
+  // Show message to user
+  document.getElementById('login-state').innerHTML = `
+    <div class="header">
+      <h2>VideoFlow</h2>
+    </div>
+    <p class="info-text">Connectez-vous dans l'onglet qui vient de s'ouvrir, puis revenez ici.</p>
+    <button id="check-auth-btn" class="primary-btn">J'ai terminé la connexion</button>
+  `;
   
-  hideError('login-error');
-  document.getElementById('login-btn').textContent = 'Connexion...';
-  document.getElementById('login-btn').disabled = true;
-  
-  try {
-    const { data, error } = await supabaseClient.auth.signInWithPassword({
-      email,
-      password
-    });
-    
-    if (error) throw error;
-    
-    console.log('[VideoFlow] Login successful');
-    await handleLoggedIn();
-  } catch (error) {
-    console.error('[VideoFlow] Login error:', error);
-    showError(error.message || 'Erreur de connexion', 'login-error');
-  } finally {
-    document.getElementById('login-btn').textContent = 'Se connecter';
-    document.getElementById('login-btn').disabled = false;
-  }
+  document.getElementById('check-auth-btn').addEventListener('click', async () => {
+    showState('loading-state');
+    const { session } = await chrome.storage.local.get(SESSION_KEY);
+    if (session && session.access_token) {
+      await handleLoggedIn();
+    } else {
+      showState('login-state');
+      showError('Session non trouvée. Veuillez vous reconnecter.', 'login-error');
+    }
+  });
 }
 
 async function handleLogout() {
-  if (!supabaseClient) return;
-  
-  await supabaseClient.auth.signOut();
-  await chrome.storage.local.clear();
+  await chrome.storage.local.remove(SESSION_KEY);
+  await chrome.storage.local.remove('pendingVideo');
   console.log('[VideoFlow] Logged out');
   showState('login-state');
 }
@@ -234,27 +193,38 @@ async function handleAddVideo() {
   document.getElementById('add-btn').disabled = true;
   
   try {
-    const { data: { session } } = await supabaseClient.auth.getSession();
-    if (!session) {
-      throw new Error('Non connecté');
+    const { session } = await chrome.storage.local.get(SESSION_KEY);
+    
+    if (!session || !session.access_token) {
+      throw new Error('Session expirée. Veuillez vous reconnecter.');
     }
     
-    const { data, error } = await supabaseClient
-      .from('content_calendar')
-      .insert({
-        user_id: session.user.id,
-        title: title,
+    const response = await fetch(ADD_CALENDAR_ENTRY_URL, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${session.access_token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        title,
         youtube_url: url,
         channel_id: channelId || null,
-        scheduled_date: scheduledDate,
-        status: 'planned'
+        scheduled_date: scheduledDate
       })
-      .select()
-      .single();
+    });
     
-    if (error) throw error;
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || `HTTP ${response.status}`);
+    }
     
-    console.log('[VideoFlow] Video added to calendar:', data);
+    const result = await response.json();
+    
+    if (!result.success) {
+      throw new Error(result.error || 'Erreur lors de l\'ajout');
+    }
+    
+    console.log('[VideoFlow] Video added to calendar:', result.data);
     
     // Clear pending video
     await chrome.storage.local.remove('pendingVideo');
@@ -284,6 +254,5 @@ async function handleCancel() {
 }
 
 function openCalendar() {
-  const url = CONFIG.CALENDAR_URL || 'https://yourdomain.com/calendar';
-  chrome.tabs.create({ url });
+  chrome.tabs.create({ url: CALENDAR_URL });
 }

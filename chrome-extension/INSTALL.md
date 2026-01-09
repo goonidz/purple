@@ -1,42 +1,30 @@
-# 🚀 Installation Rapide - Extension VideoFlow
+# Installation Rapide - Extension VideoFlow
 
-## Étape 1 : Configuration
+## Etape 1 : Generer l'icone
 
 ```bash
 cd chrome-extension
-cp config.template.js config.js
+python3 create-icon-base64.py
 ```
 
-Éditez `config.js` avec vos vraies valeurs Supabase.
-
-## Étape 2 : Générer l'icône
-
-**Option facile (Python) :**
-```bash
-pip install cairosvg
-python3 generate-icon.py
-```
-
-**Option manuelle :**
-- Créez une image PNG 48x48 et placez-la dans `icons/icon48.png`
-
-## Étape 3 : Charger dans Chrome
+## Etape 2 : Charger dans Chrome
 
 1. Ouvrir Chrome → `chrome://extensions/`
-2. Activer **Mode développeur** (coin supérieur droit)
-3. Cliquer **Charger l'extension non empaquetée**
-4. Sélectionner le dossier `chrome-extension/`
+2. Activer **Mode developpeur** (coin superieur droit)
+3. Cliquer **Charger l'extension non empaquetee**
+4. Selectionner le dossier `chrome-extension/`
 
-## Étape 4 : Connexion
+## Etape 3 : Se connecter
 
-1. Cliquer sur l'icône de l'extension
-2. Se connecter avec vos identifiants
-3. ✅ C'est prêt !
+1. Cliquer sur l'icone de l'extension
+2. Cliquer "Se connecter"
+3. Se connecter sur VideoFlow (page qui s'ouvre)
+4. Revenir a l'extension, cliquer "J'ai termine la connexion"
 
-## 🎯 Utilisation
+## C'est pret !
 
 **Clic droit** sur n'importe quel lien YouTube → **"Ajouter au calendrier VideoFlow"**
 
 ---
 
-📖 Plus de détails dans [README.md](README.md)
+Plus de details dans [README.md](README.md)

@@ -1,6 +1,3 @@
-# Configuration locale (contient les clés Supabase)
-config.js
-
 # Fichiers temporaires
 *.log
 .DS_Store
