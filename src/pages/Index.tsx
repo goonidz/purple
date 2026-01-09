@@ -470,8 +470,36 @@ const Index = () => {
       // Reload project data to show QA results
       const projectId = job.project_id;
       if (projectId) {
-        console.log('[handleJobComplete] QA job done, reloading project data:', projectId);
-        loadProjectData(projectId);
+        console.log('[handleJobComplete] QA job done, reloading prompts for project:', projectId);
+        
+        // Reload prompts from database to show QA badges
+        supabase
+          .from("projects")
+          .select("prompts")
+          .eq("id", projectId)
+          .single()
+          .then(({ data, error }) => {
+            if (!error && data?.prompts) {
+              const validPrompts = ((data.prompts as unknown as GeneratedPrompt[]) || []).filter(p => p !== null && p !== undefined);
+              console.log(`[handleJobComplete] Reloaded ${validPrompts.length} prompts after QA`);
+              
+              // Count QA results
+              const withQA = validPrompts.filter(p => p?.qa_checked);
+              const okCount = withQA.filter(p => p?.qa_status === 'OK').length;
+              const rejectCount = withQA.filter(p => p?.qa_status === 'REJECT').length;
+              console.log(`[handleJobComplete] QA results: ${okCount} OK, ${rejectCount} rejected, ${withQA.length} total checked`);
+              
+              const promptsWithGroups = calculateGroupsIfMissing(validPrompts);
+              setGeneratedPrompts(promptsWithGroups);
+              
+              // Show detailed toast
+              if (rejectCount > 0) {
+                toast.info(`${rejectCount} image(s) rejetée(s) - voir badges rouges`, { duration: 5000 });
+              }
+            } else if (error) {
+              console.error(`[handleJobComplete] Error loading prompts after QA:`, error);
+            }
+          });
       }
     }
   }, []);
