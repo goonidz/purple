@@ -307,11 +307,11 @@ const Index = () => {
     const thumbnailPresetId = metadata?.thumbnailPresetId || thumbnailPresetIdRef.current;
     const remainingAfterChunk = metadata?.remainingAfterChunk ?? 0;
     
-    // For chunked jobs (prompts/images), only show completion notification on last chunk
+    // For chunked jobs (prompts/images/upscale), only show completion notification on last chunk
     const isLastChunk = remainingAfterChunk === 0;
     
     // Show progress for intermediate chunks, full notification only for last chunk
-    if (job.job_type === 'prompts' || job.job_type === 'images') {
+    if (job.job_type === 'prompts' || job.job_type === 'images' || job.job_type === 'upscale') {
       if (!isLastChunk) {
         // Intermediate chunk - don't show final notification yet
         console.log(`${job.job_type} chunk complete, ${remainingAfterChunk} remaining`);
@@ -319,7 +319,8 @@ const Index = () => {
         // Last chunk - show notification
         const messages: Record<string, string> = {
           'prompts': 'Prompts générés en arrière-plan !',
-          'images': 'Images générées en arrière-plan !'
+          'images': 'Images générées en arrière-plan !',
+          'upscale': 'Images upscalées en 1920x1088 !'
         };
         toast.success(messages[job.job_type]);
       }
@@ -332,7 +333,6 @@ const Index = () => {
         'single_prompt': 'Prompt généré !',
         'single_image': 'Image générée !',
         'single_animation': 'Scène animée avec succès !',
-        'upscale': 'Images upscalées en 1920x1088 !',
         'qa': job.error_message ? `⚠️ QA terminé avec erreurs : ${job.error_message}` : `✅ Vérification QA terminée ! (${job.total} images vérifiées)`,
         'qa_regen': `${job.total} images régénérées après rejet QA !`
       };
@@ -387,12 +387,14 @@ const Index = () => {
         toast.info("Upscaling en cours...");
       }
     } else if (job.job_type === 'upscale') {
-      // Show chaining info for semi-auto
-      if (isSemiAuto && thumbnailPresetId && thumbnailChainEnabledRef.current) {
-        toast.info("Génération des miniatures en cours...");
-      } else if (isSemiAuto && (!thumbnailPresetId || !thumbnailChainEnabledRef.current)) {
-        const reason = !thumbnailPresetId ? "aucun preset sélectionné" : "génération automatique désactivée";
-        toast.success(`🎉 Génération complète (sans miniatures - ${reason}) !`);
+      // Show chaining info for semi-auto (only on last chunk)
+      if (isLastChunk) {
+        if (isSemiAuto && thumbnailPresetId && thumbnailChainEnabledRef.current) {
+          toast.info("Génération des miniatures en cours...");
+        } else if (isSemiAuto && (!thumbnailPresetId || !thumbnailChainEnabledRef.current)) {
+          const reason = !thumbnailPresetId ? "aucun preset sélectionné" : "génération automatique désactivée";
+          toast.success(`🎉 Génération complète (sans miniatures - ${reason}) !`);
+        }
       }
     } else if (job.job_type === 'test_images') {
       setIsGeneratingPrompts(false);
