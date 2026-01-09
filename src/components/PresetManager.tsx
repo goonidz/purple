@@ -575,6 +575,9 @@ export const PresetManager = ({ currentConfig, onLoadPreset, autoLoadPresetId }:
       return;
     }
 
+    console.log('[handleUpdatePreset] qaPrompt length:', editFormData.qaPrompt?.length || 0);
+    console.log('[handleUpdatePreset] qaPrompt contains SYMBOLES:', editFormData.qaPrompt?.includes('SYMBOLES ICONOGRAPHIQUES'));
+
     setIsUpdating(true);
     try {
       // Convert durationRanges to legacy format for backward compatibility
@@ -1395,7 +1398,11 @@ export const PresetManager = ({ currentConfig, onLoadPreset, autoLoadPresetId }:
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => setEditFormData({ ...editFormData, qaPrompt: DEFAULT_QA_PROMPT })}
+                        onClick={() => {
+                          console.log('[PresetManager] Loading default QA prompt, length:', DEFAULT_QA_PROMPT.length);
+                          console.log('[PresetManager] Default prompt contains SYMBOLES:', DEFAULT_QA_PROMPT.includes('SYMBOLES ICONOGRAPHIQUES'));
+                          setEditFormData({ ...editFormData, qaPrompt: DEFAULT_QA_PROMPT });
+                        }}
                       >
                         Charger prompt par défaut
                       </Button>
