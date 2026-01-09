@@ -23,6 +23,7 @@ const Profile = () => {
   const [keiApiKey, setKeiApiKey] = useState("");
   const [apifyApiKey, setApifyApiKey] = useState("");
   const [inworldApiKey, setInworldApiKey] = useState("");
+  const [geminiApiKey, setGeminiApiKey] = useState("");
   
   // Track original values to detect changes
   const [originalKeys, setOriginalKeys] = useState({
@@ -33,7 +34,8 @@ const Profile = () => {
     brave: "",
     kei: "",
     apify: "",
-    inworld: ""
+    inworld: "",
+    gemini: ""
   });
   const [showKeys, setShowKeys] = useState({
     replicate: false,
@@ -43,7 +45,8 @@ const Profile = () => {
     brave: false,
     kei: false,
     apify: false,
-    inworld: false
+    inworld: false,
+    gemini: false
   });
 
   useEffect(() => {
@@ -72,7 +75,7 @@ const Profile = () => {
     setIsLoading(true);
     try {
       // Try to get API keys from Vault
-      const [replicateResult, elevenLabsResult, minimaxResult, anthropicResult, braveResult, keiResult, apifyResult, inworldResult] = await Promise.all([
+      const [replicateResult, elevenLabsResult, minimaxResult, anthropicResult, braveResult, keiResult, apifyResult, inworldResult, geminiResult] = await Promise.all([
         supabase.rpc('get_user_api_key', { key_name: 'replicate' }),
         supabase.rpc('get_user_api_key', { key_name: 'eleven_labs' }),
         supabase.rpc('get_user_api_key', { key_name: 'minimax' }),
@@ -81,6 +84,7 @@ const Profile = () => {
         supabase.rpc('get_user_api_key', { key_name: 'kei' }),
         supabase.rpc('get_user_api_key', { key_name: 'apify' }),
         supabase.rpc('get_user_api_key', { key_name: 'inworld' }),
+        supabase.rpc('get_user_api_key', { key_name: 'gemini' }),
       ]);
 
       const replicateValue = replicateResult.data || "";
@@ -91,6 +95,7 @@ const Profile = () => {
       const keiValue = keiResult.data || "";
       const apifyValue = apifyResult.data || "";
       const inworldValue = inworldResult.data || "";
+      const geminiValue = geminiResult.data || "";
 
       // Set current values
       setReplicateApiKey(replicateValue);
@@ -101,6 +106,7 @@ const Profile = () => {
       setKeiApiKey(keiValue);
       setApifyApiKey(apifyValue);
       setInworldApiKey(inworldValue);
+      setGeminiApiKey(geminiValue);
       
       // Store original values to track changes
       setOriginalKeys({
@@ -111,7 +117,8 @@ const Profile = () => {
         brave: braveValue,
         kei: keiValue,
         apify: apifyValue,
-        inworld: inworldValue
+        inworld: inworldValue,
+        gemini: geminiValue
       });
       
       if (replicateResult.error && !replicateResult.error.message?.includes('not found')) {
@@ -164,6 +171,9 @@ const Profile = () => {
     if (inworldApiKey.trim() !== originalKeys.inworld) {
       changedKeys.push({ key_name: 'inworld', key_value: inworldApiKey.trim() });
     }
+    if (geminiApiKey.trim() !== originalKeys.gemini) {
+      changedKeys.push({ key_name: 'gemini', key_value: geminiApiKey.trim() });
+    }
 
     if (changedKeys.length === 0) {
       toast.info("Aucune modification détectée");
@@ -194,7 +204,8 @@ const Profile = () => {
         brave: braveApiKey.trim(),
         kei: keiApiKey.trim(),
         apify: apifyApiKey.trim(),
-        inworld: inworldApiKey.trim()
+        inworld: inworldApiKey.trim(),
+        gemini: geminiApiKey.trim()
       });
 
       toast.success("Clés API sauvegardées avec succès !");
@@ -549,11 +560,47 @@ const Profile = () => {
                       </a>
                     </p>
                   </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="gemini-key">
+                      Google Gemini API Key
+                    </Label>
+                    <div className="relative">
+                      <Input
+                        id="gemini-key"
+                        type={showKeys.gemini ? "text" : "password"}
+                        value={geminiApiKey}
+                        onChange={(e) => setGeminiApiKey(e.target.value)}
+                        placeholder="AIza..."
+                        className="pr-10"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                        onClick={() => setShowKeys(prev => ({ ...prev, gemini: !prev.gemini }))}
+                      >
+                        {showKeys.gemini ? <EyeOff className="h-4 w-4 text-muted-foreground" /> : <Eye className="h-4 w-4 text-muted-foreground" />}
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Utilisée pour le contrôle qualité automatique des images générées.{" "}
+                      <a
+                        href="https://aistudio.google.com/app/apikey"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary hover:underline"
+                      >
+                        Obtenir une clé
+                      </a>
+                    </p>
+                  </div>
                 </div>
 
                 <Button
                   onClick={handleSave}
-                  disabled={isSaving || (!replicateApiKey.trim() && !elevenLabsApiKey.trim() && !minimaxApiKey.trim() && !anthropicApiKey.trim() && !braveApiKey.trim() && !keiApiKey.trim() && !apifyApiKey.trim() && !inworldApiKey.trim())}
+                  disabled={isSaving || (!replicateApiKey.trim() && !elevenLabsApiKey.trim() && !minimaxApiKey.trim() && !anthropicApiKey.trim() && !braveApiKey.trim() && !keiApiKey.trim() && !apifyApiKey.trim() && !inworldApiKey.trim() && !geminiApiKey.trim())}
                   className="w-full"
                   size="lg"
                 >

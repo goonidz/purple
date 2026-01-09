@@ -572,13 +572,165 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
       }
     }
     
-    // All images are done (missingCount === 0) - check if upscaling is needed
+    // All images are done (missingCount === 0) - QA check before upscaling
     // Get full project data to check image model and aspect ratio
     const { data: fullProject } = await adminClient
       .from('projects')
       .select('image_model, image_width, image_height, prompts')
       .eq('id', job.project_id)
       .single();
+    
+    // QA Check - only in semi-auto mode or when generating all images
+    const shouldRunQA = metadata.semiAutoMode === true || metadata.generateAllImages === true;
+    
+    if (shouldRunQA && fullProject) {
+      console.log(`Job ${jobId}: Running QA check on generated images`);
+      
+      const projectPrompts = (fullProject.prompts as any[]) || [];
+      let needsRegeneration = false;
+      let updatedPrompts = [...projectPrompts];
+      
+      // Process images sequentially to avoid rate limiting
+      for (let index = 0; index < projectPrompts.length; index++) {
+        const prompt = projectPrompts[index];
+        
+        // Skip if no image or already QA checked or already regenerated
+        if (!prompt || !prompt.imageUrl || prompt.qa_checked === true || prompt.qa_regenerated === true) {
+          continue;
+        }
+        
+        try {
+          console.log(`Job ${jobId}: QA checking scene ${index + 1}`);
+          
+          // Call QA function
+          const qaResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/qa-image-gemini`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`
+            },
+            body: JSON.stringify({
+              imageUrl: prompt.imageUrl,
+              userId: job.user_id
+            })
+          });
+          
+          if (!qaResponse.ok) {
+            console.error(`Job ${jobId}: QA check failed for scene ${index + 1}:`, await qaResponse.text());
+            // Mark as checked anyway to not block pipeline
+            updatedPrompts[index] = {
+              ...updatedPrompts[index],
+              qa_checked: true,
+              qa_status: 'OK' // Assume OK on error
+            };
+            continue;
+          }
+          
+          const qaResult = await qaResponse.json();
+          console.log(`Job ${jobId}: QA result for scene ${index + 1}:`, qaResult.status, qaResult.anomalie_detectee);
+          
+          if (qaResult.status === 'REJECT' && qaResult.prompt_regeneration) {
+            // Need to regenerate this image
+            console.log(`Job ${jobId}: Scene ${index + 1} REJECTED. Will regenerate with new prompt.`);
+            
+            updatedPrompts[index] = {
+              ...updatedPrompts[index],
+              qa_checked: true,
+              qa_status: 'REJECT',
+              qa_regenerated: true, // Mark to avoid re-regenerating
+              qa_explication: qaResult.explication
+            };
+            
+            needsRegeneration = true;
+            
+            // Create a new prediction for regeneration
+            const { error: predError } = await adminClient
+              .from('pending_predictions')
+              .insert({
+                job_id: jobId,
+                project_id: job.project_id,
+                user_id: job.user_id,
+                prediction_type: 'scene_image',
+                scene_index: index,
+                status: 'pending',
+                metadata: {
+                  ...metadata,
+                  qaRegeneration: true,
+                  originalPrompt: prompt.prompt,
+                  correctedPrompt: qaResult.prompt_regeneration
+                }
+              });
+            
+            if (predError) {
+              console.error(`Job ${jobId}: Failed to create regeneration prediction for scene ${index + 1}:`, predError);
+            } else {
+              console.log(`Job ${jobId}: Created regeneration prediction for scene ${index + 1}`);
+              
+              // Trigger regeneration
+              const styleReference = fullProject.style_reference_url || '';
+              const regenPrompt = qaResult.prompt_regeneration;
+              
+              // Call generate-image-seedream to regenerate
+              EdgeRuntime.waitUntil((async () => {
+                try {
+                  await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/generate-image-seedream`, {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`
+                    },
+                    body: JSON.stringify({
+                      prompt: regenPrompt,
+                      styleImageUrl: styleReference,
+                      width: fullProject.image_width || 1920,
+                      height: fullProject.image_height || 1080,
+                      projectId: job.project_id,
+                      sceneIndex: index,
+                      userId: job.user_id,
+                      jobId: jobId
+                    })
+                  });
+                } catch (error) {
+                  console.error(`Job ${jobId}: Error triggering regeneration for scene ${index + 1}:`, error);
+                }
+              })());
+            }
+          } else {
+            // Image passed QA
+            updatedPrompts[index] = {
+              ...updatedPrompts[index],
+              qa_checked: true,
+              qa_status: 'OK'
+            };
+          }
+          
+          // Small delay to avoid rate limiting
+          await new Promise(resolve => setTimeout(resolve, 500));
+          
+        } catch (error) {
+          console.error(`Job ${jobId}: Error during QA for scene ${index + 1}:`, error);
+          // Mark as checked to not block pipeline
+          updatedPrompts[index] = {
+            ...updatedPrompts[index],
+            qa_checked: true,
+            qa_status: 'OK'
+          };
+        }
+      }
+      
+      // Save updated prompts
+      await adminClient
+        .from('projects')
+        .update({ prompts: updatedPrompts as any })
+        .eq('id', job.project_id);
+      
+      if (needsRegeneration) {
+        console.log(`Job ${jobId}: Some images need regeneration. Waiting for regeneration to complete before upscaling.`);
+        return; // Stop here, webhook will be called again after regeneration
+      }
+      
+      console.log(`Job ${jobId}: All images passed QA or were regenerated. Proceeding to upscale.`);
+    }
     
     const imageModel = fullProject?.image_model || '';
     const isZImage = imageModel === 'z-image-turbo' || imageModel === 'z-image-turbo-lora';

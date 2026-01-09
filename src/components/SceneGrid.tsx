@@ -37,6 +37,9 @@ interface GeneratedPrompt {
   imageUrl?: string;
   videoUrl?: string;
   continuityGroupId?: number | null;
+  qa_checked?: boolean;
+  qa_status?: 'OK' | 'REJECT';
+  qa_explication?: string;
 }
 
 interface SceneGridProps {
@@ -462,6 +465,21 @@ export function SceneGrid({
                     </TooltipTrigger>
                     <TooltipContent>
                       <p>Image régénérée manuellement</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
+              {/* QA Status badge */}
+              {prompt?.qa_checked && prompt?.qa_status === 'OK' && (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div className="bg-green-500 text-white rounded-full p-1 shadow-md cursor-help">
+                        <Check className="h-3.5 w-3.5" />
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Qualité validée automatiquement</p>
                     </TooltipContent>
                   </Tooltip>
                 </TooltipProvider>
