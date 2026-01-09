@@ -57,7 +57,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   showState('loading-state');
   
   // Check if user is logged in
-  const { session } = await chrome.storage.local.get(SESSION_KEY);
+  const result = await chrome.storage.local.get(SESSION_KEY);
+  const session = result[SESSION_KEY];
   
   if (session && session.access_token) {
     console.log('[VideoFlow] User has session token');
@@ -97,7 +98,8 @@ async function showAddVideoForm(video) {
 }
 
 async function loadChannels() {
-  const { session } = await chrome.storage.local.get(SESSION_KEY);
+  const result = await chrome.storage.local.get(SESSION_KEY);
+  const session = result[SESSION_KEY];
   
   if (!session || !session.access_token) {
     console.error('[VideoFlow] No session token for loading channels');
@@ -181,7 +183,8 @@ function redirectToAuth() {
   
   // Auto-check for session every 2 seconds
   const checkInterval = setInterval(async () => {
-    const { session } = await chrome.storage.local.get(SESSION_KEY);
+    const result = await chrome.storage.local.get(SESSION_KEY);
+    const session = result[SESSION_KEY];
     if (session && session.access_token) {
       clearInterval(checkInterval);
       showState('loading-state');
@@ -219,7 +222,8 @@ async function handleAddVideo() {
   document.getElementById('add-btn').disabled = true;
   
   try {
-    const { session } = await chrome.storage.local.get(SESSION_KEY);
+    const result = await chrome.storage.local.get(SESSION_KEY);
+    const session = result[SESSION_KEY];
     
     if (!session || !session.access_token) {
       throw new Error('Session expirée. Veuillez vous reconnecter.');
