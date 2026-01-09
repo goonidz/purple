@@ -78,6 +78,7 @@ serve(async (req) => {
         user_id: user.id,
         title: title.trim(),
         youtube_url: youtube_url.trim(),
+        source_url: youtube_url.trim(), // Rempli automatiquement pour récupérer le titre
         channel_id: channel_id || null,
         scheduled_date: scheduled_date,
         status: 'planned',
