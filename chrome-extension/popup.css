@@ -206,14 +206,6 @@ button {
   margin-top: 12px;
 }
 
-/* Success state styling */
-#success-state .header h2 {
-  background: linear-gradient(135deg, hsl(142 76% 45%), hsl(142 76% 36%));
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-
 /* Animations */
 @keyframes slideIn {
   from {
