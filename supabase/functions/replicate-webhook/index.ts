@@ -762,8 +762,14 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
     
     console.log(`Job ${jobId}: Checking upscale need - model: ${imageModel}, isZImage: ${isZImage}, dimensions: ${imageWidth}x${imageHeight}, is16x9: ${is16x9}`);
     
-    // Check if upscaling is needed (Z-Image 16:9) - works in both manual and semi-auto mode
-    if (isZImage && is16x9) {
+    // Check if upscaling is needed (Z-Image 16:9)
+    // IMPORTANT: In semi-auto mode, skip this logic - QA will handle upscaling after quality check
+    const skipAutoUpscale = metadata.semiAutoMode === true;
+    if (skipAutoUpscale) {
+      console.log(`Job ${jobId}: Semi-auto mode detected, skipping automatic upscale creation (QA will handle it)`);
+    }
+    
+    if (isZImage && is16x9 && !skipAutoUpscale) {
       // First, check if all images are already upscaled
       const projectPrompts = (fullProject?.prompts as any[]) || [];
       const imagesWithUrl = projectPrompts.filter((p: any) => p && p.imageUrl).length;

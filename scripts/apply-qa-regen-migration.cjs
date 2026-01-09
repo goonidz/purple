@@ -1,3 +1,4 @@
+require('dotenv').config();
 const https = require('https');
 const fs = require('fs');
 const path = require('path');
@@ -5,8 +6,11 @@ const path = require('path');
 const PROJECT_REF = 'laqgmqyjstisipsbljha';
 const ACCESS_TOKEN = process.env.SUPABASE_ACCESS_TOKEN;
 
+console.log('🔍 Checking environment variables...');
+console.log('   ACCESS_TOKEN:', ACCESS_TOKEN ? '✅ Found' : '❌ Missing');
+
 if (!ACCESS_TOKEN) {
-  console.error('Error: SUPABASE_ACCESS_TOKEN environment variable is not set');
+  console.error('❌ SUPABASE_ACCESS_TOKEN not found in .env');
   process.exit(1);
 }
 
