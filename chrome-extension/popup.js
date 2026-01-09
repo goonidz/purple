@@ -142,7 +142,11 @@ async function loadChannels() {
       result.channels.forEach(channel => {
         const option = document.createElement('option');
         option.value = channel.id;
-        option.textContent = channel.name;
+        option.textContent = `${channel.color ? '● ' : ''}${channel.name}`;
+        if (channel.color) {
+          option.style.color = channel.color;
+          option.dataset.color = channel.color;
+        }
         select.appendChild(option);
       });
     }
