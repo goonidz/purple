@@ -406,6 +406,16 @@ export default function Calendar() {
           <KanbanBoard
             entries={getFilteredEntries()}
             onEntryClick={handleEntryClick}
+            onEntryUpdate={(entryId, newStatus) => {
+              // Optimistic update
+              setEntries(prevEntries =>
+                prevEntries.map(entry =>
+                  entry.id === entryId
+                    ? { ...entry, status: newStatus as any }
+                    : entry
+                )
+              );
+            }}
           />
         )}
       </main>
