@@ -337,6 +337,8 @@ async function processJob(
       await processAudioGenerationJob(jobId, projectId, userId, metadata, authHeader, adminClient);
     } else if (jobType === 'upscale') {
       await processUpscaleJob(jobId, projectId, userId, metadata, authHeader, adminClient);
+    } else if (jobType === 'qa') {
+      await processQAJob(jobId, projectId, userId, metadata, authHeader, adminClient);
     }
 
     // Handle prompts chunk continuation
@@ -3399,4 +3401,168 @@ async function processUpscaleJob(
 
   // Job stays in 'processing' status - the webhook will mark it complete
   throw new Error("WEBHOOK_MODE_ACTIVE");
+}
+
+// Process QA job - check all generated images for quality issues
+async function processQAJob(
+  jobId: string,
+  projectId: string,
+  userId: string,
+  metadata: Record<string, any>,
+  authHeader: string,
+  adminClient: any
+) {
+  console.log(`[processQAJob] Starting QA for project ${projectId}`);
+
+  // Get project data
+  const { data: project } = await adminClient
+    .from('projects')
+    .select('*')
+    .eq('id', projectId)
+    .single();
+
+  if (!project) throw new Error("Project not found");
+
+  const prompts = (project.prompts as any[]) || [];
+  
+  // Filter images that need QA
+  const imagesToCheck = prompts
+    .map((prompt: any, index: number) => ({ prompt, index }))
+    .filter(({ prompt }: any) => prompt && prompt.imageUrl && typeof prompt.imageUrl === 'string' && prompt.imageUrl.trim() !== '');
+
+  console.log(`[processQAJob] Found ${imagesToCheck.length} images to check`);
+
+  if (imagesToCheck.length === 0) {
+    console.log("[processQAJob] No images to check");
+    await adminClient
+      .from('generation_jobs')
+      .update({ 
+        status: 'completed', 
+        progress: 0,
+        total: 0,
+        completed_at: new Date().toISOString()
+      })
+      .eq('id', jobId);
+    return;
+  }
+
+  // Update job total
+  await adminClient
+    .from('generation_jobs')
+    .update({ total: imagesToCheck.length })
+    .eq('id', jobId);
+
+  let okCount = 0;
+  let rejectCount = 0;
+  let errorCount = 0;
+  const updatedPrompts = [...prompts];
+
+  // Process in chunks of 100 with 2s delay between chunks
+  const CHUNK_SIZE = 100;
+  const chunks: any[][] = [];
+  for (let i = 0; i < imagesToCheck.length; i += CHUNK_SIZE) {
+    chunks.push(imagesToCheck.slice(i, i + CHUNK_SIZE));
+  }
+
+  for (let chunkIdx = 0; chunkIdx < chunks.length; chunkIdx++) {
+    const chunk = chunks[chunkIdx];
+    console.log(`[processQAJob] Processing chunk ${chunkIdx + 1}/${chunks.length} (${chunk.length} images)`);
+
+    // Process chunk in parallel
+    const qaPromises = chunk.map(async ({ prompt, index }: any) => {
+      try {
+        const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+        const response = await fetch(`${supabaseUrl}/functions/v1/qa-image-gemini`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': authHeader
+          },
+          body: JSON.stringify({
+            imageUrl: prompt.imageUrl,
+            userId: userId
+          })
+        });
+
+        if (!response.ok) {
+          console.error(`[processQAJob] QA error for scene ${index + 1}: HTTP ${response.status}`);
+          return { index, status: 'ERROR' };
+        }
+
+        const qaResult = await response.json();
+        console.log(`[processQAJob] Scene ${index + 1}: ${qaResult.status}`);
+
+        return {
+          index,
+          status: qaResult.status,
+          anomalie: qaResult.anomalie_detectee,
+          explication: qaResult.explication,
+          promptRegeneration: qaResult.prompt_regeneration
+        };
+      } catch (error) {
+        console.error(`[processQAJob] Exception for scene ${index + 1}:`, error);
+        return { index, status: 'ERROR' };
+      }
+    });
+
+    const chunkResults = await Promise.all(qaPromises);
+
+    // Update prompts with QA results
+    chunkResults.forEach((result: any) => {
+      if (result.status === 'OK') {
+        okCount++;
+        updatedPrompts[result.index] = {
+          ...updatedPrompts[result.index],
+          qa_checked: true,
+          qa_status: 'OK'
+        };
+      } else if (result.status === 'REJECT') {
+        rejectCount++;
+        updatedPrompts[result.index] = {
+          ...updatedPrompts[result.index],
+          qa_checked: true,
+          qa_status: 'REJECT',
+          qa_explication: result.explication
+        };
+      } else {
+        errorCount++;
+      }
+    });
+
+    // Update progress
+    const processed = (chunkIdx + 1) * CHUNK_SIZE;
+    const progress = Math.min(processed, imagesToCheck.length);
+    await adminClient
+      .from('generation_jobs')
+      .update({ progress })
+      .eq('id', jobId);
+
+    // Delay between chunks (except after last chunk)
+    if (chunkIdx < chunks.length - 1) {
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
+  }
+
+  // Save updated prompts to database
+  const { error: updateError } = await adminClient
+    .from('projects')
+    .update({ prompts: updatedPrompts })
+    .eq('id', projectId);
+
+  if (updateError) {
+    console.error('[processQAJob] Error saving QA results:', updateError);
+    throw updateError;
+  }
+
+  console.log(`[processQAJob] QA complete: ${okCount} OK, ${rejectCount} rejected, ${errorCount} errors`);
+
+  // Mark job as completed
+  await adminClient
+    .from('generation_jobs')
+    .update({ 
+      status: 'completed',
+      progress: imagesToCheck.length,
+      completed_at: new Date().toISOString()
+    })
+    .eq('id', jobId);
 }
