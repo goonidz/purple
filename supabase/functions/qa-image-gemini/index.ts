@@ -75,6 +75,10 @@ serve(async (req) => {
 
     // Use custom QA prompt if provided, otherwise use default
     let promptToUse = qaPrompt || QA_PROMPT;
+    console.log('[qa-image-gemini] Custom prompt provided:', !!qaPrompt);
+    console.log('[qa-image-gemini] Prompt length:', promptToUse.length);
+    console.log('[qa-image-gemini] Prompt contains "SYMBOLES ICONOGRAPHIQUES":', promptToUse.includes('SYMBOLES ICONOGRAPHIQUES'));
+    console.log('[qa-image-gemini] Prompt preview (first 300 chars):', promptToUse.substring(0, 300));
     
     // Insert source prompt if provided
     if (sourcePrompt) {

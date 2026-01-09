@@ -3430,6 +3430,9 @@ async function processQAJob(
   const prompts = (project.prompts as any[]) || [];
   const qaPrompt = metadata.qaPrompt || null;
   console.log(`[processQAJob] Using ${qaPrompt ? 'custom' : 'default'} QA prompt`);
+  console.log('[processQAJob] qaPrompt length:', qaPrompt?.length || 0);
+  console.log('[processQAJob] qaPrompt preview:', qaPrompt?.substring(0, 200) || 'none');
+  console.log('[processQAJob] qaPrompt contains "SYMBOLES ICONOGRAPHIQUES":', qaPrompt?.includes('SYMBOLES ICONOGRAPHIQUES'));
   
   // Filter images that need QA
   const imagesToCheck = prompts

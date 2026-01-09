@@ -2375,6 +2375,9 @@ const Index = () => {
     }
 
     // Start background QA job
+    console.log('[QA DEBUG] qaPrompt length:', qaPrompt?.length || 0);
+    console.log('[QA DEBUG] qaPrompt preview:', qaPrompt?.substring(0, 200) || 'empty');
+    console.log('[QA DEBUG] qaPrompt contains "SYMBOLES ICONOGRAPHIQUES":', qaPrompt?.includes('SYMBOLES ICONOGRAPHIQUES'));
     const result = await startJob('qa', { qaPrompt });
     if (result) {
       toast.info(`Vérification qualité de ${imagesToCheck.length} image(s) lancée en arrière-plan.`);
@@ -2913,6 +2916,8 @@ const Index = () => {
     setActivePresetName(preset.name);
     setPromptSystemMessage(preset.prompt_system_message || "");
     setQaPrompt(preset.qa_prompt || "");
+    console.log('[handleLoadPreset] Loaded qaPrompt length:', preset.qa_prompt?.length || 0);
+    console.log('[handleLoadPreset] Loaded qaPrompt contains "SYMBOLES ICONOGRAPHIQUES":', preset.qa_prompt?.includes('SYMBOLES ICONOGRAPHIQUES'));
     const parsedUrls = parseStyleReferenceUrls(preset.style_reference_url);
     setStyleReferenceUrls(parsedUrls);
     if (parsedUrls.length > 0) {
