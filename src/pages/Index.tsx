@@ -2414,6 +2414,9 @@ const Index = () => {
 
       // Start QA job
       const imagesToCheck = updatedPrompts.filter((p: any) => p && p.imageUrl);
+      console.log('[QA DEBUG - confirmAndRunQA] qaPrompt length:', qaPrompt.length || 0);
+      console.log('[QA DEBUG - confirmAndRunQA] qaPrompt preview:', qaPrompt.substring(0, 200) || 'empty');
+      console.log('[QA DEBUG - confirmAndRunQA] qaPrompt contains "SYMBOLES ICONOGRAPHIQUES":', qaPrompt.includes('SYMBOLES ICONOGRAPHIQUES'));
       const result = await startJob('qa', { qaPrompt });
       if (result) {
         toast.info(`Vérification qualité de ${imagesToCheck.length} image(s) relancée en arrière-plan.`);
