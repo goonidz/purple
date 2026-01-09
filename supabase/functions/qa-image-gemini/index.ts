@@ -55,9 +55,9 @@ serve(async (req) => {
 
   try {
     const body = await req.json();
-    const { imageUrl, userId } = body;
+    const { imageUrl, userId, qaPrompt } = body;
 
-    console.log('QA request body:', { imageUrl: imageUrl?.substring(0, 100), userId });
+    console.log('QA request body:', { imageUrl: imageUrl?.substring(0, 100), userId, hasCustomPrompt: !!qaPrompt });
 
     if (!imageUrl || typeof imageUrl !== 'string' || imageUrl.trim() === '') {
       throw new Error('imageUrl is required and must be a non-empty string');
@@ -66,6 +66,9 @@ serve(async (req) => {
     if (!userId) {
       throw new Error('userId is required');
     }
+
+    // Use custom QA prompt if provided, otherwise use default
+    const promptToUse = qaPrompt || QA_PROMPT;
 
     // Get Gemini API key from Vault
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
@@ -95,7 +98,7 @@ serve(async (req) => {
             {
               parts: [
                 {
-                  text: QA_PROMPT
+                  text: promptToUse
                 },
                 {
                   inline_data: {

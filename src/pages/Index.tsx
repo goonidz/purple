@@ -181,6 +181,7 @@ const Index = () => {
   const range2End = durationRanges[1]?.endSeconds || 180;
   const [preferSentenceBoundaries, setPreferSentenceBoundaries] = useState(true);
   const [promptSystemMessage, setPromptSystemMessage] = useState<string>("");
+  const [qaPrompt, setQaPrompt] = useState<string>("");
   const [scriptGenerationPrompt, setScriptGenerationPrompt] = useState<string | null>(null);
   const [isScriptCollapsed, setIsScriptCollapsed] = useState(false);
   const [isPromptCollapsed, setIsPromptCollapsed] = useState(false);
@@ -2839,6 +2840,7 @@ const Index = () => {
     prompt_system_message: string | null;
     lora_url?: string | null;
     lora_steps?: number;
+    qa_prompt?: string | null;
   }) => {
     // Use duration_ranges if available, otherwise build from legacy format
     if (preset.duration_ranges && preset.duration_ranges.length > 0) {
@@ -2861,6 +2863,7 @@ const Index = () => {
     setLoraSteps(preset.lora_steps || 10);
     setActivePresetName(preset.name);
     setPromptSystemMessage(preset.prompt_system_message || "");
+    setQaPrompt(preset.qa_prompt || "");
     const parsedUrls = parseStyleReferenceUrls(preset.style_reference_url);
     setStyleReferenceUrls(parsedUrls);
     if (parsedUrls.length > 0) {
@@ -3340,6 +3343,7 @@ const Index = () => {
                     promptSystemMessage,
                     loraUrl,
                     loraSteps,
+                    qaPrompt,
                   }}
                   onLoadPreset={handleLoadPreset}
                 />
@@ -4524,6 +4528,7 @@ const Index = () => {
                     promptSystemMessage,
                     loraUrl,
                     loraSteps,
+                    qaPrompt,
                   }}
                   autoLoadPresetId={sessionStorage.getItem("auto_load_project_preset_id") || undefined}
                   onLoadPreset={handleLoadPreset}

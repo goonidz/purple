@@ -63,6 +63,7 @@ const Projects = () => {
   const [loraUrl, setLoraUrl] = useState("");
   const [loraSteps, setLoraSteps] = useState(10);
   const [promptSystemMessage, setPromptSystemMessage] = useState("");
+  const [qaPrompt, setQaPrompt] = useState("");
   const [styleReferenceFiles, setStyleReferenceFiles] = useState<File[]>([]);
   const [styleReferenceUrls, setStyleReferenceUrls] = useState<string[]>([]);
   const [activePresetName, setActivePresetName] = useState<string | null>(null);
@@ -902,6 +903,7 @@ const Projects = () => {
                           promptSystemMessage,
                           loraUrl,
                           loraSteps,
+                          qaPrompt,
                         }}
                         autoLoadPresetId={sessionStorage.getItem("auto_load_project_preset_id") || undefined}
                         onLoadPreset={(preset) => {
@@ -926,6 +928,7 @@ const Projects = () => {
                           setLoraSteps(preset.lora_steps || 10);
                           setStyleReferenceUrls(parseStyleReferenceUrls(preset.style_reference_url));
                           setPromptSystemMessage(preset.prompt_system_message || "");
+                          setQaPrompt(preset.qa_prompt || "");
                           setActivePresetName(preset.name);
                           // Clean up sessionStorage after auto-load
                           const wasAutoLoaded = sessionStorage.getItem("auto_load_project_preset_id");
