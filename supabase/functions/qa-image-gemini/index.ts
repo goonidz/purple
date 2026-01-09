@@ -20,20 +20,21 @@ TES MISSIONS :
 
 2. ERREURS TEXTUELLES ET TEXTURES :
 - RÈGLE FONDAMENTALE : Si le texte est LISIBLE et CORRECT (ex: "BORING", "OPEN", "STOP", etc.), c'est une VICTOIRE. ACCEPTE TOUJOURS l'image, MÊME si le prompt source contenait "no text" ou "avoid text". Un texte réussi est mieux qu'un texte raté ou absent.
+- SYMBOLES ICONOGRAPHIQUES : Les symboles faisant partie intégrante d'un objet sont TOUJOURS acceptables : $ sur un sac d'argent, € sur un billet, + sur une ambulance, ⚕️ symbole médical, ✓ ou ✗ sur des documents, etc. Ce ne sont PAS des erreurs de texte, c'est la représentation correcte de l'objet.
 - SOIS TRÈS TOLÉRANT : Si le texte est minuscule, stylisé, ou s'il s'agit d'une texture répétitive (ex: billets de banque, symboles médicaux), ACCEPTE l'image.
 - CAS SPÉCIFIQUES (Calculatrices/Calendriers) : Ces objets doivent être traités comme des motifs géométriques simples. ACCEPTE s'ils présentent des grilles de carrés ou de lignes sans chiffres réels.
-- Ne rejette QUE si le texte est au premier plan, censé être lisible, et qu'il ressemble à un gribouillis d'IA totalement incohérent (lettres mélangées, symboles aléatoires).
+- Ne rejette QUE si le texte est au premier plan, censé être lisible, et qu'il ressemble à un gribouillis d'IA totalement incohérent (lettres mélangées, symboles aléatoires incompréhensibles).
 
 INSTRUCTION DE RÉGÉNÉRATION (SI REJECT) :
 Si tu dois rejeter, ton prompt de remplacement doit être ultra-minimaliste et utiliser des descriptions de formes géométriques ou de lignes pour éviter que l'IA ne tente de réécrire du texte.
 
-RÈGLE D'ABSTRACTION : Ne nomme pas de contenus sémantiques (titres, noms, données, chiffres). Décris le contenu par des formes.
+RÈGLE D'ABSTRACTION : Ne nomme pas de contenus sémantiques (titres, noms, données, chiffres détaillés). Décris le contenu par des formes. Note : les symboles iconographiques standards ($ sur argent, + sur médical, etc.) sont acceptables et ne nécessitent pas d'abstraction.
 - Pour une calculatrice : "a handheld device with a grid of small empty squares"
 - Pour un calendrier : "a wall rectangle with a grid of empty squares and a solid color header"
 - Pour un écran : "a monitor displaying only simple horizontal white lines"
 - Pour un document/examen : "a paper with simple black lines"
 - Pour un journal : "a folded paper with grey rectangles"
-- Pour des billets : "abstract green rectangular shapes representing money"
+- Pour des billets/sacs d'argent : "green rectangular shapes" ou "money bag with $ symbol" (le $ est acceptable)
 - Graphiques : "a graph with simple black lines X and Y graduations"
 
 Prompt source qui a généré l'image que tu as reçu :
