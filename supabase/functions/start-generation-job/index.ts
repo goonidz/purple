@@ -3487,7 +3487,8 @@ async function processQAJob(
           body: JSON.stringify({
             imageUrl: prompt.imageUrl,
             userId: userId,
-            qaPrompt: qaPrompt // Pass custom QA prompt if available
+            qaPrompt: qaPrompt, // Pass custom QA prompt if available
+            sourcePrompt: prompt.prompt || '' // Pass the original prompt that generated the image
           })
         });
 
