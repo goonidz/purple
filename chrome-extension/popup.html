@@ -47,11 +47,15 @@
       </div>
       <div class="form-group">
         <label for="channel-select">Chaîne YouTube</label>
-        <div class="channel-select-wrapper">
-          <span id="channel-color-indicator" class="channel-color-dot"></span>
-          <select id="channel-select">
-            <option value="">Sans chaîne</option>
-          </select>
+        <div class="custom-select-wrapper">
+          <div id="custom-select-display" class="custom-select-display">
+            <span class="channel-color-dot"></span>
+            <span class="channel-name">Sans chaîne</span>
+          </div>
+          <div id="custom-select-dropdown" class="custom-select-dropdown" style="display: none;">
+            <!-- Options will be populated by JS -->
+          </div>
+          <input type="hidden" id="channel-select" value="">
         </div>
       </div>
       <div class="form-group">

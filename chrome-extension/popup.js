@@ -135,41 +135,93 @@ async function loadChannels() {
       throw new Error(result.error || 'Failed to load channels');
     }
     
-    const select = document.getElementById('channel-select');
-    const colorIndicator = document.getElementById('channel-color-indicator');
-    select.innerHTML = '<option value="">Sans chaîne</option>';
+    const customSelectDisplay = document.getElementById('custom-select-display');
+    const customSelectDropdown = document.getElementById('custom-select-dropdown');
+    const hiddenInput = document.getElementById('channel-select');
     
+    // Store channels for later use
+    window.channelsData = result.channels || [];
+    
+    // Clear dropdown
+    customSelectDropdown.innerHTML = '';
+    
+    // Add "Sans chaîne" option
+    const noChannelOption = document.createElement('div');
+    noChannelOption.className = 'custom-select-option selected';
+    noChannelOption.dataset.value = '';
+    noChannelOption.innerHTML = '<span class="channel-color-dot"></span><span class="channel-name">Sans chaîne</span>';
+    customSelectDropdown.appendChild(noChannelOption);
+    
+    // Add channel options with colors
     if (result.channels && result.channels.length > 0) {
       result.channels.forEach(channel => {
-        const option = document.createElement('option');
-        option.value = channel.id;
-        option.textContent = channel.name;
+        const option = document.createElement('div');
+        option.className = 'custom-select-option';
+        option.dataset.value = channel.id;
+        option.dataset.color = channel.color || '';
+        option.dataset.name = channel.name;
         
-        // Store color in data attribute
+        const colorDot = document.createElement('span');
+        colorDot.className = 'channel-color-dot';
         if (channel.color) {
-          option.dataset.color = channel.color;
-          option.style.fontWeight = '600';
+          colorDot.style.background = channel.color;
         }
-        select.appendChild(option);
-      });
-      
-      // Update color indicator when selection changes
-      const updateColorIndicator = () => {
-        const selectedOption = select.options[select.selectedIndex];
-        const color = selectedOption?.dataset?.color;
         
-        if (color && colorIndicator) {
-          colorIndicator.style.background = color;
-          colorIndicator.style.borderColor = color;
-        } else if (colorIndicator) {
-          colorIndicator.style.background = '';
-          colorIndicator.style.borderColor = '';
-        }
-      };
-      
-      select.addEventListener('change', updateColorIndicator);
-      updateColorIndicator(); // Initialize
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'channel-name';
+        nameSpan.textContent = channel.name;
+        
+        option.appendChild(colorDot);
+        option.appendChild(nameSpan);
+        customSelectDropdown.appendChild(option);
+      });
     }
+    
+    // Toggle dropdown
+    customSelectDisplay.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isOpen = customSelectDropdown.style.display === 'block';
+      customSelectDropdown.style.display = isOpen ? 'none' : 'block';
+      customSelectDisplay.classList.toggle('active', !isOpen);
+    });
+    
+    // Close dropdown when clicking outside
+    document.addEventListener('click', () => {
+      customSelectDropdown.style.display = 'none';
+      customSelectDisplay.classList.remove('active');
+    });
+    
+    // Handle option selection
+    customSelectDropdown.addEventListener('click', (e) => {
+      const option = e.target.closest('.custom-select-option');
+      if (!option) return;
+      
+      // Update selected state
+      customSelectDropdown.querySelectorAll('.custom-select-option').forEach(opt => {
+        opt.classList.remove('selected');
+      });
+      option.classList.add('selected');
+      
+      // Update display
+      const colorDot = customSelectDisplay.querySelector('.channel-color-dot');
+      const nameSpan = customSelectDisplay.querySelector('.channel-name');
+      const color = option.dataset.color;
+      const name = option.dataset.name || 'Sans chaîne';
+      
+      if (color) {
+        colorDot.style.background = color;
+      } else {
+        colorDot.style.background = '';
+      }
+      nameSpan.textContent = name;
+      
+      // Update hidden input
+      hiddenInput.value = option.dataset.value;
+      
+      // Close dropdown
+      customSelectDropdown.style.display = 'none';
+      customSelectDisplay.classList.remove('active');
+    });
     
     console.log('[VideoFlow] Loaded', result.channels?.length || 0, 'channels');
   } catch (error) {
