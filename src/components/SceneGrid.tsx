@@ -15,6 +15,7 @@ import {
   Search,
   Video,
   Info,
+  AlertCircle,
 } from "lucide-react";
 import {
   Tooltip,
@@ -469,7 +470,7 @@ export function SceneGrid({
                   </Tooltip>
                 </TooltipProvider>
               )}
-              {/* QA Status badge */}
+              {/* QA Status badge - OK */}
               {prompt?.qa_checked && prompt?.qa_status === 'OK' && (
                 <TooltipProvider>
                   <Tooltip>
@@ -480,6 +481,24 @@ export function SceneGrid({
                     </TooltipTrigger>
                     <TooltipContent>
                       <p>Qualité validée automatiquement</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
+              {/* QA Status badge - REJECT */}
+              {prompt?.qa_checked && prompt?.qa_status === 'REJECT' && (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div className="bg-red-500 text-white rounded-full p-1 shadow-md cursor-help">
+                        <AlertCircle className="h-3.5 w-3.5" />
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs">
+                      <p className="font-semibold">Image rejetée par le QA</p>
+                      {prompt?.qa_explication && (
+                        <p className="text-sm mt-1">{prompt.qa_explication}</p>
+                      )}
                     </TooltipContent>
                   </Tooltip>
                 </TooltipProvider>
