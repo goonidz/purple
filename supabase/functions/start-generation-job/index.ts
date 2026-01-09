@@ -3305,18 +3305,6 @@ async function processUpscaleJob(
     console.log(`Processing upscale batch ${Math.floor(batchStart / BATCH_SIZE) + 1}/${Math.ceil(imagesToUpscale.length / BATCH_SIZE)} (${batch.length} images)`);
     
     for (let i = 0; i < batch.length; i++) {
-      // Check if job was cancelled before each request
-      const { data: currentJobStatus } = await adminClient
-        .from('generation_jobs')
-        .select('status')
-        .eq('id', jobId)
-        .single();
-      
-      if (currentJobStatus?.status === 'cancelled') {
-        console.log(`Job ${jobId} was cancelled, stopping upscale processing`);
-        return;
-      }
-      
       const { prompt, index } = batch[i];
       
       try {
