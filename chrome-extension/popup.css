@@ -202,6 +202,7 @@ select option[data-color] {
   align-items: center;
   gap: 10px;
   transition: background 0.15s;
+  position: relative;
 }
 
 .custom-select-option:hover {
@@ -211,6 +212,33 @@ select option[data-color] {
 .custom-select-option.selected {
   background: hsl(16 90% 58% / 0.1);
   font-weight: 600;
+}
+
+.channel-star {
+  margin-left: auto;
+  cursor: pointer;
+  font-size: 16px;
+  opacity: 0.3;
+  transition: all 0.2s;
+  padding: 4px;
+}
+
+.channel-star:hover {
+  opacity: 1;
+  transform: scale(1.2);
+}
+
+.channel-star.is-default {
+  opacity: 1;
+  color: hsl(45 100% 50%);
+}
+
+.custom-select-option:hover .channel-star {
+  opacity: 0.6;
+}
+
+.custom-select-option:hover .channel-star.is-default {
+  opacity: 1;
 }
 
 .button-group {

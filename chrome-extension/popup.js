@@ -145,9 +145,16 @@ async function loadChannels() {
     // Clear dropdown
     customSelectDropdown.innerHTML = '';
     
+    // Get default channel from storage
+    const { default_channel_id } = await chrome.storage.local.get('default_channel_id');
+    
     // Add "Sans chaîne" option
     const noChannelOption = document.createElement('div');
-    noChannelOption.className = 'custom-select-option selected';
+    noChannelOption.className = 'custom-select-option';
+    // Only mark as selected if no default channel
+    if (!default_channel_id) {
+      noChannelOption.classList.add('selected');
+    }
     noChannelOption.dataset.value = '';
     noChannelOption.innerHTML = '<span class="channel-color-dot"></span><span class="channel-name">Sans chaîne</span>';
     customSelectDropdown.appendChild(noChannelOption);
@@ -174,10 +181,69 @@ async function loadChannels() {
         nameSpan.className = 'channel-name';
         nameSpan.textContent = channel.name;
         
+        // Add star icon for marking default
+        const starIcon = document.createElement('span');
+        starIcon.className = 'channel-star';
+        starIcon.textContent = '⭐';
+        starIcon.title = 'Définir comme chaîne par défaut';
+        if (channel.id === default_channel_id) {
+          starIcon.classList.add('is-default');
+        }
+        
+        // Handle star click
+        starIcon.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          
+          // Toggle default
+          if (channel.id === default_channel_id) {
+            // Remove default
+            await chrome.storage.local.remove('default_channel_id');
+            starIcon.classList.remove('is-default');
+            console.log('[VideoFlow] Removed default channel');
+          } else {
+            // Set as default
+            await chrome.storage.local.set({ default_channel_id: channel.id });
+            // Remove is-default from all other stars
+            customSelectDropdown.querySelectorAll('.channel-star').forEach(s => {
+              s.classList.remove('is-default');
+            });
+            starIcon.classList.add('is-default');
+            console.log('[VideoFlow] Set default channel:', channel.name);
+          }
+        });
+        
         option.appendChild(colorDot);
         option.appendChild(nameSpan);
+        option.appendChild(starIcon);
         customSelectDropdown.appendChild(option);
       });
+      
+      // Auto-select default channel if exists
+      if (default_channel_id) {
+        const defaultChannel = result.channels.find(c => c.id === default_channel_id);
+        if (defaultChannel) {
+          const colorDot = customSelectDisplay.querySelector('.channel-color-dot');
+          const nameSpan = customSelectDisplay.querySelector('.channel-name');
+          
+          if (defaultChannel.color) {
+            colorDot.style.backgroundColor = defaultChannel.color;
+            colorDot.style.display = 'inline-block';
+          }
+          nameSpan.textContent = defaultChannel.name;
+          hiddenInput.value = defaultChannel.id;
+          
+          // Update selected state in dropdown
+          customSelectDropdown.querySelectorAll('.custom-select-option').forEach(opt => {
+            if (opt.dataset.value === defaultChannel.id) {
+              opt.classList.add('selected');
+            } else {
+              opt.classList.remove('selected');
+            }
+          });
+          
+          console.log('[VideoFlow] Auto-selected default channel:', defaultChannel.name);
+        }
+      }
     }
     
     // Toggle dropdown
