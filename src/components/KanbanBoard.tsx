@@ -48,27 +48,39 @@ export default function KanbanBoard({ entries, onEntryClick }: KanbanBoardProps)
   }, {} as Record<string, ContentCalendarEntry[]>);
 
   return (
-    <div className="flex gap-4 overflow-x-auto pb-4">
-      {statusColumns.map((column) => {
-        const columnEntries = groupedEntries[column.value] || [];
-        
-        return (
-          <div
-            key={column.value}
-            className="flex-shrink-0 w-80 bg-card rounded-lg border border-border p-4"
-          >
+    <div className="w-full">
+      {/* Scroll hint */}
+      <div className="text-sm text-muted-foreground mb-2 flex items-center gap-2">
+        <span>Faites défiler horizontalement pour voir toutes les colonnes →</span>
+      </div>
+      
+      <div 
+        className="flex gap-3 overflow-x-auto pb-4 px-1 scroll-smooth"
+        style={{
+          scrollbarWidth: 'thin',
+          scrollbarColor: 'hsl(16 90% 58% / 0.3) transparent'
+        }}
+      >
+        {statusColumns.map((column) => {
+          const columnEntries = groupedEntries[column.value] || [];
+          
+          return (
+            <div
+              key={column.value}
+              className="flex-shrink-0 w-72 bg-card rounded-lg border border-border p-3 shadow-sm"
+            >
             {/* Column Header */}
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold text-lg">{column.label}</h3>
-              <span className="text-sm text-muted-foreground bg-muted px-2 py-1 rounded-full">
+            <div className="flex items-center justify-between mb-3 pb-2 border-b">
+              <h3 className="font-semibold text-base">{column.label}</h3>
+              <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full font-medium">
                 {columnEntries.length}
               </span>
             </div>
 
             {/* Column Cards */}
-            <div className="space-y-3">
+            <div className="space-y-2 max-h-[calc(100vh-300px)] overflow-y-auto pr-1">
               {columnEntries.length === 0 ? (
-                <div className="text-center text-sm text-muted-foreground py-8">
+                <div className="text-center text-xs text-muted-foreground py-6">
                   Aucune vidéo
                 </div>
               ) : (
@@ -77,33 +89,33 @@ export default function KanbanBoard({ entries, onEntryClick }: KanbanBoardProps)
                     key={entry.id}
                     onClick={() => onEntryClick(entry)}
                     className={`
-                      p-4 rounded-lg border-l-4 cursor-pointer
-                      transition-all hover:shadow-lg hover:scale-[1.02]
+                      p-3 rounded-lg border-l-4 cursor-pointer
+                      transition-all hover:shadow-md hover:scale-[1.01]
                       ${column.color} ${column.borderColor}
                     `}
                   >
                     {/* Card Header - Title */}
-                    <h4 className="font-medium text-sm mb-2 line-clamp-2">
+                    <h4 className="font-medium text-sm mb-2 line-clamp-2 leading-tight">
                       {entry.title}
                     </h4>
 
                     {/* Channel Badge */}
                     {entry.channel && (
-                      <div className="flex items-center gap-2 mb-2">
+                      <div className="flex items-center gap-1.5 mb-2">
                         <div
-                          className="w-3 h-3 rounded-full"
+                          className="w-2.5 h-2.5 rounded-full flex-shrink-0"
                           style={{ backgroundColor: entry.channel.color }}
                         />
-                        <span className="text-xs text-muted-foreground">
+                        <span className="text-xs text-muted-foreground truncate">
                           {entry.channel.name}
                         </span>
                       </div>
                     )}
 
                     {/* Scheduled Date */}
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                       <svg
-                        className="w-4 h-4"
+                        className="w-3.5 h-3.5 flex-shrink-0"
                         fill="none"
                         stroke="currentColor"
                         viewBox="0 0 24 24"
@@ -115,14 +127,14 @@ export default function KanbanBoard({ entries, onEntryClick }: KanbanBoardProps)
                           d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
                         />
                       </svg>
-                      <span>
-                        {format(new Date(entry.scheduled_date), "dd MMM yyyy", { locale: fr })}
+                      <span className="text-xs">
+                        {format(new Date(entry.scheduled_date), "dd MMM", { locale: fr })}
                       </span>
                     </div>
 
                     {/* Project Link */}
                     {entry.project_id && (
-                      <div className="mt-2 flex items-center gap-1 text-xs text-orange-600 dark:text-orange-400">
+                      <div className="mt-1.5 flex items-center gap-1 text-xs text-orange-600 dark:text-orange-400">
                         <svg
                           className="w-3 h-3"
                           fill="none"
@@ -136,7 +148,7 @@ export default function KanbanBoard({ entries, onEntryClick }: KanbanBoardProps)
                             d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"
                           />
                         </svg>
-                        <span>Projet lié</span>
+                        <span>Projet</span>
                       </div>
                     )}
                   </div>

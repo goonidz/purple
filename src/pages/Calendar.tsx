@@ -292,7 +292,7 @@ export default function Calendar() {
     <div className="min-h-screen bg-background">
       <AppHeader title="Calendrier" />
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className={`${viewMode === 'kanban' ? 'max-w-full' : 'max-w-7xl'} mx-auto px-4 sm:px-6 lg:px-8 py-8`}>
         {/* Calendar Controls */}
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-4">
