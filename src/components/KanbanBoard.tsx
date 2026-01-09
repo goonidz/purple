@@ -1,6 +1,7 @@
+import { useState } from "react";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
-import { DndContext, DragEndEvent, DragOverEvent, closestCenter, PointerSensor, useSensor, useSensors, useDroppable, useDraggable } from "@dnd-kit/core";
+import { DndContext, DragEndEvent, DragStartEvent, closestCenter, PointerSensor, useSensor, useSensors, useDroppable, useDraggable, DragOverlay } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -102,13 +103,9 @@ function DraggableCard({ entry, column, onClick }: DraggableCardProps) {
     },
   });
 
-  const style = transform ? {
-    transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`,
-    opacity: isDragging ? 0.5 : 1,
+  const style = {
+    opacity: isDragging ? 0.3 : 1,
     cursor: isDragging ? 'grabbing' : 'grab',
-  } : {
-    opacity: 1,
-    cursor: 'grab',
   };
 
   return (
@@ -185,6 +182,8 @@ const statusColumns = [
 ];
 
 export default function KanbanBoard({ entries, onEntryClick, onEntryUpdate }: KanbanBoardProps) {
+  const [activeEntry, setActiveEntry] = useState<ContentCalendarEntry | null>(null);
+  
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
@@ -201,8 +200,16 @@ export default function KanbanBoard({ entries, onEntryClick, onEntryUpdate }: Ka
     return acc;
   }, {} as Record<string, ContentCalendarEntry[]>);
 
+  const handleDragStart = (event: DragStartEvent) => {
+    const { active } = event;
+    const entry = entries.find(e => e.id === active.id);
+    setActiveEntry(entry || null);
+  };
+
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
+    
+    setActiveEntry(null); // Reset active entry
 
     if (!over) return;
 
@@ -239,7 +246,12 @@ export default function KanbanBoard({ entries, onEntryClick, onEntryUpdate }: Ka
   };
 
   return (
-    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+    <DndContext 
+      sensors={sensors} 
+      collisionDetection={closestCenter} 
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+    >
       <div className="w-full">
         <div className="grid grid-cols-6 gap-3">
           {statusColumns.map((column) => {
@@ -256,6 +268,35 @@ export default function KanbanBoard({ entries, onEntryClick, onEntryUpdate }: Ka
           })}
         </div>
       </div>
+      
+      <DragOverlay>
+        {activeEntry ? (
+          <div className="p-3 rounded-lg border-l-4 bg-card shadow-2xl border-orange-500 cursor-grabbing rotate-3 scale-105">
+            <h4 className="font-medium text-sm mb-2 line-clamp-2 leading-tight">
+              {activeEntry.title}
+            </h4>
+            {activeEntry.channel && (
+              <div className="flex items-center gap-1.5 mb-2">
+                <div
+                  className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                  style={{ backgroundColor: activeEntry.channel.color }}
+                />
+                <span className="text-xs text-muted-foreground truncate">
+                  {activeEntry.channel.name}
+                </span>
+              </div>
+            )}
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+                />
+              </svg>
+              <span>{format(new Date(activeEntry.scheduled_date), "dd MMM", { locale: fr })}</span>
+            </div>
+          </div>
+        ) : null}
+      </DragOverlay>
     </DndContext>
   );
 }
