@@ -136,19 +136,39 @@ async function loadChannels() {
     }
     
     const select = document.getElementById('channel-select');
+    const colorIndicator = document.getElementById('channel-color-indicator');
     select.innerHTML = '<option value="">Sans chaîne</option>';
     
     if (result.channels && result.channels.length > 0) {
       result.channels.forEach(channel => {
         const option = document.createElement('option');
         option.value = channel.id;
-        option.textContent = `${channel.color ? '● ' : ''}${channel.name}`;
+        option.textContent = channel.name;
+        
+        // Store color in data attribute
         if (channel.color) {
-          option.style.color = channel.color;
           option.dataset.color = channel.color;
+          option.style.fontWeight = '600';
         }
         select.appendChild(option);
       });
+      
+      // Update color indicator when selection changes
+      const updateColorIndicator = () => {
+        const selectedOption = select.options[select.selectedIndex];
+        const color = selectedOption?.dataset?.color;
+        
+        if (color && colorIndicator) {
+          colorIndicator.style.background = color;
+          colorIndicator.style.borderColor = color;
+        } else if (colorIndicator) {
+          colorIndicator.style.background = '';
+          colorIndicator.style.borderColor = '';
+        }
+      };
+      
+      select.addEventListener('change', updateColorIndicator);
+      updateColorIndicator(); // Initialize
     }
     
     console.log('[VideoFlow] Loaded', result.channels?.length || 0, 'channels');
