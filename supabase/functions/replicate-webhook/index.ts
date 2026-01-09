@@ -493,16 +493,17 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
       console.log(`Job ${jobId}: Creating next chunk for ${missingCount} remaining images`);
       
       // Check for existing chunk job to prevent duplicates
-      const { data: existingChunkJob } = await adminClient
+      // Use maybeSingle() instead of single() to avoid errors when multiple jobs exist
+      const { data: existingChunkJobs } = await adminClient
         .from('generation_jobs')
         .select('id')
         .eq('project_id', job.project_id)
         .eq('job_type', 'images')
         .in('status', ['pending', 'processing'])
-        .single();
+        .limit(1);
 
-      if (existingChunkJob) {
-        console.log(`Job ${jobId}: Next chunk job ${existingChunkJob.id} already exists, skipping`);
+      if (existingChunkJobs && existingChunkJobs.length > 0) {
+        console.log(`Job ${jobId}: Next chunk job ${existingChunkJobs[0].id} already exists, skipping`);
         return;
       }
       

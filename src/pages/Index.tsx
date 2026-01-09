@@ -2233,11 +2233,20 @@ const Index = () => {
       return;
     }
 
+    // Protection against rapid double-clicks
+    if (isGeneratingImages) {
+      console.log("[generateAllImages] Already generating, ignoring duplicate call");
+      return;
+    }
+
+    // Mark as generating BEFORE async call to prevent double-clicks
+    setIsGeneratingImages(true);
+
     // Start background job
     const result = await startJob('images', { skipExisting });
-    if (result) {
-      setIsGeneratingImages(true);
-      toast.info("Génération des images lancée en arrière-plan. Vous pouvez quitter cette page.");
+    if (!result) {
+      // If job creation failed, reset the flag
+      setIsGeneratingImages(false);
     }
   };
 
