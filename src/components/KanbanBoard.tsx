@@ -48,31 +48,20 @@ export default function KanbanBoard({ entries, onEntryClick }: KanbanBoardProps)
   }, {} as Record<string, ContentCalendarEntry[]>);
 
   return (
-    <div className="w-full -mx-2">
-      {/* Scroll hint */}
-      <div className="text-xs text-muted-foreground mb-2 flex items-center gap-2 px-2">
-        <span>← Faites défiler horizontalement pour voir toutes les colonnes →</span>
-      </div>
-      
-      <div 
-        className="flex gap-2 overflow-x-auto pb-4 px-2 scroll-smooth"
-        style={{
-          scrollbarWidth: 'thin',
-          scrollbarColor: 'hsl(16 90% 58% / 0.5) hsl(0 0% 90%)'
-        }}
-      >
+    <div className="w-full">
+      <div className="grid grid-cols-6 gap-1.5">
         {statusColumns.map((column) => {
           const columnEntries = groupedEntries[column.value] || [];
           
           return (
             <div
               key={column.value}
-              className="flex-shrink-0 w-80 bg-card rounded-lg border border-border p-3 shadow-sm"
+              className="min-w-0 bg-card rounded-lg border border-border p-2 shadow-sm"
             >
             {/* Column Header */}
-            <div className="flex items-center justify-between mb-3 pb-2 border-b">
-              <h3 className="font-semibold text-base">{column.label}</h3>
-              <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full font-medium">
+            <div className="flex items-center justify-between mb-2 pb-1.5 border-b">
+              <h3 className="font-semibold text-sm truncate">{column.label}</h3>
+              <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full font-medium">
                 {columnEntries.length}
               </span>
             </div>
@@ -86,7 +75,7 @@ export default function KanbanBoard({ entries, onEntryClick }: KanbanBoardProps)
               }}
             >
               {columnEntries.length === 0 ? (
-                <div className="text-center text-xs text-muted-foreground py-6">
+                <div className="text-center text-[10px] text-muted-foreground py-4">
                   Aucune vidéo
                 </div>
               ) : (
@@ -95,33 +84,33 @@ export default function KanbanBoard({ entries, onEntryClick }: KanbanBoardProps)
                     key={entry.id}
                     onClick={() => onEntryClick(entry)}
                     className={`
-                      p-3 rounded-lg border-l-4 cursor-pointer
+                      p-2 rounded-md border-l-3 cursor-pointer
                       transition-all hover:shadow-md hover:scale-[1.01]
                       ${column.color} ${column.borderColor}
                     `}
                   >
                     {/* Card Header - Title */}
-                    <h4 className="font-medium text-sm mb-2 line-clamp-2 leading-tight">
+                    <h4 className="font-medium text-xs mb-1.5 line-clamp-2 leading-tight">
                       {entry.title}
                     </h4>
 
                     {/* Channel Badge */}
                     {entry.channel && (
-                      <div className="flex items-center gap-1.5 mb-2">
+                      <div className="flex items-center gap-1 mb-1">
                         <div
-                          className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                          className="w-2 h-2 rounded-full flex-shrink-0"
                           style={{ backgroundColor: entry.channel.color }}
                         />
-                        <span className="text-xs text-muted-foreground truncate">
+                        <span className="text-[10px] text-muted-foreground truncate">
                           {entry.channel.name}
                         </span>
                       </div>
                     )}
 
                     {/* Scheduled Date */}
-                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
                       <svg
-                        className="w-3.5 h-3.5 flex-shrink-0"
+                        className="w-3 h-3 flex-shrink-0"
                         fill="none"
                         stroke="currentColor"
                         viewBox="0 0 24 24"
@@ -133,28 +122,18 @@ export default function KanbanBoard({ entries, onEntryClick }: KanbanBoardProps)
                           d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
                         />
                       </svg>
-                      <span className="text-xs">
-                        {format(new Date(entry.scheduled_date), "dd MMM", { locale: fr })}
-                      </span>
+                      <span>{format(new Date(entry.scheduled_date), "dd MMM", { locale: fr })}</span>
                     </div>
 
                     {/* Project Link */}
                     {entry.project_id && (
-                      <div className="mt-1.5 flex items-center gap-1 text-xs text-orange-600 dark:text-orange-400">
-                        <svg
-                          className="w-3 h-3"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
+                      <div className="mt-1 flex items-center gap-1 text-[10px] text-orange-600 dark:text-orange-400">
+                        <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                             d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"
                           />
                         </svg>
-                        <span>Projet</span>
+                        <span>Projet lié</span>
                       </div>
                     )}
                   </div>
