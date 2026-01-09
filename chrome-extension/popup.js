@@ -98,8 +98,8 @@ async function showAddVideoForm(video) {
 }
 
 async function loadChannels() {
-  const result = await chrome.storage.local.get(SESSION_KEY);
-  const session = result[SESSION_KEY];
+  const sessionData = await chrome.storage.local.get(SESSION_KEY);
+  const session = sessionData[SESSION_KEY];
   
   if (!session || !session.access_token) {
     console.error('[VideoFlow] No session token for loading channels');
@@ -222,8 +222,8 @@ async function handleAddVideo() {
   document.getElementById('add-btn').disabled = true;
   
   try {
-    const result = await chrome.storage.local.get(SESSION_KEY);
-    const session = result[SESSION_KEY];
+    const sessionData = await chrome.storage.local.get(SESSION_KEY);
+    const session = sessionData[SESSION_KEY];
     
     if (!session || !session.access_token) {
       throw new Error('Session expirée. Veuillez vous reconnecter.');
