@@ -3866,17 +3866,6 @@ const Index = () => {
                               Vérifier upscale
                             </Button>
                           )}
-                          {generatedPrompts.length > 0 && !isGeneratingImages && (imageModel === 'z-image-turbo' || imageModel === 'z-image-turbo-lora') && aspectRatio === '16:9' && generatedPrompts.some((p: any) => p && p.imageUrl) && (
-                            <Button
-                              onClick={forceUpscale}
-                              variant="secondary"
-                              size="sm"
-                              title="Annuler les jobs existants et relancer l'upscaling"
-                            >
-                              <RefreshCw className="mr-2 h-4 w-4" />
-                              Forcer upscale
-                            </Button>
-                          )}
                           {generatedPrompts.length > 0 && selectedScenes.size > 0 && (
                             <Button
                               onClick={exportSelectedScenes}
