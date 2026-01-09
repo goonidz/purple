@@ -1999,12 +1999,10 @@ const Index = () => {
     updatedPrompts[index] = {
       ...updatedPrompts[index],
       prompt: prompt.qa_regeneration_prompt,
-      // Clear QA flags and mark as manually regenerated
-      qa_checked: false,
-      qa_status: undefined,
-      qa_explication: undefined,
-      qa_regeneration_prompt: undefined,
-      manually_regenerated: true
+      // Keep QA flags visible during regeneration, mark as manually regenerated
+      manually_regenerated: true,
+      qa_regeneration_prompt: undefined // Remove the button after clicking it
+      // qa_checked, qa_status, qa_explication restent inchangés pour garder les badges visibles
     };
     
     // Update state FIRST
