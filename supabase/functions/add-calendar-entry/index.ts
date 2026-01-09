@@ -102,6 +102,8 @@ serve(async (req) => {
 
     // Launch scraping in background (fire and forget)
     const baseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+    const userProvidedTitle = title?.trim();
+    
     const scrapingPromise = (async () => {
       try {
         // 1. Scrape title and thumbnail
@@ -117,16 +119,22 @@ serve(async (req) => {
         if (scrapeResponse.ok) {
           const scrapeData = await scrapeResponse.json();
           
+          // Only update title if user didn't provide one
+          const updateData: any = {
+            source_thumbnail_url: scrapeData.thumbnailUrl,
+          };
+          
+          if (!userProvidedTitle) {
+            updateData.title = scrapeData.title || 'Vidéo YouTube';
+          }
+          
           // Update entry with scraped data
           await supabase
             .from('content_calendar')
-            .update({
-              title: scrapeData.title || title?.trim() || 'Vidéo YouTube',
-              source_thumbnail_url: scrapeData.thumbnailUrl,
-            })
+            .update(updateData)
             .eq('id', data.id);
 
-          console.log(`Scraped title and thumbnail for entry ${data.id}`);
+          console.log(`Scraped ${userProvidedTitle ? 'thumbnail' : 'title and thumbnail'} for entry ${data.id}`);
         }
 
         // 2. Scrape transcript (in background, don't await)

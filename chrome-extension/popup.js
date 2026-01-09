@@ -89,8 +89,8 @@ async function showAddVideoForm(video) {
   // Load channels
   await loadChannels();
   
-  // Fill form
-  document.getElementById('video-title').value = video.title || '';
+  // Fill form - leave title empty (will be auto-fetched)
+  document.getElementById('video-title').value = '';
   document.getElementById('video-url').value = video.url;
   document.getElementById('scheduled-date').value = new Date().toISOString().split('T')[0];
   
