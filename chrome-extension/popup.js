@@ -57,8 +57,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   showState('loading-state');
   
   // Check if user is logged in
-  const result = await chrome.storage.local.get(SESSION_KEY);
-  const session = result[SESSION_KEY];
+  const sessionData = await chrome.storage.local.get(SESSION_KEY);
+  const session = sessionData[SESSION_KEY];
   
   if (session && session.access_token) {
     console.log('[VideoFlow] User has session token');
@@ -183,8 +183,8 @@ function redirectToAuth() {
   
   // Auto-check for session every 2 seconds
   const checkInterval = setInterval(async () => {
-    const result = await chrome.storage.local.get(SESSION_KEY);
-    const session = result[SESSION_KEY];
+    const sessionData = await chrome.storage.local.get(SESSION_KEY);
+    const session = sessionData[SESSION_KEY];
     if (session && session.access_token) {
       clearInterval(checkInterval);
       showState('loading-state');
