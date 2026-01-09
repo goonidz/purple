@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import type { User } from "@supabase/supabase-js";
 import { Button } from "@/components/ui/button";
-import { ChevronLeft, ChevronRight, Filter } from "lucide-react";
+import { ChevronLeft, ChevronRight, Filter, Calendar as CalendarIcon, LayoutGrid } from "lucide-react";
 import AppHeader from "@/components/AppHeader";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths } from "date-fns";
@@ -11,6 +11,7 @@ import { fr } from "date-fns/locale";
 import { toast } from "sonner";
 import CalendarVideoModal from "@/components/CalendarVideoModal";
 import CalendarDayCell from "@/components/CalendarDayCell";
+import KanbanBoard from "@/components/KanbanBoard";
 
 interface Channel {
   id: string;
@@ -23,7 +24,7 @@ interface ContentCalendarEntry {
   user_id: string;
   title: string;
   scheduled_date: string;
-  status: 'planned' | 'scripted' | 'audio_ready' | 'generating' | 'completed';
+  status: 'planned' | 'scripted' | 'audio_ready' | 'generating' | 'thumbnail' | 'completed';
   script: string | null;
   audio_url: string | null;
   notes: string | null;
@@ -46,6 +47,7 @@ export default function Calendar() {
   const [selectedEntry, setSelectedEntry] = useState<ContentCalendarEntry | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+  const [viewMode, setViewMode] = useState<'calendar' | 'kanban'>('calendar');
 
   useEffect(() => {
     document.title = "Calendrier";
@@ -269,6 +271,15 @@ export default function Calendar() {
     });
   };
 
+  const getFilteredEntries = () => {
+    return entries.filter(entry => {
+      const matchesChannel = selectedChannelId === "all" 
+        || (selectedChannelId === "none" && !entry.channel_id)
+        || entry.channel_id === selectedChannelId;
+      return matchesChannel;
+    });
+  };
+
   if (!user) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
@@ -286,84 +297,117 @@ export default function Calendar() {
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-4">
             <h1 className="text-2xl font-bold capitalize">
-              {format(currentMonth, "MMMM yyyy", { locale: fr })}
+              {viewMode === 'calendar' ? format(currentMonth, "MMMM yyyy", { locale: fr }) : "Vue Kanban"}
             </h1>
-            <div className="flex items-center gap-1">
-              <Button variant="outline" size="icon" onClick={handlePrevMonth}>
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-              <Button variant="outline" size="sm" onClick={handleToday}>
-                Aujourd'hui
-              </Button>
-              <Button variant="outline" size="icon" onClick={handleNextMonth}>
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-            </div>
+            {viewMode === 'calendar' && (
+              <div className="flex items-center gap-1">
+                <Button variant="outline" size="icon" onClick={handlePrevMonth}>
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <Button variant="outline" size="sm" onClick={handleToday}>
+                  Aujourd'hui
+                </Button>
+                <Button variant="outline" size="icon" onClick={handleNextMonth}>
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            )}
           </div>
           
-          {/* Channel Filter */}
-          <div className="flex items-center gap-2">
-            <Filter className="h-4 w-4 text-muted-foreground" />
-            <Select value={selectedChannelId} onValueChange={setSelectedChannelId}>
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="Filtrer par chaîne" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Toutes les chaînes</SelectItem>
-                <SelectItem value="none">Sans chaîne</SelectItem>
-                {channels.map((channel) => (
-                  <SelectItem key={channel.id} value={channel.id}>
-                    <div className="flex items-center gap-2">
-                      <div 
-                        className="h-3 w-3 rounded-full flex-shrink-0" 
-                        style={{ backgroundColor: channel.color }}
-                      />
-                      <span>{channel.name}</span>
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="flex items-center gap-4">
+            {/* View Toggle */}
+            <div className="flex items-center gap-1 bg-muted p-1 rounded-lg">
+              <Button
+                variant={viewMode === 'calendar' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => setViewMode('calendar')}
+                className="gap-2"
+              >
+                <CalendarIcon className="h-4 w-4" />
+                Calendrier
+              </Button>
+              <Button
+                variant={viewMode === 'kanban' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => setViewMode('kanban')}
+                className="gap-2"
+              >
+                <LayoutGrid className="h-4 w-4" />
+                Kanban
+              </Button>
+            </div>
+
+            {/* Channel Filter */}
+            <div className="flex items-center gap-2">
+              <Filter className="h-4 w-4 text-muted-foreground" />
+              <Select value={selectedChannelId} onValueChange={setSelectedChannelId}>
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder="Filtrer par chaîne" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Toutes les chaînes</SelectItem>
+                  <SelectItem value="none">Sans chaîne</SelectItem>
+                  {channels.map((channel) => (
+                    <SelectItem key={channel.id} value={channel.id}>
+                      <div className="flex items-center gap-2">
+                        <div 
+                          className="h-3 w-3 rounded-full flex-shrink-0" 
+                          style={{ backgroundColor: channel.color }}
+                        />
+                        <span>{channel.name}</span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         </div>
 
-        {/* Calendar Grid */}
-        <div className="bg-card rounded-xl border shadow-sm overflow-hidden">
-          {/* Weekday Headers */}
-          <div className="grid grid-cols-7 border-b bg-muted/50">
-            {["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"].map((day) => (
-              <div key={day} className="py-3 text-center text-sm font-medium text-muted-foreground">
-                {day}
-              </div>
-            ))}
+        {/* Calendar or Kanban View */}
+        {viewMode === 'calendar' ? (
+          <div className="bg-card rounded-xl border shadow-sm overflow-hidden">
+            {/* Weekday Headers */}
+            <div className="grid grid-cols-7 border-b bg-muted/50">
+              {["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"].map((day) => (
+                <div key={day} className="py-3 text-center text-sm font-medium text-muted-foreground">
+                  {day}
+                </div>
+              ))}
+            </div>
+
+            {/* Calendar Days */}
+            <div className="grid grid-cols-7">
+              {/* Empty cells for days before month starts */}
+              {Array.from({ length: adjustedStartDay }).map((_, index) => (
+                <div key={`empty-${index}`} className="min-h-[120px] border-b border-r bg-muted/20" />
+              ))}
+
+              {/* Days of the month */}
+              {daysInMonth.map((day) => (
+                <CalendarDayCell
+                  key={day.toISOString()}
+                  date={day}
+                  entries={getEntriesForDay(day)}
+                  isToday={isSameDay(day, new Date())}
+                  onDayClick={handleDayClick}
+                  onEntryClick={handleEntryClick}
+                  onEntryDrop={handleEntryDrop}
+                />
+              ))}
+
+              {/* Empty cells to complete the grid */}
+              {Array.from({ length: (7 - ((adjustedStartDay + daysInMonth.length) % 7)) % 7 }).map((_, index) => (
+                <div key={`empty-end-${index}`} className="min-h-[120px] border-b border-r bg-muted/20" />
+              ))}
+            </div>
           </div>
-
-          {/* Calendar Days */}
-          <div className="grid grid-cols-7">
-            {/* Empty cells for days before month starts */}
-            {Array.from({ length: adjustedStartDay }).map((_, index) => (
-              <div key={`empty-${index}`} className="min-h-[120px] border-b border-r bg-muted/20" />
-            ))}
-
-            {/* Days of the month */}
-            {daysInMonth.map((day) => (
-              <CalendarDayCell
-                key={day.toISOString()}
-                date={day}
-                entries={getEntriesForDay(day)}
-                isToday={isSameDay(day, new Date())}
-                onDayClick={handleDayClick}
-                onEntryClick={handleEntryClick}
-                onEntryDrop={handleEntryDrop}
-              />
-            ))}
-
-            {/* Empty cells to complete the grid */}
-            {Array.from({ length: (7 - ((adjustedStartDay + daysInMonth.length) % 7)) % 7 }).map((_, index) => (
-              <div key={`empty-end-${index}`} className="min-h-[120px] border-b border-r bg-muted/20" />
-            ))}
-          </div>
-        </div>
+        ) : (
+          <KanbanBoard
+            entries={getFilteredEntries()}
+            onEntryClick={handleEntryClick}
+          />
+        )}
       </main>
 
       {/* Video Modal */}

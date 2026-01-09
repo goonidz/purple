@@ -74,6 +74,7 @@ const statusOptions = [
   { value: "scripted", label: "Script prêt", color: "bg-blue-500/20" },
   { value: "audio_ready", label: "Audio prêt", color: "bg-yellow-500/20" },
   { value: "generating", label: "En génération", color: "bg-purple-500/20" },
+  { value: "thumbnail", label: "Miniature", color: "bg-pink-500/20" },
   { value: "completed", label: "Terminé", color: "bg-green-500/20" },
 ];
 
