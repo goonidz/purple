@@ -54,10 +54,13 @@ serve(async (req) => {
   }
 
   try {
-    const { imageUrl, userId } = await req.json();
+    const body = await req.json();
+    const { imageUrl, userId } = body;
 
-    if (!imageUrl) {
-      throw new Error('imageUrl is required');
+    console.log('QA request body:', { imageUrl: imageUrl?.substring(0, 100), userId });
+
+    if (!imageUrl || typeof imageUrl !== 'string' || imageUrl.trim() === '') {
+      throw new Error('imageUrl is required and must be a non-empty string');
     }
 
     if (!userId) {

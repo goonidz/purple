@@ -2305,8 +2305,10 @@ const Index = () => {
       return;
     }
 
-    // Check if images exist
-    const imagesToCheck = generatedPrompts.filter((p: any) => p && p.imageUrl);
+    // Check if images exist - keep original index
+    const imagesToCheck = generatedPrompts
+      .map((p, index) => ({ prompt: p, index }))
+      .filter(({ prompt }) => prompt && prompt.imageUrl);
     
     if (imagesToCheck.length === 0) {
       toast.error("Aucune image à vérifier. Générez d'abord les images.");
@@ -2333,6 +2335,14 @@ const Index = () => {
 
         const qaPromises = chunk.map(async ({ prompt, index }: any) => {
           try {
+            // Validate imageUrl before calling API
+            if (!prompt?.imageUrl || typeof prompt.imageUrl !== 'string' || prompt.imageUrl.trim() === '') {
+              console.error(`[runManualQA] Scene ${index + 1}: Invalid imageUrl`, prompt?.imageUrl);
+              return { index, status: 'ERROR', error: 'Invalid imageUrl' };
+            }
+
+            console.log(`[runManualQA] Checking scene ${index + 1} with imageUrl: ${prompt.imageUrl.substring(0, 80)}...`);
+
             const qaResponse = await supabase.functions.invoke('qa-image-gemini', {
               body: {
                 imageUrl: prompt.imageUrl,
@@ -2342,7 +2352,7 @@ const Index = () => {
 
             if (qaResponse.error) {
               console.error(`[runManualQA] QA error for scene ${index + 1}:`, qaResponse.error);
-              return { index, status: 'ERROR' };
+              return { index, status: 'ERROR', error: qaResponse.error };
             }
 
             const qaResult = qaResponse.data;
@@ -2357,7 +2367,7 @@ const Index = () => {
             };
           } catch (error) {
             console.error(`[runManualQA] Exception for scene ${index + 1}:`, error);
-            return { index, status: 'ERROR' };
+            return { index, status: 'ERROR', error };
           }
         });
 
