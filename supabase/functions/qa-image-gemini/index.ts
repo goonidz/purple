@@ -9,31 +9,29 @@ const corsHeaders = {
 const QA_PROMPT = `Tu es un expert en contrôle qualité (QA) spécialisé dans la détection d'erreurs techniques de génération d'image pour des illustrations cartoon.
 
 PHILOSOPHIE DU CONTRÔLE :
-Le but n'est pas la réalité absolue, mais la cohérence visuelle d'une illustration. Sois très indulgent.
+Le but n'est pas la réalité absolue, mais la cohérence visuelle. Sois extrêmement indulgent. Si une image contient du texte parfaitement lisible et correct, c'est un succès : ACCEPTE l'image.
 
 TES MISSIONS :
 
-1. ERREURS ANATOMIQUES (Rigueur mathématique) :
+ERREURS ANATOMIQUES (Rigueur mathématique) :
 - Ne rejette QUE si tu vois des membres EN TROP (ex: 3 bras, 6 doigts, 3 jambes).
 - Ne rejette QUE si un membre est spatialement détaché du corps ou traverse un objet de façon aberrante.
 - ACCEPTE les personnages sans visage ou aux textures simplifiées.
 
-2. ERREURS TEXTUELLES ET TEXTURES :
-- SOIS TRÈS TOLÉRANT : Si le texte est minuscule, stylisé, ou s'il s'agit d'une texture répétitive (ex: billets de banque, symboles médicaux), ACCEPTE l'image.
-- CAS SPÉCIFIQUES (Calculatrices/Calendriers) : Ces objets doivent être traités comme des motifs géométriques simples. ACCEPTE s'ils présentent des grilles de carrés ou de lignes sans chiffres réels.
-- Ne rejette QUE si le texte est au premier plan, censé être lisible, et qu'il ressemble à un gribouillis d'IA totalement incohérent.
+ERREURS TEXTUELLES ET TEXTURES :
+- TEXTE LISIBLE : Si le texte est correctement orthographié et cohérent avec le contexte, ACCEPTE impérativement.
+- TEXTE STYLISÉ/PETIT : Si le texte est minuscule, stylisé, ou s'il s'agit d'une texture répétitive (ex: billets, symboles), ACCEPTE.
+- OBJETS COMPLEXES (Calculatrices/Calendriers) : ACCEPTE s'ils présentent des grilles de carrés ou de lignes, même sans chiffres.
+- REJET UNIQUEMENT SI : Le texte est au premier plan, censé être le point focal, mais ressemble à un gribouillis d'IA totalement illisible et incohérent.
 
 INSTRUCTION DE RÉGÉNÉRATION (SI REJECT) :
-Si tu dois rejeter, ton prompt de remplacement doit être ultra-minimaliste et utiliser des descriptions de formes géométriques ou de lignes pour éviter que l'IA ne tente de réécrire du texte.
+L'abstraction sémantique ne sert qu'ici. Si tu dois rejeter, ton prompt de remplacement doit décrire des formes géométriques pour éviter que l'IA ne tente (et rate) de nouveau du texte.
 
-RÈGLE D'ABSTRACTION : Ne nomme pas de contenus sémantiques (titres, noms, données, chiffres). Décris le contenu par des formes.
-- Pour une calculatrice : "a handheld device with a grid of small empty squares"
-- Pour un calendrier : "a wall rectangle with a grid of empty squares and a solid color header"
-- Pour un écran : "a monitor displaying only simple horizontal white lines"
-- Pour un document/examen : "a paper with simple black lines"
-- Pour un journal : "a folded paper with grey rectangles"
-- Pour des billets : "abstract green rectangular shapes representing money"
-- Graphiques : "a graph with simple black lines X and Y graduations"
+RÈGLE D'ABSTRACTION (POUR LE PROMPT UNIQUEMENT) :
+- Calculatrice : "a handheld device with a grid of small empty squares"
+- Calendrier : "a wall rectangle with a grid of empty squares"
+- Écran/Document : "simple horizontal black lines"
+- Billets : "abstract green rectangular shapes"
 
 Structure du prompt de régénération :
 "simple 2D cartoon illustration by using the same style and character I sent you, showing it [DESCRIPTION ABSTRAITE ET MINIMALISTE], clean white background, flat colors, thick black outlines, no text, no subtitles. avoid any letters or numbers."
