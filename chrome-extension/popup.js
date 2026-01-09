@@ -32,6 +32,24 @@ function hideError(elementId = 'login-error') {
   }
 }
 
+// Listen for auth success messages from content script
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  console.log('[VideoFlow Popup] Received message:', message);
+  
+  if (message.type === 'AUTH_SUCCESS') {
+    console.log('[VideoFlow Popup] Auth success received, refreshing popup');
+    
+    // Refresh the popup to show logged in state
+    handleLoggedIn().then(() => {
+      toast.success('Connexion réussie !');
+    });
+    
+    sendResponse({ received: true });
+  }
+  
+  return true; // Keep channel open for async response
+});
+
 // Initialize app
 document.addEventListener('DOMContentLoaded', async () => {
   console.log('[VideoFlow] Popup loaded');
@@ -149,25 +167,33 @@ function redirectToAuth() {
     url: `${AUTH_PAGE_URL}?extension=true&return=popup` 
   });
   
-  // Show message to user
+  // Show message to user with auto-detection
   document.getElementById('login-state').innerHTML = `
     <div class="header">
       <h2>VideoFlow</h2>
     </div>
-    <p class="info-text">Connectez-vous dans l'onglet qui vient de s'ouvrir, puis revenez ici.</p>
-    <button id="check-auth-btn" class="primary-btn">J'ai terminé la connexion</button>
+    <div class="info-text">
+      <p>Connectez-vous dans l'onglet qui vient de s'ouvrir.</p>
+      <p class="text-sm text-muted-foreground mt-2">La connexion sera détectée automatiquement...</p>
+    </div>
+    <div class="spinner"></div>
   `;
   
-  document.getElementById('check-auth-btn').addEventListener('click', async () => {
-    showState('loading-state');
+  // Auto-check for session every 2 seconds
+  const checkInterval = setInterval(async () => {
     const { session } = await chrome.storage.local.get(SESSION_KEY);
     if (session && session.access_token) {
+      clearInterval(checkInterval);
+      showState('loading-state');
       await handleLoggedIn();
-    } else {
-      showState('login-state');
-      showError('Session non trouvée. Veuillez vous reconnecter.', 'login-error');
+      console.log('[VideoFlow] Auto-detected successful login');
     }
-  });
+  }, 2000);
+  
+  // Stop checking after 5 minutes
+  setTimeout(() => {
+    clearInterval(checkInterval);
+  }, 5 * 60 * 1000);
 }
 
 async function handleLogout() {

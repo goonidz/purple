@@ -10,7 +10,15 @@
   ],
   "host_permissions": [
     "https://www.youtube.com/*",
-    "https://*.supabase.co/*"
+    "https://*.supabase.co/*",
+    "https://purpleai.duckdns.org/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://purpleai.duckdns.org/auth*"],
+      "js": ["content-script.js"],
+      "run_at": "document_end"
+    }
   ],
   "background": {
     "service_worker": "background.js"
