@@ -39,11 +39,11 @@ serve(async (req) => {
     const { title, youtube_url, channel_id, scheduled_date } = await req.json();
 
     // Validate required fields
-    if (!title || !youtube_url || !scheduled_date) {
+    if (!youtube_url || !scheduled_date) {
       return new Response(
         JSON.stringify({ 
           error: 'Missing required fields', 
-          required: ['title', 'youtube_url', 'scheduled_date']
+          required: ['youtube_url', 'scheduled_date']
         }),
         {
           status: 400,
@@ -72,13 +72,13 @@ serve(async (req) => {
     }
 
     // Insert into content_calendar
+    // Only fill source_url (not youtube_url) to trigger automatic scraping
     const { data, error } = await supabase
       .from('content_calendar')
       .insert({
         user_id: user.id,
-        title: title.trim(),
-        youtube_url: youtube_url.trim(),
-        source_url: youtube_url.trim(), // Rempli automatiquement pour récupérer le titre
+        title: title?.trim() || 'Vidéo YouTube',
+        source_url: youtube_url.trim(),
         channel_id: channel_id || null,
         scheduled_date: scheduled_date,
         status: 'planned',
@@ -99,6 +99,58 @@ serve(async (req) => {
     }
 
     console.log(`Calendar entry created by user ${user.id}: "${title}" on ${scheduled_date}`);
+
+    // Launch scraping in background (fire and forget)
+    const baseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+    const scrapingPromise = (async () => {
+      try {
+        // 1. Scrape title and thumbnail
+        const scrapeResponse = await fetch(`${baseUrl}/functions/v1/scrape-youtube`, {
+          method: 'POST',
+          headers: {
+            'Authorization': authHeader,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ url: youtube_url }),
+        });
+
+        if (scrapeResponse.ok) {
+          const scrapeData = await scrapeResponse.json();
+          
+          // Update entry with scraped data
+          await supabase
+            .from('content_calendar')
+            .update({
+              title: scrapeData.title || title?.trim() || 'Vidéo YouTube',
+              source_thumbnail_url: scrapeData.thumbnailUrl,
+            })
+            .eq('id', data.id);
+
+          console.log(`Scraped title and thumbnail for entry ${data.id}`);
+        }
+
+        // 2. Scrape transcript (in background, don't await)
+        fetch(`${baseUrl}/functions/v1/scrape-youtube-transcript`, {
+          method: 'POST',
+          headers: {
+            'Authorization': authHeader,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ 
+            url: youtube_url,
+            calendarEntryId: data.id 
+          }),
+        }).catch(err => {
+          console.error('Transcript scraping failed (background):', err);
+        });
+
+      } catch (error) {
+        console.error('Background scraping error:', error);
+      }
+    })();
+
+    // Don't await the promise - let it run in background
+    scrapingPromise.catch(() => {}); // Suppress unhandled rejection
 
     return new Response(
       JSON.stringify({ success: true, data }),
