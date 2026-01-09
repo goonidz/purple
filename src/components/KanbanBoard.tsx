@@ -143,6 +143,7 @@ export default function KanbanBoard({ entries, onEntryClick }: KanbanBoardProps)
           </div>
         );
       })}
+      </div>
     </div>
   );
 }
