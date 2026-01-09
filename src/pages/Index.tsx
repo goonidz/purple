@@ -90,6 +90,10 @@ interface GeneratedPrompt {
   videoUrl?: string;
   continuityGroupId?: number | null;
   manually_regenerated?: boolean;
+  qa_checked?: boolean;
+  qa_status?: 'OK' | 'REJECT';
+  qa_explication?: string;
+  qa_regenerated?: boolean;
 }
 
 // Fonction pour calculer les groupes si continuityGroupId manquant (rétrocompatibilité)
@@ -459,8 +463,10 @@ const Index = () => {
       }, 1500); // Wait 1.5s to ensure check-animation-status has updated the project
     } else if (job.job_type === 'qa') {
       // Reload project data to show QA results
-      if (currentProjectId) {
-        loadProjectData(currentProjectId);
+      const projectId = job.project_id;
+      if (projectId) {
+        console.log('[handleJobComplete] QA job done, reloading project data:', projectId);
+        loadProjectData(projectId);
       }
     }
   }, []);
