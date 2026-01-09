@@ -1291,7 +1291,11 @@ async function chainNextJobFromWebhook(
   if (completedJobType === 'prompts') {
     nextJobType = 'images';
   } else if (completedJobType === 'images') {
-    nextJobType = 'thumbnails';
+    nextJobType = 'qa'; // Chain to QA instead of directly to thumbnails
+  } else if (completedJobType === 'qa' || completedJobType === 'qa_regen') {
+    nextJobType = 'upscale'; // After QA/regen, chain to upscale
+  } else if (completedJobType === 'upscale') {
+    nextJobType = 'thumbnails'; // After upscale, chain to thumbnails
   }
   
   if (!nextJobType) {
@@ -1426,10 +1430,57 @@ async function chainNextJobFromWebhook(
     total = prompts.filter((p: any) => p && p.prompt && !p.imageUrl).length;
     
     if (total === 0) {
-      console.log("No images to generate, skipping to thumbnails");
+      console.log("No images to generate, skipping to QA");
       await chainNextJobFromWebhook(adminClient, projectId, userId, 'images', metadata);
       return;
     }
+  } else if (nextJobType === 'qa') {
+    const prompts = (project.prompts as any[]) || [];
+    total = prompts.filter((p: any) => p && p.imageUrl).length;
+    
+    if (total === 0) {
+      console.log("No images to check, skipping QA");
+      await chainNextJobFromWebhook(adminClient, projectId, userId, 'qa', metadata);
+      return;
+    }
+    
+    // Pass qaPrompt from project preset
+    const qaPrompt = metadata.qaPrompt || null;
+    jobMetadata = {
+      ...jobMetadata,
+      qaPrompt
+    };
+  } else if (nextJobType === 'upscale') {
+    const prompts = (project.prompts as any[]) || [];
+    const imageModel = project.image_model || 'seedream-4.5';
+    const imageWidth = project.image_width || 1920;
+    const imageHeight = project.image_height || 1080;
+    
+    // Check if this is Z-Image 16:9
+    const isZImage = imageModel === 'z-image-turbo' || imageModel === 'z-image-turbo-lora';
+    const ratio = imageWidth / imageHeight;
+    const is16x9 = Math.abs(ratio - (16 / 9)) < 0.1;
+    
+    if (!isZImage || !is16x9) {
+      console.log("Not Z-Image 16:9, skipping upscaling");
+      await chainNextJobFromWebhook(adminClient, projectId, userId, 'upscale', metadata);
+      return;
+    }
+    
+    total = prompts.filter((p: any) => p && p.imageUrl).length;
+    
+    if (total === 0) {
+      console.log("No images to upscale");
+      await chainNextJobFromWebhook(adminClient, projectId, userId, 'upscale', metadata);
+      return;
+    }
+    
+    jobMetadata = {
+      ...jobMetadata,
+      imageModel,
+      imageWidth,
+      imageHeight
+    };
   } else if (nextJobType === 'thumbnails') {
     total = 3;
     

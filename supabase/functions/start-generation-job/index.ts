@@ -246,6 +246,10 @@ serve(async (req) => {
       // Count images to check for quality
       const prompts = (project?.prompts as any[]) || [];
       total = prompts.filter((p: any) => p && p.imageUrl).length;
+    } else if (jobType === 'qa_regen') {
+      // Count rejected images to regenerate
+      const prompts = (project?.prompts as any[]) || [];
+      total = prompts.filter((p: any) => p && p.qa_status === 'REJECT' && p.qa_regeneration_prompt).length;
     }
 
     // Create the job record (use null for project_id in standalone mode)
@@ -343,6 +347,8 @@ async function processJob(
       await processUpscaleJob(jobId, projectId, userId, metadata, authHeader, adminClient);
     } else if (jobType === 'qa') {
       await processQAJob(jobId, projectId, userId, metadata, authHeader, adminClient);
+    } else if (jobType === 'qa_regen') {
+      await processQARegenJob(jobId, projectId, userId, metadata, authHeader, adminClient);
     }
 
     // Handle prompts chunk continuation
@@ -3616,4 +3622,455 @@ async function processQAJob(
       completed_at: new Date().toISOString()
     })
     .eq('id', jobId);
+
+  // Chain to next job if semi-auto mode
+  const semiAutoMode = metadata.semiAutoMode === true;
+  if (semiAutoMode) {
+    console.log(`[processQAJob] Semi-auto mode enabled, checking for rejected images to regenerate`);
+    
+    if (rejectCount > 0) {
+      console.log(`[processQAJob] Found ${rejectCount} rejected images, chaining to qa_regen`);
+      
+      // Create qa_regen job
+      const { data: regenJob, error: regenJobError } = await adminClient
+        .from('generation_jobs')
+        .insert({
+          project_id: projectId,
+          user_id: userId,
+          job_type: 'qa_regen',
+          status: 'pending',
+          progress: 0,
+          total: rejectCount,
+          metadata: {
+            semiAutoMode: true,
+            thumbnailPresetId: metadata.thumbnailPresetId || null,
+            qaPrompt: metadata.qaPrompt || null
+          }
+        })
+        .select()
+        .single();
+      
+      if (regenJobError) {
+        console.error(`[processQAJob] Error creating qa_regen job:`, regenJobError);
+      } else {
+        console.log(`[processQAJob] Created qa_regen job ${regenJob.id}`);
+        
+        // Start qa_regen job
+        EdgeRuntime.waitUntil((async () => {
+          const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+          const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+          
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          
+          try {
+            const response = await fetch(`${supabaseUrl}/functions/v1/start-generation-job`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${serviceRoleKey}`
+              },
+              body: JSON.stringify({
+                jobId: regenJob.id,
+                projectId,
+                userId,
+                jobType: 'qa_regen',
+                metadata: {
+                  semiAutoMode: true,
+                  thumbnailPresetId: metadata.thumbnailPresetId || null
+                }
+              })
+            });
+            
+            if (response.ok) {
+              console.log(`[processQAJob] qa_regen job ${regenJob.id} started successfully`);
+            } else {
+              console.error(`[processQAJob] Failed to start qa_regen job: ${await response.text()}`);
+            }
+          } catch (error) {
+            console.error('[processQAJob] Error starting qa_regen job:', error);
+          }
+        })());
+      }
+    } else {
+      console.log(`[processQAJob] No rejected images, chaining to upscale`);
+      
+      // No rejections, check if we should upscale
+      // Get project data to check image model
+      const { data: projectData } = await adminClient
+        .from('projects')
+        .select('image_model, image_width, image_height')
+        .eq('id', projectId)
+        .single();
+      
+      if (projectData) {
+        const imageModel = projectData.image_model || 'seedream-4.5';
+        const imageWidth = projectData.image_width || 1920;
+        const imageHeight = projectData.image_height || 1080;
+        
+        const isZImage = imageModel === 'z-image-turbo' || imageModel === 'z-image-turbo-lora';
+        const ratio = imageWidth / imageHeight;
+        const is16x9 = Math.abs(ratio - (16 / 9)) < 0.1;
+        
+        if (isZImage && is16x9) {
+          console.log(`[processQAJob] Z-Image 16:9 detected, creating upscale job`);
+          
+          // Create upscale job
+          const { data: upscaleJob, error: upscaleJobError } = await adminClient
+            .from('generation_jobs')
+            .insert({
+              project_id: projectId,
+              user_id: userId,
+              job_type: 'upscale',
+              status: 'pending',
+              progress: 0,
+              total: updatedPrompts.filter((p: any) => p && p.imageUrl).length,
+              metadata: {
+                semiAutoMode: true,
+                thumbnailPresetId: metadata.thumbnailPresetId || null,
+                imageModel,
+                imageWidth,
+                imageHeight
+              }
+            })
+            .select()
+            .single();
+          
+          if (upscaleJobError) {
+            console.error(`[processQAJob] Error creating upscale job:`, upscaleJobError);
+          } else {
+            console.log(`[processQAJob] Created upscale job ${upscaleJob.id}`);
+            
+            // Start upscale job
+            EdgeRuntime.waitUntil((async () => {
+              const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+              const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+              
+              await new Promise(resolve => setTimeout(resolve, 1000));
+              
+              try {
+                const response = await fetch(`${supabaseUrl}/functions/v1/start-generation-job`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${serviceRoleKey}`
+                  },
+                  body: JSON.stringify({
+                    jobId: upscaleJob.id,
+                    projectId,
+                    userId,
+                    jobType: 'upscale',
+                    metadata: {
+                      semiAutoMode: true,
+                      thumbnailPresetId: metadata.thumbnailPresetId || null,
+                      imageModel,
+                      imageWidth,
+                      imageHeight
+                    }
+                  })
+                });
+                
+                if (response.ok) {
+                  console.log(`[processQAJob] upscale job ${upscaleJob.id} started successfully`);
+                } else {
+                  console.error(`[processQAJob] Failed to start upscale job: ${await response.text()}`);
+                }
+              } catch (error) {
+                console.error('[processQAJob] Error starting upscale job:', error);
+              }
+            })());
+          }
+        } else {
+          console.log(`[processQAJob] Not Z-Image 16:9, skipping upscale, chaining to thumbnails`);
+          
+          // Skip upscale, go directly to thumbnails
+          const thumbnailPresetId = metadata.thumbnailPresetId;
+          if (thumbnailPresetId) {
+            // Chain to thumbnails via webhook handler
+            // Create a minimal job just to trigger the chain
+            const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+            const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+            
+            try {
+              await fetch(`${supabaseUrl}/functions/v1/replicate-webhook`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${serviceRoleKey}`
+                },
+                body: JSON.stringify({
+                  completedJobType: 'upscale', // Pretend upscale completed
+                  projectId,
+                  userId,
+                  metadata: {
+                    semiAutoMode: true,
+                    thumbnailPresetId
+                  }
+                })
+              });
+            } catch (error) {
+              console.error('[processQAJob] Error chaining to thumbnails:', error);
+            }
+          } else {
+            console.log(`[processQAJob] No thumbnail preset, semi-auto pipeline complete`);
+          }
+        }
+      }
+    }
+  }
+}
+
+async function processQARegenJob(
+  jobId: string,
+  projectId: string,
+  userId: string,
+  metadata: Record<string, any>,
+  authHeader: string,
+  adminClient: any
+) {
+  console.log(`[processQARegenJob] Starting regeneration for rejected images in project ${projectId}`);
+
+  // Get project data
+  const { data: project } = await adminClient
+    .from('projects')
+    .select('*')
+    .eq('id', projectId)
+    .single();
+
+  if (!project) throw new Error("Project not found");
+
+  const prompts = (project.prompts as any[]) || [];
+  
+  // Find rejected images
+  const rejectedIndices = prompts
+    .map((p: any, index: number) => (p && p.qa_status === 'REJECT' && p.qa_regeneration_prompt) ? index : -1)
+    .filter((i: number) => i !== -1);
+
+  console.log(`[processQARegenJob] Found ${rejectedIndices.length} rejected images to regenerate`);
+
+  if (rejectedIndices.length === 0) {
+    console.log('[processQARegenJob] No rejected images to regenerate');
+    await adminClient
+      .from('generation_jobs')
+      .update({ 
+        status: 'completed',
+        progress: 0,
+        total: 0,
+        completed_at: new Date().toISOString()
+      })
+      .eq('id', jobId);
+    return;
+  }
+
+  // Update job total
+  await adminClient
+    .from('generation_jobs')
+    .update({ total: rejectedIndices.length })
+    .eq('id', jobId);
+
+  // Update prompts: replace with QA suggested prompt, clear QA flags
+  const updatedPrompts = [...prompts];
+  for (const index of rejectedIndices) {
+    const prompt = updatedPrompts[index];
+    updatedPrompts[index] = {
+      ...prompt,
+      prompt: prompt.qa_regeneration_prompt, // Replace with suggested prompt
+      qa_checked: false, // Clear QA flags
+      qa_status: undefined,
+      qa_explication: undefined
+      // Keep qa_regeneration_prompt for UI visibility
+    };
+  }
+
+  // Save updated prompts
+  const { error: updateError } = await adminClient
+    .from('projects')
+    .update({ prompts: updatedPrompts })
+    .eq('id', projectId);
+
+  if (updateError) {
+    console.error('[processQARegenJob] Error updating prompts:', updateError);
+    throw updateError;
+  }
+
+  console.log('[processQARegenJob] Updated prompts with suggested QA prompts');
+
+  // Generate images for rejected indices
+  let successCount = 0;
+  let failCount = 0;
+
+  for (let i = 0; i < rejectedIndices.length; i++) {
+    const index = rejectedIndices[i];
+    const prompt = updatedPrompts[index];
+
+    try {
+      console.log(`[processQARegenJob] Regenerating image ${i + 1}/${rejectedIndices.length} (scene ${index + 1})`);
+
+      const result = await generateSingleImage(
+        projectId,
+        userId,
+        prompt,
+        index,
+        project,
+        authHeader,
+        adminClient
+      );
+
+      if (result.success) {
+        successCount++;
+        // Update progress
+        await adminClient
+          .from('generation_jobs')
+          .update({ progress: i + 1 })
+          .eq('id', jobId);
+      } else {
+        failCount++;
+        console.error(`[processQARegenJob] Failed to regenerate scene ${index + 1}`);
+      }
+    } catch (error) {
+      failCount++;
+      console.error(`[processQARegenJob] Error regenerating scene ${index + 1}:`, error);
+    }
+  }
+
+  console.log(`[processQARegenJob] Regeneration complete: ${successCount} success, ${failCount} failed`);
+
+  // Mark job as completed
+  await adminClient
+    .from('generation_jobs')
+    .update({ 
+      status: 'completed',
+      progress: rejectedIndices.length,
+      error_message: failCount > 0 ? `${failCount} images failed to regenerate` : null,
+      completed_at: new Date().toISOString()
+    })
+    .eq('id', jobId);
+
+  // Chain to upscale if semi-auto mode
+  const semiAutoMode = metadata.semiAutoMode === true;
+  if (semiAutoMode) {
+    console.log(`[processQARegenJob] Semi-auto mode enabled, chaining to upscale`);
+    
+    // Get project data to check image model
+    const { data: projectData } = await adminClient
+      .from('projects')
+      .select('image_model, image_width, image_height, prompts')
+      .eq('id', projectId)
+      .single();
+    
+    if (projectData) {
+      const imageModel = projectData.image_model || 'seedream-4.5';
+      const imageWidth = projectData.image_width || 1920;
+      const imageHeight = projectData.image_height || 1080;
+      
+      const isZImage = imageModel === 'z-image-turbo' || imageModel === 'z-image-turbo-lora';
+      const ratio = imageWidth / imageHeight;
+      const is16x9 = Math.abs(ratio - (16 / 9)) < 0.1;
+      
+      if (isZImage && is16x9) {
+        console.log(`[processQARegenJob] Z-Image 16:9 detected, creating upscale job`);
+        
+        const prompts = (projectData.prompts as any[]) || [];
+        const totalImages = prompts.filter((p: any) => p && p.imageUrl).length;
+        
+        // Create upscale job
+        const { data: upscaleJob, error: upscaleJobError } = await adminClient
+          .from('generation_jobs')
+          .insert({
+            project_id: projectId,
+            user_id: userId,
+            job_type: 'upscale',
+            status: 'pending',
+            progress: 0,
+            total: totalImages,
+            metadata: {
+              semiAutoMode: true,
+              thumbnailPresetId: metadata.thumbnailPresetId || null,
+              imageModel,
+              imageWidth,
+              imageHeight
+            }
+          })
+          .select()
+          .single();
+        
+        if (upscaleJobError) {
+          console.error(`[processQARegenJob] Error creating upscale job:`, upscaleJobError);
+        } else {
+          console.log(`[processQARegenJob] Created upscale job ${upscaleJob.id}`);
+          
+          // Start upscale job
+          EdgeRuntime.waitUntil((async () => {
+            const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+            const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+            
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            try {
+              const response = await fetch(`${supabaseUrl}/functions/v1/start-generation-job`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${serviceRoleKey}`
+                },
+                body: JSON.stringify({
+                  jobId: upscaleJob.id,
+                  projectId,
+                  userId,
+                  jobType: 'upscale',
+                  metadata: {
+                    semiAutoMode: true,
+                    thumbnailPresetId: metadata.thumbnailPresetId || null,
+                    imageModel,
+                    imageWidth,
+                    imageHeight
+                  }
+                })
+              });
+              
+              if (response.ok) {
+                console.log(`[processQARegenJob] upscale job ${upscaleJob.id} started successfully`);
+              } else {
+                console.error(`[processQARegenJob] Failed to start upscale job: ${await response.text()}`);
+              }
+            } catch (error) {
+              console.error('[processQARegenJob] Error starting upscale job:', error);
+            }
+          })());
+        }
+      } else {
+        console.log(`[processQARegenJob] Not Z-Image 16:9, skipping upscale, chaining to thumbnails`);
+        
+        // Skip upscale, go directly to thumbnails
+        const thumbnailPresetId = metadata.thumbnailPresetId;
+        if (thumbnailPresetId) {
+          // Chain to thumbnails via webhook handler
+          const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+          const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+          
+          try {
+            await fetch(`${supabaseUrl}/functions/v1/replicate-webhook`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${serviceRoleKey}`
+              },
+              body: JSON.stringify({
+                completedJobType: 'upscale', // Pretend upscale completed
+                projectId,
+                userId,
+                metadata: {
+                  semiAutoMode: true,
+                  thumbnailPresetId
+                }
+              })
+            });
+          } catch (error) {
+            console.error('[processQARegenJob] Error chaining to thumbnails:', error);
+          }
+        } else {
+          console.log(`[processQARegenJob] No thumbnail preset, semi-auto pipeline complete`);
+        }
+      }
+    }
+  }
 }

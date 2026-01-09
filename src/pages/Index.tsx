@@ -333,7 +333,8 @@ const Index = () => {
         'single_image': 'Image générée !',
         'single_animation': 'Scène animée avec succès !',
         'upscale': 'Images upscalées en 1920x1088 !',
-        'qa': job.error_message ? `⚠️ QA terminé avec erreurs : ${job.error_message}` : `✅ Vérification QA terminée ! (${job.total} images vérifiées)`
+        'qa': job.error_message ? `⚠️ QA terminé avec erreurs : ${job.error_message}` : `✅ Vérification QA terminée ! (${job.total} images vérifiées)`,
+        'qa_regen': `${job.total} images régénérées après rejet QA !`
       };
       
       if (job.job_type === 'qa' && job.error_message) {
@@ -372,6 +373,26 @@ const Index = () => {
       // Semi-auto complete!
       if (isSemiAuto) {
         toast.success("🎉 Génération semi-automatique terminée !");
+      }
+    } else if (job.job_type === 'qa') {
+      // Show chaining info for semi-auto
+      if (isSemiAuto && !job.error_message) {
+        // Check if there are rejected images (this info would be in the project data after reload)
+        // For now, just show a generic chaining message
+        toast.info("Traitement des images en cours...");
+      }
+    } else if (job.job_type === 'qa_regen') {
+      // Show chaining info for semi-auto
+      if (isSemiAuto) {
+        toast.info("Upscaling en cours...");
+      }
+    } else if (job.job_type === 'upscale') {
+      // Show chaining info for semi-auto
+      if (isSemiAuto && thumbnailPresetId && thumbnailChainEnabledRef.current) {
+        toast.info("Génération des miniatures en cours...");
+      } else if (isSemiAuto && (!thumbnailPresetId || !thumbnailChainEnabledRef.current)) {
+        const reason = !thumbnailPresetId ? "aucun preset sélectionné" : "génération automatique désactivée";
+        toast.success(`🎉 Génération complète (sans miniatures - ${reason}) !`);
       }
     } else if (job.job_type === 'test_images') {
       setIsGeneratingPrompts(false);
@@ -2348,8 +2369,13 @@ const Index = () => {
     // Mark as generating BEFORE async call to prevent double-clicks
     setIsGeneratingImages(true);
 
-    // Start background job
-    const result = await startJob('images', { skipExisting });
+    // Start background job with semi-auto chaining enabled
+    const result = await startJob('images', { 
+      skipExisting,
+      semiAutoMode: true, // Enable automatic chaining to QA, regen, and upscale
+      qaPrompt: qaPrompt || null, // Pass QA prompt from current preset
+      thumbnailPresetId: null // No thumbnails for standalone generation
+    });
     if (!result) {
       // If job creation failed, reset the flag
       setIsGeneratingImages(false);

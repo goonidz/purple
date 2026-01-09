@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
-export type JobType = 'transcription' | 'prompts' | 'images' | 'thumbnails' | 'test_images' | 'single_prompt' | 'single_image' | 'upscale' | 'single_animation' | 'qa';
+export type JobType = 'transcription' | 'prompts' | 'images' | 'thumbnails' | 'test_images' | 'single_prompt' | 'single_image' | 'upscale' | 'single_animation' | 'qa' | 'qa_regen';
 export type JobStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled';
 
 export interface GenerationJob {
@@ -467,6 +467,8 @@ function getJobStartMessage(jobType: JobType): string {
       return "Upscaling des images démarré en arrière-plan. Vous pouvez quitter cette page.";
     case 'qa':
       return "Vérification qualité (QA) démarrée en arrière-plan. Vous pouvez quitter cette page.";
+    case 'qa_regen':
+      return "Régénération des images rejetées démarrée en arrière-plan";
     default:
       return "Génération démarrée en arrière-plan";
   }
