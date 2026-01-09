@@ -48,17 +48,17 @@ export default function KanbanBoard({ entries, onEntryClick }: KanbanBoardProps)
   }, {} as Record<string, ContentCalendarEntry[]>);
 
   return (
-    <div className="w-full">
+    <div className="w-full -mx-2">
       {/* Scroll hint */}
-      <div className="text-sm text-muted-foreground mb-2 flex items-center gap-2">
-        <span>Faites défiler horizontalement pour voir toutes les colonnes →</span>
+      <div className="text-xs text-muted-foreground mb-2 flex items-center gap-2 px-2">
+        <span>← Faites défiler horizontalement pour voir toutes les colonnes →</span>
       </div>
       
       <div 
-        className="flex gap-3 overflow-x-auto pb-4 px-1 scroll-smooth"
+        className="flex gap-2 overflow-x-auto pb-4 px-2 scroll-smooth"
         style={{
           scrollbarWidth: 'thin',
-          scrollbarColor: 'hsl(16 90% 58% / 0.3) transparent'
+          scrollbarColor: 'hsl(16 90% 58% / 0.5) hsl(0 0% 90%)'
         }}
       >
         {statusColumns.map((column) => {
@@ -67,7 +67,7 @@ export default function KanbanBoard({ entries, onEntryClick }: KanbanBoardProps)
           return (
             <div
               key={column.value}
-              className="flex-shrink-0 w-72 bg-card rounded-lg border border-border p-3 shadow-sm"
+              className="flex-shrink-0 w-80 bg-card rounded-lg border border-border p-3 shadow-sm"
             >
             {/* Column Header */}
             <div className="flex items-center justify-between mb-3 pb-2 border-b">
@@ -78,7 +78,13 @@ export default function KanbanBoard({ entries, onEntryClick }: KanbanBoardProps)
             </div>
 
             {/* Column Cards */}
-            <div className="space-y-2 max-h-[calc(100vh-300px)] overflow-y-auto pr-1">
+            <div 
+              className="space-y-2 max-h-[calc(100vh-280px)] overflow-y-auto pr-1"
+              style={{
+                scrollbarWidth: 'thin',
+                scrollbarColor: 'hsl(16 90% 58% / 0.3) transparent'
+              }}
+            >
               {columnEntries.length === 0 ? (
                 <div className="text-center text-xs text-muted-foreground py-6">
                   Aucune vidéo
