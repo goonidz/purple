@@ -2299,6 +2299,126 @@ const Index = () => {
     }
   };
   
+  const runManualQA = async () => {
+    if (!currentProjectId) {
+      toast.error("Veuillez d'abord sélectionner ou créer un projet");
+      return;
+    }
+
+    // Check if images exist
+    const imagesToCheck = generatedPrompts.filter((p: any) => p && p.imageUrl);
+    
+    if (imagesToCheck.length === 0) {
+      toast.error("Aucune image à vérifier. Générez d'abord les images.");
+      return;
+    }
+
+    const loadingToast = toast.loading(`Vérification qualité de ${imagesToCheck.length} image(s)...`);
+
+    try {
+      let okCount = 0;
+      let rejectCount = 0;
+      const updatedPrompts = [...generatedPrompts];
+
+      // Process in chunks of 100 with 2s delay between chunks
+      const CHUNK_SIZE = 100;
+      const chunks: any[][] = [];
+      for (let i = 0; i < imagesToCheck.length; i += CHUNK_SIZE) {
+        chunks.push(imagesToCheck.slice(i, i + CHUNK_SIZE));
+      }
+
+      for (let chunkIdx = 0; chunkIdx < chunks.length; chunkIdx++) {
+        const chunk = chunks[chunkIdx];
+        console.log(`[runManualQA] Processing chunk ${chunkIdx + 1}/${chunks.length} (${chunk.length} images)`);
+
+        const qaPromises = chunk.map(async ({ prompt, index }: any) => {
+          try {
+            const qaResponse = await supabase.functions.invoke('qa-image-gemini', {
+              body: {
+                imageUrl: prompt.imageUrl,
+                userId: user?.id
+              }
+            });
+
+            if (qaResponse.error) {
+              console.error(`[runManualQA] QA error for scene ${index + 1}:`, qaResponse.error);
+              return { index, status: 'ERROR' };
+            }
+
+            const qaResult = qaResponse.data;
+            console.log(`[runManualQA] Scene ${index + 1}: ${qaResult.status}`);
+
+            return {
+              index,
+              status: qaResult.status,
+              anomalie: qaResult.anomalie_detectee,
+              explication: qaResult.explication,
+              promptRegeneration: qaResult.prompt_regeneration
+            };
+          } catch (error) {
+            console.error(`[runManualQA] Exception for scene ${index + 1}:`, error);
+            return { index, status: 'ERROR' };
+          }
+        });
+
+        const chunkResults = await Promise.all(qaPromises);
+
+        // Update prompts with QA results
+        chunkResults.forEach((result: any) => {
+          if (result.status === 'OK') {
+            okCount++;
+            updatedPrompts[result.index] = {
+              ...updatedPrompts[result.index],
+              qa_checked: true,
+              qa_status: 'OK'
+            };
+          } else if (result.status === 'REJECT') {
+            rejectCount++;
+            updatedPrompts[result.index] = {
+              ...updatedPrompts[result.index],
+              qa_checked: true,
+              qa_status: 'REJECT',
+              qa_explication: result.explication
+            };
+          }
+        });
+
+        // Delay between chunks (except after last chunk)
+        if (chunkIdx < chunks.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+      }
+
+      // Save updated prompts to database
+      const { error: updateError } = await supabase
+        .from('projects')
+        .update({ prompts: updatedPrompts as any })
+        .eq('id', currentProjectId);
+
+      if (updateError) {
+        console.error('[runManualQA] Error saving QA results:', updateError);
+        toast.error('Erreur lors de la sauvegarde des résultats QA', { id: loadingToast });
+        return;
+      }
+
+      // Update local state
+      setGeneratedPrompts(updatedPrompts);
+
+      toast.success(
+        `✅ QA terminé : ${okCount} OK, ${rejectCount} rejetées`,
+        { id: loadingToast }
+      );
+
+      if (rejectCount > 0) {
+        toast.info(`${rejectCount} image(s) rejetée(s). Consultez les détails dans la console.`);
+      }
+
+    } catch (error: any) {
+      console.error('[runManualQA] Error:', error);
+      toast.error(error.message || 'Erreur lors de la vérification QA', { id: loadingToast });
+    }
+  };
+
   const forceUpscale = async () => {
     if (!currentProjectId) {
       toast.error("Veuillez d'abord sélectionner ou créer un projet");
@@ -3606,6 +3726,18 @@ const Index = () => {
                                   Upscaler les images (1920x1088)
                                 </>
                               )}
+                            </Button>
+                          )}
+                          {generatedPrompts.length > 0 && !isGeneratingImages && generatedPrompts.some((p: any) => p && p.imageUrl) && (
+                            <Button
+                              onClick={runManualQA}
+                              disabled={false}
+                              title="Vérifier la qualité des images (détection d'artefacts et erreurs)"
+                              size="sm"
+                              variant="outline"
+                            >
+                              <CheckCircle2 className="mr-2 h-4 w-4" />
+                              Vérifier qualité (QA)
                             </Button>
                           )}
                           {generatedPrompts.length > 0 && !isGeneratingImages && (
