@@ -93,6 +93,7 @@ interface GeneratedPrompt {
   qa_checked?: boolean;
   qa_status?: 'OK' | 'REJECT';
   qa_explication?: string;
+  qa_regeneration_prompt?: string;
   qa_regenerated?: boolean;
 }
 
@@ -1973,6 +1974,54 @@ const Index = () => {
     const result = await startJob('single_image', { sceneIndex: index });
     if (!result) {
       removeGeneratingImageIndex(index);
+    }
+  };
+
+  const handleRegenerateWithQAPrompt = async (index: number) => {
+    const prompt = generatedPrompts[index];
+    if (!prompt) {
+      toast.error("Aucun prompt disponible pour cette scène");
+      return;
+    }
+
+    if (!prompt.qa_regeneration_prompt) {
+      toast.error("Aucun prompt de régénération disponible");
+      return;
+    }
+
+    if (!currentProjectId) {
+      toast.error("Veuillez d'abord sélectionner ou créer un projet");
+      return;
+    }
+
+    // Replace the current prompt with the QA suggested prompt
+    const updatedPrompts = [...generatedPrompts];
+    updatedPrompts[index] = {
+      ...updatedPrompts[index],
+      prompt: prompt.qa_regeneration_prompt,
+      // Clear QA flags as we're regenerating
+      qa_checked: false,
+      qa_status: undefined,
+      qa_explication: undefined,
+      qa_regeneration_prompt: undefined
+    };
+    
+    setGeneratedPrompts(updatedPrompts);
+
+    // Save to database
+    try {
+      await supabase
+        .from('projects')
+        .update({ prompts: updatedPrompts as any })
+        .eq('id', currentProjectId);
+      
+      toast.success("Prompt remplacé et régénération lancée");
+      
+      // Generate image with new prompt
+      await generateImage(index);
+    } catch (error) {
+      console.error("Error saving new prompt:", error);
+      toast.error("Erreur lors de la sauvegarde du nouveau prompt");
     }
   };
 
@@ -4127,6 +4176,7 @@ const Index = () => {
                       setConfirmRegenerateImage={setConfirmRegenerateImage}
                       generateSinglePrompt={generateSinglePrompt}
                       generateImage={generateImage}
+                      handleRegenerateWithQAPrompt={handleRegenerateWithQAPrompt}
                       uploadManualImage={uploadManualImage}
                       copyToClipboard={copyToClipboard}
                       setImagePreviewUrl={setImagePreviewUrl}

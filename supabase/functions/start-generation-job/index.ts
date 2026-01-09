@@ -3565,7 +3565,8 @@ async function processQAJob(
           ...updatedPrompts[result.index],
           qa_checked: true,
           qa_status: 'REJECT',
-          qa_explication: result.explication
+          qa_explication: result.explication,
+          qa_regeneration_prompt: result.promptRegeneration || null
         };
       } else {
         errorCount++;

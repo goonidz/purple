@@ -16,6 +16,7 @@ import {
   Video,
   Info,
   AlertCircle,
+  RotateCcw,
 } from "lucide-react";
 import {
   Tooltip,
@@ -41,6 +42,7 @@ interface GeneratedPrompt {
   qa_checked?: boolean;
   qa_status?: 'OK' | 'REJECT';
   qa_explication?: string;
+  qa_regeneration_prompt?: string;
 }
 
 interface SceneGridProps {
@@ -61,6 +63,7 @@ interface SceneGridProps {
   setConfirmRegenerateImage: (index: number | null) => void;
   generateSinglePrompt: (index: number) => void;
   generateImage: (index: number) => void;
+  handleRegenerateWithQAPrompt: (index: number) => void;
   uploadManualImage: (file: File, index: number) => void;
   copyToClipboard: (text: string | undefined, index: number) => void;
   setImagePreviewUrl: (url: string | null) => void;
@@ -89,6 +92,7 @@ export function SceneGrid({
   setConfirmRegenerateImage,
   generateSinglePrompt,
   generateImage,
+  handleRegenerateWithQAPrompt,
   uploadManualImage,
   copyToClipboard,
   setImagePreviewUrl,
@@ -487,21 +491,44 @@ export function SceneGrid({
               )}
               {/* QA Status badge - REJECT */}
               {prompt?.qa_checked && prompt?.qa_status === 'REJECT' && (
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <div className="bg-red-500 text-white rounded-full p-1 shadow-md cursor-help">
-                        <AlertCircle className="h-3.5 w-3.5" />
-                      </div>
-                    </TooltipTrigger>
-                    <TooltipContent className="max-w-xs">
-                      <p className="font-semibold">Image rejetée par le QA</p>
-                      {prompt?.qa_explication && (
-                        <p className="text-sm mt-1">{prompt.qa_explication}</p>
-                      )}
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
+                <>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div className="bg-red-500 text-white rounded-full p-1 shadow-md cursor-help">
+                          <AlertCircle className="h-3.5 w-3.5" />
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-xs">
+                        <p className="font-semibold">Image rejetée par le QA</p>
+                        {prompt?.qa_explication && (
+                          <p className="text-sm mt-1">{prompt.qa_explication}</p>
+                        )}
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                  {/* Regenerate button with QA prompt */}
+                  {prompt?.qa_regeneration_prompt && (
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 bg-orange-500 hover:bg-orange-600 text-white rounded-full p-1 shadow-md"
+                            onClick={() => handleRegenerateWithQAPrompt(index)}
+                          >
+                            <RotateCcw className="h-3.5 w-3.5" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent className="max-w-xs">
+                          <p className="font-semibold">Régénérer avec le prompt suggéré</p>
+                          <p className="text-sm mt-1">Remplace le prompt actuel et régénère l'image</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  )}
+                </>
               )}
             </div>
           </Card>
