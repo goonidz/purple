@@ -60,10 +60,12 @@ STRICT RULES FOR GENERATING CONSISTENT PROMPTS:
 1. Follow EXACTLY the structure and style of the examples below
 2. Use the same tone, vocabulary, and format
 3. Respect the same approximate length (50-100 words)
-4. Include the same types of elements: main subject, visual style, composition, lighting, mood
+4. Include the same types of elements: main subject, visual style, composition, lighting, mood (NO TEXT)
 5. NEVER deviate from the format established by the examples
 6. Generate prompts in ENGLISH only
 7. NEVER use the word "dead" in the prompt (rephrase with other words instead)
+8. Don't ask to generate text, (for exemple : "standing in front of massive glowing text reading "14 TRILLION DOLLARS" is FORBIDDEN).
+9. Start exactly the same way, end exactly the same way.
 
 CONTENT SAFETY - STRICTLY FORBIDDEN:
 - No nudity, partial nudity, or suggestive/intimate content
