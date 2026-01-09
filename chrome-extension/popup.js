@@ -116,6 +116,16 @@ async function loadChannels() {
     });
     
     if (!response.ok) {
+      // Session expirée
+      if (response.status === 401) {
+        console.error('[VideoFlow] Session expired, clearing storage');
+        await chrome.storage.local.remove(SESSION_KEY);
+        showError('Session expirée. Veuillez vous reconnecter.', 'add-error');
+        setTimeout(() => {
+          redirectToAuth();
+        }, 2000);
+        return;
+      }
       throw new Error(`HTTP ${response.status}: ${await response.text()}`);
     }
     
@@ -244,6 +254,12 @@ async function handleAddVideo() {
     });
     
     if (!response.ok) {
+      // Session expirée
+      if (response.status === 401) {
+        console.error('[VideoFlow] Session expired during add video');
+        await chrome.storage.local.remove(SESSION_KEY);
+        throw new Error('Session expirée. Reconnectez-vous et réessayez.');
+      }
       const errorData = await response.json();
       throw new Error(errorData.error || `HTTP ${response.status}`);
     }
