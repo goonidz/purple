@@ -303,8 +303,8 @@ async function handleAddVideo() {
   const channelId = document.getElementById('channel-select').value;
   const scheduledDate = document.getElementById('scheduled-date').value;
   
-  if (!title || !url || !scheduledDate) {
-    showError('Veuillez remplir tous les champs', 'add-error');
+  if (!url || !scheduledDate) {
+    showError('Veuillez sélectionner une date', 'add-error');
     return;
   }
   
