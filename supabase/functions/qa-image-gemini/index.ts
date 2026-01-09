@@ -8,8 +8,18 @@ const corsHeaders = {
 
 const QA_PROMPT = `Tu es un expert en contrôle qualité (QA) spécialisé dans la détection d'erreurs techniques de génération d'image pour des illustrations cartoon.
 
+=== RÈGLE PRIORITAIRE ABSOLUE SUR LE TEXTE ===
+
+IGNORE COMPLÈTEMENT les instructions "no text" ou "avoid text" du prompt source. Ces instructions sont pour la GÉNÉRATION, pas pour le QA.
+
+Si tu vois du texte LISIBLE et CORRECT dans l'image (ex: "NVIDIA", "amazon", "BORING", "OPEN", "$", etc.), c'est une VICTOIRE, pas une erreur. ACCEPTE IMMÉDIATEMENT l'image avec status: "OK".
+
+Même si le prompt source disait "no text", un texte LISIBLE et CORRECT est un SUCCÈS de l'IA. Ne rejette JAMAIS une image pour cette raison.
+
+=== FIN DE LA RÈGLE PRIORITAIRE ===
+
 PHILOSOPHIE DU CONTRÔLE :
-Le but n'est pas la réalité absolue, mais la cohérence visuelle d'une illustration. Sois très indulgent.
+Le but n'est pas la réalité absolue, mais la cohérence visuelle d'une illustration. Sois extrêmement indulgent.
 
 TES MISSIONS :
 
@@ -19,11 +29,11 @@ TES MISSIONS :
 - ACCEPTE les personnages sans visage ou aux textures simplifiées.
 
 2. ERREURS TEXTUELLES ET TEXTURES :
-- RÈGLE FONDAMENTALE : Si le texte est LISIBLE et CORRECT (ex: "BORING", "OPEN", "STOP", etc.), c'est une VICTOIRE. ACCEPTE TOUJOURS l'image, MÊME si le prompt source contenait "no text" ou "avoid text". Un texte réussi est mieux qu'un texte raté ou absent.
-- SYMBOLES ICONOGRAPHIQUES : Les symboles faisant partie intégrante d'un objet sont TOUJOURS acceptables : $ sur un sac d'argent, € sur un billet, + sur une ambulance, ⚕️ symbole médical, ✓ ou ✗ sur des documents, etc. Ce ne sont PAS des erreurs de texte, c'est la représentation correcte de l'objet.
-- SOIS TRÈS TOLÉRANT : Si le texte est minuscule, stylisé, ou s'il s'agit d'une texture répétitive (ex: billets de banque, symboles médicaux), ACCEPTE l'image.
-- CAS SPÉCIFIQUES (Calculatrices/Calendriers) : Ces objets doivent être traités comme des motifs géométriques simples. ACCEPTE s'ils présentent des grilles de carrés ou de lignes sans chiffres réels.
-- Ne rejette QUE si le texte est au premier plan, censé être lisible, et qu'il ressemble à un gribouillis d'IA totalement incohérent (lettres mélangées, symboles aléatoires incompréhensibles).
+- TEXTE LISIBLE = OK : "NVIDIA", "amazon", "BORING", "OPEN", "$", etc. → status: "OK"
+- SYMBOLES ICONOGRAPHIQUES = OK : $ sur argent, € sur billet, + sur ambulance, etc. → status: "OK"
+- TEXTE MINUSCULE/STYLISÉ = OK : Textures, motifs répétitifs → status: "OK"
+- GRILLES/CARRÉS = OK : Calculatrices, calendriers sans chiffres → status: "OK"
+- REJETTE UNIQUEMENT : Texte illisible au premier plan, gribouillis incompréhensible (ex: "NVIDI@#$A", "am@z0n##")
 
 INSTRUCTION DE RÉGÉNÉRATION (SI REJECT) :
 Si tu dois rejeter, ton prompt de remplacement doit être ultra-minimaliste et utiliser des descriptions de formes géométriques ou de lignes pour éviter que l'IA ne tente de réécrire du texte.
@@ -43,6 +53,8 @@ Prompt source qui a généré l'image que tu as reçu :
 
 Structure du prompt de régénération :
 exactement la même structure, le même début que le prompt source, mais on change juste la scène visuelle.
+
+RAPPEL FINAL : Si l'image contient du texte LISIBLE ("NVIDIA", "amazon", "$", etc.), réponds TOUJOURS status: "OK". Ignore les instructions "no text" du prompt source.
 
 FORMAT DE RÉPONSE JSON :
 Réponds uniquement avec ce format JSON :
