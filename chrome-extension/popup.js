@@ -155,6 +155,8 @@ async function loadChannels() {
     // Add channel options with colors
     if (result.channels && result.channels.length > 0) {
       result.channels.forEach(channel => {
+        console.log('[VideoFlow] Channel:', channel.name, 'Color:', channel.color);
+        
         const option = document.createElement('div');
         option.className = 'custom-select-option';
         option.dataset.value = channel.id;
@@ -164,7 +166,8 @@ async function loadChannels() {
         const colorDot = document.createElement('span');
         colorDot.className = 'channel-color-dot';
         if (channel.color) {
-          colorDot.style.background = channel.color;
+          colorDot.style.backgroundColor = channel.color;
+          console.log('[VideoFlow] Applied color to', channel.name, ':', channel.color);
         }
         
         const nameSpan = document.createElement('span');
@@ -209,9 +212,11 @@ async function loadChannels() {
       const name = option.dataset.name || 'Sans chaîne';
       
       if (color) {
-        colorDot.style.background = color;
+        colorDot.style.backgroundColor = color;
+        colorDot.style.display = 'inline-block';
       } else {
-        colorDot.style.background = '';
+        colorDot.style.backgroundColor = 'transparent';
+        colorDot.style.display = 'none';
       }
       nameSpan.textContent = name;
       
