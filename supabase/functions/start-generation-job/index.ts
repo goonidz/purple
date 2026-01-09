@@ -3558,6 +3558,13 @@ async function processQAJob(
   for (let chunkIdx = 0; chunkIdx < chunks.length; chunkIdx++) {
     const chunk = chunks[chunkIdx];
     console.log(`[processQAJob] Processing chunk ${chunkIdx + 1}/${chunks.length} (${chunk.length} images)`);
+    
+    // Log complete QA prompt once per chunk (for debugging)
+    if (chunkIdx === 0) {
+      console.log(`[processQAJob] ========== COMPLETE QA PROMPT (shown once) ==========`);
+      console.log(qaPrompt || 'Using default QA prompt');
+      console.log(`[processQAJob] ========================================================`);
+    }
 
     // Process chunk in parallel
     const qaPromises = chunk.map(async ({ prompt, index }: any) => {

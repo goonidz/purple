@@ -113,7 +113,6 @@ serve(async (req) => {
     console.log('[qa-image-gemini] Custom prompt provided:', !!qaPrompt);
     console.log('[qa-image-gemini] Prompt length:', promptToUse.length);
     console.log('[qa-image-gemini] Prompt contains "SYMBOLES ICONOGRAPHIQUES":', promptToUse.includes('SYMBOLES ICONOGRAPHIQUES'));
-    console.log('[qa-image-gemini] Prompt preview (first 300 chars):', promptToUse.substring(0, 300));
     
     // Insert source prompt if provided
     if (sourcePrompt) {
@@ -122,6 +121,11 @@ serve(async (req) => {
       // Remove the placeholder if no source prompt
       promptToUse = promptToUse.replace('Prompt source qui a généré l\'image que tu as reçu :\n\n(variable qui insère le prompt lié à l\'image)\n\n', '');
     }
+    
+    // Log the COMPLETE prompt once per request (for debugging)
+    console.log('[qa-image-gemini] ========== COMPLETE QA PROMPT ==========');
+    console.log(promptToUse);
+    console.log('[qa-image-gemini] ========================================')
 
     // Get Gemini API key from Vault
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
