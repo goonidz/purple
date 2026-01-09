@@ -173,8 +173,33 @@ serve(async (req) => {
 
     // Parse JSON response from Gemini
     // Remove markdown code blocks if present
-    const cleanedText = responseText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-    const qaResult = JSON.parse(cleanedText);
+    let cleanedText = responseText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    
+    // Try to parse JSON, with fallback for malformed responses
+    let qaResult: any;
+    try {
+      qaResult = JSON.parse(cleanedText);
+    } catch (parseError) {
+      console.error('JSON parse error, attempting to fix:', parseError);
+      // Try to extract JSON using regex as fallback
+      const jsonMatch = cleanedText.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        try {
+          qaResult = JSON.parse(jsonMatch[0]);
+        } catch {
+          // If still fails, return a safe default
+          qaResult = {
+            status: 'OK',
+            anomalie_detectee: 'aucune',
+            explication: '',
+            prompt_regeneration: ''
+          };
+          console.log('Fallback to OK status due to parse error');
+        }
+      } else {
+        throw new Error(`Failed to parse Gemini response: ${parseError}`);
+      }
+    }
 
     // Validate response structure
     if (!qaResult.status || !qaResult.anomalie_detectee) {

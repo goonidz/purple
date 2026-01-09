@@ -3466,8 +3466,8 @@ async function processQAJob(
   let errorCount = 0;
   const updatedPrompts = [...prompts];
 
-  // Process in chunks of 300 with 2s delay between chunks
-  const CHUNK_SIZE = 300;
+  // Process in chunks of 100 with 2s delay between chunks (reduced to avoid Supabase 503 errors)
+  const CHUNK_SIZE = 100;
   const chunks: any[][] = [];
   for (let i = 0; i < imagesToCheck.length; i += CHUNK_SIZE) {
     chunks.push(imagesToCheck.slice(i, i + CHUNK_SIZE));
@@ -3479,49 +3479,73 @@ async function processQAJob(
 
     // Process chunk in parallel
     const qaPromises = chunk.map(async ({ prompt, index }: any) => {
-      try {
-        const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-        const response = await fetch(`${supabaseUrl}/functions/v1/qa-image-gemini`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': authHeader
-          },
-          body: JSON.stringify({
-            imageUrl: prompt.imageUrl,
-            userId: userId,
-            qaPrompt: qaPrompt, // Pass custom QA prompt if available
-            sourcePrompt: prompt.prompt || '' // Pass the original prompt that generated the image
-          })
-        });
+      const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+      const maxRetries = 3;
+      
+      // Retry logic for 503 errors
+      for (let attempt = 0; attempt < maxRetries; attempt++) {
+        try {
+          const response = await fetch(`${supabaseUrl}/functions/v1/qa-image-gemini`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': authHeader
+            },
+            body: JSON.stringify({
+              imageUrl: prompt.imageUrl,
+              userId: userId,
+              qaPrompt: qaPrompt, // Pass custom QA prompt if available
+              sourcePrompt: prompt.prompt || '' // Pass the original prompt that generated the image
+            })
+          });
 
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.error(`[processQAJob] QA error for scene ${index + 1}: HTTP ${response.status}`, errorText);
-          return { index, status: 'ERROR', error: errorText };
+          // Retry on 503 errors
+          if (response.status === 503 && attempt < maxRetries - 1) {
+            const delay = Math.pow(2, attempt) * 1000; // Exponential backoff: 1s, 2s, 4s
+            console.log(`[processQAJob] Scene ${index + 1}: 503 error, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+            continue;
+          }
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            console.error(`[processQAJob] QA error for scene ${index + 1}: HTTP ${response.status}`, errorText);
+            return { index, status: 'ERROR', error: errorText };
+          }
+
+          const qaResult = await response.json();
+          
+          // Check if the response contains an error (500 errors return JSON with error field)
+          if (qaResult.error || qaResult.status === 'ERROR') {
+            console.error(`[processQAJob] QA error for scene ${index + 1}:`, qaResult.error || qaResult.explication);
+            return { index, status: 'ERROR', error: qaResult.error };
+          }
+          
+          console.log(`[processQAJob] Scene ${index + 1}: ${qaResult.status}`);
+
+          return {
+            index,
+            status: qaResult.status,
+            anomalie: qaResult.anomalie_detectee,
+            explication: qaResult.explication,
+            promptRegeneration: qaResult.prompt_regeneration
+          };
+
+        } catch (error) {
+          // If last attempt, return error
+          if (attempt === maxRetries - 1) {
+            console.error(`[processQAJob] Exception for scene ${index + 1} after ${maxRetries} attempts:`, error);
+            return { index, status: 'ERROR' };
+          }
+          // Otherwise retry
+          const delay = Math.pow(2, attempt) * 1000;
+          console.log(`[processQAJob] Scene ${index + 1}: exception, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})`);
+          await new Promise(resolve => setTimeout(resolve, delay));
         }
-
-        const qaResult = await response.json();
-        
-        // Check if the response contains an error (500 errors return JSON with error field)
-        if (qaResult.error || qaResult.status === 'ERROR') {
-          console.error(`[processQAJob] QA error for scene ${index + 1}:`, qaResult.error || qaResult.explication);
-          return { index, status: 'ERROR', error: qaResult.error };
-        }
-        
-        console.log(`[processQAJob] Scene ${index + 1}: ${qaResult.status}`);
-
-        return {
-          index,
-          status: qaResult.status,
-          anomalie: qaResult.anomalie_detectee,
-          explication: qaResult.explication,
-          promptRegeneration: qaResult.prompt_regeneration
-        };
-      } catch (error) {
-        console.error(`[processQAJob] Exception for scene ${index + 1}:`, error);
-        return { index, status: 'ERROR' };
       }
+      
+      // Should never reach here
+      return { index, status: 'ERROR' };
     });
 
     const chunkResults = await Promise.all(qaPromises);
