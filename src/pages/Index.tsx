@@ -2375,7 +2375,7 @@ const Index = () => {
     }
 
     // Start background QA job
-    const result = await startJob('qa', {});
+    const result = await startJob('qa', { qaPrompt });
     if (result) {
       toast.info(`Vérification qualité de ${imagesToCheck.length} image(s) lancée en arrière-plan.`);
     }
@@ -2411,7 +2411,7 @@ const Index = () => {
 
       // Start QA job
       const imagesToCheck = updatedPrompts.filter((p: any) => p && p.imageUrl);
-      const result = await startJob('qa', {});
+      const result = await startJob('qa', { qaPrompt });
       if (result) {
         toast.info(`Vérification qualité de ${imagesToCheck.length} image(s) relancée en arrière-plan.`);
       }

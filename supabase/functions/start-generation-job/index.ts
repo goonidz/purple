@@ -3418,17 +3418,17 @@ async function processQAJob(
 ) {
   console.log(`[processQAJob] Starting QA for project ${projectId}`);
 
-  // Get project data with preset to get qaPrompt
+  // Get project data
   const { data: project } = await adminClient
     .from('projects')
-    .select('*, presets!inner(qa_prompt)')
+    .select('*')
     .eq('id', projectId)
     .single();
 
   if (!project) throw new Error("Project not found");
 
   const prompts = (project.prompts as any[]) || [];
-  const qaPrompt = (project as any).presets?.qa_prompt || null;
+  const qaPrompt = metadata.qaPrompt || null;
   console.log(`[processQAJob] Using ${qaPrompt ? 'custom' : 'default'} QA prompt`);
   
   // Filter images that need QA
@@ -3463,8 +3463,8 @@ async function processQAJob(
   let errorCount = 0;
   const updatedPrompts = [...prompts];
 
-  // Process in chunks of 100 with 2s delay between chunks
-  const CHUNK_SIZE = 100;
+  // Process in chunks of 300 with 2s delay between chunks
+  const CHUNK_SIZE = 300;
   const chunks: any[][] = [];
   for (let i = 0; i < imagesToCheck.length; i += CHUNK_SIZE) {
     chunks.push(imagesToCheck.slice(i, i + CHUNK_SIZE));
