@@ -3226,7 +3226,95 @@ async function processUpscaleJob(
   console.log(`Found ${allImagesToUpscale.length} images to upscale (skipped: ${skippedAlreadyUpscaled} already upscaled, ${skippedHighRes} high-res)`);
 
   if (allImagesToUpscale.length === 0) {
-    console.log("No images to upscale");
+    console.log("No images to upscale in this chunk - marking job as completed");
+    
+    // Mark job as completed to prevent blocking
+    await adminClient
+      .from('generation_jobs')
+      .update({ 
+        status: 'completed',
+        progress: 0,
+        completed_at: new Date().toISOString()
+      })
+      .eq('id', jobId);
+    
+    // Check if there are REALLY more images that need upscaling
+    // by checking for images without isUpscaled flag (in case webhook miscounted)
+    const reallyNeedUpscale = prompts.filter((p: any) => 
+      p && p.imageUrl && p.isUpscaled !== true
+    ).length;
+    
+    if (reallyNeedUpscale > 0) {
+      console.log(`WARNING: Found ${reallyNeedUpscale} images that still need upscaling but were not detected by filter. Creating continuation job...`);
+      
+      // Check for existing upscale job to prevent duplicates
+      const { data: existingJobs } = await adminClient
+        .from('generation_jobs')
+        .select('id, status')
+        .eq('project_id', projectId)
+        .eq('job_type', 'upscale')
+        .in('status', ['pending', 'processing'])
+        .limit(1);
+      
+      if (!existingJobs || existingJobs.length === 0) {
+        // Create a new upscale chunk job
+        const { data: retryJob, error: retryError } = await adminClient
+          .from('generation_jobs')
+          .insert({
+            project_id: projectId,
+            user_id: userId,
+            job_type: 'upscale',
+            status: 'pending',
+            progress: 0,
+            total: reallyNeedUpscale,
+            metadata: {
+              ...metadata,
+              isChunkContinuation: true,
+              upscaledIndices: metadata.upscaledIndices || []
+            }
+          })
+          .select()
+          .single();
+        
+        if (!retryError && retryJob) {
+          console.log(`Created retry upscale job ${retryJob.id} for ${reallyNeedUpscale} remaining images`);
+          
+          // Start the retry job
+          EdgeRuntime.waitUntil((async () => {
+            const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+            const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+            
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            try {
+              await fetch(`${supabaseUrl}/functions/v1/start-generation-job`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${serviceRoleKey}`
+                },
+                body: JSON.stringify({
+                  jobId: retryJob.id,
+                  projectId,
+                  userId,
+                  jobType: 'upscale',
+                  metadata: {
+                    ...metadata,
+                    isChunkContinuation: true,
+                    upscaledIndices: metadata.upscaledIndices || []
+                  }
+                })
+              });
+            } catch (error) {
+              console.error('Error starting retry upscale job:', error);
+            }
+          })());
+        }
+      } else {
+        console.log(`Upscale job already exists (${existingJobs[0].id}), skipping retry creation`);
+      }
+    }
+    
     return;
   }
 

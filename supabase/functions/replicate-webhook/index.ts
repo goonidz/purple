@@ -920,6 +920,15 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
           if (!prompt || !prompt.imageUrl) return false;
           if (prompt.isUpscaled === true) return false; // Already marked as upscaled
           if (allUpscaledIndices.includes(index)) return false; // Upscaled in this job run
+          
+          // CRITICAL: Also check dimensions to match processUpscaleJob logic
+          const imgWidth = prompt.imageWidth || 0;
+          const imgHeight = prompt.imageHeight || 0;
+          if (imgWidth >= 1920 && imgHeight >= 1080) {
+            console.log(`Webhook: Skipping scene ${index + 1} - already high-res (${imgWidth}x${imgHeight})`);
+            return false; // Already high resolution
+          }
+          
           return true;
         });
       
