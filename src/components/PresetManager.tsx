@@ -268,6 +268,7 @@ export const PresetManager = ({ currentConfig, onLoadPreset, autoLoadPresetId }:
           prompt_system_message: presetData.prompt_system_message || null,
           lora_url: presetData.lora_url || null,
           lora_steps: presetData.lora_steps || 10,
+          qa_prompt: presetData.qa_prompt || null,
         };
       });
       
