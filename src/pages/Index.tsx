@@ -1999,29 +1999,41 @@ const Index = () => {
     updatedPrompts[index] = {
       ...updatedPrompts[index],
       prompt: prompt.qa_regeneration_prompt,
-      // Clear QA flags as we're regenerating
+      // Clear QA flags and mark as manually regenerated
       qa_checked: false,
       qa_status: undefined,
       qa_explication: undefined,
-      qa_regeneration_prompt: undefined
+      qa_regeneration_prompt: undefined,
+      manually_regenerated: true
     };
     
+    // Update state FIRST
     setGeneratedPrompts(updatedPrompts);
+    
+    // Mark as generating
+    addGeneratingImageIndex(index);
+    setRegeneratedScenes(prev => new Set([...prev, index]));
 
-    // Save to database
+    // Save to database BEFORE starting job
     try {
       await supabase
         .from('projects')
         .update({ prompts: updatedPrompts as any })
         .eq('id', currentProjectId);
       
-      toast.success("Prompt remplacé et régénération lancée");
+      console.log('[handleRegenerateWithQAPrompt] Updated prompt in DB, new prompt:', prompt.qa_regeneration_prompt);
       
-      // Generate image with new prompt
-      await generateImage(index);
+      toast.success("Prompt remplacé, régénération en cours...");
+      
+      // Start background job AFTER DB update
+      const result = await startJob('single_image', { sceneIndex: index });
+      if (!result) {
+        removeGeneratingImageIndex(index);
+      }
     } catch (error) {
       console.error("Error saving new prompt:", error);
       toast.error("Erreur lors de la sauvegarde du nouveau prompt");
+      removeGeneratingImageIndex(index);
     }
   };
 
