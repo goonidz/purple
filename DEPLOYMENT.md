@@ -1,15 +1,46 @@
 # Guide de déploiement VideoFlow sur VPS Linux
 
-Ce guide explique comment déployer l'application VideoFlow sur un VPS Linux avec Docker, nginx, DuckDNS et déploiement automatique.
+Ce guide explique comment déployer l'application VideoFlow sur un VPS Linux avec Docker, nginx, DuckDNS, HTTPS et déploiement automatique.
+
+## 🚀 Installation en une seule commande (Recommandé)
+
+Sur un VPS Ubuntu/Debian fraîchement installé, exécutez cette commande pour tout installer automatiquement :
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/goonidz/purple/main/scripts/install-vps.sh | bash -s -- \
+  laqgmqyjstisipsbljha \
+  votre_SUPABASE_SERVICE_ROLE_KEY \
+  purpleai \
+  votre_DUCKDNS_TOKEN \
+  https://github.com/goonidz/purple
+```
+
+**Paramètres requis** :
+1. `SUPABASE_PROJECT_REF` - ID de votre projet Supabase
+2. `SUPABASE_SERVICE_ROLE_KEY` - Clé service_role Supabase
+3. `DUCKDNS_DOMAIN` - Nom de domaine DuckDNS (sans .duckdns.org)
+4. `DUCKDNS_TOKEN` - Token d'API DuckDNS
+5. `GITHUB_REPO` - URL du repository GitHub
+
+Cette commande va automatiquement :
+- ✅ Installer tous les packages nécessaires (Docker, Node.js, FFmpeg, etc.)
+- ✅ Cloner le repository
+- ✅ Configurer DuckDNS
+- ✅ Configurer HTTPS avec Let's Encrypt
+- ✅ Démarrer tous les services (Frontend, Video Render, Webhook)
+- ✅ Configurer PM2 pour démarrage automatique
+
+---
 
 ## Vue d'ensemble du déploiement
 
 Le projet VideoFlow est déployé avec une architecture complète :
 
-- **Frontend React** : Container Docker avec nginx, accessible via domaine DuckDNS
+- **Frontend React** : Container Docker avec nginx, accessible via domaine DuckDNS en HTTPS
 - **Service de rendu vidéo** : Node.js + FFmpeg sur le port 3000 (géré par PM2)
 - **Webhook GitHub** : Déploiement automatique à chaque push (port 9000, géré par PM2)
 - **Nom de domaine** : `purpleai.duckdns.org` (gratuit via DuckDNS)
+- **HTTPS** : Certificat SSL automatique via Let's Encrypt
 
 Tous les services sont configurés automatiquement via les scripts de déploiement.
 
@@ -398,25 +429,28 @@ Ouvrez votre navigateur et allez sur :
 http://videoflow.duckdns.org
 ```
 
-### 8. Configuration SSL avec Let's Encrypt (optionnel mais recommandé)
+### 8. Configuration SSL avec Let's Encrypt (AUTOMATIQUE)
 
-**Important** : Let's Encrypt limite à **5 échecs par heure** par domaine. Si vous avez trop d'échecs, attendez 1 heure avant de réessayer.
+**✅ HTTPS est maintenant configuré automatiquement par le script `deploy.sh` !**
 
-#### Méthode automatique (recommandée)
-
-```bash
-cd ~/purple
-git pull origin main
-./setup-ssl-auto.sh
-```
-
-Le script va automatiquement :
+Le script s'occupe de tout :
 - Vérifier et mettre à jour DuckDNS
-- Diagnostiquer les problèmes
+- Installer Certbot si nécessaire
 - Obtenir le certificat SSL
 - Configurer nginx pour HTTPS
+- Configurer le proxy `/api/render/` pour le service de rendu vidéo
 
-#### Méthode manuelle
+#### Vérification HTTPS
+
+```bash
+# Vérifier que le certificat est bien installé
+sudo certbot certificates
+
+# Tester l'accès HTTPS
+curl https://purpleai.duckdns.org/health
+```
+
+#### Si vous devez reconfigurer manuellement
 
 ```bash
 # Installer Certbot
@@ -427,15 +461,6 @@ sudo certbot --nginx -d purpleai.duckdns.org
 
 # Le certificat sera renouvelé automatiquement
 ```
-
-#### Si rate limit Let's Encrypt
-
-Si vous voyez l'erreur "too many failed authorizations" :
-
-1. **Attendez 1 heure** avant de réessayer
-2. Vérifiez que le domaine pointe bien vers le serveur : `nslookup purpleai.duckdns.org`
-3. Vérifiez que nginx fonctionne : `sudo systemctl status nginx`
-4. Réessayez : `./setup-ssl-delayed.sh`
 
 Après SSL, votre site sera accessible en HTTPS : `https://purpleai.duckdns.org`
 
@@ -507,35 +532,51 @@ sudo netstat -tulpn | grep :80
 
 ### Service de rendu vidéo ne démarre pas
 
-**Symptômes** : `pm2 status` montre `errored` pour `video-render`
+**Symptômes** : `pm2 status` montre `errored` pour `video-render-service`
 
 **Solutions** :
 1. Vérifier que le service pointe vers le bon répertoire :
    ```bash
-   pm2 info video-render | grep "script path"
+   pm2 info video-render-service | grep "script path"
    # Doit être : /home/ubuntu/purple/video-render-service/server.js
    ```
 
-2. Si ce n'est pas le bon répertoire :
+2. **Vérifier les variables d'environnement Supabase** :
    ```bash
-   pm2 stop video-render
-   pm2 delete video-render
    cd ~/purple/video-render-service
-   pm2 start server.js --name video-render
+   cat .env
+   # Doit contenir :
+   # SUPABASE_URL=https://laqgmqyjstisipsbljha.supabase.co
+   # SUPABASE_SERVICE_ROLE_KEY=votre_cle_service_role
+   ```
+
+3. Si les variables sont manquantes, créer le fichier `.env` :
+   ```bash
+   cd ~/purple/video-render-service
+   cat > .env << 'EOF'
+   SUPABASE_URL=https://laqgmqyjstisipsbljha.supabase.co
+   SUPABASE_SERVICE_ROLE_KEY=votre_cle_service_role_ici
+   EOF
+   ```
+
+4. Vérifier que FFmpeg est installé :
+   ```bash
+   ffmpeg -version
+   # Si absent :
+   sudo apt-get update && sudo apt-get install -y ffmpeg
+   ```
+
+5. Redémarrer le service :
+   ```bash
+   pm2 delete video-render-service
+   cd ~/purple/video-render-service
+   pm2 start server.js --name video-render-service
    pm2 save
    ```
 
-3. Vérifier que les dépendances sont installées :
+6. Vérifier les logs d'erreur :
    ```bash
-   cd ~/purple/video-render-service
-   ls -la node_modules
-   # Si absent ou incomplet :
-   npm install
-   ```
-
-4. Vérifier les logs d'erreur :
-   ```bash
-   pm2 logs video-render --lines 50 --err
+   pm2 logs video-render-service --lines 50 --err
    ```
 
 ### Erreur "Edge Function returned a non-2xx status code"
@@ -543,14 +584,29 @@ sudo netstat -tulpn | grep :80
 **Causes possibles** :
 1. Service de rendu vidéo non démarré (voir section précédente)
 2. Variable d'environnement `FFMPEG_SERVICE_URL` mal configurée dans Supabase
+3. Problème Mixed Content (HTTP vs HTTPS)
 
 **Solutions** :
 1. Vérifier que le service tourne : `curl http://localhost:3000/health`
-2. Vérifier/mettre à jour `FFMPEG_SERVICE_URL` dans Supabase :
+
+2. **Mettre à jour `FFMPEG_SERVICE_URL` pour utiliser HTTPS** :
    ```bash
-   npx supabase secrets set FFMPEG_SERVICE_URL=http://51.91.158.233:3000 --project-ref laqgmqyjstisipsbljha
+   npx supabase secrets set FFMPEG_SERVICE_URL=https://purpleai.duckdns.org/api/render --project-ref laqgmqyjstisipsbljha
    ```
-3. Vérifier les logs de l'Edge Function dans le dashboard Supabase
+
+3. Vérifier que nginx proxy `/api/render/` vers le service :
+   ```bash
+   curl https://purpleai.duckdns.org/api/render/health
+   # Doit retourner : {"status":"ok","version":"v2.16-cleanup-endpoint",...}
+   ```
+
+4. Vérifier la configuration nginx :
+   ```bash
+   sudo cat /etc/nginx/sites-available/purpleai | grep -A 10 "location /api/render"
+   # Doit contenir le proxy vers http://127.0.0.1:3000/
+   ```
+
+5. Vérifier les logs de l'Edge Function dans le dashboard Supabase
 
 ### Nettoyage
 
@@ -571,29 +627,25 @@ docker system prune -a
 ```
 Internet
     ↓
-purpleai.duckdns.org (DuckDNS gratuit)
+https://purpleai.duckdns.org (DuckDNS + Let's Encrypt SSL)
     ↓
 VPS Linux (51.91.158.233)
     ↓
 ┌─────────────────────────────────────┐
-│  Nginx (port 80)                    │
-│  - Proxy vers Docker (port 8080)    │
-│  - Gère le domaine DuckDNS          │
+│  Nginx (ports 80 + 443)             │
+│  - Redirect HTTP → HTTPS            │
+│  - Proxy / → Docker:8080            │
+│  - Proxy /api/render/ → :3000       │
+│  - Certificat SSL Let's Encrypt     │
 └─────────────────────────────────────┘
-    ↓
-┌─────────────────────────────────────┐
-│  Docker Container (port 8080)       │
-│  - Frontend React (VideoFlow)       │
-│  - nginx interne pour servir les    │
-│    fichiers statiques               │
-└─────────────────────────────────────┘
-
-┌─────────────────────────────────────┐
-│  Service Rendu Vidéo (port 3000)    │
-│  - Node.js + FFmpeg                 │
-│  - Accessible via IP:3000           │
-│  - Géré par PM2                     │
-└─────────────────────────────────────┘
+    ↓                      ↓
+    ↓                      ↓
+┌─────────────────┐  ┌────────────────────┐
+│  Docker (8080)  │  │  Video Render      │
+│  - Frontend     │  │  (port 3000)       │
+│  - React + nginx│  │  - Node.js + FFmpeg│
+└─────────────────┘  │  - Géré par PM2    │
+                     └────────────────────┘
 
 ┌─────────────────────────────────────┐
 │  Webhook GitHub (port 9000)         │
@@ -604,20 +656,23 @@ VPS Linux (51.91.158.233)
 
 ### Services déployés
 
-- **Frontend** : Docker container accessible via `http://purpleai.duckdns.org`
+- **Frontend** : Docker container accessible via `https://purpleai.duckdns.org`
   - Nginx sur l'hôte fait le proxy vers Docker (port 8080 interne)
-  - Configuration automatique via `fix-nginx-docker.sh`
+  - HTTPS automatique avec Let's Encrypt
+  - Configuration automatique via `deploy.sh`
   
 - **Service de rendu vidéo** : Node.js + FFmpeg sur le port 3000
-  - Accessible via `http://51.91.158.233:3000` ou `http://purpleai.duckdns.org:3000`
+  - Accessible via `https://purpleai.duckdns.org/api/render` (proxy nginx)
   - Géré par PM2, démarre automatiquement au boot
   - Les vidéos sont servies depuis le VPS (pas d'upload Supabase)
+  - **Variables d'environnement requises** : `.env` avec `SUPABASE_URL` et `SUPABASE_SERVICE_ROLE_KEY`
   - **Important** : Le service doit être lancé depuis `~/purple/video-render-service/` (le repo git)
-  - Vérifier avec : `pm2 info video-render | grep "script path"` (doit pointer vers `~/purple/video-render-service/server.js`)
+  - Vérifier avec : `pm2 info video-render-service | grep "script path"`
 
 - **Webhook GitHub** : Service Node.js sur le port 9000
   - Écoute les événements push de GitHub
   - Déclenche automatiquement le déploiement
+  - Redémarre automatiquement `video-render-service` après mise à jour
   - Géré par PM2
 
 ### Configuration automatique

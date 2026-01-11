@@ -41,13 +41,24 @@ Ce document résume toute la configuration effectuée pour déployer VideoFlow s
 ### 5. Service de rendu vidéo
 
 - **Service** : `video-render-service/server.js` (Node.js + FFmpeg)
-- **Port** : 3000
-- **Accès** : `http://51.91.158.233:3000` (IP directe)
+- **Port** : 3000 (local)
+- **Accès** : `https://purpleai.duckdns.org/api/render` (via proxy nginx)
 - **Fonctionnement** : 
   - Reçoit les requêtes de rendu depuis Supabase Edge Functions
   - Rend les vidéos avec FFmpeg (effet Ken Burns)
   - Sert les vidéos directement depuis le VPS
+  - Utilise les variables Supabase (`.env` avec `SUPABASE_URL` et `SUPABASE_SERVICE_ROLE_KEY`)
 - **Gestion** : PM2 (démarrage automatique au boot)
+
+### 6. HTTPS avec Let's Encrypt
+
+- **Certificat** : Let's Encrypt SSL (gratuit)
+- **Configuration** : Automatique via `deploy.sh`
+- **Renouvellement** : Automatique via Certbot
+- **Proxy nginx** : `/api/render/` → `http://127.0.0.1:3000/` (pour éviter Mixed Content)
+- **Accès** : 
+  - Frontend : `https://purpleai.duckdns.org`
+  - API Render : `https://purpleai.duckdns.org/api/render`
 
 ## Architecture complète
 
@@ -55,33 +66,30 @@ Ce document résume toute la configuration effectuée pour déployer VideoFlow s
 ┌─────────────────────────────────────────────┐
 │  Internet                                   │
 └─────────────────────────────────────────────┘
-           ↓
+           ↓ HTTPS
 ┌─────────────────────────────────────────────┐
 │  purpleai.duckdns.org (DuckDNS)             │
 │  → 51.91.158.233                            │
+│  ✅ Let's Encrypt SSL                       │
 └─────────────────────────────────────────────┘
            ↓
 ┌─────────────────────────────────────────────┐
 │  VPS Linux (Ubuntu 22.04)                   │
 │                                             │
 │  ┌───────────────────────────────────────┐ │
-│  │  Nginx (port 80)                      │ │
-│  │  - Proxy vers Docker:8080             │ │
-│  │  - Gère le domaine DuckDNS            │ │
+│  │  Nginx (ports 80 + 443)               │ │
+│  │  - Redirect HTTP → HTTPS              │ │
+│  │  - Proxy / → Docker:8080              │ │
+│  │  - Proxy /api/render → :3000          │ │
+│  │  - SSL Let's Encrypt                  │ │
 │  └───────────────────────────────────────┘ │
-│           ↓                                 │
-│  ┌───────────────────────────────────────┐ │
-│  │  Docker Container (port 8080)         │ │
-│  │  - Frontend React (VideoFlow)         │ │
-│  │  - nginx interne                      │ │
-│  └───────────────────────────────────────┘ │
-│                                             │
-│  ┌───────────────────────────────────────┐ │
-│  │  Service Rendu Vidéo (port 3000)      │ │
-│  │  - Node.js + FFmpeg                   │ │
-│  │  - Accessible via IP:3000             │ │
-│  │  - PM2                                │ │
-│  └───────────────────────────────────────┘ │
+│           ↓               ↓                 │
+│  ┌────────────────┐  ┌──────────────────┐  │
+│  │  Docker (8080) │  │  Video Render    │  │
+│  │  - Frontend    │  │  (port 3000)     │  │
+│  │  - React       │  │  - Node + FFmpeg │  │
+│  │  - nginx       │  │  - PM2           │  │
+│  └────────────────┘  └──────────────────┘  │
 │                                             │
 │  ┌───────────────────────────────────────┐ │
 │  │  Webhook GitHub (port 9000)           │ │
@@ -93,8 +101,8 @@ Ce document résume toute la configuration effectuée pour déployer VideoFlow s
 
 ## URLs d'accès
 
-- **Frontend web** : `http://purpleai.duckdns.org`
-- **Service vidéo** : `http://51.91.158.233:3000`
+- **Frontend web** : `https://purpleai.duckdns.org` (HTTPS automatique avec Let's Encrypt)
+- **Service vidéo** : `https://purpleai.duckdns.org/api/render` (proxy nginx → port 3000)
 - **Webhook** : `http://51.91.158.233:9000/webhook` (interne GitHub)
 
 ## Scripts de déploiement
@@ -180,8 +188,9 @@ pm2 restart webhook-deploy
 
 ## Configuration des ports
 
-- **Port 80** : Nginx (frontend web via domaine)
-- **Port 3000** : Service de rendu vidéo (IP directe)
+- **Port 80** : Nginx (redirect HTTP → HTTPS)
+- **Port 443** : Nginx HTTPS (frontend web + API render)
+- **Port 3000** : Service de rendu vidéo (local seulement, proxy par nginx via `/api/render`)
 - **Port 8080** : Docker container (interne uniquement, proxy par nginx)
 - **Port 9000** : Webhook GitHub (interne)
 
