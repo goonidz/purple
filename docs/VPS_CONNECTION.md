@@ -1,11 +1,14 @@
 # 🔌 Guide de connexion au VPS
 
+> ⚠️ **Note de sécurité** : Suite à un incident de sécurité en janvier 2026 (cryptominer), le VPS est maintenant sécurisé avec fail2ban et authentification SSH par clé uniquement. Voir [VPS_SECURITY.md](./VPS_SECURITY.md) pour plus de détails.
+
 ## 📋 Informations du VPS
 
 - **IP Publique** : `51.91.158.233`
 - **Domaine** : `purpleai.duckdns.org`
 - **Utilisateur** : `ubuntu`
 - **Port SSH** : `22` (par défaut)
+- **Authentification** : **Clé SSH uniquement** (mot de passe désactivé)
 
 ---
 
