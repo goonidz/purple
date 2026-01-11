@@ -46,9 +46,10 @@ function deploy() {
     const commands = [
       `cd ${REPO_PATH}`,
       'git pull origin main',
-      // Restart video-render-service if server.js changed
-      'cd video-render-service && pm2 restart video-render-service 2>/dev/null || true',
-      'cd ..',
+      // Copy video-render-service files to the PM2 location if it exists
+      '[ -d ~/video-render-service ] && cp -r video-render-service/* ~/video-render-service/ || true',
+      // Restart video-render-service if it's running
+      'pm2 restart video-render-service 2>/dev/null || true',
       // Configurer DuckDNS automatiquement si pas déjà fait (en arrière-plan pour ne pas bloquer)
       '[ ! -f ~/.duckdns ] && [ -f setup-duckdns.sh ] && (nohup ./setup-duckdns.sh > ~/duckdns-setup.log 2>&1 &) || true',
       './deploy.sh'
