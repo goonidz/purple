@@ -2070,9 +2070,9 @@ app.post('/render', async (req, res) => {
     console.log(`[${jobId}] Added to queue at position ${position}/${queueLength}`);
     console.log(`[${jobId}] Reasons: ${resourceCheck.reasons.join(', ')}`);
     
-    // Initialize job status as queued
+    // Initialize job status as pending (queued)
     jobs.set(jobId, { 
-      status: 'queued', 
+      status: 'pending', 
       progress: 0, 
       steps: [], 
       createdAt: new Date().toISOString(),
@@ -2083,7 +2083,7 @@ app.post('/render', async (req, res) => {
     return res.json({
       success: true,
       jobId,
-      status: 'queued',
+      status: 'pending',
       position,
       queueLength,
       message: `Job queued (position ${position}/${queueLength})`,
