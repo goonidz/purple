@@ -2408,6 +2408,17 @@ app.post('/generate-script', async (req, res) => {
     webSearch,
   } = req.body;
   
+  // DEBUG: Log received parameters
+  console.log('[generate-script] Received parameters:', {
+    hasAnthropicKey: !!anthropicApiKey,
+    promptLength: customPrompt?.length || 0,
+    model,
+    asyncMode,
+    projectId,
+    userId,
+    webSearchEnabled: webSearch?.enabled
+  });
+
   if (!anthropicApiKey) {
     return res.status(400).json({ error: 'Anthropic API key required' });
   }
