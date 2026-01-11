@@ -113,8 +113,161 @@ ssh -v ubuntu@51.91.158.233
 
 → Tu dois passer par le panneau de contrôle de ton hébergeur (OVH, Hostinger, etc.) pour :
 1. Accéder à la console KVM (accès direct au serveur)
-2. Réinitialiser le mot de passe root
-3. Ajouter une nouvelle clé SSH
+2. Te connecter avec le mot de passe de l'utilisateur `ubuntu`
+3. Ajouter une nouvelle clé SSH (voir section suivante)
+
+---
+
+## 🔄 Gestion des clés SSH
+
+### 🖥️ Se connecter depuis un autre ordinateur
+
+**Méthode 1 : Copier ta clé SSH existante (Rapide)**
+
+**Depuis ton Mac actuel** :
+```bash
+# Afficher ta clé SSH privée
+cat ~/.ssh/id_ed25519
+
+# Copier tout le contenu (commence par "-----BEGIN OPENSSH PRIVATE KEY-----")
+```
+
+**Sur le nouvel ordinateur** :
+```bash
+# Créer le dossier .ssh s'il n'existe pas
+mkdir -p ~/.ssh
+
+# Créer le fichier de clé
+nano ~/.ssh/id_ed25519
+
+# Coller le contenu de la clé privée
+# Sauvegarder : Ctrl+X, Y, Entrée
+
+# Définir les bonnes permissions (CRITIQUE !)
+chmod 600 ~/.ssh/id_ed25519
+
+# Tester la connexion
+ssh ubuntu@51.91.158.233
+```
+
+**Méthode 2 : Ajouter une nouvelle clé SSH (Recommandé)**
+
+**Sur le nouvel ordinateur** :
+```bash
+# Générer une nouvelle paire de clés
+ssh-keygen -t ed25519 -C "nouvel-ordi@example.com"
+
+# Afficher la clé publique
+cat ~/.ssh/id_ed25519.pub
+# Copier la sortie (commence par "ssh-ed25519 AAA...")
+```
+
+**Sur le VPS** (connecté depuis ton Mac actuel) :
+```bash
+# Ajouter la nouvelle clé publique
+nano ~/.ssh/authorized_keys
+
+# Coller la nouvelle clé publique sur une nouvelle ligne
+# Sauvegarder : Ctrl+X, Y, Entrée
+
+# Vérifier les permissions
+chmod 600 ~/.ssh/authorized_keys
+chmod 700 ~/.ssh
+```
+
+**Depuis le nouvel ordinateur** :
+```bash
+# Tester la connexion
+ssh ubuntu@51.91.158.233
+```
+
+### 🆘 Clé SSH perdue ET plus d'accès au VPS
+
+**Étape 1 : Accéder via la console KVM**
+
+1. Connecte-toi au panneau de contrôle de ton hébergeur :
+   - **OVH** : Manager → VPS → KVM/iKVM
+   - **Hostinger** : VPS → Console
+   - **DigitalOcean** : Droplet → Access → Launch Console
+   - **Hetzner** : Server → Console
+
+2. Connecte-toi avec le **mot de passe** de l'utilisateur `ubuntu`
+   - Si tu as oublié le mot de passe, utilise l'option "Reset Password" dans le panneau
+
+**Étape 2 : Ajouter une nouvelle clé SSH**
+
+**Sur ton nouvel ordinateur** :
+```bash
+# Générer une nouvelle paire de clés
+ssh-keygen -t ed25519 -C "nouveau-pc@example.com"
+
+# Afficher la clé publique
+cat ~/.ssh/id_ed25519.pub
+```
+
+**Sur le VPS (via console KVM)** :
+```bash
+# Ajouter la nouvelle clé publique
+echo "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA... nouveau-pc@example.com" >> ~/.ssh/authorized_keys
+
+# Vérifier les permissions
+chmod 600 ~/.ssh/authorized_keys
+chmod 700 ~/.ssh
+
+# Vérifier le contenu
+cat ~/.ssh/authorized_keys
+```
+
+**Depuis ton nouvel ordinateur** :
+```bash
+# Tester la connexion
+ssh ubuntu@51.91.158.233
+```
+
+### 🔐 Gérer plusieurs clés SSH
+
+**Sur le VPS** (`~/.ssh/authorized_keys`) :
+```bash
+# Tu peux avoir plusieurs clés, une par ligne :
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIckcMHdbciiy1TczoTTzRH4JwGiyW2XvxDlpTL9eF+I tom@mac
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBbBcMHdbciiy1TczoTTzRH4JwGiyW2XvxDlpTL9eF+K tom@laptop
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICcCcMHdbciiy1TczoTTzRH4JwGiyW2XvxDlpTL9eF+L tom@bureau
+```
+
+**Avantages** :
+- ✅ Se connecter depuis plusieurs ordinateurs
+- ✅ Si tu perds une clé, tu peux encore te connecter avec une autre
+- ✅ Révoquer une clé compromise sans perdre l'accès
+
+**Révoquer une clé** :
+```bash
+# Sur le VPS, éditer le fichier
+nano ~/.ssh/authorized_keys
+
+# Supprimer la ligne de la clé compromise
+# Sauvegarder : Ctrl+X, Y, Entrée
+```
+
+### 💾 Sauvegarder tes clés SSH
+
+**Important** : Sauvegarde tes clés SSH dans un endroit sûr !
+
+**Option 1 : Gestionnaire de mots de passe** (Recommandé)
+- 1Password, Bitwarden, KeePass, etc.
+- Stocke ta clé privée dans une note sécurisée
+
+**Option 2 : Clé USB chiffrée**
+```bash
+# Copier ta clé sur une clé USB
+cp ~/.ssh/id_ed25519 /Volumes/USB_SECURE/backup_ssh_key
+
+# NE JAMAIS stocker sur le cloud non chiffré !
+```
+
+**Option 3 : Avoir plusieurs clés**
+- Génère une clé par ordinateur
+- Ajoute-les toutes sur le VPS
+- Si tu perds un ordinateur, tu as encore accès avec un autre
 
 ---
 
