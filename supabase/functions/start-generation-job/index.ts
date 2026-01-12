@@ -4029,6 +4029,7 @@ async function processQARegenJob(
   adminClient: any
 ) {
   console.log(`[processQARegenJob] Starting regeneration for rejected images in project ${projectId}`);
+  const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
 
   // Get project data
   const { data: project } = await adminClient
@@ -4040,6 +4041,33 @@ async function processQARegenJob(
   if (!project) throw new Error("Project not found");
 
   const prompts = (project.prompts as any[]) || [];
+  let imageWidth = project.image_width || 1920;
+  let imageHeight = project.image_height || 1080;
+  const imageModel = project.image_model || 'seedream-4.5';
+  
+  // IMPORTANT: For Z-Image models with 16:9, always generate at 960x544 (will be upscaled later)
+  const isZImage = imageModel === 'z-image-turbo' || imageModel === 'z-image-turbo-lora';
+  if (isZImage) {
+    const ratio = imageWidth / imageHeight;
+    const is16x9 = Math.abs(ratio - (16 / 9)) < 0.1;
+    if (is16x9) {
+      console.log(`[processQARegenJob] Z-Image 16:9 detected - forcing 960x544 for generation (was ${imageWidth}x${imageHeight})`);
+      imageWidth = 960;
+      imageHeight = 544;
+    }
+  }
+  
+  // Parse style references
+  let styleReferenceUrls: string[] = [];
+  if (project.style_reference_url) {
+    try {
+      styleReferenceUrls = JSON.parse(project.style_reference_url);
+    } catch {
+      if (project.style_reference_url) {
+        styleReferenceUrls = [project.style_reference_url];
+      }
+    }
+  }
   
   // Find rejected images
   const rejectedIndices = prompts
@@ -4075,7 +4103,7 @@ async function processQARegenJob(
     updatedPrompts[index] = {
       ...prompt,
       prompt: prompt.qa_regeneration_prompt, // Replace with suggested prompt
-      qa_regenerated: true, // Mark as regenerated to show in UI
+      qa_regenerated: true, // Mark as regenerated to show blue badge in UI
       // KEEP qa_status, qa_explication, and qa_regeneration_prompt for history
     };
   }
@@ -4093,8 +4121,11 @@ async function processQARegenJob(
 
   console.log('[processQARegenJob] Updated prompts with suggested QA prompts');
 
-  // Generate images for rejected indices
-  let successCount = 0;
+  // Build webhook URL for async image generation
+  const webhookUrl = `${supabaseUrl}/functions/v1/replicate-webhook`;
+
+  // Generate images for rejected indices using webhook mode
+  let startedCount = 0;
   let failCount = 0;
 
   for (let i = 0; i < rejectedIndices.length; i++) {
@@ -4104,46 +4135,98 @@ async function processQARegenJob(
     try {
       console.log(`[processQARegenJob] Regenerating image ${i + 1}/${rejectedIndices.length} (scene ${index + 1})`);
 
-      const result = await generateSingleImage(
-        projectId,
+      const requestBody: any = {
+        prompt: prompt.prompt,
+        width: imageWidth,
+        height: imageHeight,
+        model: imageModel,
+        async: true,
+        webhook_url: webhookUrl,
         userId,
-        prompt,
-        index,
-        project,
-        authHeader,
-        adminClient
-      );
+      };
 
-      if (result.success) {
-        successCount++;
-        // Update progress
-        await adminClient
-          .from('generation_jobs')
-          .update({ progress: i + 1 })
-          .eq('id', jobId);
-      } else {
-        failCount++;
-        console.error(`[processQARegenJob] Failed to regenerate scene ${index + 1}`);
+      if (styleReferenceUrls.length > 0) {
+        requestBody.image_urls = styleReferenceUrls;
       }
+      
+      // Add LoRA parameters for z-image-turbo-lora model
+      if (imageModel === 'z-image-turbo-lora') {
+        if (project.lora_url) {
+          requestBody.lora_url = project.lora_url;
+        }
+        if (project.lora_steps) {
+          requestBody.lora_steps = project.lora_steps;
+        }
+      }
+
+      // Start async generation with webhook
+      const startResponse = await fetch(`${supabaseUrl}/functions/v1/generate-image-seedream`, {
+        method: 'POST',
+        headers: {
+          'Authorization': authHeader,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody),
+      });
+
+      if (!startResponse.ok) {
+        throw new Error(`Failed to start generation: ${startResponse.status}`);
+      }
+
+      const startData = await startResponse.json();
+      const predictionId = startData.predictionId;
+
+      if (!predictionId) {
+        throw new Error("No prediction ID returned");
+      }
+
+      // Create pending_prediction entry for webhook tracking
+      const { error: insertError } = await adminClient
+        .from('pending_predictions')
+        .insert({
+          job_id: jobId,
+          prediction_id: predictionId,
+          prediction_type: 'scene_image',
+          scene_index: index,
+          project_id: projectId,
+          user_id: userId,
+          metadata: { 
+            prompt: prompt.prompt,
+            imageModel,
+            imageWidth,
+            imageHeight,
+            qaRegeneration: true // Mark this as a QA regeneration
+          },
+          status: 'pending'
+        });
+
+      if (insertError) {
+        console.error(`[processQARegenJob] Error inserting pending prediction:`, insertError);
+        throw insertError;
+      }
+
+      startedCount++;
+      console.log(`[processQARegenJob] Started prediction ${predictionId} for scene ${index + 1}`);
+
     } catch (error) {
       failCount++;
       console.error(`[processQARegenJob] Error regenerating scene ${index + 1}:`, error);
     }
   }
 
-  console.log(`[processQARegenJob] Regeneration complete: ${successCount} success, ${failCount} failed`);
+  console.log(`[processQARegenJob] Regeneration started: ${startedCount} predictions created, ${failCount} failed`);
 
-  // Mark job as completed
+  // Update job with final counts
   await adminClient
     .from('generation_jobs')
     .update({ 
-      status: 'completed',
-      progress: rejectedIndices.length,
-      error_message: failCount > 0 ? `${failCount} images failed to regenerate` : null,
-      completed_at: new Date().toISOString()
+      total: startedCount,
+      error_message: failCount > 0 ? `${failCount} images failed to start` : null,
     })
     .eq('id', jobId);
 
-  console.log(`[processQARegenJob] Job completed, chainNextJob will handle upscale`);
-  // NOTE: chainNextJob will be called after this function returns and will handle chaining to upscale
+  console.log(`[processQARegenJob] Webhook mode active - images will be processed by replicate-webhook`);
+  
+  // Throw special error to indicate webhook mode (like other jobs)
+  throw new Error("WEBHOOK_MODE_ACTIVE");
 }
