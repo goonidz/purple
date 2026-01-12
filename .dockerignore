@@ -51,8 +51,8 @@ docs
 scripts/*.sh
 deploy.sh
 setup-*.sh
-*.conf
+nginx-*.conf
+!nginx.conf
 
 # Docker
-Dockerfile
 docker-compose.yml
