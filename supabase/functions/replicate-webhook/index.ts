@@ -1437,7 +1437,88 @@ async function chainNextJobFromWebhook(
     }
   } else if (nextJobType === 'qa') {
     const prompts = (project.prompts as any[]) || [];
-    total = prompts.filter((p: any) => p && p.imageUrl).length;
+    
+    // CRITICAL: Before chaining to QA, verify ALL images are actually generated
+    // Count prompts that have a prompt but no image - these need to be generated first
+    const missingImages = prompts.filter((p: any) => p && p.prompt && !p.imageUrl).length;
+    const totalWithImages = prompts.filter((p: any) => p && p.imageUrl).length;
+    const totalWithPrompts = prompts.filter((p: any) => p && p.prompt).length;
+    
+    console.log(`chainNextJobFromWebhook -> QA check: ${totalWithImages}/${totalWithPrompts} images generated, ${missingImages} missing`);
+    
+    if (missingImages > 0) {
+      console.log(`BLOCKING QA: ${missingImages} images still missing! Creating images job instead.`);
+      
+      // Create a new images job to generate the missing images
+      const { data: imagesJob, error: imagesJobError } = await adminClient
+        .from('generation_jobs')
+        .insert({
+          project_id: projectId,
+          user_id: userId,
+          job_type: 'images',
+          status: 'pending',
+          progress: 0,
+          total: Math.min(missingImages, 50),
+          metadata: {
+            semiAutoMode: true,
+            skipExisting: true,
+            useWebhook: true,
+            isChunkContinuation: true,
+            started_at: new Date().toISOString()
+          }
+        })
+        .select()
+        .single();
+      
+      if (imagesJobError) {
+        console.error(`Error creating images job for missing images:`, imagesJobError);
+        return;
+      }
+      
+      console.log(`Created images job ${imagesJob.id} for ${missingImages} missing images`);
+      
+      // Start the images job
+      EdgeRuntime.waitUntil((async () => {
+        const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+        const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+        
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        try {
+          const response = await fetch(`${supabaseUrl}/functions/v1/start-generation-job`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${serviceRoleKey}`
+            },
+            body: JSON.stringify({
+              jobId: imagesJob.id,
+              projectId,
+              userId,
+              jobType: 'images',
+              metadata: {
+                semiAutoMode: true,
+                skipExisting: true,
+                useWebhook: true,
+                isChunkContinuation: true
+              }
+            })
+          });
+          
+          if (response.ok) {
+            console.log(`Images job ${imagesJob.id} started successfully`);
+          } else {
+            console.error(`Failed to start images job: ${await response.text()}`);
+          }
+        } catch (error) {
+          console.error("Error starting images job:", error);
+        }
+      })());
+      
+      return; // Don't chain to QA yet - images job will chain when complete
+    }
+    
+    total = totalWithImages;
     
     if (total === 0) {
       console.log("No images to check, skipping QA");

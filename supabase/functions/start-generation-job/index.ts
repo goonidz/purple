@@ -648,7 +648,66 @@ async function chainNextJob(
     total = prompts.filter((p: any) => p && !p.imageUrl).length;
   } else if (nextJobType === 'qa') {
     const prompts = (project.prompts as any[]) || [];
-    total = prompts.filter((p: any) => p && p.imageUrl).length;
+    
+    // CRITICAL: Before chaining to QA, verify ALL images are actually generated
+    // Count prompts that have a prompt but no image - these need to be generated first
+    const missingImages = prompts.filter((p: any) => p && p.prompt && !p.imageUrl).length;
+    const totalWithImages = prompts.filter((p: any) => p && p.imageUrl).length;
+    const totalWithPrompts = prompts.filter((p: any) => p && p.prompt).length;
+    
+    console.log(`chainNextJob -> QA check: ${totalWithImages}/${totalWithPrompts} images generated, ${missingImages} missing`);
+    
+    if (missingImages > 0) {
+      console.log(`BLOCKING QA: ${missingImages} images still missing! Creating images job instead.`);
+      
+      // Create a new images job to generate the missing images
+      const { data: imagesJob, error: imagesJobError } = await adminClient
+        .from('generation_jobs')
+        .insert({
+          project_id: projectId,
+          user_id: userId,
+          job_type: 'images',
+          status: 'pending',
+          progress: 0,
+          total: Math.min(missingImages, 50),
+          metadata: {
+            semiAutoMode: true,
+            skipExisting: true,
+            useWebhook: true,
+            isChunkContinuation: true,
+            started_at: new Date().toISOString()
+          }
+        })
+        .select()
+        .single();
+      
+      if (imagesJobError) {
+        console.error(`Error creating images job for missing images:`, imagesJobError);
+        return;
+      }
+      
+      console.log(`Created images job ${imagesJob.id} for ${missingImages} missing images`);
+      
+      // Start the images job
+      EdgeRuntime.waitUntil(processChainedJob(
+        imagesJob.id,
+        projectId,
+        'images',
+        userId,
+        {
+          semiAutoMode: true,
+          skipExisting: true,
+          useWebhook: true,
+          isChunkContinuation: true
+        },
+        authHeader,
+        adminClient
+      ));
+      
+      return; // Don't chain to QA yet - images job will chain when complete
+    }
+    
+    total = totalWithImages;
     
     if (total === 0) {
       console.log("No images to QA check, skipping to next step");
