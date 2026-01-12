@@ -155,7 +155,22 @@ serve(async (req) => {
           const missingCount = prompts.filter((p: any) => p?.prompt && !p?.imageUrl).length;
           
           if (missingCount > 0) {
-            console.log(`Job ${job.id}: ${missingCount} images still missing - creating next chunk`);
+            console.log(`Job ${job.id}: ${missingCount} images still missing - checking if ready for next chunk`);
+            
+            // IMPORTANT: Before creating next chunk, ensure ALL predictions from THIS job are complete
+            // to avoid race conditions where some images are still being generated
+            const { data: pendingInThisJob } = await adminClient
+              .from('pending_predictions')
+              .select('id')
+              .eq('job_id', job.id)
+              .in('status', ['pending', 'processing']);
+            
+            if (pendingInThisJob && pendingInThisJob.length > 0) {
+              console.log(`Job ${job.id}: ${pendingInThisJob.length} predictions still pending/processing, NOT creating next chunk yet`);
+              continue; // Don't create next chunk yet - wait for all predictions to finish
+            }
+            
+            console.log(`Job ${job.id}: All predictions complete, creating next chunk for ${missingCount} images`);
             
             // Check for existing chunk job to prevent duplicates
             const { data: existingChunkJob } = await adminClient
@@ -258,7 +273,19 @@ serve(async (req) => {
           console.log(`Job ${job.id}: Upscale chunk complete. ${remainingToUpscale.length} images still need upscaling`);
           
           if (remainingToUpscale.length > 0) {
-            console.log(`Job ${job.id}: Creating next upscale chunk for ${remainingToUpscale.length} images`);
+            // IMPORTANT: Before creating next chunk, ensure ALL predictions from THIS job are complete
+            const { data: pendingInThisJob } = await adminClient
+              .from('pending_predictions')
+              .select('id')
+              .eq('job_id', job.id)
+              .in('status', ['pending', 'processing']);
+            
+            if (pendingInThisJob && pendingInThisJob.length > 0) {
+              console.log(`Job ${job.id}: ${pendingInThisJob.length} upscale predictions still pending/processing, NOT creating next chunk yet`);
+              continue; // Don't create next chunk yet - wait for all predictions to finish
+            }
+            
+            console.log(`Job ${job.id}: All upscale predictions complete, creating next chunk for ${remainingToUpscale.length} images`);
             
             // Check for existing upscale chunk job to prevent duplicates
             const { data: existingChunkJobs } = await adminClient

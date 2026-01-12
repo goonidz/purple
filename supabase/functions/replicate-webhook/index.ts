@@ -948,8 +948,20 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
       console.log(`Job ${jobId}: Upscale chunk complete. ${justUpscaledIndices.length} upscaled this chunk, ${remainingToUpscale.length} remaining`);
       
       if (remainingToUpscale.length > 0) {
+        // IMPORTANT: Before creating next chunk, ensure ALL predictions from THIS job are complete
+        const { data: pendingInThisJob } = await adminClient
+          .from('pending_predictions')
+          .select('id')
+          .eq('job_id', jobId)
+          .in('status', ['pending', 'processing']);
+        
+        if (pendingInThisJob && pendingInThisJob.length > 0) {
+          console.log(`Job ${jobId}: ${pendingInThisJob.length} upscale predictions still pending/processing, waiting before creating next chunk`);
+          return; // Don't create next chunk yet - wait for all predictions to finish
+        }
+        
         // More images to upscale - create next chunk job
-        console.log(`Job ${jobId}: Creating next upscale chunk for ${remainingToUpscale.length} images`);
+        console.log(`Job ${jobId}: All upscale predictions complete, creating next chunk for ${remainingToUpscale.length} images`);
         
         // Check for existing upscale chunk job to prevent duplicates (use limit(1) to avoid error on multiple results)
         const { data: existingChunkJobs } = await adminClient
