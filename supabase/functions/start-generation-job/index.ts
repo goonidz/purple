@@ -811,6 +811,15 @@ async function processChainedJob(
       await processImagesJob(jobId, projectId, userId, metadata, authHeader, adminClient);
     } else if (jobType === 'thumbnails') {
       await processThumbnailsJob(jobId, projectId, userId, metadata, authHeader, adminClient);
+    } else if (jobType === 'qa') {
+      await processQAJob(jobId, projectId, userId, metadata, authHeader, adminClient);
+    } else if (jobType === 'qa_regen') {
+      await processQARegenJob(jobId, projectId, userId, metadata, authHeader, adminClient);
+    } else if (jobType === 'upscale') {
+      await processUpscaleJob(jobId, projectId, userId, metadata, authHeader, adminClient);
+    } else {
+      console.log(`Unknown job type for chained job: ${jobType}`);
+      throw new Error(`Unknown job type: ${jobType}`);
     }
 
     // Mark job as completed
