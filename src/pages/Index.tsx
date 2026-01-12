@@ -33,7 +33,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Upload, X, Loader2, Image as ImageIcon, RefreshCw, Settings, Download, Video, Type, Check, Copy, FolderOpen, Pencil, AlertCircle, FileText, ArrowUp, MonitorPlay, Cloud, Trash2, Hash, Play, Sparkles, User as UserIcon, CheckCircle2, Clock, Maximize2, Calendar, ChevronDown, ChevronUp, Minimize2 } from "lucide-react";
+import { Upload, X, Loader2, Image as ImageIcon, RefreshCw, Settings, Download, Video, Type, Check, Copy, FolderOpen, Pencil, AlertCircle, FileText, ArrowUp, MonitorPlay, Cloud, Trash2, Play, Sparkles, User as UserIcon, CheckCircle2, Clock, Maximize2, Calendar, ChevronDown, ChevronUp, Minimize2 } from "lucide-react";
 import AppHeader from "@/components/AppHeader";
 import { ProjectConfigurationModal } from "@/components/ProjectConfigurationModal";
 import { toast } from "sonner";
@@ -57,10 +57,6 @@ import { PresetManager } from "@/components/PresetManager";
 import { ThumbnailGenerator } from "@/components/ThumbnailGenerator";
 import { DurationRangesEditor } from "@/components/DurationRangesEditor";
 import { SHORT_FORM_DURATION_RANGES } from "@/lib/durationRanges";
-import { TitleGenerator } from "@/components/TitleGenerator";
-import { DescriptionGenerator } from "@/components/DescriptionGenerator";
-import { TagGenerator } from "@/components/TagGenerator";
-import { YouTubeTester } from "@/components/YouTubeTester";
 import { YouTubeMetadataTab } from "@/components/YouTubeMetadataTab";
 import { DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import {
@@ -3229,25 +3225,9 @@ const Index = () => {
                   <ImageIcon className="h-3 w-3 sm:h-4 sm:w-4" />
                   <span className="hidden md:inline">Miniatures</span>
                 </TabsTrigger>
-                <TabsTrigger value="titles" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm px-2 sm:px-3">
-                  <Type className="h-3 w-3 sm:h-4 sm:w-4" />
-                  <span className="hidden md:inline">Titres</span>
-                </TabsTrigger>
-                <TabsTrigger value="descriptions" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm px-2 sm:px-3">
-                  <FileText className="h-3 w-3 sm:h-4 sm:w-4" />
-                  <span className="hidden md:inline">Desc.</span>
-                </TabsTrigger>
-                <TabsTrigger value="test" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm px-2 sm:px-3">
-                  <MonitorPlay className="h-3 w-3 sm:h-4 sm:w-4" />
-                  <span className="hidden md:inline">Test</span>
-                </TabsTrigger>
                 <TabsTrigger value="youtube" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm px-2 sm:px-3">
                   <Sparkles className="h-3 w-3 sm:h-4 sm:w-4" />
                   <span className="hidden md:inline">YouTube</span>
-                </TabsTrigger>
-                <TabsTrigger value="tags" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm px-2 sm:px-3">
-                  <Hash className="h-3 w-3 sm:h-4 sm:w-4" />
-                  <span className="hidden md:inline">Tags</span>
                 </TabsTrigger>
                 <TabsTrigger value="transcript" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm px-2 sm:px-3">
                   <Type className="h-3 w-3 sm:h-4 sm:w-4" />
@@ -4327,41 +4307,6 @@ const Index = () => {
                 </div>
               </TabsContent>
 
-              <TabsContent value="titles" className="m-0">
-                <div className="max-w-5xl mx-auto">
-                  <TitleGenerator
-                    projectId={currentProjectId || ""}
-                    videoScript={generatedPrompts.filter(p => p).map(p => p.text).join(" ")}
-                  />
-                </div>
-              </TabsContent>
-
-              <TabsContent value="descriptions" className="m-0">
-                <div className="max-w-5xl mx-auto">
-                  <DescriptionGenerator
-                    projectId={currentProjectId || ""}
-                    videoScript={generatedPrompts.filter(p => p).map(p => p.text).join(" ")}
-                    scenes={generatedPrompts
-                      .filter(p => p && p.startTime !== undefined)
-                      .map(p => ({
-                        text: p.text,
-                        startTime: p.startTime,
-                        endTime: p.endTime
-                      }))
-                      .sort((a, b) => a.startTime - b.startTime)}
-                  />
-                </div>
-              </TabsContent>
-
-              <TabsContent value="test" className="m-0">
-                <div className="max-w-6xl mx-auto">
-                  <YouTubeTester
-                    projectId={currentProjectId || ""}
-                    videoTitle={projectName}
-                  />
-                </div>
-              </TabsContent>
-
               <TabsContent value="youtube" className="m-0">
                 <div className="max-w-5xl mx-auto">
                   <YouTubeMetadataTab
@@ -4376,16 +4321,6 @@ const Index = () => {
                         endTime: p.endTime
                       }))
                     }
-                  />
-                </div>
-              </TabsContent>
-
-              <TabsContent value="tags" className="m-0">
-                <div className="max-w-3xl mx-auto">
-                  <TagGenerator
-                    projectId={currentProjectId || ""}
-                    videoScript={generatedPrompts.filter(p => p).map(p => p.text).join(" ")}
-                    videoTitle={projectName}
                   />
                 </div>
               </TabsContent>
