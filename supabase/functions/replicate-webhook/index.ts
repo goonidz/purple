@@ -474,6 +474,19 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
   // Handle chunk continuation or semi-auto mode chaining for images
   const metadata = job.metadata || {};
   if (job.job_type === 'images') {
+    // IMPORTANT: Before creating next chunk, ensure ALL predictions from THIS job are complete
+    // to avoid race conditions where some images are still being generated
+    const { data: pendingInThisJob } = await adminClient
+      .from('pending_predictions')
+      .select('id')
+      .eq('job_id', jobId)
+      .in('status', ['pending', 'processing']);
+    
+    if (pendingInThisJob && pendingInThisJob.length > 0) {
+      console.log(`Job ${jobId}: ${pendingInThisJob.length} predictions still pending/processing in this job, waiting before creating next chunk`);
+      return; // Don't create next chunk yet - some predictions from this job are still running
+    }
+    
     // Check if there are more images to process by re-checking the project
     // This is more reliable than relying on pre-calculated remainingAfterChunk
     // because images are added between chunk starts
@@ -486,7 +499,7 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
     const prompts = (project?.prompts as any[]) || [];
     const missingCount = prompts.filter((p: any) => p?.prompt && !p?.imageUrl).length;
     
-    console.log(`Job ${jobId} complete. Checking project - ${missingCount} images still missing`);
+    console.log(`Job ${jobId} complete. All predictions finished. Checking project - ${missingCount} images still missing`);
     
     if (missingCount > 0) {
       // More images need to be generated - create next chunk job
