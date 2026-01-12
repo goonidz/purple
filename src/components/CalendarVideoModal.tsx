@@ -526,11 +526,38 @@ export default function CalendarVideoModal({
     }
   };
 
+  // Clean YouTube URL by extracting video ID and rebuilding a clean URL
+  const cleanYouTubeUrl = (url: string): string => {
+    if (!url.trim()) return url;
+    
+    // Extract video ID from various YouTube URL formats
+    const patterns = [
+      /(?:youtube\.com\/watch\?v=)([a-zA-Z0-9_-]{11})(?:&.*)?/,  // Standard watch URL with params
+      /(?:youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})(?:\?.*)?/,    // Embed URL
+      /(?:youtube\.com\/v\/)([a-zA-Z0-9_-]{11})(?:\?.*)?/,        // Old format
+      /(?:youtu\.be\/)([a-zA-Z0-9_-]{11})(?:\?.*)?/,              // Shortened URL
+      /(?:youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})(?:\?.*)?/    // Shorts URL
+    ];
+    
+    for (const pattern of patterns) {
+      const match = url.match(pattern);
+      if (match && match[1]) {
+        // Return clean URL with just the video ID
+        return `https://www.youtube.com/watch?v=${match[1]}`;
+      }
+    }
+    
+    // If no pattern matches, return original URL
+    return url;
+  };
+
   const handleSourceUrlChange = async (url: string) => {
-    setSourceUrl(url);
+    // Clean the URL first to remove unnecessary parameters
+    const cleanedUrl = cleanYouTubeUrl(url);
+    setSourceUrl(cleanedUrl);
     
     // Clear thumbnail and transcript if URL is empty
-    if (!url.trim()) {
+    if (!cleanedUrl.trim()) {
       setSourceThumbnailUrl(null);
       setSourceTranscript(null);
       return;
@@ -538,27 +565,27 @@ export default function CalendarVideoModal({
     
     // Verify URL is a valid YouTube URL before proceeding
     const youtubePattern = /(?:youtube\.com\/(?:watch\?v=|embed\/|v\/|shorts\/)|youtu\.be\/|^)([a-zA-Z0-9_-]{11})/;
-    if (!youtubePattern.test(url)) {
+    if (!youtubePattern.test(cleanedUrl)) {
       // Not a valid YouTube URL, don't scrape
       return;
     }
     
-    // Scrape title and thumbnail first
-    const scrapeResult = await scrapeYouTubeUrl(url);
+    // Scrape title and thumbnail first (use cleaned URL)
+    const scrapeResult = await scrapeYouTubeUrl(cleanedUrl);
     
     // Immediately launch transcript scraping after title/thumbnail are scraped
     // Launch in background without awaiting - it will continue even if user leaves
     // If entry exists, use it; otherwise create it automatically
     if (entry?.id) {
       // Entry exists, launch transcript scraping immediately (fire and forget)
-      scrapeTranscript(url, entry.id).catch(err => {
+      scrapeTranscript(cleanedUrl, entry.id).catch(err => {
         console.error("Transcript scraping error (background):", err);
         // Don't show error to user if they've left the page
       });
     } else {
       // Entry doesn't exist yet, create it automatically with available data
       // Use scraped title if available, or current title, or placeholder
-      createEntryAndScrapeTranscript(url, scrapeResult?.title).catch(err => {
+      createEntryAndScrapeTranscript(cleanedUrl, scrapeResult?.title).catch(err => {
         console.error("Error creating entry and scraping transcript (background):", err);
         // Don't show error to user if they've left the page
       });
