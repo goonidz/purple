@@ -1,8 +1,34 @@
 # Configuration HTTPS pour purpleai.duckdns.org
 
-Ce guide explique comment activer HTTPS gratuitement avec Let's Encrypt pour votre domaine DuckDNS.
+✅ **Mise à jour 11 janvier 2026** : HTTPS est maintenant **configuré automatiquement** lors du déploiement ! Le script `deploy.sh` configure automatiquement SSL avec Let's Encrypt. Ce guide est conservé pour référence.
 
-## Prérequis
+---
+
+## ✅ Statut actuel
+
+**HTTPS actif** : https://purpleai.duckdns.org  
+**SSL** : Let's Encrypt (renouvellement automatique)  
+**Configuration** : Automatique via `deploy.sh`
+
+---
+
+## 🚀 Installation automatique (DÉJÀ FAIT)
+
+Lors du déploiement avec `./deploy.sh`, le script :
+1. ✅ Configure nginx automatiquement
+2. ✅ Obtient le certificat SSL Let's Encrypt
+3. ✅ Configure la redirection HTTP → HTTPS
+4. ✅ Configure le renouvellement automatique
+
+**Tu n'as rien à faire** ! HTTPS est déjà configuré.
+
+---
+
+## 📚 Guide manuel (pour référence historique)
+
+Ce guide explique comment activer HTTPS gratuitement avec Let's Encrypt pour votre domaine DuckDNS **si besoin de le refaire manuellement**.
+
+### Prérequis
 
 - Accès SSH au VPS (51.91.158.233)
 - Le domaine `purpleai.duckdns.org` doit pointer vers l'IP du VPS

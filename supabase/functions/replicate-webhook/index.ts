@@ -55,6 +55,15 @@ serve(async (req) => {
       });
     }
 
+    // CRITICAL: Ignore duplicate webhooks for already completed/failed predictions
+    if (prediction.status === 'completed' || prediction.status === 'failed') {
+      console.log(`Webhook DUPLICATE IGNORED: Prediction ${predictionId} already ${prediction.status}`);
+      return new Response(JSON.stringify({ ok: true, message: "Already processed" }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     console.log(`Found prediction ${predictionId} for job ${prediction.job_id}, type: ${prediction.prediction_type}`);
 
     // Handle based on status
@@ -487,6 +496,11 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
       return; // Don't create next chunk yet - some predictions from this job are still running
     }
     
+    // NOTE: We no longer check for pending predictions across the entire project here.
+    // The database unique index (idx_unique_active_prediction_per_scene) will prevent
+    // duplicate predictions at the DB level. This allows chunks to continue even if
+    // some old predictions are stuck in other jobs.
+    
     // Check if there are more images to process by re-checking the project
     // This is more reliable than relying on pre-calculated remainingAfterChunk
     // because images are added between chunk starts
@@ -506,13 +520,41 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
       console.log(`Job ${jobId}: Creating next chunk for ${missingCount} remaining images`);
       
       // Check for existing chunk job to prevent duplicates
-      // Use maybeSingle() instead of single() to avoid errors when multiple jobs exist
+      // But first, clean up any stuck jobs (pending/processing for > 10 minutes with no recent activity)
+      const TEN_MINUTES_AGO = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+      
+      const { data: stuckJobs } = await adminClient
+        .from('generation_jobs')
+        .select('id, updated_at, created_at')
+        .eq('project_id', job.project_id)
+        .eq('job_type', 'images')
+        .in('status', ['pending', 'processing'])
+        .lt('updated_at', TEN_MINUTES_AGO)
+        .neq('id', jobId);
+      
+      if (stuckJobs && stuckJobs.length > 0) {
+        console.log(`Job ${jobId}: Found ${stuckJobs.length} stuck image jobs, marking them as failed`);
+        for (const stuckJob of stuckJobs) {
+          await adminClient
+            .from('generation_jobs')
+            .update({ 
+              status: 'failed', 
+              error_message: 'Job stuck - cleaned up automatically',
+              completed_at: new Date().toISOString()
+            })
+            .eq('id', stuckJob.id);
+          console.log(`Job ${jobId}: Marked stuck job ${stuckJob.id} as failed`);
+        }
+      }
+      
+      // Now check for existing active chunk jobs
       const { data: existingChunkJobs } = await adminClient
         .from('generation_jobs')
         .select('id')
         .eq('project_id', job.project_id)
         .eq('job_type', 'images')
         .in('status', ['pending', 'processing'])
+        .neq('id', jobId)
         .limit(1);
 
       if (existingChunkJobs && existingChunkJobs.length > 0) {
@@ -586,7 +628,8 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
       }
     }
     
-    // All images are done (missingCount === 0) - QA check before upscaling
+    // All images are done (missingCount === 0)
+    // In semi-auto mode, the QA check is now done as a separate job (chained via chainNextJobFromWebhook)
     // Get full project data to check image model and aspect ratio
     const { data: fullProject } = await adminClient
       .from('projects')
@@ -594,10 +637,9 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
       .eq('id', job.project_id)
       .single();
     
-    // QA Check - only in semi-auto mode or when generating all images
-    const shouldRunQA = metadata.semiAutoMode === true || metadata.generateAllImages === true;
-    
-    if (shouldRunQA && fullProject) {
+    // NOTE: QA check is now handled by a separate 'qa' job in semi-auto mode
+    // Skip inline QA and go directly to checking upscale needs
+    if (false && fullProject) {
       console.log(`Job ${jobId}: Running QA check on generated images`);
       
       const projectPrompts = (fullProject.prompts as any[]) || [];
@@ -690,7 +732,12 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
                   });
                 
                 if (predError) {
+                  if (predError.code === '23505') {
+                    console.log(`Job ${jobId}: Scene ${index + 1} regeneration already in progress (duplicate prevented by DB)`);
+                    return; // Skip triggering regeneration - already being processed
+                  }
                   console.error(`Job ${jobId}: Failed to create regeneration prediction for scene ${index + 1}:`, predError);
+                  return; // Don't trigger regeneration if prediction creation failed
                 } else {
                   console.log(`Job ${jobId}: Created regeneration prediction for scene ${index + 1}`);
                   
@@ -776,13 +823,8 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
     console.log(`Job ${jobId}: Checking upscale need - model: ${imageModel}, isZImage: ${isZImage}, dimensions: ${imageWidth}x${imageHeight}, is16x9: ${is16x9}`);
     
     // Check if upscaling is needed (Z-Image 16:9)
-    // IMPORTANT: In semi-auto mode, skip this logic - QA will handle upscaling after quality check
-    const skipAutoUpscale = metadata.semiAutoMode === true;
-    if (skipAutoUpscale) {
-      console.log(`Job ${jobId}: Semi-auto mode detected, skipping automatic upscale creation (QA will handle it)`);
-    }
-    
-    if (isZImage && is16x9 && !skipAutoUpscale) {
+    // In semi-auto mode, we STILL need to create upscale job after QA is done
+    if (isZImage && is16x9) {
       // First, check if all images are already upscaled
       const projectPrompts = (fullProject?.prompts as any[]) || [];
       const imagesWithUrl = projectPrompts.filter((p: any) => p && p.imageUrl).length;
@@ -793,10 +835,11 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
       
       if (!needsUpscale) {
         console.log(`Job ${jobId}: All images already upscaled, skipping upscale job creation`);
-        // Continue to semi-auto chaining if enabled (thumbnails)
+        // Continue to semi-auto chaining if enabled
         if (metadata.semiAutoMode === true) {
           console.log(`Job ${jobId}: All images upscaled. Chaining to thumbnails.`);
-          await chainNextJobFromWebhook(adminClient, job.project_id, job.user_id, job.job_type, metadata);
+          // Pass 'upscale' as completed job type so it chains to thumbnails
+          await chainNextJobFromWebhook(adminClient, job.project_id, job.user_id, 'upscale', metadata);
         }
         return; // Don't proceed further
       } else {
@@ -885,9 +928,9 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
       }
     }
     
-    // Proceed to semi-auto chaining if enabled (thumbnails)
+    // Proceed to semi-auto chaining if enabled
     if (metadata.semiAutoMode === true) {
-      console.log(`Job ${jobId}: All images generated. Chaining to thumbnails.`);
+      console.log(`Job ${jobId}: All images generated. Chaining to next step (QA).`);
       await chainNextJobFromWebhook(adminClient, job.project_id, job.user_id, job.job_type, metadata);
     }
   } else if (job.job_type === 'upscale') {
@@ -959,6 +1002,9 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
           console.log(`Job ${jobId}: ${pendingInThisJob.length} upscale predictions still pending/processing, waiting before creating next chunk`);
           return; // Don't create next chunk yet - wait for all predictions to finish
         }
+        
+        // NOTE: We no longer check for pending upscale predictions across the entire project here.
+        // The database unique index will prevent duplicate predictions at the DB level.
         
         // More images to upscale - create next chunk job
         console.log(`Job ${jobId}: All upscale predictions complete, creating next chunk for ${remainingToUpscale.length} images`);
@@ -1191,7 +1237,7 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
                   
                   if (predictionId) {
                     // Create pending_prediction for webhook tracking (like processUpscaleJob)
-                    await adminClient
+                    const { error: insertError } = await adminClient
                       .from('pending_predictions')
                       .insert({
                         job_id: upscaleJob.id,
@@ -1207,7 +1253,15 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
                         status: 'pending'
                       });
                     
-                    console.log(`Job ${jobId}: Upscale started for scene ${sceneIndex}, prediction: ${predictionId}`);
+                    if (insertError) {
+                      if (insertError.code === '23505') {
+                        console.log(`Job ${jobId}: Upscale for scene ${sceneIndex} already in progress (duplicate prevented by DB)`);
+                      } else {
+                        console.error(`Job ${jobId}: Failed to create upscale prediction:`, insertError);
+                      }
+                    } else {
+                      console.log(`Job ${jobId}: Upscale started for scene ${sceneIndex}, prediction: ${predictionId}`);
+                    }
                   } else {
                     throw new Error('No prediction ID returned');
                   }
@@ -1331,7 +1385,8 @@ async function chainNextJobFromWebhook(
   if (completedJobType === 'prompts') {
     nextJobType = 'images';
   } else if (completedJobType === 'images') {
-    nextJobType = 'qa'; // Chain to QA instead of directly to thumbnails
+    // After images, chain to QA to check image quality
+    nextJobType = 'qa';
   } else if (completedJobType === 'qa' || completedJobType === 'qa_regen') {
     nextJobType = 'upscale'; // After QA/regen, chain to upscale
   } else if (completedJobType === 'upscale') {
@@ -1528,6 +1583,23 @@ async function chainNextJobFromWebhook(
     if (!thumbnailPresetId) {
       console.log(`No thumbnail preset. Pipeline complete.`);
       return;
+    }
+
+    // Check if the channel has disabled thumbnail generation
+    const { data: calendarEntry } = await adminClient
+      .from('content_calendar')
+      .select('channel_id, channels!inner(thumbnail_preset_enabled)')
+      .eq('project_id', projectId)
+      .maybeSingle();
+    
+    if (calendarEntry) {
+      const channelData = (calendarEntry as any).channels;
+      const thumbnailEnabled = channelData?.thumbnail_preset_enabled !== false;
+      
+      if (!thumbnailEnabled) {
+        console.log(`Thumbnail generation disabled for channel. Pipeline complete.`);
+        return;
+      }
     }
 
     const { data: thumbnailPreset } = await adminClient

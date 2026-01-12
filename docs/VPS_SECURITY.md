@@ -42,12 +42,26 @@ Le **11 janvier 2026**, un **cryptominer malveillant** a été découvert sur le
 
 **Résultat** : Les bots ont réussi à deviner le mot de passe et ont installé le cryptominer.
 
-### Actions correctives
+### Actions correctives - Résolution complète
 
-✅ **Malware supprimé** : Tous les processus malveillants ont été tués
-✅ **fail2ban installé** : Bannit automatiquement les attaquants après 5 tentatives
-✅ **Authentification SSH sécurisée** : Mot de passe désactivé, seulement clés SSH
-✅ **`/dev/shm` protégé** : Monté en `noexec` pour empêcher l'exécution de malwares
+**Tentative 1 : Nettoyage manuel** (ÉCHEC)
+- ❌ Malware tué mais relancé sous nouveaux noms (`I9aFf`, `sUsxVLdJ`)
+- ❌ Mécanisme de persistance non identifié
+- ❌ Décision : **Réinstallation complète nécessaire**
+
+**Solution finale : Réinstallation VPS** (SUCCÈS)
+- ✅ **VPS réinstallé** : Ubuntu 22.04 LTS fraîchement installé (11 jan 2026, 22:10 UTC)
+- ✅ **Nouvelle clé SSH** : Génération d'une nouvelle clé (`id_ed25519_new`)
+- ✅ **fail2ban installé** : Protection contre brute-force SSH
+- ✅ **SSH password désactivé** : Authentification par clé SSH uniquement
+- ✅ **`/dev/shm` et `/tmp` en noexec** : Empêche l'exécution de malwares
+- ✅ **Tous les services redéployés** : Frontend, Video Render, Webhook
+- ✅ **SSL configuré** : Certificat Let's Encrypt automatique
+- ✅ **Aucune perte de données** : Tout dans Supabase + GitHub
+
+**Durée totale** : 3 heures (incluant troubleshooting)  
+**Downtime** : ~30 minutes  
+**Statut final** : ✅ VPS propre, sécurisé et opérationnel
 ✅ **Services redémarrés** : Tous les services PM2 fonctionnent normalement
 
 ---

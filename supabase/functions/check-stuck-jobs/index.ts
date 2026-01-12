@@ -170,6 +170,10 @@ serve(async (req) => {
               continue; // Don't create next chunk yet - wait for all predictions to finish
             }
             
+            // NOTE: We no longer check for pending predictions across the entire project here.
+            // The database unique index (idx_unique_active_prediction_per_scene) will prevent
+            // duplicate predictions at the DB level.
+            
             console.log(`Job ${job.id}: All predictions complete, creating next chunk for ${missingCount} images`);
             
             // Check for existing chunk job to prevent duplicates
@@ -284,6 +288,9 @@ serve(async (req) => {
               console.log(`Job ${job.id}: ${pendingInThisJob.length} upscale predictions still pending/processing, NOT creating next chunk yet`);
               continue; // Don't create next chunk yet - wait for all predictions to finish
             }
+            
+            // NOTE: We no longer check for pending upscale predictions across the entire project here.
+            // The database unique index will prevent duplicate predictions at the DB level.
             
             console.log(`Job ${job.id}: All upscale predictions complete, creating next chunk for ${remainingToUpscale.length} images`);
             

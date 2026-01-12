@@ -600,6 +600,13 @@ async function chainNextJob(
     
     nextJobType = 'images';
   } else if (completedJobType === 'images') {
+    // After images, chain to QA for quality check
+    nextJobType = 'qa';
+  } else if (completedJobType === 'qa' || completedJobType === 'qa_regen') {
+    // After QA/regen, chain to upscale
+    nextJobType = 'upscale';
+  } else if (completedJobType === 'upscale') {
+    // After upscale, chain to thumbnails
     nextJobType = 'thumbnails';
   }
   // After thumbnails, the pipeline is complete
@@ -622,6 +629,46 @@ async function chainNextJob(
   if (nextJobType === 'images') {
     const prompts = (project.prompts as any[]) || [];
     total = prompts.filter((p: any) => p && !p.imageUrl).length;
+  } else if (nextJobType === 'qa') {
+    const prompts = (project.prompts as any[]) || [];
+    total = prompts.filter((p: any) => p && p.imageUrl).length;
+    
+    if (total === 0) {
+      console.log("No images to QA check, skipping to next step");
+      await chainNextJob(projectId, userId, 'qa', authHeader, adminClient);
+      return;
+    }
+  } else if (nextJobType === 'upscale') {
+    const prompts = (project.prompts as any[]) || [];
+    const imageModel = project.image_model || 'seedream-4.5';
+    const imageWidth = project.image_width || 1920;
+    const imageHeight = project.image_height || 1080;
+    
+    // Check if this is Z-Image 16:9
+    const isZImage = imageModel === 'z-image-turbo' || imageModel === 'z-image-turbo-lora';
+    const ratio = imageWidth / imageHeight;
+    const is16x9 = Math.abs(ratio - (16 / 9)) < 0.1;
+    
+    if (!isZImage || !is16x9) {
+      console.log("Not Z-Image 16:9, skipping upscale");
+      await chainNextJob(projectId, userId, 'upscale', authHeader, adminClient);
+      return;
+    }
+    
+    total = prompts.filter((p: any) => p && p.imageUrl).length;
+    
+    if (total === 0) {
+      console.log("No images to upscale, skipping to next step");
+      await chainNextJob(projectId, userId, 'upscale', authHeader, adminClient);
+      return;
+    }
+    
+    jobMetadata = {
+      ...jobMetadata,
+      imageModel,
+      imageWidth,
+      imageHeight
+    };
   } else if (nextJobType === 'thumbnails') {
     total = 3; // Always 3 thumbnails
     
@@ -632,6 +679,24 @@ async function chainNextJob(
       console.log(`No thumbnail preset selected for project ${projectId}. Skipping thumbnails.`);
       console.log(`Semi-automatic pipeline completed for project ${projectId} (without thumbnails)`);
       return;
+    }
+    
+    // Check if the channel has disabled thumbnail generation
+    const { data: calendarEntry } = await adminClient
+      .from('content_calendar')
+      .select('channel_id, channels!inner(thumbnail_preset_enabled)')
+      .eq('project_id', projectId)
+      .maybeSingle();
+    
+    if (calendarEntry) {
+      const channelData = (calendarEntry as any).channels;
+      const thumbnailEnabled = channelData?.thumbnail_preset_enabled !== false;
+      
+      if (!thumbnailEnabled) {
+        console.log(`Thumbnail generation disabled for channel. Skipping thumbnails.`);
+        console.log(`Semi-automatic pipeline completed for project ${projectId} (without thumbnails)`);
+        return;
+      }
     }
     
     // Fetch the thumbnail preset
@@ -1599,12 +1664,60 @@ async function processImagesJob(
 
   // Filter prompts that need images - ALWAYS re-filter from DB to get fresh state
   const skipExisting = metadata.skipExisting !== false;
+  
+  // FIRST: Clean up stuck predictions (pending/processing for > 5 minutes)
+  // This allows scenes with stuck predictions to be retried
+  const FIVE_MINUTES_AGO = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+  
+  const { data: stuckPredictions } = await adminClient
+    .from('pending_predictions')
+    .select('id, scene_index')
+    .eq('project_id', projectId)
+    .eq('prediction_type', 'scene_image')
+    .in('status', ['pending', 'processing', 'starting'])
+    .lt('created_at', FIVE_MINUTES_AGO);
+  
+  if (stuckPredictions && stuckPredictions.length > 0) {
+    console.log(`CLEANUP: Found ${stuckPredictions.length} stuck predictions older than 5 minutes, marking as failed`);
+    const stuckIds = stuckPredictions.map((p: any) => p.id);
+    await adminClient
+      .from('pending_predictions')
+      .update({ 
+        status: 'failed', 
+        error_message: 'Timeout - cleaned up automatically',
+        completed_at: new Date().toISOString()
+      })
+      .in('id', stuckIds);
+    console.log(`CLEANUP: Marked ${stuckIds.length} stuck predictions as failed (scenes: ${stuckPredictions.slice(0, 5).map((p: any) => p.scene_index + 1).join(', ')}...)`);
+  }
+  
+  // NOW check for active predictions (after cleanup)
+  // This prevents creating new predictions for scenes that are REALLY still being processed
+  const { data: activePredictions } = await adminClient
+    .from('pending_predictions')
+    .select('scene_index')
+    .eq('project_id', projectId)
+    .eq('prediction_type', 'scene_image')
+    .in('status', ['pending', 'processing', 'starting']);
+  
+  const scenesWithActivePredictions = new Set(
+    (activePredictions || []).map((p: any) => p.scene_index)
+  );
+  
+  if (scenesWithActivePredictions.size > 0) {
+    console.log(`DUPLICATE PREVENTION: ${scenesWithActivePredictions.size} scenes already have active predictions: [${Array.from(scenesWithActivePredictions).slice(0, 10).join(', ')}${scenesWithActivePredictions.size > 10 ? '...' : ''}]`);
+  }
+  
   const allPromptsToProcess = prompts
     .map((prompt: any, index: number) => ({ prompt, index }))
-    .filter(({ prompt }: any) => prompt && (!skipExisting || !prompt.imageUrl));
+    .filter(({ prompt, index }: any) => 
+      prompt && 
+      (!skipExisting || !prompt.imageUrl) &&
+      !scenesWithActivePredictions.has(index) // Skip scenes with active predictions
+    );
 
   if (allPromptsToProcess.length === 0) {
-    console.log("No images to generate");
+    console.log("No images to generate (all have images or active predictions)");
     return;
   }
 
@@ -1930,6 +2043,14 @@ async function processImagesJob(
                 }
                 success = true;
                 break;
+              } else if (insertError.code === '23505') {
+                // Unique constraint violation - prediction already exists for this scene
+                // This is OK - another process already created it, skip this scene
+                console.log(`Scene ${index + 1}: Prediction already exists (duplicate prevented by DB), skipping`);
+                success = true; // Consider it a success - scene is being processed
+                break;
+              } else {
+                console.error(`Scene ${index + 1}: Insert error: ${insertError.message}`);
               }
             }
           }
@@ -1992,13 +2113,55 @@ async function processImagesJob(
       .eq('id', jobId);
   }
 
-  // If no predictions were started, mark job as failed
+  // If no predictions were started, check if there are still images to generate
   if (startedCount === 0) {
+    // Re-check how many images are actually missing
+    const { data: projectCheck } = await adminClient
+      .from('projects')
+      .select('prompts')
+      .eq('id', projectId)
+      .single();
+    
+    const promptsCheck = (projectCheck?.prompts as any[]) || [];
+    const stillMissingCount = promptsCheck.filter((p: any) => p?.prompt && !p?.imageUrl).length;
+    
+    if (stillMissingCount > 0) {
+      // Images are still missing but we couldn't create predictions
+      // This might be because duplicates were blocked - mark job as completed and let check-stuck-jobs handle it
+      console.log(`No new predictions started but ${stillMissingCount} images still missing. Marking job completed to allow retry.`);
+      await adminClient
+        .from('generation_jobs')
+        .update({ 
+          status: 'completed',
+          completed_at: new Date().toISOString()
+        })
+        .eq('id', jobId);
+      
+      // Trigger check-stuck-jobs to clean up and retry
+      EdgeRuntime.waitUntil((async () => {
+        await new Promise(resolve => setTimeout(resolve, 5000));
+        const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+        try {
+          await fetch(`${supabaseUrl}/functions/v1/check-stuck-jobs`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ projectId }),
+          });
+        } catch (e) {
+          console.error('Failed to trigger check-stuck-jobs:', e);
+        }
+      })());
+      return;
+    }
+    
+    // No images missing - job is done
     await adminClient
       .from('generation_jobs')
       .update({ 
-        status: 'failed',
-        error_message: 'Aucune génération démarrée - vérifiez votre quota Replicate',
+        status: 'completed',
         completed_at: new Date().toISOString()
       })
       .eq('id', jobId);
@@ -2829,7 +2992,13 @@ async function processSingleImageJob(
     });
 
   if (insertError) {
-    console.error(`Failed to create pending_prediction:`, insertError);
+    if (insertError.code === '23505') {
+      // Unique constraint violation - prediction already exists for this scene
+      console.log(`[processSingleImageJob] Scene ${sceneIndex + 1}: Prediction already exists (duplicate prevented by DB)`);
+      // The image is already being generated, don't throw error
+    } else {
+      console.error(`Failed to create pending_prediction:`, insertError);
+    }
   }
 
   console.log(`[processSingleImageJob] Single image generation started for scene ${sceneIndex + 1}`);
@@ -3188,10 +3357,28 @@ async function processUpscaleJob(
   // - Have imageUrl (generated)
   // - Are NOT already upscaled (check isUpscaled flag in prompt OR upscaledIndices from current job run)
   // - Image dimensions are below 1920x1080 (if stored)
+  // - No active upscale prediction already in progress
   const alreadyUpscaledIndices = new Set(metadata.upscaledIndices || []);
+  
+  // CRITICAL: Also check for pending/processing upscale predictions to avoid duplicates
+  const { data: activeUpscalePredictions } = await adminClient
+    .from('pending_predictions')
+    .select('scene_index')
+    .eq('project_id', projectId)
+    .eq('prediction_type', 'upscale')
+    .in('status', ['pending', 'processing', 'starting']);
+  
+  const scenesWithActiveUpscalePredictions = new Set(
+    (activeUpscalePredictions || []).map((p: any) => p.scene_index)
+  );
+  
+  if (scenesWithActiveUpscalePredictions.size > 0) {
+    console.log(`UPSCALE DUPLICATE PREVENTION: ${scenesWithActiveUpscalePredictions.size} scenes already have active upscale predictions: [${Array.from(scenesWithActiveUpscalePredictions).slice(0, 10).join(', ')}${scenesWithActiveUpscalePredictions.size > 10 ? '...' : ''}]`);
+  }
   
   let skippedHighRes = 0;
   let skippedAlreadyUpscaled = 0;
+  let skippedActivePrediction = 0;
   
   const allImagesToUpscale = prompts
     .map((prompt: any, index: number) => ({ prompt, index }))
@@ -3211,6 +3398,12 @@ async function processUpscaleJob(
         return false;
       }
       
+      // Skip if there's already an active upscale prediction for this scene
+      if (scenesWithActiveUpscalePredictions.has(index)) {
+        skippedActivePrediction++;
+        return false;
+      }
+      
       // Skip if image dimensions are already >= 1920x1080 (high res)
       const imgWidth = prompt.imageWidth || 0;
       const imgHeight = prompt.imageHeight || 0;
@@ -3223,7 +3416,7 @@ async function processUpscaleJob(
       return true;
     });
   
-  console.log(`Found ${allImagesToUpscale.length} images to upscale (skipped: ${skippedAlreadyUpscaled} already upscaled, ${skippedHighRes} high-res)`);
+  console.log(`Found ${allImagesToUpscale.length} images to upscale (skipped: ${skippedAlreadyUpscaled} already upscaled, ${skippedHighRes} high-res, ${skippedActivePrediction} active predictions)`);
 
   if (allImagesToUpscale.length === 0) {
     console.log("No images to upscale in this chunk - marking job as completed");
@@ -3438,6 +3631,13 @@ async function processUpscaleJob(
             if (!insertError) {
               startedCount++;
               console.log(`Scene ${index + 1} upscale started: ${predictionId}`);
+            } else if (insertError.code === '23505') {
+              // Unique constraint violation - upscale prediction already exists for this scene
+              console.log(`Scene ${index + 1}: Upscale prediction already exists (duplicate prevented by DB), skipping`);
+              // Don't count as started or failed - it's already being processed
+            } else {
+              console.error(`Scene ${index + 1}: Upscale insert error: ${insertError.message}`);
+              failedCount++;
             }
           }
         } else {
