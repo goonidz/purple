@@ -811,127 +811,16 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
       console.log(`Job ${jobId}: All images passed QA or were regenerated. Proceeding to upscale.`);
     }
     
-    const imageModel = fullProject?.image_model || '';
-    const isZImage = imageModel === 'z-image-turbo' || imageModel === 'z-image-turbo-lora';
-    const imageWidth = fullProject?.image_width || 1920;
-    const imageHeight = fullProject?.image_height || 1080;
-    
-    // More robust 16:9 detection: check ratio OR exact dimensions (960x544 is the base for upscaling)
-    const ratio = imageWidth / imageHeight;
-    const is16x9 = Math.abs(ratio - (16 / 9)) < 0.1 || (imageWidth === 960 && imageHeight === 544);
-    
-    console.log(`Job ${jobId}: Checking upscale need - model: ${imageModel}, isZImage: ${isZImage}, dimensions: ${imageWidth}x${imageHeight}, is16x9: ${is16x9}`);
-    
-    // Check if upscaling is needed (Z-Image 16:9)
-    // In semi-auto mode, we STILL need to create upscale job after QA is done
-    if (isZImage && is16x9) {
-      // First, check if all images are already upscaled
-      const projectPrompts = (fullProject?.prompts as any[]) || [];
-      const imagesWithUrl = projectPrompts.filter((p: any) => p && p.imageUrl).length;
-      const imagesUpscaled = projectPrompts.filter((p: any) => p && p.imageUrl && p.isUpscaled === true).length;
-      const needsUpscale = imagesWithUrl > imagesUpscaled;
-      
-      console.log(`Job ${jobId}: Upscale check - ${imagesWithUrl} images total, ${imagesUpscaled} upscaled, ${imagesWithUrl - imagesUpscaled} need upscaling`);
-      
-      if (!needsUpscale) {
-        console.log(`Job ${jobId}: All images already upscaled, skipping upscale job creation`);
-        // Continue to semi-auto chaining if enabled
-        if (metadata.semiAutoMode === true) {
-          console.log(`Job ${jobId}: All images upscaled. Chaining to thumbnails.`);
-          // Pass 'upscale' as completed job type so it chains to thumbnails
-          await chainNextJobFromWebhook(adminClient, job.project_id, job.user_id, 'upscale', metadata);
-        }
-        return; // Don't proceed further
-      } else {
-        // Check if there's already an active upscale job (pending or processing)
-        const { data: existingUpscaleJobs } = await adminClient
-          .from('generation_jobs')
-          .select('id, status')
-          .eq('project_id', job.project_id)
-          .eq('job_type', 'upscale')
-          .in('status', ['pending', 'processing'])
-          .limit(1);
-        
-        const existingUpscaleJob = existingUpscaleJobs?.[0];
-        
-        if (existingUpscaleJob) {
-          console.log(`Job ${jobId}: Active upscale job already exists (${existingUpscaleJob.id}, status: ${existingUpscaleJob.status}), skipping creation`);
-        } else {
-          // Create upscale job for images that need upscaling
-          const imagesNeedingUpscale = imagesWithUrl - imagesUpscaled;
-          
-          console.log(`Job ${jobId}: Z-Image 16:9 detected. Creating upscale job for ${imagesNeedingUpscale} images (${imagesWithUrl} total, ${imagesUpscaled} already upscaled).`);
-          
-          const { data: upscaleJob, error: upscaleError } = await adminClient
-            .from('generation_jobs')
-            .insert({
-              project_id: job.project_id,
-              user_id: job.user_id,
-              job_type: 'upscale',
-              status: 'pending',
-              progress: 0,
-              total: imagesNeedingUpscale,
-              metadata: {
-                ...metadata,
-                imageModel,
-                skipExisting: true, // Skip already upscaled images
-                totalGlobal: imagesNeedingUpscale
-              }
-            })
-            .select()
-            .single();
-        
-        if (upscaleError) {
-          console.error("Error creating upscale job:", upscaleError);
-        } else {
-          console.log(`Created upscale job ${upscaleJob.id}`);
-          
-          // Start upscale job in background
-          EdgeRuntime.waitUntil((async () => {
-            const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-            const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-            
-            await new Promise(resolve => setTimeout(resolve, 2000));
-            
-            try {
-              const response = await fetch(`${supabaseUrl}/functions/v1/start-generation-job`, {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'Authorization': `Bearer ${serviceRoleKey}`
-                },
-                body: JSON.stringify({
-                  jobId: upscaleJob.id,
-                  projectId: job.project_id,
-                  userId: job.user_id,
-                  jobType: 'upscale',
-                  metadata: {
-                    ...metadata,
-                    imageModel
-                  }
-                })
-              });
-              
-              if (response.ok) {
-                console.log(`Upscale job ${upscaleJob.id} started successfully`);
-              } else {
-                console.error(`Failed to start upscale job: ${await response.text()}`);
-              }
-            } catch (error) {
-              console.error("Error starting upscale job:", error);
-            }
-          })());
-          
-          return; // Don't proceed to thumbnails yet - wait for upscale to complete
-        }
-        }
-      }
-    }
+    // NOTE: All upscale logic is now handled by the chaining system (images -> QA -> upscale)
+    // DO NOT create upscale jobs here - it bypasses QA
     
     // Proceed to semi-auto chaining if enabled
+    console.log(`Job ${jobId}: Images done. metadata.semiAutoMode = ${metadata.semiAutoMode}, job_type = ${job.job_type}`);
     if (metadata.semiAutoMode === true) {
       console.log(`Job ${jobId}: All images generated. Chaining to next step (QA).`);
       await chainNextJobFromWebhook(adminClient, job.project_id, job.user_id, job.job_type, metadata);
+    } else {
+      console.log(`Job ${jobId}: Semi-auto mode NOT enabled, pipeline stops here`);
     }
   } else if (job.job_type === 'upscale') {
     console.log(`Job ${jobId}: Processing upscale job completion`);
@@ -1387,8 +1276,25 @@ async function chainNextJobFromWebhook(
   } else if (completedJobType === 'images') {
     // After images, chain to QA to check image quality
     nextJobType = 'qa';
-  } else if (completedJobType === 'qa' || completedJobType === 'qa_regen') {
-    nextJobType = 'upscale'; // After QA/regen, chain to upscale
+  } else if (completedJobType === 'qa') {
+    // After QA, check if there's a qa_regen job pending/processing
+    const { data: qaRegenJobs } = await adminClient
+      .from('generation_jobs')
+      .select('id, status')
+      .eq('project_id', projectId)
+      .eq('job_type', 'qa_regen')
+      .in('status', ['pending', 'processing'])
+      .limit(1);
+    
+    if (qaRegenJobs && qaRegenJobs.length > 0) {
+      console.log(`Webhook: QA regen job ${qaRegenJobs[0].id} is pending/processing, waiting for it to complete`);
+      return; // Don't chain to upscale yet - wait for qa_regen to finish
+    }
+    
+    // No qa_regen job, proceed to upscale
+    nextJobType = 'upscale';
+  } else if (completedJobType === 'qa_regen') {
+    nextJobType = 'upscale'; // After QA regen, chain to upscale
   } else if (completedJobType === 'upscale') {
     nextJobType = 'thumbnails'; // After upscale, chain to thumbnails
   }
@@ -1539,8 +1445,21 @@ async function chainNextJobFromWebhook(
       return;
     }
     
-    // Pass qaPrompt from project preset
-    const qaPrompt = metadata.qaPrompt || null;
+    // Get qaPrompt from metadata or fetch from project preset
+    let qaPrompt = metadata.qaPrompt || null;
+    if (!qaPrompt && project.preset_id) {
+      const { data: preset } = await adminClient
+        .from('presets')
+        .select('qa_prompt')
+        .eq('id', project.preset_id)
+        .single();
+      
+      if (preset?.qa_prompt) {
+        qaPrompt = preset.qa_prompt;
+        console.log(`Loaded qaPrompt from preset (${qaPrompt.length} chars)`);
+      }
+    }
+    
     jobMetadata = {
       ...jobMetadata,
       qaPrompt

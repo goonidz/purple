@@ -58,6 +58,10 @@ export function JobProgressIndicator({ job, onCancel, className }: JobProgressIn
         return 'Génération des prompts';
       case 'images':
         return 'Génération des images';
+      case 'qa':
+        return 'Vérification des images';
+      case 'qa_regen':
+        return 'Régénération des images rejetées';
       case 'thumbnails':
         return 'Génération des miniatures';
       case 'upscale':
