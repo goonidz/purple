@@ -530,6 +530,21 @@ export function SceneGrid({
                   )}
                 </>
               )}
+              {/* QA Regenerated badge - Blue badge for auto-regenerated images */}
+              {prompt?.qa_regenerated === true && (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div className="bg-blue-500 text-white rounded-full p-1 shadow-md cursor-help">
+                        <RotateCcw className="h-3.5 w-3.5" />
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Image régénérée automatiquement par le QA</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
             </div>
           </Card>
         );
