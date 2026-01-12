@@ -1087,7 +1087,7 @@ async function renderVideoScene(videoPath, outputPath, duration, width, height, 
       
       // If video is shorter than target duration, loop it
       // If video is longer, trim it
-      const scaleFilter = `scale=${width}:${height}:force_original_aspect_ratio=decrease,crop=${width}:${height}`;
+      const scaleFilter = `scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height}`;
       
       // Calculate how many loops needed if video is shorter
       const loopsNeeded = videoDuration < duration ? Math.ceil(duration / videoDuration) : 1;
@@ -1231,7 +1231,7 @@ async function renderSceneWithEffect(imagePath, outputPath, duration, width, hei
         // No effect: use zoompan with zoom=1 (no zoom) to generate frames for the duration
         effect = 'none';
         const totalFrames = Math.max(1, Math.ceil(duration * framerate));
-        const preprocessFilter = `scale=${width}:${height}:force_original_aspect_ratio=decrease,crop=${width}:${height}`;
+        const preprocessFilter = `scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height}`;
         // zoompan with z=1 (no zoom), x/y at center, generates static frames
         const staticFilter = `zoompan=z=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${totalFrames}:s=${width}x${height}:fps=${framerate}`;
         finalFilter = `${preprocessFilter},${staticFilter}`;
@@ -1263,7 +1263,7 @@ async function renderSceneWithEffect(imagePath, outputPath, duration, width, hei
         // Then crop only the minimum necessary to reach exact dimensions and avoid black bars
         // This minimizes content loss while ensuring the frame is filled
         // Using Lanczos interpolation for high-quality scaling (especially important for downscaling high-res images)
-        const preprocessFilter = `scale=${width}:${height}:force_original_aspect_ratio=decrease:flags=lanczos,crop=${width}:${height}`;
+        const preprocessFilter = `scale=${width}:${height}:force_original_aspect_ratio=increase:flags=lanczos,crop=${width}:${height}`;
         
         // Combine preprocessing with the effect filter
         finalFilter = `${preprocessFilter},${filter}`;
