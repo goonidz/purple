@@ -35,10 +35,19 @@ if [ -z "$VITE_SUPABASE_URL" ] || [ -z "$VITE_SUPABASE_PUBLISHABLE_KEY" ]; then
 fi
 
 echo "📦 Building Docker image..."
-sudo docker build \
-    --build-arg VITE_SUPABASE_URL="$VITE_SUPABASE_URL" \
-    --build-arg VITE_SUPABASE_PUBLISHABLE_KEY="$VITE_SUPABASE_PUBLISHABLE_KEY" \
-    -t videoflow:latest .
+# Use --no-cache if FORCE_REBUILD is set
+if [ "$FORCE_REBUILD" = "true" ]; then
+    echo "🔨 Force rebuilding without cache..."
+    sudo docker build --no-cache \
+        --build-arg VITE_SUPABASE_URL="$VITE_SUPABASE_URL" \
+        --build-arg VITE_SUPABASE_PUBLISHABLE_KEY="$VITE_SUPABASE_PUBLISHABLE_KEY" \
+        -t videoflow:latest .
+else
+    sudo docker build \
+        --build-arg VITE_SUPABASE_URL="$VITE_SUPABASE_URL" \
+        --build-arg VITE_SUPABASE_PUBLISHABLE_KEY="$VITE_SUPABASE_PUBLISHABLE_KEY" \
+        -t videoflow:latest .
+fi
 
 echo "🛑 Stopping existing container (if any)..."
 sudo docker stop videoflow 2>/dev/null || true
