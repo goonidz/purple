@@ -192,11 +192,20 @@ export default function KanbanBoard({ entries, onEntryClick, onEntryUpdate }: Ka
     })
   );
 
-  // Group entries by status and sort by scheduled_date (earliest first)
+  // Group entries by status and sort by scheduled_date
+  // Completed column: most recent first (descending)
+  // Other columns: earliest first (ascending)
   const groupedEntries = statusColumns.reduce((acc, column) => {
     acc[column.value] = entries
       .filter(entry => entry.status === column.value)
-      .sort((a, b) => new Date(a.scheduled_date).getTime() - new Date(b.scheduled_date).getTime());
+      .sort((a, b) => {
+        const timeA = new Date(a.scheduled_date).getTime();
+        const timeB = new Date(b.scheduled_date).getTime();
+        // For "completed" column, sort descending (most recent first)
+        return column.value === 'completed' 
+          ? timeB - timeA 
+          : timeA - timeB;
+      });
     return acc;
   }, {} as Record<string, ContentCalendarEntry[]>);
 
