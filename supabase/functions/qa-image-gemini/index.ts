@@ -169,6 +169,31 @@ serve(async (req) => {
           generationConfig: {
             temperature: 0.1,
             maxOutputTokens: 500,
+            responseMimeType: "application/json",
+            responseSchema: {
+              type: "object",
+              properties: {
+                status: {
+                  type: "string",
+                  enum: ["OK", "REJECT"],
+                  description: "Status of the QA check - OK if image is fine, REJECT if technical bug detected"
+                },
+                anomalie_detectee: {
+                  type: "string",
+                  enum: ["aucune", "anatomie", "texte", "cadrage"],
+                  description: "Type of anomaly detected - aucune, anatomie, texte, or cadrage"
+                },
+                explication: {
+                  type: "string",
+                  description: "Brief explanation of the technical bug if REJECT, empty string otherwise"
+                },
+                prompt_regeneration: {
+                  type: "string",
+                  description: "Regeneration prompt with same structure as source if REJECT, empty string otherwise"
+                }
+              },
+              required: ["status", "anomalie_detectee", "explication", "prompt_regeneration"]
+            }
           }
         })
       }
@@ -191,37 +216,11 @@ serve(async (req) => {
 
     console.log('Gemini raw response:', responseText);
 
-    // Parse JSON response from Gemini
-    // Remove markdown code blocks if present
-    let cleanedText = responseText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-    
-    // Try to parse JSON, with fallback for malformed responses
-    let qaResult: any;
-    try {
-      qaResult = JSON.parse(cleanedText);
-    } catch (parseError) {
-      console.error('JSON parse error, attempting to fix:', parseError);
-      // Try to extract JSON using regex as fallback
-      const jsonMatch = cleanedText.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        try {
-          qaResult = JSON.parse(jsonMatch[0]);
-        } catch {
-          // If still fails, return a safe default
-          qaResult = {
-            status: 'OK',
-            anomalie_detectee: 'aucune',
-            explication: '',
-            prompt_regeneration: ''
-          };
-          console.log('Fallback to OK status due to parse error');
-        }
-      } else {
-        throw new Error(`Failed to parse Gemini response: ${parseError}`);
-      }
-    }
+    // With structured output (responseSchema), Gemini GUARANTEES valid JSON
+    // No need for complex parsing logic or fallbacks
+    const qaResult = JSON.parse(responseText);
 
-    // Validate response structure
+    // Extra validation (should never fail with structured output)
     if (!qaResult.status || !qaResult.anomalie_detectee) {
       throw new Error('Invalid QA response structure');
     }
