@@ -60,6 +60,7 @@ import { TitleGenerator } from "@/components/TitleGenerator";
 import { DescriptionGenerator } from "@/components/DescriptionGenerator";
 import { TagGenerator } from "@/components/TagGenerator";
 import { YouTubeTester } from "@/components/YouTubeTester";
+import { YouTubeMetadataTab } from "@/components/YouTubeMetadataTab";
 import { DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import {
   DropdownMenu,
@@ -163,6 +164,7 @@ const Index = () => {
   const [calendarDate, setCalendarDate] = useState<string | null>(null);
   const [calendarChannelName, setCalendarChannelName] = useState<string | null>(null);
   const [calendarChannelColor, setCalendarChannelColor] = useState<string | null>(null);
+  const [calendarStatus, setCalendarStatus] = useState<string | null>(null);
   const [transcriptFile, setTranscriptFile] = useState<File | null>(null);
   const [transcriptData, setTranscriptData] = useState<TranscriptData | null>(null);
   const [examplePrompts, setExamplePrompts] = useState<string[]>(["", "", ""]);
@@ -705,6 +707,10 @@ const Index = () => {
           if (updatedEntry.scheduled_date) {
             setCalendarDate(updatedEntry.scheduled_date);
           }
+          // Update status if it changed
+          if (updatedEntry.status) {
+            setCalendarStatus(updatedEntry.status);
+          }
           // Update channel info if channel_id changed
           if (updatedEntry.channel_id) {
             const { data: channelData } = await supabase
@@ -1035,7 +1041,7 @@ const Index = () => {
       // Load calendar date and channel if project is linked to calendar
       const { data: calendarEntries, error: calendarError } = await supabase
         .from("content_calendar")
-        .select("scheduled_date, id, channel_id, channels(name, color)")
+        .select("scheduled_date, id, channel_id, status, channels(name, color)")
         .eq("project_id", projectId);
       
       if (calendarError) {
@@ -1043,6 +1049,7 @@ const Index = () => {
         setCalendarDate(null);
         setCalendarChannelName(null);
         setCalendarChannelColor(null);
+        setCalendarStatus(null);
       } else {
         console.log("Calendar entries for project:", calendarEntries);
         // Get the first entry with a scheduled_date
@@ -1061,6 +1068,10 @@ const Index = () => {
           setCalendarChannelName(null);
           setCalendarChannelColor(null);
         }
+        
+        // Get status from calendar entry
+        const entryWithStatus = calendarEntries?.find(entry => entry.status);
+        setCalendarStatus(entryWithStatus?.status || null);
       }
       
       // Mark that project data has been loaded
@@ -3132,7 +3143,7 @@ const Index = () => {
                     <Pencil className="h-3.5 w-3.5" />
                   </Button>
                 </div>
-                {(calendarDate || calendarChannelName) && (
+                {(calendarDate || calendarChannelName || calendarStatus) && (
                   <div className="flex items-center gap-3 text-xs mt-0.5">
                     {calendarDate && (
                       <div className="flex items-center gap-1.5 text-primary">
@@ -3152,6 +3163,34 @@ const Index = () => {
                         style={{ backgroundColor: calendarChannelColor || '#6b7280' }}
                       >
                         📺 {calendarChannelName}
+                      </span>
+                    )}
+                    {calendarStatus && (
+                      <span 
+                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
+                          calendarStatus === 'completed' ? 'bg-green-100 text-green-800' :
+                          calendarStatus === 'thumbnail' ? 'bg-blue-100 text-blue-800' :
+                          calendarStatus === 'generating' ? 'bg-purple-100 text-purple-800' :
+                          calendarStatus === 'audio_ready' ? 'bg-yellow-100 text-yellow-800' :
+                          calendarStatus === 'scripted' ? 'bg-orange-100 text-orange-800' :
+                          calendarStatus === 'planned' ? 'bg-gray-100 text-gray-800' :
+                          'bg-gray-100 text-gray-800'
+                        }`}
+                      >
+                        {calendarStatus === 'completed' && '✅'}
+                        {calendarStatus === 'thumbnail' && '🖼️'}
+                        {calendarStatus === 'generating' && '⚙️'}
+                        {calendarStatus === 'audio_ready' && '🎵'}
+                        {calendarStatus === 'scripted' && '📝'}
+                        {calendarStatus === 'planned' && '📋'}
+                        {' '}
+                        {calendarStatus === 'completed' ? 'Terminé' :
+                         calendarStatus === 'thumbnail' ? 'Miniature' :
+                         calendarStatus === 'generating' ? 'Génération' :
+                         calendarStatus === 'audio_ready' ? 'Audio prêt' :
+                         calendarStatus === 'scripted' ? 'Scripté' :
+                         calendarStatus === 'planned' ? 'Planifié' :
+                         calendarStatus}
                       </span>
                     )}
                   </div>
@@ -3200,6 +3239,10 @@ const Index = () => {
                 <TabsTrigger value="test" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm px-2 sm:px-3">
                   <MonitorPlay className="h-3 w-3 sm:h-4 sm:w-4" />
                   <span className="hidden md:inline">Test</span>
+                </TabsTrigger>
+                <TabsTrigger value="youtube" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm px-2 sm:px-3">
+                  <Sparkles className="h-3 w-3 sm:h-4 sm:w-4" />
+                  <span className="hidden md:inline">YouTube</span>
                 </TabsTrigger>
                 <TabsTrigger value="tags" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm px-2 sm:px-3">
                   <Hash className="h-3 w-3 sm:h-4 sm:w-4" />
@@ -4314,6 +4357,24 @@ const Index = () => {
                   <YouTubeTester
                     projectId={currentProjectId || ""}
                     videoTitle={projectName}
+                  />
+                </div>
+              </TabsContent>
+
+              <TabsContent value="youtube" className="m-0">
+                <div className="max-w-5xl mx-auto">
+                  <YouTubeMetadataTab
+                    projectId={currentProjectId || ""}
+                    videoScript={generatedPrompts.filter(p => p).map(p => p.text).join(" ")}
+                    videoTitle={projectName}
+                    scenes={generatedPrompts
+                      .filter(p => p)
+                      .map(p => ({
+                        text: p.text,
+                        startTime: p.startTime,
+                        endTime: p.endTime
+                      }))
+                    }
                   />
                 </div>
               </TabsContent>
