@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
-import { Loader2, Key, LogOut, Eye, EyeOff } from "lucide-react";
+import { Loader2, Key, LogOut, Eye, EyeOff, Shield, Lock } from "lucide-react";
 import { toast } from "sonner";
 import type { User } from "@supabase/supabase-js";
 import AppHeader from "@/components/AppHeader";
@@ -48,6 +48,13 @@ const Profile = () => {
     inworld: false,
     gemini: false
   });
+
+  // Password change state
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
 
   useEffect(() => {
     document.title = "Profil";
@@ -220,6 +227,47 @@ const Profile = () => {
   const handleLogout = async () => {
     await supabase.auth.signOut();
     navigate("/auth");
+  };
+
+  const handleChangePassword = async () => {
+    if (!newPassword || !confirmPassword) {
+      toast.error("Veuillez remplir tous les champs");
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      toast.error("Le mot de passe doit contenir au moins 6 caractères");
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      toast.error("Les mots de passe ne correspondent pas");
+      return;
+    }
+
+    setIsChangingPassword(true);
+    try {
+      const { error } = await supabase.auth.updateUser({
+        password: newPassword
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      toast.success("Mot de passe modifié avec succès !");
+      setNewPassword("");
+      setConfirmPassword("");
+    } catch (error: any) {
+      console.error("Error changing password:", error);
+      if (error.message?.includes("same as")) {
+        toast.error("Le nouveau mot de passe doit être différent de l'ancien");
+      } else {
+        toast.error(`Erreur: ${error.message || 'Impossible de changer le mot de passe'}`);
+      }
+    } finally {
+      setIsChangingPassword(false);
+    }
   };
 
   if (!user) {
@@ -613,6 +661,91 @@ const Profile = () => {
                     "Sauvegarder les clés API"
                   )}
                 </Button>
+
+                {/* Security Section */}
+                <div className="space-y-6 pt-6 mt-6 border-t">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Shield className="h-5 w-5 text-primary" />
+                    <h2 className="text-xl font-semibold">Sécurité</h2>
+                  </div>
+
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="new-password">
+                        Nouveau mot de passe
+                      </Label>
+                      <div className="relative">
+                        <Input
+                          id="new-password"
+                          type={showNewPassword ? "text" : "password"}
+                          value={newPassword}
+                          onChange={(e) => setNewPassword(e.target.value)}
+                          placeholder="••••••••"
+                          className="pr-10"
+                          minLength={6}
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                          onClick={() => setShowNewPassword(!showNewPassword)}
+                        >
+                          {showNewPassword ? <EyeOff className="h-4 w-4 text-muted-foreground" /> : <Eye className="h-4 w-4 text-muted-foreground" />}
+                        </Button>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Minimum 6 caractères
+                      </p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="confirm-password">
+                        Confirmer le mot de passe
+                      </Label>
+                      <div className="relative">
+                        <Input
+                          id="confirm-password"
+                          type={showConfirmPassword ? "text" : "password"}
+                          value={confirmPassword}
+                          onChange={(e) => setConfirmPassword(e.target.value)}
+                          placeholder="••••••••"
+                          className="pr-10"
+                          minLength={6}
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                          onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                        >
+                          {showConfirmPassword ? <EyeOff className="h-4 w-4 text-muted-foreground" /> : <Eye className="h-4 w-4 text-muted-foreground" />}
+                        </Button>
+                      </div>
+                    </div>
+
+                    <Button
+                      onClick={handleChangePassword}
+                      disabled={isChangingPassword || !newPassword || !confirmPassword}
+                      variant="outline"
+                      className="w-full gap-2"
+                      size="lg"
+                    >
+                      {isChangingPassword ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Modification...
+                        </>
+                      ) : (
+                        <>
+                          <Lock className="h-4 w-4" />
+                          Changer le mot de passe
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </div>
               </div>
             )}
           </div>
