@@ -224,8 +224,8 @@ ssh ubuntu@51.91.158.233 "curl --max-time 3 -s http://localhost:3000/health"
 ### App smoke test
 - Trigger a script generation from the UI and confirm the logs on the VPS show the expected model / thinking settings (if applicable).
 
-#### Vérifier “Sonnet 4.5 thinking” (Anthropic direct)
-La génération de script “Anthropic direct” passe par le **service VPS** (`/api/render/generate-script`), donc **il n’y aura pas de logs dans Supabase** pour ce flux.
+#### Vérifier "Sonnet 4.5 thinking" (Anthropic direct)
+La génération de script "Anthropic direct" passe par le **service VPS** (`/api/render/generate-script`), donc **il n'y aura pas de logs dans Supabase** pour ce flux.
 
 Sur le VPS, vérifie les logs PM2 :
 
@@ -275,15 +275,35 @@ curl -s "https://laqgmqyjstisipsbljha.supabase.co/rest/v1/TABLE?select=NEW_COLUM
 
 If you get `{"code": "42703"}` it still doesn't exist → Use Supabase Dashboard SQL Editor as last resort.
 
-### "git push" asks for username/password
-- Use a GitHub credential helper (macOS keychain) or a Personal Access Token (PAT).
-- If you’re using HTTPS remotes, GitHub no longer supports password auth (PAT required).
+### "git push" fails with authentication error
 
-### Supabase deploy fails (“Not authorized”)
+GitHub no longer supports password auth for HTTPS remotes. Use the macOS keychain credential helper:
+
+```bash
+# Configure credential helper (one-time setup)
+git config credential.helper osxkeychain
+
+# Then push normally
+git push origin main
+```
+
+If that doesn't work, create a Personal Access Token (PAT):
+1. Go to: https://github.com/settings/tokens
+2. Generate a new token with `repo` scope
+3. Use the token as your password when prompted
+
+Alternative: Use SSH instead of HTTPS:
+```bash
+git remote set-url origin git@github.com:goonidz/purple.git
+git push origin main
+```
+(Requires SSH key configured in GitHub)
+
+### Supabase deploy fails ("Not authorized")
 - Ensure `SUPABASE_ACCESS_TOKEN` is exported in the same shell session.
-- Confirm you’re deploying to the correct project ref: `laqgmqyjstisipsbljha`.
+- Confirm you're deploying to the correct project ref: `laqgmqyjstisipsbljha`.
 
-### VPS: service won’t respond
+### VPS: service won't respond
 - Check PM2 status and logs:
 
 ```bash
@@ -295,4 +315,3 @@ ssh ubuntu@51.91.158.233 "pm2 status; pm2 logs video-render --lines 50 --nostrea
 ```bash
 ssh ubuntu@51.91.158.233 "ss -lntp | grep ':3000' || true"
 ```
-
