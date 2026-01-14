@@ -13,6 +13,8 @@ FROM runpod/pytorch:2.1.0-py3.10-cuda11.8.0-devel-ubuntu22.04
 WORKDIR /app
 
 # Install build dependencies for FFmpeg compilation
+# CRITICAL: libnvidia-encode-520 provides the NVENC runtime library
+# Without this, FFmpeg can compile with NVENC but cannot encode at runtime
 RUN apt-get update && apt-get install -y \
     wget \
     git \
@@ -28,6 +30,8 @@ RUN apt-get update && apt-get install -y \
     libfdk-aac-dev \
     libass-dev \
     libfreetype6-dev \
+    libnvidia-encode-520 \
+    libnvidia-decode-520 \
     && rm -rf /var/lib/apt/lists/*
 
 # Install NVIDIA Video Codec SDK headers
@@ -71,7 +75,10 @@ RUN wget -q https://ffmpeg.org/releases/ffmpeg-5.1.8.tar.xz && \
 # Verify FFmpeg installation and NVENC support
 RUN ffmpeg -version && \
     echo "=== Checking NVENC support ===" && \
-    ffmpeg -hide_banner -encoders 2>/dev/null | grep -i nvenc || echo "NVENC listed in encoders"
+    ffmpeg -hide_banner -encoders 2>/dev/null | grep -i nvenc && \
+    echo "=== Checking NVENC library ===" && \
+    ldconfig -p | grep -i nvidia-encode && \
+    echo "=== NVENC setup complete ==="
 
 # Copy requirements and install Python dependencies
 COPY runpod-handler/requirements.txt .
