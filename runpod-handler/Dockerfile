@@ -84,6 +84,11 @@ COPY runpod-handler/handler.py .
 # SUPABASE_URL=https://your-project.supabase.co
 # SUPABASE_SERVICE_KEY=your-service-key
 
+# CRITICAL: Enable GPU video encoding capabilities in container
+# Without this, NVENC is blocked even if GPU is visible
+ENV NVIDIA_DRIVER_CAPABILITIES=all
+ENV NVIDIA_VISIBLE_DEVICES=all
+
 # Health check info
 ENV FFMPEG_VERSION="5.1.8-LTS"
 ENV NVENC_SUPPORT="enabled"
