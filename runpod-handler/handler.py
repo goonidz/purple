@@ -18,10 +18,32 @@ from typing import Dict, Any, List, Optional
 SUPABASE_URL = os.environ.get('SUPABASE_URL', '')
 SUPABASE_SERVICE_KEY = os.environ.get('SUPABASE_SERVICE_KEY', '')
 
+# FFmpeg binary (allow overriding in RunPod env)
+FFMPEG_BIN = os.environ.get('FFMPEG_BIN', 'ffmpeg')
+
 # Global encoder detection (runs once at startup)
 GPU_ENCODER_AVAILABLE = None
 ENCODER_NAME = None
 ENCODER_PRESET = None
+
+
+def _run_diag(cmd: str, timeout: int = 15) -> None:
+    """Best-effort: print command output for debugging."""
+    try:
+        r = subprocess.run(
+            ['bash', '-lc', cmd],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        out = (r.stdout or '').strip()
+        err = (r.stderr or '').strip()
+        if out:
+            print(out)
+        if err:
+            print(err)
+    except Exception as e:
+        print(f"[GPU Handler] Diagnostic command failed: {e}")
 
 
 def detect_gpu_encoder() -> bool:
@@ -35,6 +57,10 @@ def detect_gpu_encoder() -> bool:
         return GPU_ENCODER_AVAILABLE
     
     print("[GPU Handler] Detecting available encoders...")
+    print(f"[GPU Handler] NVIDIA_DRIVER_CAPABILITIES={os.environ.get('NVIDIA_DRIVER_CAPABILITIES')}")
+    print(f"[GPU Handler] NVIDIA_VISIBLE_DEVICES={os.environ.get('NVIDIA_VISIBLE_DEVICES')}")
+    print(f"[GPU Handler] CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES')}")
+    print(f"[GPU Handler] FFMPEG_BIN={FFMPEG_BIN}")
     
     # Wait for GPU to be ready (cold start can delay GPU initialization)
     print("[GPU Handler] Waiting for GPU initialization...")
@@ -52,11 +78,28 @@ def detect_gpu_encoder() -> bool:
             print("[GPU Handler] nvidia-smi failed or no GPU visible")
     except Exception as e:
         print(f"[GPU Handler] nvidia-smi check failed: {e}")
+
+    # Confirm CUDA works from Python (helps distinguish NVENC vs CUDA visibility issues)
+    print("[GPU Handler] Checking CUDA visibility from Python (torch)...")
+    _run_diag(
+        "python -c \"import torch; "
+        "print('torch', torch.__version__); "
+        "print('cuda', torch.version.cuda); "
+        "print('is_available', torch.cuda.is_available()); "
+        "print('device_count', torch.cuda.device_count()); "
+        "print('device_name_0', torch.cuda.get_device_name(0) if torch.cuda.is_available() else None)\"",
+        timeout=20,
+    )
+
+    # Check presence of NVENC runtime libs and device nodes
+    print("[GPU Handler] Checking NVENC/CUDA runtime libraries and /dev nodes...")
+    _run_diag("ldconfig -p | egrep -i 'libcuda\\.so|nvidia-encode|nvidia-ml' || true")
+    _run_diag("ls -l /dev/nvidia* 2>/dev/null || true")
     
     # First, check if FFmpeg has nvenc support compiled in
     try:
         result = subprocess.run(
-            ['ffmpeg', '-hide_banner', '-encoders'],
+            [FFMPEG_BIN, '-hide_banner', '-encoders'],
             capture_output=True, text=True, timeout=10
         )
         has_nvenc_support = 'h264_nvenc' in result.stdout
@@ -83,9 +126,14 @@ def detect_gpu_encoder() -> bool:
             print(f"[GPU Handler] Testing NVENC (attempt {attempt + 1}/{max_attempts})...")
             
             test_cmd = [
-                'ffmpeg', '-y',
-                '-f', 'lavfi', '-i', 'color=c=black:s=64x64:d=0.1',
+                FFMPEG_BIN, '-y',
+                '-hide_banner',
+                '-loglevel', 'warning',
+                '-f', 'lavfi',
+                '-i', 'color=c=black:s=128x128:r=30:d=0.2,format=yuv420p',
                 '-c:v', 'h264_nvenc',
+                '-gpu', '0',
+                '-pix_fmt', 'yuv420p',
                 '-f', 'null', '-'
             ]
             result = subprocess.run(test_cmd, capture_output=True, text=True, timeout=30)
@@ -111,6 +159,9 @@ def detect_gpu_encoder() -> bool:
                     error_msg = error_lines[-1] if error_lines else "Unknown error"
                 
                 print(f"[GPU Handler] NVENC attempt {attempt + 1} failed: {error_msg}")
+                if stderr:
+                    print("[GPU Handler] NVENC stderr (tail):")
+                    print(stderr[-2000:])
                 
                 if attempt < max_attempts - 1:
                     print("[GPU Handler] Retrying in 2 seconds...")
@@ -232,7 +283,7 @@ def create_video_segment(
     
     # Build FFmpeg command with detected encoder
     cmd = [
-        'ffmpeg', '-y',
+        FFMPEG_BIN, '-y',
         '-loop', '1',
         '-i', image_path,
         '-t', str(duration),
@@ -272,7 +323,7 @@ def concatenate_videos(video_paths: List[str], output_path: str) -> bool:
     
     # Use stream copy for concatenation (very fast, no re-encoding)
     cmd = [
-        'ffmpeg', '-y',
+        FFMPEG_BIN, '-y',
         '-f', 'concat',
         '-safe', '0',
         '-i', concat_file,
@@ -298,7 +349,7 @@ def add_audio(video_path: str, audio_path: str, output_path: str) -> bool:
     """Add audio to video (copy video stream, encode audio)"""
     
     cmd = [
-        'ffmpeg', '-y',
+        FFMPEG_BIN, '-y',
         '-i', video_path,
         '-i', audio_path,
         '-c:v', 'copy',  # Just copy video, no re-encoding needed
