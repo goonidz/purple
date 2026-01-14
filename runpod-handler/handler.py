@@ -25,6 +25,7 @@ FFMPEG_BIN = os.environ.get('FFMPEG_BIN', 'ffmpeg')
 GPU_ENCODER_AVAILABLE = None
 ENCODER_NAME = None
 ENCODER_PRESET = None
+ENCODER_GPU_ID: Optional[int] = None
 
 
 def _run_diag(cmd: str, timeout: int = 15) -> None:
@@ -51,7 +52,7 @@ def detect_gpu_encoder() -> bool:
     Detect if h264_nvenc is available at startup.
     This runs ONCE and caches the result for all subsequent renders.
     """
-    global GPU_ENCODER_AVAILABLE, ENCODER_NAME, ENCODER_PRESET
+    global GPU_ENCODER_AVAILABLE, ENCODER_NAME, ENCODER_PRESET, ENCODER_GPU_ID
     
     if GPU_ENCODER_AVAILABLE is not None:
         return GPU_ENCODER_AVAILABLE
@@ -119,54 +120,71 @@ def detect_gpu_encoder() -> bool:
         return False
     
     # Test if NVENC actually works (GPU accessible)
-    # Try multiple times in case GPU is still initializing
+    # IMPORTANT: Some RunPod workers expose the device node as /dev/nvidia1 (no /dev/nvidia0).
+    # In that case, forcing -gpu 0 fails with "No capable devices found".
+    # We'll probe a few GPU ids and keep the first that works.
     max_attempts = 3
+    candidate_gpu_ids = [0, 1, 2, 3]
     for attempt in range(max_attempts):
         try:
             print(f"[GPU Handler] Testing NVENC (attempt {attempt + 1}/{max_attempts})...")
-            
-            test_cmd = [
-                FFMPEG_BIN, '-y',
-                '-hide_banner',
-                '-loglevel', 'warning',
-                '-f', 'lavfi',
-                '-i', 'color=c=black:s=128x128:r=30:d=0.2,format=yuv420p',
-                '-c:v', 'h264_nvenc',
-                '-gpu', '0',
-                '-pix_fmt', 'yuv420p',
-                '-f', 'null', '-'
-            ]
-            result = subprocess.run(test_cmd, capture_output=True, text=True, timeout=30)
-            
-            if result.returncode == 0:
-                print("[GPU Handler] ✅ NVENC GPU encoder available and working!")
-                GPU_ENCODER_AVAILABLE = True
-                ENCODER_NAME = 'h264_nvenc'
-                ENCODER_PRESET = 'p4'
-                return True
-            else:
-                # Extract the actual error from stderr
-                stderr = result.stderr
-                if 'Cannot load' in stderr or 'No NVENC' in stderr or 'not found' in stderr:
-                    error_msg = "NVENC library not available"
-                elif 'No capable devices' in stderr:
-                    error_msg = "No GPU device found"
-                elif 'OpenEncodeSessionEx failed' in stderr:
-                    error_msg = "GPU encoder session failed"
+
+            for gpu_id in candidate_gpu_ids:
+                print(f"[GPU Handler] NVENC probe: trying -gpu {gpu_id} ...")
+                test_cmd = [
+                    FFMPEG_BIN, '-y',
+                    '-hide_banner',
+                    '-loglevel', 'warning',
+                    '-f', 'lavfi',
+                    '-i', 'color=c=black:s=128x128:r=30:d=0.2,format=yuv420p',
+                    '-c:v', 'h264_nvenc',
+                    '-gpu', str(gpu_id),
+                    '-pix_fmt', 'yuv420p',
+                    '-f', 'null', '-'
+                ]
+                result = subprocess.run(test_cmd, capture_output=True, text=True, timeout=30)
+
+                if result.returncode == 0:
+                    print(f"[GPU Handler] ✅ NVENC works with -gpu {gpu_id}")
+                    GPU_ENCODER_AVAILABLE = True
+                    ENCODER_NAME = 'h264_nvenc'
+                    ENCODER_PRESET = 'p4'
+                    ENCODER_GPU_ID = gpu_id
+                    return True
+
+                stderr = result.stderr or ""
+                # Print short per-gpu failure; full tail printed below on last attempt.
+                if 'OpenEncodeSessionEx failed' in stderr or 'No capable devices found' in stderr:
+                    print(f"[GPU Handler] NVENC probe failed on -gpu {gpu_id}: No capable devices")
                 else:
-                    # Get last few lines of error
-                    error_lines = [l for l in stderr.split('\n') if l.strip() and not l.startswith('  ')]
-                    error_msg = error_lines[-1] if error_lines else "Unknown error"
-                
-                print(f"[GPU Handler] NVENC attempt {attempt + 1} failed: {error_msg}")
-                if stderr:
-                    print("[GPU Handler] NVENC stderr (tail):")
-                    print(stderr[-2000:])
-                
-                if attempt < max_attempts - 1:
-                    print("[GPU Handler] Retrying in 2 seconds...")
-                    time.sleep(2)
-                    
+                    last_line = ""
+                    lines = [l for l in stderr.split('\n') if l.strip()]
+                    if lines:
+                        last_line = lines[-1]
+                    print(f"[GPU Handler] NVENC probe failed on -gpu {gpu_id}: {last_line or 'Unknown error'}")
+
+            # If we get here, all gpu ids failed this attempt
+            # Extract the actual error from the last run's stderr (best available signal)
+            stderr = (locals().get('stderr') or "")
+            if 'Cannot load' in stderr or 'No NVENC' in stderr or 'not found' in stderr:
+                error_msg = "NVENC library not available"
+            elif 'No capable devices' in stderr:
+                error_msg = "No GPU device found"
+            elif 'OpenEncodeSessionEx failed' in stderr:
+                error_msg = "GPU encoder session failed"
+            else:
+                error_lines = [l for l in stderr.split('\n') if l.strip() and not l.startswith('  ')]
+                error_msg = error_lines[-1] if error_lines else "Unknown error"
+
+            print(f"[GPU Handler] NVENC attempt {attempt + 1} failed: {error_msg}")
+            if stderr:
+                print("[GPU Handler] NVENC stderr (tail):")
+                print(stderr[-2000:])
+
+            if attempt < max_attempts - 1:
+                print("[GPU Handler] Retrying in 2 seconds...")
+                time.sleep(2)
+
         except subprocess.TimeoutExpired:
             print(f"[GPU Handler] NVENC test timeout on attempt {attempt + 1}")
             if attempt < max_attempts - 1:
@@ -181,6 +199,7 @@ def detect_gpu_encoder() -> bool:
     GPU_ENCODER_AVAILABLE = False
     ENCODER_NAME = 'libx264'
     ENCODER_PRESET = 'fast'
+    ENCODER_GPU_ID = None
     return False
 
 
@@ -230,6 +249,8 @@ def get_encoder_args() -> List[str]:
     if ENCODER_NAME == 'h264_nvenc':
         return [
             '-c:v', 'h264_nvenc',
+            # Use probed GPU id when available (important on some RunPod workers)
+            *(['-gpu', str(ENCODER_GPU_ID)] if ENCODER_GPU_ID is not None else []),
             '-preset', 'p4',
             '-tune', 'hq',
             '-b:v', '8M',
