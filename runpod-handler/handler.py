@@ -22,6 +22,12 @@ SUPABASE_SERVICE_KEY = os.environ.get('SUPABASE_SERVICE_KEY', '')
 # FFmpeg binary (allow overriding in RunPod env)
 FFMPEG_BIN = os.environ.get('FFMPEG_BIN', 'ffmpeg')
 
+# Run mode:
+# - "" (default): RunPod serverless
+# - "pod": print NVENC smoke test + keepalive (debug)
+# - "worker": poll Supabase queue + render jobs (Pods)
+RUNPOD_MODE = (os.environ.get("RUNPOD_MODE", "") or "").strip().lower()
+
 # Global encoder detection (runs once at startup)
 GPU_ENCODER_AVAILABLE = None
 ENCODER_NAME = None
@@ -54,12 +60,13 @@ def _is_pod_mode() -> bool:
     - RunPod Serverless (default): runpod.serverless.start(...)
     - RunPod Pod (manual): keep container alive, print NVENC test in logs.
     """
-    if os.environ.get("RUNPOD_MODE", "").lower() == "pod":
-        return True
-    # Common env var on RunPod Pods
-    if os.environ.get("RUNPOD_POD_ID"):
+    if RUNPOD_MODE == "pod":
         return True
     return False
+
+
+def _is_worker_mode() -> bool:
+    return RUNPOD_MODE == "worker"
 
 
 def _nvenc_smoke_test() -> None:
@@ -475,6 +482,171 @@ def add_audio(video_path: str, audio_path: str, output_path: str) -> bool:
         return False
 
 
+def _supabase_headers() -> Dict[str, str]:
+    url = os.environ.get("SUPABASE_URL", "")
+    key = os.environ.get("SUPABASE_SERVICE_KEY", "") or os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
+    if not url or not key:
+        raise RuntimeError("Missing SUPABASE_URL or SUPABASE_SERVICE_KEY for Pod worker")
+    return {
+        "apikey": key,
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json",
+    }
+
+
+def _supabase_rest_url(path: str) -> str:
+    base = os.environ.get("SUPABASE_URL", "").rstrip("/")
+    if not base:
+        raise RuntimeError("Missing SUPABASE_URL for Pod worker")
+    return f"{base}{path}"
+
+
+def claim_next_gpu_job(worker_id: str) -> Optional[Dict[str, Any]]:
+    """
+    Calls Postgres RPC claim_gpu_render_job() and returns one job row or None.
+    """
+    headers = _supabase_headers()
+    url = _supabase_rest_url("/rest/v1/rpc/claim_gpu_render_job")
+    r = requests.post(url, headers=headers, data=json.dumps({"p_worker_id": worker_id}), timeout=30)
+    if r.status_code >= 300:
+        raise RuntimeError(f"claim_gpu_render_job failed: {r.status_code} {r.text}")
+    rows = r.json()
+    if not rows:
+        return None
+    return rows[0]
+
+
+def update_gpu_job(job_id: str, patch: Dict[str, Any]) -> None:
+    headers = _supabase_headers()
+    url = _supabase_rest_url(f"/rest/v1/gpu_render_jobs?id=eq.{job_id}")
+    r = requests.patch(url, headers=headers, data=json.dumps(patch), timeout=30)
+    if r.status_code >= 300:
+        raise RuntimeError(f"update gpu_render_jobs failed: {r.status_code} {r.text}")
+
+
+def render_video_payload(payload: Dict[str, Any], progress_cb=None) -> Dict[str, Any]:
+    """
+    Core render pipeline used by both serverless and Pod worker.
+    progress_cb: callable(progress:int) -> None
+    """
+    if progress_cb is None:
+        progress_cb = lambda _p: None
+
+    detect_gpu_encoder()
+
+    scenes = payload.get('scenes', [])
+    audio_url = payload.get('audioUrl', '')
+    video_settings = payload.get('videoSettings', {}) or {}
+    project_id = payload.get('projectId', '')
+    project_name = payload.get('projectName', 'video')
+    user_id = payload.get('userId', '')
+    effect_type = payload.get('effectType', 'pan')
+
+    width = video_settings.get('width', 1920)
+    height = video_settings.get('height', 1080)
+    framerate = video_settings.get('framerate', 25)
+
+    if not scenes:
+        return {"error": "No scenes provided"}
+    if not audio_url:
+        return {"error": "No audio URL provided"}
+
+    print(f"[GPU Handler] Starting render for project {project_id}")
+    print(f"[GPU Handler] {len(scenes)} scenes, {width}x{height} @ {framerate}fps")
+    print(f"[GPU Handler] Effect type: {effect_type}")
+    print(f"[GPU Handler] Using encoder: {ENCODER_NAME} (GPU: {GPU_ENCODER_AVAILABLE})")
+
+    start_time = time.time()
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
+
+        audio_path = temp_path / 'audio.mp3'
+        if not download_file(audio_url, str(audio_path)):
+            return {"error": "Failed to download audio"}
+
+        segment_paths: List[str] = []
+
+        for i, scene in enumerate(scenes):
+            print(f"[GPU Handler] Processing scene {i+1}/{len(scenes)}")
+
+            image_url = scene.get('imageUrl', '')
+            if not image_url:
+                return {"error": f"Scene {i} has no image URL"}
+
+            ext = '.jpg'
+            if '.png' in image_url.lower():
+                ext = '.png'
+            elif '.webp' in image_url.lower():
+                ext = '.webp'
+
+            image_path = temp_path / f'image_{i}{ext}'
+            if not download_file(image_url, str(image_path)):
+                return {"error": f"Failed to download image for scene {i}"}
+
+            segment_path = temp_path / f'segment_{i}.mp4'
+            duration = scene.get('duration', scene.get('endTime', 5) - scene.get('startTime', 0))
+
+            if not create_video_segment(
+                str(image_path),
+                str(segment_path),
+                duration,
+                width,
+                height,
+                framerate,
+                effect_type
+            ):
+                return {"error": f"Failed to create video segment for scene {i}"}
+
+            segment_paths.append(str(segment_path))
+            progress = int((i + 1) / len(scenes) * 70)
+            progress_cb(progress)
+
+        print("[GPU Handler] Concatenating segments...")
+        concat_path = temp_path / 'concat.mp4'
+        if not concatenate_videos(segment_paths, str(concat_path)):
+            return {"error": "Failed to concatenate video segments"}
+
+        progress_cb(85)
+
+        print("[GPU Handler] Adding audio...")
+        final_path = temp_path / f'{project_name}.mp4'
+        if not add_audio(str(concat_path), str(audio_path), str(final_path)):
+            return {"error": "Failed to add audio to video"}
+
+        progress_cb(95)
+
+        file_size_mb = os.path.getsize(str(final_path)) / (1024 * 1024)
+
+        print("[GPU Handler] Uploading to Supabase...")
+        try:
+            timestamp = int(time.time())
+            dest_path = f"{user_id}/{project_id}/{timestamp}_{project_name}.mp4"
+            video_url = upload_to_supabase(str(final_path), 'rendered-videos', dest_path)
+        except Exception as e:
+            print(f"[GPU Handler] Upload error: {e}")
+            return {"error": f"Failed to upload video: {e}"}
+
+        elapsed_time = time.time() - start_time
+        print(f"[GPU Handler] ✅ Render complete in {elapsed_time:.1f}s")
+        print(f"[GPU Handler] Video URL: {video_url}")
+
+        progress_cb(100)
+
+        return {
+            "success": True,
+            "videoUrl": video_url,
+            "duration": elapsed_time,
+            "fileSizeMB": round(file_size_mb, 2),
+            "scenesCount": len(scenes),
+            "resolution": f"{width}x{height}",
+            "framerate": framerate,
+            "effectType": effect_type,
+            "encoder": ENCODER_NAME,
+            "gpuAccelerated": GPU_ENCODER_AVAILABLE,
+        }
+
+
 def handler(job: Dict[str, Any]) -> Dict[str, Any]:
     """
     RunPod handler function
@@ -497,133 +669,15 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
     }
     """
     
-    # Detect encoder on first call (cached for subsequent calls)
-    detect_gpu_encoder()
-    
-    job_input = job.get('input', {})
-    
-    scenes = job_input.get('scenes', [])
-    audio_url = job_input.get('audioUrl', '')
-    video_settings = job_input.get('videoSettings', {})
-    project_id = job_input.get('projectId', '')
-    project_name = job_input.get('projectName', 'video')
-    user_id = job_input.get('userId', '')
-    effect_type = job_input.get('effectType', 'pan')
-    
-    width = video_settings.get('width', 1920)
-    height = video_settings.get('height', 1080)
-    framerate = video_settings.get('framerate', 25)
-    
-    if not scenes:
-        return {"error": "No scenes provided"}
-    
-    if not audio_url:
-        return {"error": "No audio URL provided"}
-    
-    print(f"[GPU Handler] Starting render for project {project_id}")
-    print(f"[GPU Handler] {len(scenes)} scenes, {width}x{height} @ {framerate}fps")
-    print(f"[GPU Handler] Effect type: {effect_type}")
-    print(f"[GPU Handler] Using encoder: {ENCODER_NAME} (GPU: {GPU_ENCODER_AVAILABLE})")
-    
-    start_time = time.time()
-    
-    with tempfile.TemporaryDirectory() as temp_dir:
-        temp_path = Path(temp_dir)
-        
-        # Download audio
-        audio_path = temp_path / 'audio.mp3'
-        if not download_file(audio_url, str(audio_path)):
-            return {"error": "Failed to download audio"}
-        
-        # Process each scene
-        segment_paths = []
-        
-        for i, scene in enumerate(scenes):
-            print(f"[GPU Handler] Processing scene {i+1}/{len(scenes)}")
-            
-            # Download image
-            image_url = scene.get('imageUrl', '')
-            if not image_url:
-                return {"error": f"Scene {i} has no image URL"}
-            
-            # Determine file extension from URL
-            ext = '.jpg'
-            if '.png' in image_url.lower():
-                ext = '.png'
-            elif '.webp' in image_url.lower():
-                ext = '.webp'
-            
-            image_path = temp_path / f'image_{i}{ext}'
-            if not download_file(image_url, str(image_path)):
-                return {"error": f"Failed to download image for scene {i}"}
-            
-            # Create video segment
-            segment_path = temp_path / f'segment_{i}.mp4'
-            duration = scene.get('duration', scene.get('endTime', 5) - scene.get('startTime', 0))
-            
-            if not create_video_segment(
-                str(image_path),
-                str(segment_path),
-                duration,
-                width,
-                height,
-                framerate,
-                effect_type
-            ):
-                return {"error": f"Failed to create video segment for scene {i}"}
-            
-            segment_paths.append(str(segment_path))
-            
-            # Report progress
-            progress = int((i + 1) / len(scenes) * 70)  # 0-70% for segments
-            runpod.serverless.progress_update(job, progress)
-        
-        # Concatenate all segments
-        print("[GPU Handler] Concatenating segments...")
-        concat_path = temp_path / 'concat.mp4'
-        if not concatenate_videos(segment_paths, str(concat_path)):
-            return {"error": "Failed to concatenate video segments"}
-        
-        runpod.serverless.progress_update(job, 85)
-        
-        # Add audio
-        print("[GPU Handler] Adding audio...")
-        final_path = temp_path / f'{project_name}.mp4'
-        if not add_audio(str(concat_path), str(audio_path), str(final_path)):
-            return {"error": "Failed to add audio to video"}
-        
-        runpod.serverless.progress_update(job, 95)
-        
-        # Get file info
-        file_size_mb = os.path.getsize(str(final_path)) / (1024 * 1024)
-        
-        # Upload to Supabase Storage
-        print("[GPU Handler] Uploading to Supabase...")
+    job_input = job.get('input', {}) or {}
+
+    def _cb(p: int):
         try:
-            timestamp = int(time.time())
-            dest_path = f"{user_id}/{project_id}/{timestamp}_{project_name}.mp4"
-            video_url = upload_to_supabase(str(final_path), 'rendered-videos', dest_path)
-        except Exception as e:
-            print(f"[GPU Handler] Upload error: {e}")
-            return {"error": f"Failed to upload video: {e}"}
-        
-        elapsed_time = time.time() - start_time
-        
-        print(f"[GPU Handler] ✅ Render complete in {elapsed_time:.1f}s")
-        print(f"[GPU Handler] Video URL: {video_url}")
-        
-        return {
-            "success": True,
-            "videoUrl": video_url,
-            "duration": elapsed_time,
-            "fileSizeMB": round(file_size_mb, 2),
-            "scenesCount": len(scenes),
-            "resolution": f"{width}x{height}",
-            "framerate": framerate,
-            "effectType": effect_type,
-            "encoder": ENCODER_NAME,
-            "gpuAccelerated": GPU_ENCODER_AVAILABLE,
-        }
+            runpod.serverless.progress_update(job, p)
+        except Exception:
+            pass
+
+    return render_video_payload(job_input, progress_cb=_cb)
 
 
 # RunPod serverless handler
@@ -634,5 +688,48 @@ if _is_pod_mode():
     print("[Pod] Container ready. (RUNPOD_MODE=pod)")
     while True:
         time.sleep(3600)
+elif _is_worker_mode():
+    # In worker mode (RunPod Pods), we poll Supabase for jobs and render them.
+    worker_id = os.environ.get("RUNPOD_POD_ID") or os.environ.get("HOSTNAME") or "worker"
+    print(f"[Worker] Starting GPU Pod worker. worker_id={worker_id}")
+    while True:
+        try:
+            claimed = claim_next_gpu_job(worker_id)
+            if not claimed:
+                time.sleep(2)
+                continue
+
+            job_id = claimed["id"]
+            payload = claimed.get("payload") or {}
+            print(f"[Worker] Claimed gpu_render_job id={job_id}")
+
+            update_gpu_job(job_id, {"status": "processing", "progress": 0})
+
+            def _cb(p: int):
+                try:
+                    update_gpu_job(job_id, {"progress": p, "status": "processing"})
+                except Exception as e:
+                    print(f"[Worker] Progress update failed: {e}")
+
+            result = render_video_payload(payload, progress_cb=_cb)
+
+            if result.get("success"):
+                update_gpu_job(job_id, {
+                    "status": "completed",
+                    "progress": 100,
+                    "video_url": result.get("videoUrl"),
+                    "finished_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                    "error_message": None,
+                })
+            else:
+                update_gpu_job(job_id, {
+                    "status": "failed",
+                    "progress": 100,
+                    "error_message": result.get("error") or "Render failed",
+                    "finished_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                })
+        except Exception as e:
+            print(f"[Worker] Loop error: {e}")
+            time.sleep(2)
 else:
     runpod.serverless.start({"handler": handler})

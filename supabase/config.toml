@@ -3,6 +3,9 @@ project_id = "hroghyzosrcjueqjftex"
 [functions.run-migration]
 verify_jwt = false
 
+[functions.render-video-gpu-pod]
+verify_jwt = false
+
 [functions.generate-prompts]
 verify_jwt = false
 
