@@ -599,13 +599,13 @@ def render_video_payload(payload: Dict[str, Any], progress_cb=None) -> Dict[str,
         if not download_file(audio_url, str(audio_path)):
             return {"error": "Failed to download audio"}
 
-        # Download ALL images in parallel (10x faster!)
+        # Download ALL images in parallel (20x faster!)
         print(f"[GPU Handler] Downloading {len(scenes)} images in parallel...")
         download_start = time.time()
         
         image_paths = [None] * len(scenes)  # Pre-allocate list
         
-        with ThreadPoolExecutor(max_workers=10) as executor:
+        with ThreadPoolExecutor(max_workers=20) as executor:
             # Submit all download tasks
             future_to_index = {
                 executor.submit(download_scene_image, i, scene, temp_path): i 
@@ -626,8 +626,8 @@ def render_video_payload(payload: Dict[str, Any], progress_cb=None) -> Dict[str,
         download_time = time.time() - download_start
         print(f"[GPU Handler] Downloaded {len(scenes)} images in {download_time:.1f}s (parallel)")
 
-        # Process all scenes in parallel (5 workers = 5 FFmpeg instances at once)
-        print(f"[GPU Handler] Processing {len(scenes)} scenes in parallel (5 workers)...")
+        # Process all scenes in parallel (20 workers = 20 FFmpeg instances at once)
+        print(f"[GPU Handler] Processing {len(scenes)} scenes in parallel (20 workers)...")
         process_start = time.time()
         
         segment_paths = [None] * len(scenes)
@@ -651,7 +651,7 @@ def render_video_payload(payload: Dict[str, Any], progress_cb=None) -> Dict[str,
             
             return (i, str(segment_path), None)
         
-        with ThreadPoolExecutor(max_workers=5) as executor:
+        with ThreadPoolExecutor(max_workers=20) as executor:
             # Submit all processing tasks
             future_to_index = {
                 executor.submit(process_scene_task, i, scene): i 
