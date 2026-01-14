@@ -47,6 +47,56 @@ def _run_diag(cmd: str, timeout: int = 15) -> None:
     except Exception as e:
         print(f"[GPU Handler] Diagnostic command failed: {e}")
 
+
+def _is_pod_mode() -> bool:
+    """
+    This image can run in two contexts:
+    - RunPod Serverless (default): runpod.serverless.start(...)
+    - RunPod Pod (manual): keep container alive, print NVENC test in logs.
+    """
+    if os.environ.get("RUNPOD_MODE", "").lower() == "pod":
+        return True
+    # Common env var on RunPod Pods
+    if os.environ.get("RUNPOD_POD_ID"):
+        return True
+    return False
+
+
+def _nvenc_smoke_test() -> None:
+    print("[Pod] Running NVENC smoke test...")
+    _run_diag("nvidia-smi || true", timeout=10)
+    _run_diag("ls -la /dev/nvidia* /dev/nvidia-caps 2>/dev/null || true", timeout=5)
+    _run_diag(f"{FFMPEG_BIN} -hide_banner -encoders 2>/dev/null | grep -i nvenc || true", timeout=10)
+    # Minimal encode test (no output file)
+    cmd = [
+        FFMPEG_BIN,
+        "-hide_banner",
+        "-loglevel",
+        "warning",
+        "-f",
+        "lavfi",
+        "-i",
+        "color=c=black:s=128x128:d=1,format=yuv420p",
+        "-c:v",
+        "h264_nvenc",
+        "-pix_fmt",
+        "yuv420p",
+        "-f",
+        "null",
+        "-",
+    ]
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        if r.returncode == 0:
+            print("[Pod] ✅ NVENC OK (h264_nvenc)")
+        else:
+            print("[Pod] ❌ NVENC FAILED (h264_nvenc)")
+            if r.stderr:
+                print("[Pod] ffmpeg stderr (tail):")
+                print(r.stderr[-2000:])
+    except Exception as e:
+        print(f"[Pod] NVENC smoke test exception: {e}")
+
 def _discover_nvidia_device_indices() -> List[int]:
     """
     RunPod serverless sometimes maps the assigned GPU to /dev/nvidia4, /dev/nvidia1, etc.
@@ -575,4 +625,12 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # RunPod serverless handler
-runpod.serverless.start({"handler": handler})
+if _is_pod_mode():
+    # In Pod mode we don't run the serverless worker loop.
+    # We keep the container alive so you can connect, and we print a NVENC test in logs.
+    _nvenc_smoke_test()
+    print("[Pod] Container ready. (RUNPOD_MODE=pod)")
+    while True:
+        time.sleep(3600)
+else:
+    runpod.serverless.start({"handler": handler})
