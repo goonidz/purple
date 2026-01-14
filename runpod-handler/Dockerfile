@@ -20,6 +20,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     xz-utils \
     python3-pip \
+    nvidia-modprobe \
     && rm -rf /var/lib/apt/lists/*
 
 # Install prebuilt FFmpeg with NVENC support (fast, no compilation).
@@ -40,8 +41,13 @@ RUN python3 -m pip install --no-cache-dir -r requirements.txt
 # Copy handler code
 COPY runpod-handler/handler.py .
 
+# Entrypoint: ensure NVENC capability devices exist (/dev/nvidia-caps/*)
+COPY runpod-handler/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
 # Enable GPU video encoding capabilities
 ENV NVIDIA_DRIVER_CAPABILITIES=all
 ENV NVIDIA_VISIBLE_DEVICES=all
 
+ENTRYPOINT ["/entrypoint.sh"]
 CMD ["python3", "-u", "handler.py"]

@@ -83,7 +83,7 @@ def detect_gpu_encoder() -> bool:
     # Confirm CUDA works from Python (helps distinguish NVENC vs CUDA visibility issues)
     print("[GPU Handler] Checking CUDA visibility from Python (torch)...")
     _run_diag(
-        "python -c \"import torch; "
+        "python3 -c \"import torch; "
         "print('torch', torch.__version__); "
         "print('cuda', torch.version.cuda); "
         "print('is_available', torch.cuda.is_available()); "
