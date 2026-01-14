@@ -2,19 +2,19 @@
 # FFmpeg 6.1 with NVENC support for CUDA 12.x
 #
 # IMPORTANT VERSION NOTES:
-# - Using CUDA 12.1 base image (compatible with RunPod's CUDA 12.2 workers)
-# - nv-codec-headers n12.1.14.0 for CUDA 12.x compatibility
-# - FFmpeg 6.1 (latest stable) works well with CUDA 12.x
+# - Using runpod/pytorch:1.0.3 with CUDA 12.8 (latest stable)
+# - nv-codec-headers n12.2.72.0 for CUDA 12.x compatibility
+# - FFmpeg 6.1 works well with modern CUDA
 # - Handler has automatic CPU fallback if GPU unavailable
 #
 # Build time: ~10-15 minutes
 
-FROM runpod/pytorch:2.1.0-py3.10-cuda12.1.0-devel-ubuntu22.04
+FROM runpod/pytorch:1.0.3-cu1281-torch280-ubuntu2204
 
 WORKDIR /app
 
 # Install build dependencies for FFmpeg compilation
-# Note: libnvidia-encode is provided by the container runtime for CUDA 12.x
+# Note: NVENC runtime libs are provided by the container for CUDA 12.x
 RUN apt-get update && apt-get install -y \
     wget \
     git \
@@ -33,15 +33,15 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Install NVIDIA Video Codec SDK headers
-# Using n12.1.14.0 which is compatible with CUDA 12.x
-RUN git clone --depth 1 --branch n12.1.14.0 https://github.com/FFmpeg/nv-codec-headers.git && \
+# Using n12.2.72.0 for CUDA 12.x compatibility
+RUN git clone --depth 1 --branch n12.2.72.0 https://github.com/FFmpeg/nv-codec-headers.git && \
     cd nv-codec-headers && \
     make install && \
     cd .. && \
     rm -rf nv-codec-headers
 
 # Download and compile FFmpeg 6.1 with NVENC support
-# FFmpeg 6.1 is the latest stable release, works well with CUDA 12.x
+# FFmpeg 6.1 is the latest stable, works with CUDA 12.x
 RUN wget -q https://ffmpeg.org/releases/ffmpeg-6.1.tar.xz && \
     tar xf ffmpeg-6.1.tar.xz && \
     cd ffmpeg-6.1 && \
@@ -74,7 +74,7 @@ RUN wget -q https://ffmpeg.org/releases/ffmpeg-6.1.tar.xz && \
 RUN ffmpeg -version && \
     echo "=== Checking NVENC support ===" && \
     ffmpeg -hide_banner -encoders 2>/dev/null | grep -i nvenc && \
-    echo "=== FFmpeg NVENC build complete ==="
+    echo "=== FFmpeg build complete ==="
 
 # Copy requirements and install Python dependencies
 COPY runpod-handler/requirements.txt .
