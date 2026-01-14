@@ -1266,10 +1266,6 @@ async function renderSceneWithEffect(imagePath, outputPath, duration, width, hei
         console.log(`[${jobId}] Filter: ${filter}`);
         
         // Preprocessing: Resize image to fit target dimensions, then crop minimally to avoid black bars
-        // Strategy: First downscale/upscale to fit within target dimensions (maintains aspect ratio)
-        // Then crop only the minimum necessary to reach exact dimensions and avoid black bars
-        // This minimizes content loss while ensuring the frame is filled
-        // Using Lanczos interpolation for high-quality scaling (especially important for downscaling high-res images)
         const preprocessFilter = `scale=${width}:${height}:force_original_aspect_ratio=increase:flags=lanczos,crop=${width}:${height}`;
         
         // Combine preprocessing with the effect filter
@@ -1277,11 +1273,9 @@ async function renderSceneWithEffect(imagePath, outputPath, duration, width, hei
       }
       
       // Validate filter string doesn't contain invalid characters
-      if (finalFilter.includes('undefined') || finalFilter.includes('NaN') || finalFilter.includes('Infinity')) {
+      if (!finalFilter || finalFilter.includes('undefined') || finalFilter.includes('NaN') || finalFilter.includes('Infinity')) {
         return reject(new Error(`Invalid filter contains undefined/NaN/Infinity: ${finalFilter}`));
       }
-      
-      console.log(`[${jobId}] Final filter chain: ${finalFilter}`);
       
       console.log(`[${jobId}] Final filter chain: ${finalFilter}`);
       
