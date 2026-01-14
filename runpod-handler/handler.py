@@ -538,7 +538,9 @@ def render_video_payload(payload: Dict[str, Any], progress_cb=None) -> Dict[str,
     audio_url = payload.get('audioUrl', '')
     video_settings = payload.get('videoSettings', {}) or {}
     project_id = payload.get('projectId', '')
-    project_name = payload.get('projectName', 'video')
+    project_name_raw = payload.get('projectName', 'video')
+    # Sanitize project name for URL-safe file paths (replace spaces and special chars)
+    project_name = re.sub(r'[^\w\-]', '_', project_name_raw)
     user_id = payload.get('userId', '')
     effect_type = payload.get('effectType', 'pan')
 
