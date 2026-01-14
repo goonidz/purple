@@ -69,40 +69,30 @@ export async function renderVideo(options: VideoRenderOptions): Promise<VideoRen
     const { projectId, framerate = 25, width = 1920, height = 1080, subtitleSettings, effectType = 'pan', renderMethod = 'standard' } = options;
 
     console.log('Calling render-video Edge Function with:', { projectId, framerate, width, height, effectType, renderMethod });
-    console.log('User authenticated:', user.id);
-    console.log('Session valid:', !!session);
-
-    const requestBody = {
-      projectId,
-      framerate,
-      width,
-      height,
-      subtitleSettings,
-      effectType,
-      renderMethod,
-    };
-    
-    console.log('Request body keys:', Object.keys(requestBody));
-    console.log('Request body effectType:', requestBody.effectType, '(type:', typeof requestBody.effectType, ')');
 
     const { data, error } = await supabase.functions.invoke('render-video', {
-      body: requestBody,
+      body: {
+        projectId,
+        framerate,
+        width,
+        height,
+        subtitleSettings,
+        effectType,
+        renderMethod,
+      },
     });
-
-    console.log('Edge Function response:', { data, error });
 
     if (error) {
       console.error('Edge Function error:', error);
-      console.error('Error details:', JSON.stringify(error, null, 2));
+      
+      // Try to extract more details from the error if it's a FunctionsHttpError
+      if (error instanceof Error && 'context' in error) {
+        console.error('Edge Function error context:', (error as any).context);
+      }
       
       // Check if it's an authentication error
       if (error.message?.includes('401') || error.message?.includes('Unauthorized')) {
         throw new Error('Erreur d\'authentification. Veuillez vous reconnecter.');
-      }
-      
-      // Check if it's a rate limit error (429)
-      if (error.message?.includes('429') || error.status === 429 || data?.status === 429) {
-        throw new Error(data?.error || 'Trop de requêtes simultanées. Veuillez attendre quelques secondes avant de relancer un rendu.');
       }
       
       throw new Error(error.message || 'Failed to invoke Edge Function');
