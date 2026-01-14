@@ -1241,9 +1241,16 @@ async function renderSceneWithEffect(imagePath, outputPath, duration, width, hei
       } else if (isOpenCVZoom) {
         // OpenCV WarpAffine zoom effect
         console.log(`[${jobId}] Scene ${sceneIndex}: Using OpenCV WarpAffine zoom`);
-        return renderSceneWithOpenCV(imagePath, outputPath, duration, width, height, framerate, sceneIndex, jobId)
-          .then(resolve)
-          .catch(reject);
+        try {
+          await renderSceneWithOpenCV(imagePath, outputPath, duration, width, height, framerate, sceneIndex, jobId);
+          return resolve();
+        } catch (opencvErr) {
+          console.error(`[${jobId}] OpenCV failed, falling back to Ken Burns:`, opencvErr.message);
+          // Fallback to Ken Burns if OpenCV fails
+          ({ filter, effect } = getKenBurnsEffect(sceneIndex, duration, width, height, framerate, renderMethod));
+          const preprocessFilter = `scale=${width}:${height}:force_original_aspect_ratio=increase:flags=lanczos,crop=${width}:${height}`;
+          finalFilter = `${preprocessFilter},${filter}`;
+        }
       } else {
         if (isPan) {
           ({ filter, effect } = getPanEffect(sceneIndex, duration, width, height, framerate));
@@ -1272,7 +1279,7 @@ async function renderSceneWithEffect(imagePath, outputPath, duration, width, hei
         finalFilter = `${preprocessFilter},${filter}`;
       }
       
-      // Validate filter string doesn't contain invalid characters
+      // The following code only runs if we didn't return resolve() for OpenCV
       if (!finalFilter || finalFilter.includes('undefined') || finalFilter.includes('NaN') || finalFilter.includes('Infinity')) {
         return reject(new Error(`Invalid filter contains undefined/NaN/Infinity: ${finalFilter}`));
       }
