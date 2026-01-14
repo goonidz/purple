@@ -17,11 +17,11 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install Python dependencies
-COPY requirements.txt .
+COPY runpod-handler/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy handler code
-COPY handler.py .
+COPY runpod-handler/handler.py .
 
 # Environment variables (to be set in RunPod dashboard)
 # SUPABASE_URL=https://your-project.supabase.co
