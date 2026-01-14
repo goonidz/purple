@@ -626,8 +626,9 @@ def render_video_payload(payload: Dict[str, Any], progress_cb=None) -> Dict[str,
         download_time = time.time() - download_start
         print(f"[GPU Handler] Downloaded {len(scenes)} images in {download_time:.1f}s (parallel)")
 
-        # Process all scenes in parallel (20 workers = 20 FFmpeg instances at once)
-        print(f"[GPU Handler] Processing {len(scenes)} scenes in parallel (20 workers)...")
+        # Process all scenes in parallel (3 workers = NVENC session limit)
+        # RTX 4090 can only handle 3-5 simultaneous NVENC sessions
+        print(f"[GPU Handler] Processing {len(scenes)} scenes in parallel (3 workers)...")
         process_start = time.time()
         
         segment_paths = [None] * len(scenes)
@@ -651,7 +652,7 @@ def render_video_payload(payload: Dict[str, Any], progress_cb=None) -> Dict[str,
             
             return (i, str(segment_path), None)
         
-        with ThreadPoolExecutor(max_workers=20) as executor:
+        with ThreadPoolExecutor(max_workers=3) as executor:
             # Submit all processing tasks
             future_to_index = {
                 executor.submit(process_scene_task, i, scene): i 
