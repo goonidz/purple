@@ -18,7 +18,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Version identifier - update this when making pan/zoom changes
-const SERVICE_VERSION = 'v2.16-cleanup-endpoint';
+const SERVICE_VERSION = 'v2.17-opencv-zoom-support';
 
 // Path to FFmpeg fork with subpixel zoom support
 // Install with: ./install-ffmpeg-subpixel.sh
@@ -1168,6 +1168,7 @@ async function renderSceneWithEffect(imagePath, outputPath, duration, width, hei
     const isPan = normalizedEffectType === 'pan';
     const isPanOld = /^pan[_\s-]?old$/i.test(normalizedEffectType);
     const isSubpixelZoom = normalizedEffectType === 'zoom_subpixel';
+    const isOpenCVZoom = normalizedEffectType === 'opencv_zoom';
     const isNoEffect = normalizedEffectType === 'none';
     console.log(`[${jobId}] Normalized effectType: "${normalizedEffectType}"`);
     console.log(`[${jobId}] Is pan effect? ${isPan}, Is pan old? ${isPanOld}, Is subpixel zoom? ${isSubpixelZoom}, Is no effect? ${isNoEffect}`);
@@ -1225,7 +1226,7 @@ async function renderSceneWithEffect(imagePath, outputPath, duration, width, hei
       // Select the appropriate effect based on effectType
       let filter, effect, finalFilter;
       
-      console.log(`[${jobId}] Scene ${sceneIndex}: Selecting effect - normalizedEffectType="${normalizedEffectType}", isNoEffect=${isNoEffect}, isPan=${isPan}, isSubpixelZoom=${isSubpixelZoom}`);
+      console.log(`[${jobId}] Scene ${sceneIndex}: Selecting effect - normalizedEffectType="${normalizedEffectType}", isNoEffect=${isNoEffect}, isPan=${isPan}, isSubpixelZoom=${isSubpixelZoom}, isOpenCVZoom=${isOpenCVZoom}`);
       
       if (isNoEffect) {
         // No effect: use zoompan with zoom=1 (no zoom) to generate frames for the duration
@@ -1237,6 +1238,12 @@ async function renderSceneWithEffect(imagePath, outputPath, duration, width, hei
         finalFilter = `${preprocessFilter},${staticFilter}`;
         console.log(`[${jobId}] Scene ${sceneIndex}: No effect (static image), ${duration.toFixed(2)}s`);
         console.log(`[${jobId}] Scene ${sceneIndex}: Final filter for no effect: ${finalFilter}`);
+      } else if (isOpenCVZoom) {
+        // OpenCV WarpAffine zoom effect
+        console.log(`[${jobId}] Scene ${sceneIndex}: Using OpenCV WarpAffine zoom`);
+        return renderSceneWithOpenCV(imagePath, outputPath, duration, width, height, framerate, sceneIndex, jobId)
+          .then(resolve)
+          .catch(reject);
       } else {
         if (isPan) {
           ({ filter, effect } = getPanEffect(sceneIndex, duration, width, height, framerate));
@@ -1371,6 +1378,92 @@ async function renderSceneWithEffect(imagePath, outputPath, duration, width, hei
       
       sceneFfmpegCommand.run();
     });
+  });
+}
+
+/**
+ * Render a single scene using OpenCV WarpAffine zoom
+ * This is an alternative to FFmpeg zoompan for smoother animations without massive upscaling.
+ */
+async function renderSceneWithOpenCV(imagePath, outputPath, duration, width, height, framerate, sceneIndex, jobId) {
+  return new Promise(async (resolve, reject) => {
+    console.log(`[${jobId}] OpenCV: Rendering scene ${sceneIndex} for ${duration}s (${width}x${height}@${framerate}fps)`);
+    
+    // Choose effect based on scene index for variety
+    const effects = ['zoom_in', 'zoom_out', 'zoom_in_left', 'zoom_out_right', 'zoom_in_top', 'zoom_out_bottom'];
+    const effect = effects[sceneIndex % effects.length];
+    
+    // Path to the python script
+    const scriptPath = path.join(__dirname, 'opencv_zoom.py');
+    const framesDir = path.join(path.dirname(outputPath), `frames_${sceneIndex}`);
+    
+    try {
+      if (!fs.existsSync(framesDir)) {
+        fs.mkdirSync(framesDir, { recursive: true });
+      }
+
+      // 1. Generate frames using OpenCV
+      const pythonProcess = require('child_process').spawn('python3', [
+        scriptPath,
+        imagePath,
+        framesDir,
+        duration.toString(),
+        width.toString(),
+        height.toString(),
+        framerate.toString(),
+        effect
+      ]);
+      
+      let stderr = '';
+      pythonProcess.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+      
+      pythonProcess.on('close', (code) => {
+        if (code !== 0) {
+          console.error(`[${jobId}] OpenCV Scene ${sceneIndex} failed with code ${code}: ${stderr}`);
+          return reject(new Error(`OpenCV process failed: ${stderr}`));
+        }
+
+        // 2. Assemble frames into video using FFmpeg
+        const framePattern = path.join(framesDir, 'frame_%05d.jpg');
+        ffmpeg()
+          .input(framePattern)
+          .inputOptions(['-framerate', framerate.toString()])
+          .videoCodec('libx264')
+          .outputOptions([
+            '-preset', 'ultrafast',
+            '-crf', '23',
+            '-pix_fmt', 'yuv420p',
+            '-vsync', 'cfr'
+          ])
+          .output(outputPath)
+          .on('start', (cmd) => {
+            console.log(`[${jobId}] OpenCV Scene ${sceneIndex} FFmpeg: ${cmd}`);
+          })
+          .on('end', () => {
+            console.log(`[${jobId}] OpenCV Scene ${sceneIndex} completed successfully`);
+            // Cleanup frames directory
+            fs.rm(framesDir, { recursive: true, force: true }, (err) => {
+              if (err) console.error(`[${jobId}] Error cleaning up frames dir: ${err.message}`);
+              resolve();
+            });
+          })
+          .on('error', (err) => {
+            console.error(`[${jobId}] OpenCV Scene ${sceneIndex} FFmpeg error:`, err.message);
+            reject(err);
+          })
+          .run();
+      });
+      
+      pythonProcess.on('error', (err) => {
+        console.error(`[${jobId}] Failed to start OpenCV process:`, err);
+        reject(err);
+      });
+    } catch (err) {
+      console.error(`[${jobId}] Error in renderSceneWithOpenCV:`, err);
+      reject(err);
+    }
   });
 }
 

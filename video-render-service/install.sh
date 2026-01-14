@@ -20,6 +20,14 @@ fi
 echo "📦 Installing dependencies..."
 npm install
 
+# Install Python dependencies for OpenCV zoom
+echo "🐍 Installing Python dependencies..."
+if command -v pip3 &> /dev/null; then
+    pip3 install opencv-python-headless numpy
+else
+    echo "⚠️  pip3 not found. Please install python3-pip and then: pip3 install opencv-python-headless numpy"
+fi
+
 # Create .env file if it doesn't exist
 if [ ! -f .env ]; then
     echo "📝 Creating .env file..."

@@ -18,7 +18,7 @@ export interface VideoRenderOptions {
   width?: number;
   height?: number;
   subtitleSettings?: SubtitleSettings;
-  effectType?: 'zoom' | 'pan' | 'zoom_subpixel' | 'none'; // 'zoom' for Ken Burns, 'pan' for pan effects, 'zoom_subpixel' for experimental smooth zoom, 'none' for static image
+  effectType?: 'zoom' | 'pan' | 'zoom_subpixel' | 'opencv_zoom' | 'none'; // 'zoom' for Ken Burns, 'pan' for pan effects, 'zoom_subpixel' for experimental smooth zoom, 'opencv_zoom' for OpenCV warpAffine zoom, 'none' for static image
   renderMethod?: 'standard' | 'lanczos'; // 'standard' = 6x upscale, 'lanczos' = 2x upscale with Lanczos
 }
 
