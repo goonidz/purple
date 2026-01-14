@@ -626,16 +626,18 @@ def render_video_payload(payload: Dict[str, Any], progress_cb=None) -> Dict[str,
         download_time = time.time() - download_start
         print(f"[GPU Handler] Downloaded {len(scenes)} images in {download_time:.1f}s (parallel)")
 
-        # Now process all scenes with pre-downloaded images
-        segment_paths: List[str] = []
+        # Process all scenes in parallel (5 workers = 5 FFmpeg instances at once)
+        print(f"[GPU Handler] Processing {len(scenes)} scenes in parallel (5 workers)...")
+        process_start = time.time()
         
-        for i, scene in enumerate(scenes):
-            print(f"[GPU Handler] Processing scene {i+1}/{len(scenes)}")
-            
+        segment_paths = [None] * len(scenes)
+        
+        def process_scene_task(i: int, scene: Dict) -> Tuple[int, Optional[str], Optional[str]]:
+            """Process a single scene. Returns (index, segment_path, error)."""
             image_path = image_paths[i]
             segment_path = temp_path / f'segment_{i}.mp4'
             duration = scene.get('duration', scene.get('endTime', 5) - scene.get('startTime', 0))
-
+            
             if not create_video_segment(
                 image_path,
                 str(segment_path),
@@ -645,12 +647,34 @@ def render_video_payload(payload: Dict[str, Any], progress_cb=None) -> Dict[str,
                 framerate,
                 effect_type
             ):
-                return {"error": f"Failed to create video segment for scene {i}"}
-
-            segment_paths.append(str(segment_path))
-            # Progress 20-80% for processing
-            progress = 20 + int((i + 1) / len(scenes) * 60)
-            progress_cb(progress)
+                return (i, None, f"Failed to create video segment for scene {i}")
+            
+            return (i, str(segment_path), None)
+        
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            # Submit all processing tasks
+            future_to_index = {
+                executor.submit(process_scene_task, i, scene): i 
+                for i, scene in enumerate(scenes)
+            }
+            
+            # Collect results as they complete
+            completed = 0
+            for future in as_completed(future_to_index):
+                index, segment_path, error = future.result()
+                if error:
+                    return {"error": error}
+                segment_paths[index] = segment_path
+                
+                completed += 1
+                print(f"[GPU Handler] Completed scene {completed}/{len(scenes)}")
+                
+                # Progress 20-80% for processing
+                progress = 20 + int(completed / len(scenes) * 60)
+                progress_cb(progress)
+        
+        process_time = time.time() - process_start
+        print(f"[GPU Handler] Processed {len(scenes)} scenes in {process_time:.1f}s (parallel)")
 
         print("[GPU Handler] Concatenating segments...")
         concat_path = temp_path / 'concat.mp4'
