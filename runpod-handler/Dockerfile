@@ -3,7 +3,7 @@
 #
 # IMPORTANT VERSION NOTES:
 # - Using runpod/pytorch:1.0.3 with CUDA 12.8 (latest stable)
-# - nv-codec-headers n12.2.72.0 for CUDA 12.x compatibility
+# - nv-codec-headers n12.1.14.0 (compatible with FFmpeg 6.1)
 # - FFmpeg 6.1 works well with modern CUDA
 # - Handler has automatic CPU fallback if GPU unavailable
 #
@@ -14,7 +14,6 @@ FROM runpod/pytorch:1.0.3-cu1281-torch280-ubuntu2204
 WORKDIR /app
 
 # Install build dependencies for FFmpeg compilation
-# Note: NVENC runtime libs are provided by the container for CUDA 12.x
 RUN apt-get update && apt-get install -y \
     wget \
     git \
@@ -33,15 +32,14 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Install NVIDIA Video Codec SDK headers
-# Using n12.2.72.0 for CUDA 12.x compatibility
-RUN git clone --depth 1 --branch n12.2.72.0 https://github.com/FFmpeg/nv-codec-headers.git && \
+# n12.1.14.0 is compatible with FFmpeg 6.1 (NOT n12.2.x which is too new)
+RUN git clone --depth 1 --branch n12.1.14.0 https://github.com/FFmpeg/nv-codec-headers.git && \
     cd nv-codec-headers && \
     make install && \
     cd .. && \
     rm -rf nv-codec-headers
 
 # Download and compile FFmpeg 6.1 with NVENC support
-# FFmpeg 6.1 is the latest stable, works with CUDA 12.x
 RUN wget -q https://ffmpeg.org/releases/ffmpeg-6.1.tar.xz && \
     tar xf ffmpeg-6.1.tar.xz && \
     cd ffmpeg-6.1 && \
@@ -83,12 +81,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy handler code
 COPY runpod-handler/handler.py .
 
-# Environment variables (to be set in RunPod dashboard)
-# SUPABASE_URL=https://your-project.supabase.co
-# SUPABASE_SERVICE_KEY=your-service-key
-
 # CRITICAL: Enable GPU video encoding capabilities in container
-# Without this, NVENC is blocked even if GPU is visible
 ENV NVIDIA_DRIVER_CAPABILITIES=all
 ENV NVIDIA_VISIBLE_DEVICES=all
 
@@ -98,4 +91,3 @@ ENV NVENC_SUPPORT="enabled"
 
 # Start the handler
 CMD ["python", "-u", "handler.py"]
-# Trigger rebuild Wed Jan 14 17:14:38 CET 2026
