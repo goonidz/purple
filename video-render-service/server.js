@@ -1184,7 +1184,7 @@ async function renderSceneWithEffect(imagePath, outputPath, duration, width, hei
     }
     
     // Get actual image dimensions using ffprobe
-    ffmpeg.ffprobe(imagePath, (err, metadata) => {
+    ffmpeg.ffprobe(imagePath, async (err, metadata) => {
       if (err) {
         console.error(`[${jobId}] Error probing image ${sceneIndex}:`, err);
         return reject(new Error(`Failed to probe image: ${err.message}`));
