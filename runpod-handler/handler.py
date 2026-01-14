@@ -237,7 +237,8 @@ def detect_gpu_encoder() -> bool:
                     print(f"[GPU Handler] ✅ NVENC works with -gpu {gpu_id}")
                     GPU_ENCODER_AVAILABLE = True
                     ENCODER_NAME = 'h264_nvenc'
-                    ENCODER_PRESET = 'p4'
+                    # FFmpeg 5.x uses 'fast'/'medium'/'slow', FFmpeg 6+ uses 'p1'-'p7'
+                    ENCODER_PRESET = 'fast'
                     ENCODER_GPU_ID = gpu_id
                     return True
 
@@ -340,7 +341,8 @@ def get_encoder_args() -> List[str]:
             '-c:v', 'h264_nvenc',
             # Use probed GPU id when available (important on some RunPod workers)
             *(['-gpu', str(ENCODER_GPU_ID)] if ENCODER_GPU_ID is not None else []),
-            '-preset', 'p4',
+            # FFmpeg 5.x uses 'fast'/'medium'/'slow', FFmpeg 6+ uses 'p1'-'p7'
+            '-preset', 'fast',
             '-tune', 'hq',
             '-b:v', '8M',
             '-maxrate', '12M',
