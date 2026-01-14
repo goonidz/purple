@@ -1,53 +1,32 @@
-# RunPod GPU Video Rendering Handler (Serverless)
+# RunPod GPU Video Rendering Handler
 #
-# Your error:
-#   nvidia-container-cli: requirement error: unsatisfied condition: cuda>=12.8
-# means the *worker's host driver* is older than CUDA 12.8.
-# You can't "update the driver" on serverless workers, so the fix is:
-#   ✅ use an earlier CUDA container.
+# Base image: lestermfp/runpod-ffmpeg-cuda (community template)
+# This image has FFmpeg 5.1.4 pre-compiled with NVENC support
+# and CUDA 11.8 - proven to work on RunPod Pods.
 #
-# This Dockerfile pins to RunPod's CUDA 12.2 base image (broad compatibility)
-# and installs a prebuilt FFmpeg that includes NVENC.
-#
-# Build time: ~2-4 minutes
+# Build time: ~1-2 minutes (just adding Python deps + handler)
 
-FROM runpod/base:0.6.1-cuda12.2.0
+FROM lestermfp/runpod-ffmpeg-cuda:latest
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates \
-    wget \
-    xz-utils \
-    python3-pip \
-    nvidia-modprobe \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install prebuilt FFmpeg with NVENC support (fast, no compilation).
-# (John Van Sickle static builds typically do NOT include NVENC; use BtbN.)
-RUN wget -q https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl-shared.tar.xz && \
-    tar xf ffmpeg-master-latest-linux64-gpl-shared.tar.xz && \
-    cp -r ffmpeg-master-latest-linux64-gpl-shared/bin/* /usr/local/bin/ && \
-    cp -r ffmpeg-master-latest-linux64-gpl-shared/lib/* /usr/local/lib/ && \
-    ldconfig && \
-    rm -rf ffmpeg-master-latest-linux64-gpl-shared* && \
-    ffmpeg -version && \
-    ffmpeg -hide_banner -encoders 2>/dev/null | grep -i nvenc
-
-# Copy requirements and install Python dependencies
+# Install Python dependencies (image already has python3-pip)
 COPY runpod-handler/requirements.txt .
-RUN python3 -m pip install --no-cache-dir -r requirements.txt
+RUN pip3 install --no-cache-dir -r requirements.txt
 
 # Copy handler code
 COPY runpod-handler/handler.py .
 
-# Entrypoint: ensure NVENC capability devices exist (/dev/nvidia-caps/*)
+# Entrypoint for NVENC capability devices
 COPY runpod-handler/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-# Enable GPU video encoding capabilities
+# GPU capabilities
 ENV NVIDIA_DRIVER_CAPABILITIES=all
 ENV NVIDIA_VISIBLE_DEVICES=all
+
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["python3", "handler.py"]
 
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["python3", "-u", "handler.py"]
