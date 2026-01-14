@@ -1,6 +1,7 @@
 """
 RunPod Serverless Handler for GPU Video Rendering
 Uses FFmpeg with NVENC (NVIDIA GPU acceleration) for fast video encoding
+With automatic fallback to CPU encoding if GPU is unavailable
 """
 
 import runpod
@@ -11,12 +12,82 @@ import requests
 import json
 import time
 from pathlib import Path
-from typing import Dict, Any, List
-from urllib.parse import urlparse
+from typing import Dict, Any, List, Optional
 
 # Supabase configuration (for uploading results)
 SUPABASE_URL = os.environ.get('SUPABASE_URL', '')
 SUPABASE_SERVICE_KEY = os.environ.get('SUPABASE_SERVICE_KEY', '')
+
+# Global encoder detection (runs once at startup)
+GPU_ENCODER_AVAILABLE = None
+ENCODER_NAME = None
+ENCODER_PRESET = None
+
+
+def detect_gpu_encoder() -> bool:
+    """
+    Detect if h264_nvenc is available at startup.
+    This runs ONCE and caches the result for all subsequent renders.
+    """
+    global GPU_ENCODER_AVAILABLE, ENCODER_NAME, ENCODER_PRESET
+    
+    if GPU_ENCODER_AVAILABLE is not None:
+        return GPU_ENCODER_AVAILABLE
+    
+    print("[GPU Handler] Detecting available encoders...")
+    
+    # First, check if FFmpeg has nvenc support compiled in
+    try:
+        result = subprocess.run(
+            ['ffmpeg', '-hide_banner', '-encoders'],
+            capture_output=True, text=True, timeout=10
+        )
+        has_nvenc_support = 'h264_nvenc' in result.stdout
+        
+        if not has_nvenc_support:
+            print("[GPU Handler] FFmpeg was not compiled with NVENC support")
+            GPU_ENCODER_AVAILABLE = False
+            ENCODER_NAME = 'libx264'
+            ENCODER_PRESET = 'fast'
+            return False
+            
+    except Exception as e:
+        print(f"[GPU Handler] Error checking encoders: {e}")
+        GPU_ENCODER_AVAILABLE = False
+        ENCODER_NAME = 'libx264'
+        ENCODER_PRESET = 'fast'
+        return False
+    
+    # Test if NVENC actually works (GPU accessible)
+    try:
+        test_cmd = [
+            'ffmpeg', '-y',
+            '-f', 'lavfi', '-i', 'color=c=black:s=64x64:d=0.1',
+            '-c:v', 'h264_nvenc',
+            '-f', 'null', '-'
+        ]
+        result = subprocess.run(test_cmd, capture_output=True, text=True, timeout=30)
+        
+        if result.returncode == 0:
+            print("[GPU Handler] ✅ NVENC GPU encoder available and working!")
+            GPU_ENCODER_AVAILABLE = True
+            ENCODER_NAME = 'h264_nvenc'
+            ENCODER_PRESET = 'p4'
+            return True
+        else:
+            print(f"[GPU Handler] NVENC test failed: {result.stderr[:200]}")
+            GPU_ENCODER_AVAILABLE = False
+            ENCODER_NAME = 'libx264'
+            ENCODER_PRESET = 'fast'
+            return False
+            
+    except Exception as e:
+        print(f"[GPU Handler] NVENC test exception: {e}")
+        GPU_ENCODER_AVAILABLE = False
+        ENCODER_NAME = 'libx264'
+        ENCODER_PRESET = 'fast'
+        return False
+
 
 def download_file(url: str, dest_path: str) -> bool:
     """Download a file from URL to destination path"""
@@ -59,6 +130,25 @@ def upload_to_supabase(file_path: str, bucket: str, dest_path: str) -> str:
     return public_url
 
 
+def get_encoder_args() -> List[str]:
+    """Get the appropriate encoder arguments based on detected encoder"""
+    if ENCODER_NAME == 'h264_nvenc':
+        return [
+            '-c:v', 'h264_nvenc',
+            '-preset', 'p4',
+            '-tune', 'hq',
+            '-b:v', '8M',
+            '-maxrate', '12M',
+            '-bufsize', '16M',
+        ]
+    else:
+        return [
+            '-c:v', 'libx264',
+            '-preset', 'fast',
+            '-crf', '20',
+        ]
+
+
 def create_video_segment(
     image_path: str,
     output_path: str,
@@ -68,70 +158,56 @@ def create_video_segment(
     framerate: int,
     effect_type: str = 'pan'
 ) -> bool:
-    """Create a video segment from an image with GPU acceleration"""
+    """Create a video segment from an image with the detected encoder"""
     
     # Determine zoom/pan parameters based on effect type
     if effect_type == 'none':
         # Static image, no movement
         filter_complex = f"scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2"
     elif 'zoom' in effect_type:
-        # Ken Burns zoom effect using GPU-accelerated scaling
+        # Ken Burns zoom effect
         zoom_amount = 0.08  # 8% zoom
         if 'zoom_out' in effect_type:
-            # Start zoomed, end normal
             start_scale = 1.0 + zoom_amount
             end_scale = 1.0
         else:
-            # Start normal, end zoomed
             start_scale = 1.0
             end_scale = 1.0 + zoom_amount
         
-        # Use zoompan filter (FFmpeg's built-in for smooth zoom)
         filter_complex = (
             f"scale=8*{width}:8*{height},"
             f"zoompan=z='if(eq(on,1),{start_scale},{start_scale}+({end_scale}-{start_scale})*on/({framerate}*{duration}))':"
             f"d={int(framerate * duration)}:s={width}x{height}:fps={framerate}"
         )
     else:
-        # Pan effect
-        pan_speed = 0.03  # 3% of width for pan
+        # Pan effect (default)
         filter_complex = (
             f"scale=-2:{int(height * 1.1)},"
             f"crop={width}:{height}:'(iw-{width})*t/{duration}':(ih-{height})/2"
         )
     
-    # FFmpeg command with NVENC GPU encoding
+    # Build FFmpeg command with detected encoder
     cmd = [
         'ffmpeg', '-y',
         '-loop', '1',
         '-i', image_path,
         '-t', str(duration),
         '-vf', filter_complex,
-        '-c:v', 'h264_nvenc',  # NVIDIA GPU encoder
-        '-preset', 'p4',  # Balanced quality/speed
-        '-tune', 'hq',
-        '-b:v', '8M',
-        '-maxrate', '12M',
-        '-bufsize', '16M',
+    ]
+    cmd.extend(get_encoder_args())
+    cmd.extend([
         '-pix_fmt', 'yuv420p',
         '-r', str(framerate),
         output_path
-    ]
+    ])
     
-    print(f"Running FFmpeg: {' '.join(cmd)}")
+    print(f"Running FFmpeg ({ENCODER_NAME}): {' '.join(cmd[:15])}...")
     
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
         if result.returncode != 0:
-            print(f"FFmpeg error: {result.stderr}")
-            # Fallback to CPU encoding if GPU fails
-            cmd[cmd.index('h264_nvenc')] = 'libx264'
-            cmd = [c for c in cmd if c not in ['-preset', 'p4', '-tune', 'hq']]
-            cmd.extend(['-preset', 'fast'])
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
-            if result.returncode != 0:
-                print(f"FFmpeg CPU fallback error: {result.stderr}")
-                return False
+            print(f"FFmpeg error: {result.stderr[-500:]}")
+            return False
         return True
     except subprocess.TimeoutExpired:
         print("FFmpeg timeout")
@@ -142,7 +218,7 @@ def create_video_segment(
 
 
 def concatenate_videos(video_paths: List[str], output_path: str) -> bool:
-    """Concatenate multiple video segments into one using GPU"""
+    """Concatenate multiple video segments into one"""
     
     # Create concat file
     concat_file = output_path.replace('.mp4', '_concat.txt')
@@ -150,29 +226,21 @@ def concatenate_videos(video_paths: List[str], output_path: str) -> bool:
         for vp in video_paths:
             f.write(f"file '{vp}'\n")
     
+    # Use stream copy for concatenation (very fast, no re-encoding)
     cmd = [
         'ffmpeg', '-y',
         '-f', 'concat',
         '-safe', '0',
         '-i', concat_file,
-        '-c:v', 'h264_nvenc',
-        '-preset', 'p4',
-        '-tune', 'hq',
-        '-b:v', '8M',
+        '-c', 'copy',
         output_path
     ]
     
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
         if result.returncode != 0:
-            print(f"Concat error: {result.stderr}")
-            # Fallback to CPU
-            cmd[cmd.index('h264_nvenc')] = 'libx264'
-            cmd = [c for c in cmd if c not in ['-preset', 'p4', '-tune', 'hq']]
-            cmd.extend(['-preset', 'fast'])
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
-            if result.returncode != 0:
-                return False
+            print(f"Concat error: {result.stderr[-500:]}")
+            return False
         return True
     except Exception as e:
         print(f"Concat exception: {e}")
@@ -183,14 +251,13 @@ def concatenate_videos(video_paths: List[str], output_path: str) -> bool:
 
 
 def add_audio(video_path: str, audio_path: str, output_path: str) -> bool:
-    """Add audio to video using GPU encoding"""
+    """Add audio to video (copy video stream, encode audio)"""
     
     cmd = [
         'ffmpeg', '-y',
         '-i', video_path,
         '-i', audio_path,
-        '-c:v', 'h264_nvenc',
-        '-preset', 'p4',
+        '-c:v', 'copy',  # Just copy video, no re-encoding needed
         '-c:a', 'aac',
         '-b:a', '192k',
         '-map', '0:v:0',
@@ -202,23 +269,8 @@ def add_audio(video_path: str, audio_path: str, output_path: str) -> bool:
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
         if result.returncode != 0:
-            print(f"Audio mux error: {result.stderr}")
-            # Fallback to copy (no re-encoding)
-            cmd = [
-                'ffmpeg', '-y',
-                '-i', video_path,
-                '-i', audio_path,
-                '-c:v', 'copy',
-                '-c:a', 'aac',
-                '-b:a', '192k',
-                '-map', '0:v:0',
-                '-map', '1:a:0',
-                '-shortest',
-                output_path
-            ]
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
-            if result.returncode != 0:
-                return False
+            print(f"Audio mux error: {result.stderr[-500:]}")
+            return False
         return True
     except Exception as e:
         print(f"Audio mux exception: {e}")
@@ -247,6 +299,9 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
     }
     """
     
+    # Detect encoder on first call (cached for subsequent calls)
+    detect_gpu_encoder()
+    
     job_input = job.get('input', {})
     
     scenes = job_input.get('scenes', [])
@@ -270,6 +325,7 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
     print(f"[GPU Handler] Starting render for project {project_id}")
     print(f"[GPU Handler] {len(scenes)} scenes, {width}x{height} @ {framerate}fps")
     print(f"[GPU Handler] Effect type: {effect_type}")
+    print(f"[GPU Handler] Using encoder: {ENCODER_NAME} (GPU: {GPU_ENCODER_AVAILABLE})")
     
     start_time = time.time()
     
@@ -351,13 +407,11 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
             video_url = upload_to_supabase(str(final_path), 'videos', dest_path)
         except Exception as e:
             print(f"[GPU Handler] Upload error: {e}")
-            # Return local path for debugging (won't work in production)
-            video_url = f"file://{final_path}"
             return {"error": f"Failed to upload video: {e}"}
         
         elapsed_time = time.time() - start_time
         
-        print(f"[GPU Handler] Render complete in {elapsed_time:.1f}s")
+        print(f"[GPU Handler] ✅ Render complete in {elapsed_time:.1f}s")
         print(f"[GPU Handler] Video URL: {video_url}")
         
         return {
@@ -369,6 +423,8 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
             "resolution": f"{width}x{height}",
             "framerate": framerate,
             "effectType": effect_type,
+            "encoder": ENCODER_NAME,
+            "gpuAccelerated": GPU_ENCODER_AVAILABLE,
         }
 
 
