@@ -11,6 +11,7 @@ import tempfile
 import requests
 import json
 import time
+import re
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 
@@ -45,6 +46,31 @@ def _run_diag(cmd: str, timeout: int = 15) -> None:
             print(err)
     except Exception as e:
         print(f"[GPU Handler] Diagnostic command failed: {e}")
+
+def _discover_nvidia_device_indices() -> List[int]:
+    """
+    RunPod serverless sometimes maps the assigned GPU to /dev/nvidia4, /dev/nvidia1, etc.
+    NVENC's `-gpu N` expects the *same index* as the device node number.
+    """
+    try:
+        ls = subprocess.run(
+            ['bash', '-lc', 'ls -1 /dev/nvidia* 2>/dev/null || true'],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        paths = [p.strip() for p in (ls.stdout or "").splitlines() if p.strip()]
+        idx: List[int] = []
+        for p in paths:
+            m = re.match(r"^/dev/nvidia(\d+)$", p)
+            if m:
+                idx.append(int(m.group(1)))
+        idx = sorted(set(idx))
+        if idx:
+            print(f"[GPU Handler] Detected GPU device nodes: {', '.join(str(i) for i in idx)}")
+        return idx
+    except Exception:
+        return []
 
 
 def detect_gpu_encoder() -> bool:
@@ -120,11 +146,15 @@ def detect_gpu_encoder() -> bool:
         return False
     
     # Test if NVENC actually works (GPU accessible)
-    # IMPORTANT: Some RunPod workers expose the device node as /dev/nvidia1 (no /dev/nvidia0).
-    # In that case, forcing -gpu 0 fails with "No capable devices found".
-    # We'll probe a few GPU ids and keep the first that works.
+    # IMPORTANT: RunPod workers may expose the GPU as /dev/nvidia4, /dev/nvidia1, etc.
+    # In that case, forcing -gpu 0 fails. We must probe the actual indices present.
     max_attempts = 3
-    candidate_gpu_ids = [0, 1, 2, 3]
+    discovered = _discover_nvidia_device_indices()
+    # Always include a small fallback range too, but prefer real device node indices.
+    candidate_gpu_ids = (discovered + [0, 1, 2, 3, 4, 5, 6, 7])
+    # Deduplicate while preserving order
+    seen = set()
+    candidate_gpu_ids = [x for x in candidate_gpu_ids if not (x in seen or seen.add(x))]
     for attempt in range(max_attempts):
         try:
             print(f"[GPU Handler] Testing NVENC (attempt {attempt + 1}/{max_attempts})...")
@@ -153,7 +183,7 @@ def detect_gpu_encoder() -> bool:
                     return True
 
                 stderr = result.stderr or ""
-                # Print short per-gpu failure; full tail printed below on last attempt.
+                # Print short per-gpu failure; full tail printed below.
                 if 'OpenEncodeSessionEx failed' in stderr or 'No capable devices found' in stderr:
                     print(f"[GPU Handler] NVENC probe failed on -gpu {gpu_id}: No capable devices")
                 else:
