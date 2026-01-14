@@ -13,7 +13,8 @@ import json
 import time
 import re
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Supabase configuration (for uploading results)
 SUPABASE_URL = os.environ.get('SUPABASE_URL', '')
@@ -532,6 +533,28 @@ def update_gpu_job(job_id: str, patch: Dict[str, Any]) -> None:
         raise RuntimeError(f"update gpu_render_jobs failed: {r.status_code} {r.text}")
 
 
+def download_scene_image(scene_index: int, scene: Dict, temp_path: Path) -> Tuple[int, Optional[str], Optional[str]]:
+    """
+    Download a single scene image. Returns (index, image_path, error).
+    Used for parallel downloading.
+    """
+    image_url = scene.get('imageUrl', '')
+    if not image_url:
+        return (scene_index, None, f"Scene {scene_index} has no image URL")
+    
+    ext = '.jpg'
+    if '.png' in image_url.lower():
+        ext = '.png'
+    elif '.webp' in image_url.lower():
+        ext = '.webp'
+    
+    image_path = temp_path / f'image_{scene_index}{ext}'
+    if not download_file(image_url, str(image_path)):
+        return (scene_index, None, f"Failed to download image for scene {scene_index}")
+    
+    return (scene_index, str(image_path), None)
+
+
 def render_video_payload(payload: Dict[str, Any], progress_cb=None) -> Dict[str, Any]:
     """
     Core render pipeline used by both serverless and Pod worker.
@@ -571,34 +594,50 @@ def render_video_payload(payload: Dict[str, Any], progress_cb=None) -> Dict[str,
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
 
+        # Download audio
         audio_path = temp_path / 'audio.mp3'
         if not download_file(audio_url, str(audio_path)):
             return {"error": "Failed to download audio"}
 
-        segment_paths: List[str] = []
+        # Download ALL images in parallel (10x faster!)
+        print(f"[GPU Handler] Downloading {len(scenes)} images in parallel...")
+        download_start = time.time()
+        
+        image_paths = [None] * len(scenes)  # Pre-allocate list
+        
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            # Submit all download tasks
+            future_to_index = {
+                executor.submit(download_scene_image, i, scene, temp_path): i 
+                for i, scene in enumerate(scenes)
+            }
+            
+            # Collect results as they complete
+            for future in as_completed(future_to_index):
+                index, image_path, error = future.result()
+                if error:
+                    return {"error": error}
+                image_paths[index] = image_path
+                
+                # Update progress for downloads (0-20%)
+                progress = int((len([p for p in image_paths if p is not None]) / len(scenes)) * 20)
+                progress_cb(progress)
+        
+        download_time = time.time() - download_start
+        print(f"[GPU Handler] Downloaded {len(scenes)} images in {download_time:.1f}s (parallel)")
 
+        # Now process all scenes with pre-downloaded images
+        segment_paths: List[str] = []
+        
         for i, scene in enumerate(scenes):
             print(f"[GPU Handler] Processing scene {i+1}/{len(scenes)}")
-
-            image_url = scene.get('imageUrl', '')
-            if not image_url:
-                return {"error": f"Scene {i} has no image URL"}
-
-            ext = '.jpg'
-            if '.png' in image_url.lower():
-                ext = '.png'
-            elif '.webp' in image_url.lower():
-                ext = '.webp'
-
-            image_path = temp_path / f'image_{i}{ext}'
-            if not download_file(image_url, str(image_path)):
-                return {"error": f"Failed to download image for scene {i}"}
-
+            
+            image_path = image_paths[i]
             segment_path = temp_path / f'segment_{i}.mp4'
             duration = scene.get('duration', scene.get('endTime', 5) - scene.get('startTime', 0))
 
             if not create_video_segment(
-                str(image_path),
+                image_path,
                 str(segment_path),
                 duration,
                 width,
@@ -609,7 +648,8 @@ def render_video_payload(payload: Dict[str, Any], progress_cb=None) -> Dict[str,
                 return {"error": f"Failed to create video segment for scene {i}"}
 
             segment_paths.append(str(segment_path))
-            progress = int((i + 1) / len(scenes) * 70)
+            # Progress 20-80% for processing
+            progress = 20 + int((i + 1) / len(scenes) * 60)
             progress_cb(progress)
 
         print("[GPU Handler] Concatenating segments...")
