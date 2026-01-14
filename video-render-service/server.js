@@ -18,7 +18,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Version identifier - update this when making pan/zoom changes
-const SERVICE_VERSION = 'v2.17-opencv-zoom-support';
+const SERVICE_VERSION = 'v2.18-fix-async-logic';
 
 // Path to FFmpeg fork with subpixel zoom support
 // Install with: ./install-ffmpeg-subpixel.sh
@@ -1160,225 +1160,164 @@ async function renderVideoScene(videoPath, outputPath, duration, width, height, 
   });
 }
 
-// Render a single scene with effect (Ken Burns, Pan, or Subpixel Zoom)
+/**
+ * Render a single scene with zoom/pan effects
+ * This version uses clean async/await and is decoupled from OpenCV logic for stability.
+ */
 async function renderSceneWithEffect(imagePath, outputPath, duration, width, height, framerate, sceneIndex, jobId, effectType = 'zoom', renderMethod = 'standard') {
+  console.log(`[${jobId}] Rendering scene ${sceneIndex} with effectType: "${effectType}"`);
+  const normalizedEffectType = String(effectType || '').toLowerCase().trim();
+  const isOpenCVZoom = normalizedEffectType === 'opencv_zoom';
+  const isNoEffect = normalizedEffectType === 'none';
+  
+  if (!fs.existsSync(imagePath)) throw new Error(`Image not found: ${imagePath}`);
+  
+  // 1. Handle OpenCV Zoom separately (clean return)
+  if (isOpenCVZoom) {
+    try {
+      await renderSceneWithOpenCV(imagePath, outputPath, duration, width, height, framerate, sceneIndex, jobId);
+      return; // Success
+    } catch (err) {
+      console.error(`[${jobId}] OpenCV failed, falling back to standard:`, err.message);
+      // fallback to zoom if opencv fails
+    }
+  }
+
+  // 2. Standard FFmpeg Logic
+  const metadata = await new Promise((resolve, reject) => {
+    ffmpeg.ffprobe(imagePath, (err, data) => err ? reject(err) : resolve(data));
+  });
+
+  const isPan = normalizedEffectType === 'pan';
+  const isPanOld = /^pan[_\s-]?old$/i.test(normalizedEffectType);
+  const isSubpixelZoom = normalizedEffectType === 'zoom_subpixel';
+
+  let filter, effect, finalFilter;
+  const preprocessFilter = `scale=${width}:${height}:force_original_aspect_ratio=increase:flags=lanczos,crop=${width}:${height}`;
+
+  if (isNoEffect) {
+    const totalFrames = Math.max(1, Math.ceil(duration * framerate));
+    const staticFilter = `zoompan=z=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${totalFrames}:s=${width}x${height}:fps=${framerate}`;
+    finalFilter = `${preprocessFilter},${staticFilter}`;
+  } else {
+    if (isPan) {
+      ({ filter, effect } = getPanEffect(sceneIndex, duration, width, height, framerate));
+    } else if (isPanOld) {
+      ({ filter, effect } = getPanOldEffect(sceneIndex, duration, width, height, framerate));
+    } else if (isSubpixelZoom) {
+      ({ filter, effect } = getSubpixelZoomEffect(sceneIndex, duration, width, height, framerate));
+    } else {
+      ({ filter, effect } = getKenBurnsEffect(sceneIndex, duration, width, height, framerate, renderMethod));
+    }
+    finalFilter = `${preprocessFilter},${filter}`;
+  }
+
+  const outputDir = path.dirname(outputPath);
+  if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true });
+
   return new Promise((resolve, reject) => {
-    console.log(`[${jobId}] Rendering scene ${sceneIndex} with effectType: "${effectType}" (type: ${typeof effectType})`);
-    const normalizedEffectType = String(effectType || '').toLowerCase().trim();
-    const isPan = normalizedEffectType === 'pan';
-    const isPanOld = /^pan[_\s-]?old$/i.test(normalizedEffectType);
-    const isSubpixelZoom = normalizedEffectType === 'zoom_subpixel';
-    const isOpenCVZoom = normalizedEffectType === 'opencv_zoom';
-    const isNoEffect = normalizedEffectType === 'none';
-    console.log(`[${jobId}] Normalized effectType: "${normalizedEffectType}"`);
-    console.log(`[${jobId}] Is pan effect? ${isPan}, Is pan old? ${isPanOld}, Is subpixel zoom? ${isSubpixelZoom}, Is no effect? ${isNoEffect}`);
+    const cmd = ffmpeg(imagePath).inputOptions(['-loop', '1']);
+    if (isSubpixelZoom) cmd.setFfmpegPath(FFMPEG_SUBPIXEL_PATH);
     
-    // Check if FFmpeg subpixel fork is available (only for subpixel zoom)
-    if (isSubpixelZoom && !fs.existsSync(FFMPEG_SUBPIXEL_PATH)) {
-      return reject(new Error(`FFmpeg Subpixel fork not installed. Run install-ffmpeg-subpixel.sh on the VPS. Expected path: ${FFMPEG_SUBPIXEL_PATH}`));
+    cmd.videoCodec('libx264')
+      .outputOptions(['-preset', 'ultrafast', '-crf', '23', '-vsync', 'cfr', '-t', duration.toFixed(6)])
+      .videoFilters([finalFilter])
+      .output(outputPath)
+      .on('end', () => resolve())
+      .on('error', (err) => reject(err));
+
+    const job = jobs.get(jobId);
+    if (job) {
+      if (!job.sceneCommands) job.sceneCommands = [];
+      job.sceneCommands.push(cmd);
     }
+    cmd.run();
+  });
+}
+
+/**
+ * Render a single scene using OpenCV WarpAffine zoom
+ * This is an alternative to FFmpeg zoompan for smoother animations without massive upscaling.
+ */
+async function renderSceneWithOpenCV(imagePath, outputPath, duration, width, height, framerate, sceneIndex, jobId) {
+  return new Promise(async (resolve, reject) => {
+    console.log(`[${jobId}] OpenCV: Rendering scene ${sceneIndex} for ${duration}s (${width}x${height}@${framerate}fps)`);
     
-    // Verify image exists and get its dimensions
-    if (!fs.existsSync(imagePath)) {
-      return reject(new Error(`Image file not found: ${imagePath}`));
+    // Choose effect based on scene index for variety
+    const effects = ['zoom_in', 'zoom_out', 'zoom_in_left', 'zoom_out_right', 'zoom_in_top', 'zoom_out_bottom'];
+    const effect = effects[sceneIndex % effects.length];
+    
+    // Path to the python script
+    const scriptPath = path.join(__dirname, 'opencv_zoom.py');
+    const framesDir = path.join(path.dirname(outputPath), `frames_${sceneIndex}`);
+    
+    try {
+      if (!fs.existsSync(framesDir)) {
+        fs.mkdirSync(framesDir, { recursive: true });
+      }
+
+      // 1. Generate frames using OpenCV
+      const pythonProcess = require('child_process').spawn('python3', [
+        scriptPath,
+        imagePath,
+        framesDir,
+        duration.toString(),
+        width.toString(),
+        height.toString(),
+        framerate.toString(),
+        effect
+      ]);
+      
+      let stderr = '';
+      pythonProcess.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+      
+      pythonProcess.on('close', (code) => {
+        if (code !== 0) {
+          console.error(`[${jobId}] OpenCV Scene ${sceneIndex} failed with code ${code}: ${stderr}`);
+          return reject(new Error(`OpenCV process failed: ${stderr}`));
+        }
+
+        // 2. Assemble frames into video using FFmpeg
+        const framePattern = path.join(framesDir, 'frame_%05d.jpg');
+        ffmpeg()
+          .input(framePattern)
+          .inputOptions(['-framerate', framerate.toString()])
+          .videoCodec('libx264')
+          .outputOptions([
+            '-preset', 'ultrafast',
+            '-crf', '23',
+            '-pix_fmt', 'yuv420p',
+            '-vsync', 'cfr'
+          ])
+          .output(outputPath)
+          .on('start', (cmd) => {
+            console.log(`[${jobId}] OpenCV Scene ${sceneIndex} FFmpeg: ${cmd}`);
+          })
+          .on('end', () => {
+            console.log(`[${jobId}] OpenCV Scene ${sceneIndex} completed successfully`);
+            // Cleanup frames directory
+            fs.rm(framesDir, { recursive: true, force: true }, (err) => {
+              if (err) console.error(`[${jobId}] Error cleaning up frames dir: ${err.message}`);
+              resolve();
+            });
+          })
+          .on('error', (err) => {
+            console.error(`[${jobId}] OpenCV Scene ${sceneIndex} FFmpeg error:`, err.message);
+            reject(err);
+          })
+          .run();
+      });
+      
+      pythonProcess.on('error', (err) => {
+        console.error(`[${jobId}] Failed to start OpenCV process:`, err);
+        reject(err);
+      });
+    } catch (err) {
+      console.error(`[${jobId}] Error in renderSceneWithOpenCV:`, err);
+      reject(err);
     }
-    
-    // Get actual image dimensions using ffprobe
-    ffmpeg.ffprobe(imagePath, async (err, metadata) => {
-      if (err) {
-        console.error(`[${jobId}] Error probing image ${sceneIndex}:`, err);
-        return reject(new Error(`Failed to probe image: ${err.message}`));
-      }
-      
-      const imageStream = metadata?.streams?.find(s => s.codec_type === 'video');
-      const actualWidth = imageStream?.width || 0;
-      const actualHeight = imageStream?.height || 0;
-      const imageSize = fs.statSync(imagePath).size;
-      
-      console.log(`[${jobId}] Scene ${sceneIndex} image info:`);
-      console.log(`[${jobId}]   File: ${imagePath}`);
-      console.log(`[${jobId}]   Dimensions: ${actualWidth}x${actualHeight}`);
-      console.log(`[${jobId}]   File size: ${(imageSize / 1024).toFixed(2)} KB`);
-      console.log(`[${jobId}]   Target dimensions: ${width}x${height}`);
-      
-      if (actualWidth === 0 || actualHeight === 0) {
-        return reject(new Error(`Invalid image dimensions: ${actualWidth}x${actualHeight}`));
-      }
-      
-      // Validate image is readable
-      try {
-        fs.accessSync(imagePath, fs.constants.R_OK);
-      } catch (accessErr) {
-        return reject(new Error(`Image file is not readable: ${imagePath} - ${accessErr.message}`));
-      }
-      
-      // Validate duration and dimensions
-      if (duration <= 0 || duration > 300) {
-        return reject(new Error(`Invalid duration: ${duration}s (must be > 0 and <= 300)`));
-      }
-      if (width <= 0 || height <= 0 || width > 7680 || height > 4320) {
-        return reject(new Error(`Invalid target dimensions: ${width}x${height}`));
-      }
-      if (framerate <= 0 || framerate > 120) {
-        return reject(new Error(`Invalid framerate: ${framerate} (must be > 0 and <= 120)`));
-      }
-      
-      // Select the appropriate effect based on effectType
-      let filter, effect, finalFilter;
-      
-      console.log(`[${jobId}] Scene ${sceneIndex}: Selecting effect - normalizedEffectType="${normalizedEffectType}", isNoEffect=${isNoEffect}, isPan=${isPan}, isSubpixelZoom=${isSubpixelZoom}, isOpenCVZoom=${isOpenCVZoom}`);
-      
-      if (isNoEffect) {
-        // No effect: use zoompan with zoom=1 (no zoom) to generate frames for the duration
-        effect = 'none';
-        const totalFrames = Math.max(1, Math.ceil(duration * framerate));
-        const preprocessFilter = `scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height}`;
-        // zoompan with z=1 (no zoom), x/y at center, generates static frames
-        const staticFilter = `zoompan=z=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${totalFrames}:s=${width}x${height}:fps=${framerate}`;
-        finalFilter = `${preprocessFilter},${staticFilter}`;
-        console.log(`[${jobId}] Scene ${sceneIndex}: No effect (static image), ${duration.toFixed(2)}s`);
-        console.log(`[${jobId}] Scene ${sceneIndex}: Final filter for no effect: ${finalFilter}`);
-      } else if (isOpenCVZoom) {
-        // OpenCV WarpAffine zoom effect
-        console.log(`[${jobId}] Scene ${sceneIndex}: Using OpenCV WarpAffine zoom`);
-        try {
-          await renderSceneWithOpenCV(imagePath, outputPath, duration, width, height, framerate, sceneIndex, jobId);
-          return resolve();
-        } catch (opencvErr) {
-          console.error(`[${jobId}] OpenCV failed, falling back to Ken Burns:`, opencvErr.message);
-          // Fallback to Ken Burns if OpenCV fails
-          ({ filter, effect } = getKenBurnsEffect(sceneIndex, duration, width, height, framerate, renderMethod));
-          const preprocessFilter = `scale=${width}:${height}:force_original_aspect_ratio=increase:flags=lanczos,crop=${width}:${height}`;
-          finalFilter = `${preprocessFilter},${filter}`;
-        }
-      } else {
-        if (isPan) {
-          ({ filter, effect } = getPanEffect(sceneIndex, duration, width, height, framerate));
-        } else if (isPanOld) {
-          ({ filter, effect } = getPanOldEffect(sceneIndex, duration, width, height, framerate));
-        } else if (isSubpixelZoom) {
-          ({ filter, effect } = getSubpixelZoomEffect(sceneIndex, duration, width, height, framerate));
-        } else {
-          // Default: Ken Burns zoom
-          console.log(`[${jobId}] Scene ${sceneIndex}: Falling back to Ken Burns (effectType="${effectType}", normalized="${normalizedEffectType}")`);
-          ({ filter, effect } = getKenBurnsEffect(sceneIndex, duration, width, height, framerate, renderMethod));
-        }
-        
-        // Validate filter string is not empty
-        if (!filter || filter.trim().length === 0) {
-          return reject(new Error(`Empty filter generated for scene ${sceneIndex}`));
-        }
-        
-        console.log(`[${jobId}] Scene ${sceneIndex}: ${effect} effect (effectType: "${effectType}", isPan: ${isPan}), ${duration.toFixed(2)}s`);
-        console.log(`[${jobId}] Filter: ${filter}`);
-        
-        // Preprocessing: Resize image to fit target dimensions, then crop minimally to avoid black bars
-        const preprocessFilter = `scale=${width}:${height}:force_original_aspect_ratio=increase:flags=lanczos,crop=${width}:${height}`;
-        
-        // Combine preprocessing with the effect filter
-        finalFilter = `${preprocessFilter},${filter}`;
-      }
-      
-      // The following code only runs if we didn't return resolve() for OpenCV
-      if (!finalFilter || finalFilter.includes('undefined') || finalFilter.includes('NaN') || finalFilter.includes('Infinity')) {
-        return reject(new Error(`Invalid filter contains undefined/NaN/Infinity: ${finalFilter}`));
-      }
-      
-      console.log(`[${jobId}] Final filter chain: ${finalFilter}`);
-      
-      // Validate output directory exists
-      const outputDir = path.dirname(outputPath);
-      if (!fs.existsSync(outputDir)) {
-        try {
-          fs.mkdirSync(outputDir, { recursive: true });
-          console.log(`[${jobId}] Created output directory: ${outputDir}`);
-        } catch (mkdirErr) {
-          return reject(new Error(`Failed to create output directory: ${mkdirErr.message}`));
-        }
-      }
-      
-      // Use zoompan filter directly on the image - it generates frames from a single image
-      // The filter chain handles format conversion (yuv444p -> zoompan -> yuv420p)
-      const sceneFfmpegCommand = ffmpeg();
-      
-      // For subpixel zoom, use the forked FFmpeg binary with subpixel support
-      if (isSubpixelZoom) {
-        sceneFfmpegCommand.setFfmpegPath(FFMPEG_SUBPIXEL_PATH);
-        console.log(`[${jobId}] Scene ${sceneIndex}: Using FFmpeg subpixel fork at ${FFMPEG_SUBPIXEL_PATH}`);
-      }
-      
-      sceneFfmpegCommand
-        .input(imagePath)
-        .inputOptions(['-loop', '1']) // Loop the single image
-        .videoCodec('libx264')
-        .outputOptions([
-          '-preset', 'ultrafast',
-          '-crf', '23',
-          '-vsync', 'cfr',  // Constant frame rate
-          '-t', duration.toFixed(6),  // Precise duration
-          // Optimizations for subpixel zoom (bilinear interpolation is more CPU-intensive)
-          ...(isSubpixelZoom ? [
-            '-threads', '0',  // Use all available CPU threads
-            '-tune', 'fastdecode',  // Optimize for speed
-            '-x264-params', 'threads=0:lookahead-threads=0'  // Parallel encoding
-          ] : [])
-        ])
-        .videoFilters([finalFilter])
-        .output(outputPath)
-        .on('start', (cmd) => {
-          console.log(`[${jobId}] Scene ${sceneIndex} FFmpeg: ${cmd}`);
-        })
-        .on('stderr', (stderrLine) => {
-          // Log FFmpeg stderr for debugging - filter out verbose messages
-          if (stderrLine.includes('error') || stderrLine.includes('Error') || stderrLine.includes('failed') || stderrLine.includes('Failed')) {
-            console.error(`[${jobId}] Scene ${sceneIndex} FFmpeg stderr: ${stderrLine}`);
-          }
-        })
-        .on('end', () => {
-          console.log(`[${jobId}] Scene ${sceneIndex} completed`);
-          resolve();
-        })
-        .on('error', (err, stdout, stderr) => {
-          console.error(`[${jobId}] Scene ${sceneIndex} error:`, err.message);
-          console.error(`[${jobId}] Scene ${sceneIndex} error details:`, err);
-          if (stderr) {
-            console.error(`[${jobId}] Scene ${sceneIndex} FFmpeg stderr output:`, stderr);
-          }
-          if (stdout) {
-            console.error(`[${jobId}] Scene ${sceneIndex} FFmpeg stdout output:`, stdout);
-          }
-          // Extract more details from error if available
-          const errorDetails = {
-            message: err.message,
-            code: err.code,
-            signal: err.signal,
-            killed: err.killed,
-            cmd: err.cmd,
-            imagePath,
-            outputPath,
-            finalFilter,
-            duration,
-            width,
-            height,
-            framerate,
-            effectType
-          };
-          console.error(`[${jobId}] Scene ${sceneIndex} full error context:`, JSON.stringify(errorDetails, null, 2));
-          reject(err);
-        });
-      
-      // Store scene FFmpeg command in job for cancellation
-      const job = jobs.get(jobId);
-      if (job) {
-        if (!job.sceneCommands) {
-          job.sceneCommands = [];
-        }
-        job.sceneCommands.push(sceneFfmpegCommand);
-        jobs.set(jobId, job);
-      }
-      
-      sceneFfmpegCommand.run();
-    });
   });
 }
 
