@@ -447,8 +447,8 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
         print("[GPU Handler] Uploading to Supabase...")
         try:
             timestamp = int(time.time())
-            dest_path = f"renders/{user_id}/{project_id}/{timestamp}_{project_name}.mp4"
-            video_url = upload_to_supabase(str(final_path), 'videos', dest_path)
+            dest_path = f"{user_id}/{project_id}/{timestamp}_{project_name}.mp4"
+            video_url = upload_to_supabase(str(final_path), 'rendered-videos', dest_path)
         except Exception as e:
             print(f"[GPU Handler] Upload error: {e}")
             return {"error": f"Failed to upload video: {e}"}
