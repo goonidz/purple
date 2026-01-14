@@ -98,3 +98,4 @@ ENV NVENC_SUPPORT="enabled"
 
 # Start the handler
 CMD ["python", "-u", "handler.py"]
+# Trigger rebuild Wed Jan 14 17:14:38 CET 2026
