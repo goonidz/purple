@@ -11,6 +11,7 @@ import tempfile
 import requests
 import json
 import time
+import re
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 
@@ -18,10 +19,116 @@ from typing import Dict, Any, List, Optional
 SUPABASE_URL = os.environ.get('SUPABASE_URL', '')
 SUPABASE_SERVICE_KEY = os.environ.get('SUPABASE_SERVICE_KEY', '')
 
+# FFmpeg binary (allow overriding in RunPod env)
+FFMPEG_BIN = os.environ.get('FFMPEG_BIN', 'ffmpeg')
+
+# Run mode:
+# - "" (default): RunPod serverless
+# - "pod": print NVENC smoke test + keepalive (debug)
+# - "worker": poll Supabase queue + render jobs (Pods)
+RUNPOD_MODE = (os.environ.get("RUNPOD_MODE", "") or "").strip().lower()
+
 # Global encoder detection (runs once at startup)
 GPU_ENCODER_AVAILABLE = None
 ENCODER_NAME = None
 ENCODER_PRESET = None
+ENCODER_GPU_ID: Optional[int] = None
+
+
+def _run_diag(cmd: str, timeout: int = 15) -> None:
+    """Best-effort: print command output for debugging."""
+    try:
+        r = subprocess.run(
+            ['bash', '-lc', cmd],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        out = (r.stdout or '').strip()
+        err = (r.stderr or '').strip()
+        if out:
+            print(out)
+        if err:
+            print(err)
+    except Exception as e:
+        print(f"[GPU Handler] Diagnostic command failed: {e}")
+
+
+def _is_pod_mode() -> bool:
+    """
+    This image can run in two contexts:
+    - RunPod Serverless (default): runpod.serverless.start(...)
+    - RunPod Pod (manual): keep container alive, print NVENC test in logs.
+    """
+    if RUNPOD_MODE == "pod":
+        return True
+    return False
+
+
+def _is_worker_mode() -> bool:
+    return RUNPOD_MODE == "worker"
+
+
+def _nvenc_smoke_test() -> None:
+    print("[Pod] Running NVENC smoke test...")
+    _run_diag("nvidia-smi || true", timeout=10)
+    _run_diag("ls -la /dev/nvidia* /dev/nvidia-caps 2>/dev/null || true", timeout=5)
+    _run_diag(f"{FFMPEG_BIN} -hide_banner -encoders 2>/dev/null | grep -i nvenc || true", timeout=10)
+    # Minimal encode test (no output file)
+    # NOTE: Some NVENC setups reject very small dimensions; use a safe minimum.
+    cmd = [
+        FFMPEG_BIN,
+        "-hide_banner",
+        "-loglevel",
+        "warning",
+        "-f",
+        "lavfi",
+        "-i",
+        "color=c=black:s=640x360:r=30:d=1,format=yuv420p",
+        "-c:v",
+        "h264_nvenc",
+        "-pix_fmt",
+        "yuv420p",
+        "-f",
+        "null",
+        "-",
+    ]
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        if r.returncode == 0:
+            print("[Pod] ✅ NVENC OK (h264_nvenc)")
+        else:
+            print("[Pod] ❌ NVENC FAILED (h264_nvenc)")
+            if r.stderr:
+                print("[Pod] ffmpeg stderr (tail):")
+                print(r.stderr[-2000:])
+    except Exception as e:
+        print(f"[Pod] NVENC smoke test exception: {e}")
+
+def _discover_nvidia_device_indices() -> List[int]:
+    """
+    RunPod serverless sometimes maps the assigned GPU to /dev/nvidia4, /dev/nvidia1, etc.
+    NVENC's `-gpu N` expects the *same index* as the device node number.
+    """
+    try:
+        ls = subprocess.run(
+            ['bash', '-lc', 'ls -1 /dev/nvidia* 2>/dev/null || true'],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        paths = [p.strip() for p in (ls.stdout or "").splitlines() if p.strip()]
+        idx: List[int] = []
+        for p in paths:
+            m = re.match(r"^/dev/nvidia(\d+)$", p)
+            if m:
+                idx.append(int(m.group(1)))
+        idx = sorted(set(idx))
+        if idx:
+            print(f"[GPU Handler] Detected GPU device nodes: {', '.join(str(i) for i in idx)}")
+        return idx
+    except Exception:
+        return []
 
 
 def detect_gpu_encoder() -> bool:
@@ -29,12 +136,16 @@ def detect_gpu_encoder() -> bool:
     Detect if h264_nvenc is available at startup.
     This runs ONCE and caches the result for all subsequent renders.
     """
-    global GPU_ENCODER_AVAILABLE, ENCODER_NAME, ENCODER_PRESET
+    global GPU_ENCODER_AVAILABLE, ENCODER_NAME, ENCODER_PRESET, ENCODER_GPU_ID
     
     if GPU_ENCODER_AVAILABLE is not None:
         return GPU_ENCODER_AVAILABLE
     
     print("[GPU Handler] Detecting available encoders...")
+    print(f"[GPU Handler] NVIDIA_DRIVER_CAPABILITIES={os.environ.get('NVIDIA_DRIVER_CAPABILITIES')}")
+    print(f"[GPU Handler] NVIDIA_VISIBLE_DEVICES={os.environ.get('NVIDIA_VISIBLE_DEVICES')}")
+    print(f"[GPU Handler] CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES')}")
+    print(f"[GPU Handler] FFMPEG_BIN={FFMPEG_BIN}")
     
     # Wait for GPU to be ready (cold start can delay GPU initialization)
     print("[GPU Handler] Waiting for GPU initialization...")
@@ -52,11 +163,28 @@ def detect_gpu_encoder() -> bool:
             print("[GPU Handler] nvidia-smi failed or no GPU visible")
     except Exception as e:
         print(f"[GPU Handler] nvidia-smi check failed: {e}")
+
+    # Confirm CUDA works from Python (helps distinguish NVENC vs CUDA visibility issues)
+    print("[GPU Handler] Checking CUDA visibility from Python (torch)...")
+    _run_diag(
+        "python3 -c \"import torch; "
+        "print('torch', torch.__version__); "
+        "print('cuda', torch.version.cuda); "
+        "print('is_available', torch.cuda.is_available()); "
+        "print('device_count', torch.cuda.device_count()); "
+        "print('device_name_0', torch.cuda.get_device_name(0) if torch.cuda.is_available() else None)\"",
+        timeout=20,
+    )
+
+    # Check presence of NVENC runtime libs and device nodes
+    print("[GPU Handler] Checking NVENC/CUDA runtime libraries and /dev nodes...")
+    _run_diag("ldconfig -p | egrep -i 'libcuda\\.so|nvidia-encode|nvidia-ml' || true")
+    _run_diag("ls -l /dev/nvidia* 2>/dev/null || true")
     
     # First, check if FFmpeg has nvenc support compiled in
     try:
         result = subprocess.run(
-            ['ffmpeg', '-hide_banner', '-encoders'],
+            [FFMPEG_BIN, '-hide_banner', '-encoders'],
             capture_output=True, text=True, timeout=10
         )
         has_nvenc_support = 'h264_nvenc' in result.stdout
@@ -76,46 +204,76 @@ def detect_gpu_encoder() -> bool:
         return False
     
     # Test if NVENC actually works (GPU accessible)
-    # Try multiple times in case GPU is still initializing
+    # IMPORTANT: RunPod workers may expose the GPU as /dev/nvidia4, /dev/nvidia1, etc.
+    # In that case, forcing -gpu 0 fails. We must probe the actual indices present.
     max_attempts = 3
+    discovered = _discover_nvidia_device_indices()
+    # Always include a small fallback range too, but prefer real device node indices.
+    candidate_gpu_ids = (discovered + [0, 1, 2, 3, 4, 5, 6, 7])
+    # Deduplicate while preserving order
+    seen = set()
+    candidate_gpu_ids = [x for x in candidate_gpu_ids if not (x in seen or seen.add(x))]
     for attempt in range(max_attempts):
         try:
             print(f"[GPU Handler] Testing NVENC (attempt {attempt + 1}/{max_attempts})...")
-            
-            test_cmd = [
-                'ffmpeg', '-y',
-                '-f', 'lavfi', '-i', 'color=c=black:s=64x64:d=0.1',
-                '-c:v', 'h264_nvenc',
-                '-f', 'null', '-'
-            ]
-            result = subprocess.run(test_cmd, capture_output=True, text=True, timeout=30)
-            
-            if result.returncode == 0:
-                print("[GPU Handler] ✅ NVENC GPU encoder available and working!")
-                GPU_ENCODER_AVAILABLE = True
-                ENCODER_NAME = 'h264_nvenc'
-                ENCODER_PRESET = 'p4'
-                return True
-            else:
-                # Extract the actual error from stderr
-                stderr = result.stderr
-                if 'Cannot load' in stderr or 'No NVENC' in stderr or 'not found' in stderr:
-                    error_msg = "NVENC library not available"
-                elif 'No capable devices' in stderr:
-                    error_msg = "No GPU device found"
-                elif 'OpenEncodeSessionEx failed' in stderr:
-                    error_msg = "GPU encoder session failed"
+
+            for gpu_id in candidate_gpu_ids:
+                print(f"[GPU Handler] NVENC probe: trying -gpu {gpu_id} ...")
+                test_cmd = [
+                    FFMPEG_BIN, '-y',
+                    '-hide_banner',
+                    '-loglevel', 'warning',
+                    '-f', 'lavfi',
+                    # Some NVENC setups reject very small dimensions; use a safe minimum.
+                    '-i', 'color=c=black:s=640x360:r=30:d=0.2,format=yuv420p',
+                    '-c:v', 'h264_nvenc',
+                    '-gpu', str(gpu_id),
+                    '-pix_fmt', 'yuv420p',
+                    '-f', 'null', '-'
+                ]
+                result = subprocess.run(test_cmd, capture_output=True, text=True, timeout=30)
+
+                if result.returncode == 0:
+                    print(f"[GPU Handler] ✅ NVENC works with -gpu {gpu_id}")
+                    GPU_ENCODER_AVAILABLE = True
+                    ENCODER_NAME = 'h264_nvenc'
+                    ENCODER_PRESET = 'p4'
+                    ENCODER_GPU_ID = gpu_id
+                    return True
+
+                stderr = result.stderr or ""
+                # Print short per-gpu failure; full tail printed below.
+                if 'OpenEncodeSessionEx failed' in stderr or 'No capable devices found' in stderr:
+                    print(f"[GPU Handler] NVENC probe failed on -gpu {gpu_id}: No capable devices")
                 else:
-                    # Get last few lines of error
-                    error_lines = [l for l in stderr.split('\n') if l.strip() and not l.startswith('  ')]
-                    error_msg = error_lines[-1] if error_lines else "Unknown error"
-                
-                print(f"[GPU Handler] NVENC attempt {attempt + 1} failed: {error_msg}")
-                
-                if attempt < max_attempts - 1:
-                    print("[GPU Handler] Retrying in 2 seconds...")
-                    time.sleep(2)
-                    
+                    last_line = ""
+                    lines = [l for l in stderr.split('\n') if l.strip()]
+                    if lines:
+                        last_line = lines[-1]
+                    print(f"[GPU Handler] NVENC probe failed on -gpu {gpu_id}: {last_line or 'Unknown error'}")
+
+            # If we get here, all gpu ids failed this attempt
+            # Extract the actual error from the last run's stderr (best available signal)
+            stderr = (locals().get('stderr') or "")
+            if 'Cannot load' in stderr or 'No NVENC' in stderr or 'not found' in stderr:
+                error_msg = "NVENC library not available"
+            elif 'No capable devices' in stderr:
+                error_msg = "No GPU device found"
+            elif 'OpenEncodeSessionEx failed' in stderr:
+                error_msg = "GPU encoder session failed"
+            else:
+                error_lines = [l for l in stderr.split('\n') if l.strip() and not l.startswith('  ')]
+                error_msg = error_lines[-1] if error_lines else "Unknown error"
+
+            print(f"[GPU Handler] NVENC attempt {attempt + 1} failed: {error_msg}")
+            if stderr:
+                print("[GPU Handler] NVENC stderr (tail):")
+                print(stderr[-2000:])
+
+            if attempt < max_attempts - 1:
+                print("[GPU Handler] Retrying in 2 seconds...")
+                time.sleep(2)
+
         except subprocess.TimeoutExpired:
             print(f"[GPU Handler] NVENC test timeout on attempt {attempt + 1}")
             if attempt < max_attempts - 1:
@@ -130,6 +288,7 @@ def detect_gpu_encoder() -> bool:
     GPU_ENCODER_AVAILABLE = False
     ENCODER_NAME = 'libx264'
     ENCODER_PRESET = 'fast'
+    ENCODER_GPU_ID = None
     return False
 
 
@@ -179,6 +338,8 @@ def get_encoder_args() -> List[str]:
     if ENCODER_NAME == 'h264_nvenc':
         return [
             '-c:v', 'h264_nvenc',
+            # Use probed GPU id when available (important on some RunPod workers)
+            *(['-gpu', str(ENCODER_GPU_ID)] if ENCODER_GPU_ID is not None else []),
             '-preset', 'p4',
             '-tune', 'hq',
             '-b:v', '8M',
@@ -232,7 +393,7 @@ def create_video_segment(
     
     # Build FFmpeg command with detected encoder
     cmd = [
-        'ffmpeg', '-y',
+        FFMPEG_BIN, '-y',
         '-loop', '1',
         '-i', image_path,
         '-t', str(duration),
@@ -272,7 +433,7 @@ def concatenate_videos(video_paths: List[str], output_path: str) -> bool:
     
     # Use stream copy for concatenation (very fast, no re-encoding)
     cmd = [
-        'ffmpeg', '-y',
+        FFMPEG_BIN, '-y',
         '-f', 'concat',
         '-safe', '0',
         '-i', concat_file,
@@ -298,7 +459,7 @@ def add_audio(video_path: str, audio_path: str, output_path: str) -> bool:
     """Add audio to video (copy video stream, encode audio)"""
     
     cmd = [
-        'ffmpeg', '-y',
+        FFMPEG_BIN, '-y',
         '-i', video_path,
         '-i', audio_path,
         '-c:v', 'copy',  # Just copy video, no re-encoding needed
@@ -319,6 +480,171 @@ def add_audio(video_path: str, audio_path: str, output_path: str) -> bool:
     except Exception as e:
         print(f"Audio mux exception: {e}")
         return False
+
+
+def _supabase_headers() -> Dict[str, str]:
+    url = os.environ.get("SUPABASE_URL", "")
+    key = os.environ.get("SUPABASE_SERVICE_KEY", "") or os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
+    if not url or not key:
+        raise RuntimeError("Missing SUPABASE_URL or SUPABASE_SERVICE_KEY for Pod worker")
+    return {
+        "apikey": key,
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json",
+    }
+
+
+def _supabase_rest_url(path: str) -> str:
+    base = os.environ.get("SUPABASE_URL", "").rstrip("/")
+    if not base:
+        raise RuntimeError("Missing SUPABASE_URL for Pod worker")
+    return f"{base}{path}"
+
+
+def claim_next_gpu_job(worker_id: str) -> Optional[Dict[str, Any]]:
+    """
+    Calls Postgres RPC claim_gpu_render_job() and returns one job row or None.
+    """
+    headers = _supabase_headers()
+    url = _supabase_rest_url("/rest/v1/rpc/claim_gpu_render_job")
+    r = requests.post(url, headers=headers, data=json.dumps({"p_worker_id": worker_id}), timeout=30)
+    if r.status_code >= 300:
+        raise RuntimeError(f"claim_gpu_render_job failed: {r.status_code} {r.text}")
+    rows = r.json()
+    if not rows:
+        return None
+    return rows[0]
+
+
+def update_gpu_job(job_id: str, patch: Dict[str, Any]) -> None:
+    headers = _supabase_headers()
+    url = _supabase_rest_url(f"/rest/v1/gpu_render_jobs?id=eq.{job_id}")
+    r = requests.patch(url, headers=headers, data=json.dumps(patch), timeout=30)
+    if r.status_code >= 300:
+        raise RuntimeError(f"update gpu_render_jobs failed: {r.status_code} {r.text}")
+
+
+def render_video_payload(payload: Dict[str, Any], progress_cb=None) -> Dict[str, Any]:
+    """
+    Core render pipeline used by both serverless and Pod worker.
+    progress_cb: callable(progress:int) -> None
+    """
+    if progress_cb is None:
+        progress_cb = lambda _p: None
+
+    detect_gpu_encoder()
+
+    scenes = payload.get('scenes', [])
+    audio_url = payload.get('audioUrl', '')
+    video_settings = payload.get('videoSettings', {}) or {}
+    project_id = payload.get('projectId', '')
+    project_name = payload.get('projectName', 'video')
+    user_id = payload.get('userId', '')
+    effect_type = payload.get('effectType', 'pan')
+
+    width = video_settings.get('width', 1920)
+    height = video_settings.get('height', 1080)
+    framerate = video_settings.get('framerate', 25)
+
+    if not scenes:
+        return {"error": "No scenes provided"}
+    if not audio_url:
+        return {"error": "No audio URL provided"}
+
+    print(f"[GPU Handler] Starting render for project {project_id}")
+    print(f"[GPU Handler] {len(scenes)} scenes, {width}x{height} @ {framerate}fps")
+    print(f"[GPU Handler] Effect type: {effect_type}")
+    print(f"[GPU Handler] Using encoder: {ENCODER_NAME} (GPU: {GPU_ENCODER_AVAILABLE})")
+
+    start_time = time.time()
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
+
+        audio_path = temp_path / 'audio.mp3'
+        if not download_file(audio_url, str(audio_path)):
+            return {"error": "Failed to download audio"}
+
+        segment_paths: List[str] = []
+
+        for i, scene in enumerate(scenes):
+            print(f"[GPU Handler] Processing scene {i+1}/{len(scenes)}")
+
+            image_url = scene.get('imageUrl', '')
+            if not image_url:
+                return {"error": f"Scene {i} has no image URL"}
+
+            ext = '.jpg'
+            if '.png' in image_url.lower():
+                ext = '.png'
+            elif '.webp' in image_url.lower():
+                ext = '.webp'
+
+            image_path = temp_path / f'image_{i}{ext}'
+            if not download_file(image_url, str(image_path)):
+                return {"error": f"Failed to download image for scene {i}"}
+
+            segment_path = temp_path / f'segment_{i}.mp4'
+            duration = scene.get('duration', scene.get('endTime', 5) - scene.get('startTime', 0))
+
+            if not create_video_segment(
+                str(image_path),
+                str(segment_path),
+                duration,
+                width,
+                height,
+                framerate,
+                effect_type
+            ):
+                return {"error": f"Failed to create video segment for scene {i}"}
+
+            segment_paths.append(str(segment_path))
+            progress = int((i + 1) / len(scenes) * 70)
+            progress_cb(progress)
+
+        print("[GPU Handler] Concatenating segments...")
+        concat_path = temp_path / 'concat.mp4'
+        if not concatenate_videos(segment_paths, str(concat_path)):
+            return {"error": "Failed to concatenate video segments"}
+
+        progress_cb(85)
+
+        print("[GPU Handler] Adding audio...")
+        final_path = temp_path / f'{project_name}.mp4'
+        if not add_audio(str(concat_path), str(audio_path), str(final_path)):
+            return {"error": "Failed to add audio to video"}
+
+        progress_cb(95)
+
+        file_size_mb = os.path.getsize(str(final_path)) / (1024 * 1024)
+
+        print("[GPU Handler] Uploading to Supabase...")
+        try:
+            timestamp = int(time.time())
+            dest_path = f"{user_id}/{project_id}/{timestamp}_{project_name}.mp4"
+            video_url = upload_to_supabase(str(final_path), 'rendered-videos', dest_path)
+        except Exception as e:
+            print(f"[GPU Handler] Upload error: {e}")
+            return {"error": f"Failed to upload video: {e}"}
+
+        elapsed_time = time.time() - start_time
+        print(f"[GPU Handler] ✅ Render complete in {elapsed_time:.1f}s")
+        print(f"[GPU Handler] Video URL: {video_url}")
+
+        progress_cb(100)
+
+        return {
+            "success": True,
+            "videoUrl": video_url,
+            "duration": elapsed_time,
+            "fileSizeMB": round(file_size_mb, 2),
+            "scenesCount": len(scenes),
+            "resolution": f"{width}x{height}",
+            "framerate": framerate,
+            "effectType": effect_type,
+            "encoder": ENCODER_NAME,
+            "gpuAccelerated": GPU_ENCODER_AVAILABLE,
+        }
 
 
 def handler(job: Dict[str, Any]) -> Dict[str, Any]:
@@ -343,134 +669,67 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
     }
     """
     
-    # Detect encoder on first call (cached for subsequent calls)
-    detect_gpu_encoder()
-    
-    job_input = job.get('input', {})
-    
-    scenes = job_input.get('scenes', [])
-    audio_url = job_input.get('audioUrl', '')
-    video_settings = job_input.get('videoSettings', {})
-    project_id = job_input.get('projectId', '')
-    project_name = job_input.get('projectName', 'video')
-    user_id = job_input.get('userId', '')
-    effect_type = job_input.get('effectType', 'pan')
-    
-    width = video_settings.get('width', 1920)
-    height = video_settings.get('height', 1080)
-    framerate = video_settings.get('framerate', 25)
-    
-    if not scenes:
-        return {"error": "No scenes provided"}
-    
-    if not audio_url:
-        return {"error": "No audio URL provided"}
-    
-    print(f"[GPU Handler] Starting render for project {project_id}")
-    print(f"[GPU Handler] {len(scenes)} scenes, {width}x{height} @ {framerate}fps")
-    print(f"[GPU Handler] Effect type: {effect_type}")
-    print(f"[GPU Handler] Using encoder: {ENCODER_NAME} (GPU: {GPU_ENCODER_AVAILABLE})")
-    
-    start_time = time.time()
-    
-    with tempfile.TemporaryDirectory() as temp_dir:
-        temp_path = Path(temp_dir)
-        
-        # Download audio
-        audio_path = temp_path / 'audio.mp3'
-        if not download_file(audio_url, str(audio_path)):
-            return {"error": "Failed to download audio"}
-        
-        # Process each scene
-        segment_paths = []
-        
-        for i, scene in enumerate(scenes):
-            print(f"[GPU Handler] Processing scene {i+1}/{len(scenes)}")
-            
-            # Download image
-            image_url = scene.get('imageUrl', '')
-            if not image_url:
-                return {"error": f"Scene {i} has no image URL"}
-            
-            # Determine file extension from URL
-            ext = '.jpg'
-            if '.png' in image_url.lower():
-                ext = '.png'
-            elif '.webp' in image_url.lower():
-                ext = '.webp'
-            
-            image_path = temp_path / f'image_{i}{ext}'
-            if not download_file(image_url, str(image_path)):
-                return {"error": f"Failed to download image for scene {i}"}
-            
-            # Create video segment
-            segment_path = temp_path / f'segment_{i}.mp4'
-            duration = scene.get('duration', scene.get('endTime', 5) - scene.get('startTime', 0))
-            
-            if not create_video_segment(
-                str(image_path),
-                str(segment_path),
-                duration,
-                width,
-                height,
-                framerate,
-                effect_type
-            ):
-                return {"error": f"Failed to create video segment for scene {i}"}
-            
-            segment_paths.append(str(segment_path))
-            
-            # Report progress
-            progress = int((i + 1) / len(scenes) * 70)  # 0-70% for segments
-            runpod.serverless.progress_update(job, progress)
-        
-        # Concatenate all segments
-        print("[GPU Handler] Concatenating segments...")
-        concat_path = temp_path / 'concat.mp4'
-        if not concatenate_videos(segment_paths, str(concat_path)):
-            return {"error": "Failed to concatenate video segments"}
-        
-        runpod.serverless.progress_update(job, 85)
-        
-        # Add audio
-        print("[GPU Handler] Adding audio...")
-        final_path = temp_path / f'{project_name}.mp4'
-        if not add_audio(str(concat_path), str(audio_path), str(final_path)):
-            return {"error": "Failed to add audio to video"}
-        
-        runpod.serverless.progress_update(job, 95)
-        
-        # Get file info
-        file_size_mb = os.path.getsize(str(final_path)) / (1024 * 1024)
-        
-        # Upload to Supabase Storage
-        print("[GPU Handler] Uploading to Supabase...")
+    job_input = job.get('input', {}) or {}
+
+    def _cb(p: int):
         try:
-            timestamp = int(time.time())
-            dest_path = f"{user_id}/{project_id}/{timestamp}_{project_name}.mp4"
-            video_url = upload_to_supabase(str(final_path), 'rendered-videos', dest_path)
-        except Exception as e:
-            print(f"[GPU Handler] Upload error: {e}")
-            return {"error": f"Failed to upload video: {e}"}
-        
-        elapsed_time = time.time() - start_time
-        
-        print(f"[GPU Handler] ✅ Render complete in {elapsed_time:.1f}s")
-        print(f"[GPU Handler] Video URL: {video_url}")
-        
-        return {
-            "success": True,
-            "videoUrl": video_url,
-            "duration": elapsed_time,
-            "fileSizeMB": round(file_size_mb, 2),
-            "scenesCount": len(scenes),
-            "resolution": f"{width}x{height}",
-            "framerate": framerate,
-            "effectType": effect_type,
-            "encoder": ENCODER_NAME,
-            "gpuAccelerated": GPU_ENCODER_AVAILABLE,
-        }
+            runpod.serverless.progress_update(job, p)
+        except Exception:
+            pass
+
+    return render_video_payload(job_input, progress_cb=_cb)
 
 
 # RunPod serverless handler
-runpod.serverless.start({"handler": handler})
+if _is_pod_mode():
+    # In Pod mode we don't run the serverless worker loop.
+    # We keep the container alive so you can connect, and we print a NVENC test in logs.
+    _nvenc_smoke_test()
+    print("[Pod] Container ready. (RUNPOD_MODE=pod)")
+    while True:
+        time.sleep(3600)
+elif _is_worker_mode():
+    # In worker mode (RunPod Pods), we poll Supabase for jobs and render them.
+    worker_id = os.environ.get("RUNPOD_POD_ID") or os.environ.get("HOSTNAME") or "worker"
+    print(f"[Worker] Starting GPU Pod worker. worker_id={worker_id}")
+    while True:
+        try:
+            claimed = claim_next_gpu_job(worker_id)
+            if not claimed:
+                time.sleep(2)
+                continue
+
+            job_id = claimed["id"]
+            payload = claimed.get("payload") or {}
+            print(f"[Worker] Claimed gpu_render_job id={job_id}")
+
+            update_gpu_job(job_id, {"status": "processing", "progress": 0})
+
+            def _cb(p: int):
+                try:
+                    update_gpu_job(job_id, {"progress": p, "status": "processing"})
+                except Exception as e:
+                    print(f"[Worker] Progress update failed: {e}")
+
+            result = render_video_payload(payload, progress_cb=_cb)
+
+            if result.get("success"):
+                update_gpu_job(job_id, {
+                    "status": "completed",
+                    "progress": 100,
+                    "video_url": result.get("videoUrl"),
+                    "finished_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                    "error_message": None,
+                })
+            else:
+                update_gpu_job(job_id, {
+                    "status": "failed",
+                    "progress": 100,
+                    "error_message": result.get("error") or "Render failed",
+                    "finished_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                })
+        except Exception as e:
+            print(f"[Worker] Loop error: {e}")
+            time.sleep(2)
+else:
+    runpod.serverless.start({"handler": handler})

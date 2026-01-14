@@ -25,7 +25,7 @@ export async function renderVideoGpu(options: VideoRenderOptions): Promise<Video
 
     const { projectId, framerate = 25, width = 1920, height = 1080, subtitleSettings, effectType = 'pan', renderMethod = 'standard' } = options;
 
-    console.log('[GPU] Calling render-video-gpu Edge Function with:', { projectId, framerate, width, height, effectType, renderMethod });
+    console.log('[GPU] Calling render-video-gpu-pod Edge Function with:', { projectId, framerate, width, height, effectType, renderMethod });
     console.log('[GPU] User authenticated:', user.id);
 
     const requestBody = {
@@ -38,7 +38,7 @@ export async function renderVideoGpu(options: VideoRenderOptions): Promise<Video
       renderMethod,
     };
 
-    const { data, error } = await supabase.functions.invoke('render-video-gpu', {
+    const { data, error } = await supabase.functions.invoke('render-video-gpu-pod', {
       body: requestBody,
     });
 
@@ -60,13 +60,11 @@ export async function renderVideoGpu(options: VideoRenderOptions): Promise<Video
       console.log('[GPU] Render video success, returning:', {
         jobId: data.jobId,
         status: data.status,
-        statusUrl: data.statusUrl,
       });
       return {
         success: true,
         jobId: data.jobId,
         status: data.status || 'pending',
-        statusUrl: data.statusUrl,
       };
     }
 
@@ -84,43 +82,45 @@ export async function renderVideoGpu(options: VideoRenderOptions): Promise<Video
 }
 
 /**
- * Poll RunPod job status
+ * Poll GPU Pod job status from DB (gpu_render_jobs)
  */
-export async function pollGpuJobStatus(statusUrl: string): Promise<JobStatus> {
+export async function pollGpuJobStatusFromDb(jobId: string): Promise<JobStatus> {
   try {
-    const response = await fetch(statusUrl);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch GPU job status: ${response.statusText}`);
+    const { data, error } = await supabase
+      .from('gpu_render_jobs')
+      .select('id,status,progress,video_url,error_message,updated_at')
+      .eq('id', jobId)
+      .single();
+
+    if (error || !data) {
+      throw new Error(error?.message || 'Failed to fetch GPU job status');
     }
-    
-    const data = await response.json();
-    
-    // Map RunPod status to our status format
-    let status: 'pending' | 'processing' | 'completed' | 'failed' = 'pending';
-    if (data.status === 'IN_QUEUE') status = 'pending';
-    else if (data.status === 'IN_PROGRESS') status = 'processing';
-    else if (data.status === 'COMPLETED') status = 'completed';
-    else if (data.status === 'FAILED' || data.status === 'CANCELLED') status = 'failed';
-    
+
     return {
-      success: data.status !== 'FAILED' && data.status !== 'CANCELLED',
-      jobId: data.id || '',
-      status,
-      progress: data.progress,
-      videoUrl: data.output?.videoUrl,
-      duration: data.output?.duration,
-      fileSizeMB: data.output?.fileSizeMB,
-      steps: data.output?.steps || [],
-      currentStep: data.output?.currentStep || null,
-      error: data.error,
+      success: data.status !== 'failed' && data.status !== 'cancelled',
+      jobId: data.id,
+      status: data.status as any,
+      progress: data.progress ?? undefined,
+      videoUrl: data.video_url ?? undefined,
+      error: data.error_message ?? undefined,
     };
   } catch (error: any) {
     console.error('[GPU] Poll job status error:', error);
     return {
       success: false,
-      jobId: '',
+      jobId,
       status: 'failed',
       error: error.message || 'Failed to poll GPU job status',
     };
   }
+}
+
+// Backwards-compatible export (serverless path previously used statusUrl polling)
+export async function pollGpuJobStatus(_statusUrl: string): Promise<JobStatus> {
+  return {
+    success: false,
+    jobId: '',
+    status: 'failed',
+    error: 'Deprecated: GPU Pod uses DB polling; call pollGpuJobStatusFromDb(jobId)',
+  };
 }

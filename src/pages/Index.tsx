@@ -2910,7 +2910,11 @@ const Index = () => {
         ? await renderVideoGpu(renderOptions)
         : await renderVideo(renderOptions);
 
-      if (result.success && result.jobId && result.statusUrl) {
+      // VPS path returns statusUrl; GPU Pod path returns only jobId
+      const isGpuPodJob = useGpuRendering && result.success && !!result.jobId && !result.statusUrl;
+      const isVpsJob = !useGpuRendering && result.success && !!result.jobId && !!result.statusUrl;
+
+      if (isVpsJob) {
         // Fallback: Create job in database if Edge Function didn't create it
         // (This can happen if there was an error during insertion)
         const { data: { user } } = await supabase.auth.getUser();
@@ -2965,6 +2969,8 @@ const Index = () => {
         // Ensure the new render job appears without manual page refresh
         setTimeout(() => refreshVideoRenderJobs(), 500);
         setTimeout(() => refreshVideoRenderJobs(), 2000);
+      } else if (isGpuPodJob) {
+        toast.success("Rendu GPU (Pod) démarré. Vous pouvez quitter cette page.");
       } else {
         toast.error(result.error || "Erreur lors du démarrage du rendu vidéo");
       }
