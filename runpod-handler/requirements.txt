@@ -1,0 +1,11 @@
+# RunPod SDK
+runpod>=1.6.0
+
+# HTTP requests for downloading files and API calls
+requests>=2.31.0
+
+# Optional: OpenCV for advanced image processing (if needed)
+# opencv-python-headless>=4.8.0
+
+# Type hints support
+typing-extensions>=4.8.0

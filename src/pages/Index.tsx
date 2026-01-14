@@ -49,6 +49,7 @@ import {
   type ExportMode
 } from "@/lib/videoExportHelpers";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -74,6 +75,7 @@ import { useVideoRenderJobs, VideoRenderJob } from "@/hooks/useVideoRenderJobs";
 import { ActiveJobsBanner, ActiveVideoRenderJobsBanner } from "@/components/JobProgressIndicator";
 import { ExportPathPresetManager } from "@/components/ExportPathPresetManager";
 import { renderVideo, type SubtitleSettings as RenderSubtitleSettings } from "@/lib/videoRender";
+import { renderVideoGpu } from "@/lib/videoRenderGpu";
 
 // TranscriptSegment, TranscriptData, and Scene are imported from @/lib/sceneParser
 
@@ -246,6 +248,7 @@ const Index = () => {
   const [exportBasePath, setExportBasePath] = useState<string>("");
   const [isExporting, setIsExporting] = useState(false);
   const [isRendering, setIsRendering] = useState(false);
+  const [useGpuRendering, setUseGpuRendering] = useState(false);
   const [audioUrl, setAudioUrl] = useState<string>("");
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [isUploadingAudio, setIsUploadingAudio] = useState(false);
@@ -2882,7 +2885,7 @@ const Index = () => {
       }
 
       // Subtitles disabled - Ken Burns effect enabled
-      const result = await renderVideo({
+      const renderOptions = {
         projectId: currentProjectId!,
         framerate: exportFramerate,
         width: renderWidth,
@@ -2900,7 +2903,12 @@ const Index = () => {
           x: 50,
           y: 85
         },
-      });
+      };
+      
+      // Use GPU rendering if toggle is enabled, otherwise use VPS
+      const result = useGpuRendering 
+        ? await renderVideoGpu(renderOptions)
+        : await renderVideo(renderOptions);
 
       if (result.success && result.jobId && result.statusUrl) {
         // Fallback: Create job in database if Edge Function didn't create it
@@ -3730,6 +3738,17 @@ const Index = () => {
                                         <SelectItem value="lanczos">Lanczos (2x upscale) ⚡</SelectItem>
                                       </SelectContent>
                                     </Select>
+                                    <div className="flex items-center gap-2 px-2 py-1 bg-muted/50 rounded-md">
+                                      <Switch
+                                        id="gpu-mode"
+                                        checked={useGpuRendering}
+                                        onCheckedChange={setUseGpuRendering}
+                                        disabled={!audioUrl}
+                                      />
+                                      <Label htmlFor="gpu-mode" className="text-xs font-medium cursor-pointer">
+                                        GPU
+                                      </Label>
+                                    </div>
                                     <Button
                                       onClick={handleRenderVideo}
                                       disabled={isRendering || !audioUrl}
