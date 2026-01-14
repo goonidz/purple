@@ -367,12 +367,19 @@ def create_video_segment(
 ) -> bool:
     """Create a video segment from an image with the detected encoder"""
     
+    # Use GPU-accelerated filters when NVENC is available
+    use_gpu_filters = (ENCODER_NAME == 'h264_nvenc')
+    
     # Determine zoom/pan parameters based on effect type
     if effect_type == 'none':
         # Static image, no movement
-        filter_complex = f"scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2"
+        if use_gpu_filters:
+            # GPU path: scale_npp does the scaling on GPU
+            filter_complex = f"scale_npp={width}:{height}:format=yuv420p,hwdownload,format=yuv420p"
+        else:
+            filter_complex = f"scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2"
     elif 'zoom' in effect_type:
-        # Ken Burns zoom effect
+        # Ken Burns zoom effect (CPU only - zoompan not available on GPU)
         zoom_amount = 0.08  # 8% zoom
         if 'zoom_out' in effect_type:
             start_scale = 1.0 + zoom_amount
@@ -386,21 +393,39 @@ def create_video_segment(
             f"zoompan=z='if(eq(on,1),{start_scale},{start_scale}+({end_scale}-{start_scale})*on/({framerate}*{duration}))':"
             f"d={int(framerate * duration)}:s={width}x{height}:fps={framerate}"
         )
+        use_gpu_filters = False  # Force CPU for zoompan
     else:
         # Pan effect (default)
-        filter_complex = (
-            f"scale=-2:{int(height * 1.1)},"
-            f"crop={width}:{height}:'(iw-{width})*t/{duration}':(ih-{height})/2"
-        )
+        if use_gpu_filters:
+            # GPU path: scale on GPU, then crop on CPU (crop not available in NPP)
+            # Scale to slightly larger, download to CPU, then crop with animation
+            filter_complex = (
+                f"scale_npp=-2:{int(height * 1.1)}:format=yuv420p,hwdownload,format=yuv420p,"
+                f"crop={width}:{height}:'(iw-{width})*t/{duration}':(ih-{height})/2"
+            )
+        else:
+            filter_complex = (
+                f"scale=-2:{int(height * 1.1)},"
+                f"crop={width}:{height}:'(iw-{width})*t/{duration}':(ih-{height})/2"
+            )
     
     # Build FFmpeg command with detected encoder
-    cmd = [
-        FFMPEG_BIN, '-y',
+    cmd = [FFMPEG_BIN, '-y']
+    
+    # Add GPU acceleration if available
+    if use_gpu_filters and ENCODER_GPU_ID is not None:
+        cmd.extend([
+            '-hwaccel', 'cuda',
+            '-hwaccel_device', str(ENCODER_GPU_ID),
+            '-hwaccel_output_format', 'cuda',
+        ])
+    
+    cmd.extend([
         '-loop', '1',
         '-i', image_path,
         '-t', str(duration),
         '-vf', filter_complex,
-    ]
+    ])
     cmd.extend(get_encoder_args())
     cmd.extend([
         '-pix_fmt', 'yuv420p',
