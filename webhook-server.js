@@ -101,6 +101,35 @@ const server = http.createServer((req, res) => {
           log(`Received push event: ${payload.commits.length} commit(s)`, 'yellow');
           log(`Latest commit: ${payload.head_commit.message}`, 'yellow');
           
+          // Check if any commits modified video-render-service/
+          const affectsVPS = payload.commits.some(commit => {
+            const allFiles = [
+              ...(commit.added || []),
+              ...(commit.modified || []),
+              ...(commit.removed || [])
+            ];
+            return allFiles.some(file => 
+              file.startsWith('video-render-service/') || 
+              file === 'deploy.sh' ||
+              file === 'package.json' ||
+              file === 'webhook-server.js'
+            );
+          });
+          
+          if (!affectsVPS) {
+            log('Ignoring push - no changes to video-render-service/', 'yellow');
+            log('(Only runpod-handler or other files changed)', 'yellow');
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ 
+              success: true, 
+              message: 'Push ignored - no VPS-related changes',
+              skipped: true
+            }));
+            return;
+          }
+          
+          log('Changes detected in video-render-service/ - deploying...', 'blue');
+          
           deploy()
             .then(() => {
               res.writeHead(200, { 'Content-Type': 'application/json' });
