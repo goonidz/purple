@@ -36,6 +36,23 @@ def detect_gpu_encoder() -> bool:
     
     print("[GPU Handler] Detecting available encoders...")
     
+    # Wait for GPU to be ready (cold start can delay GPU initialization)
+    print("[GPU Handler] Waiting for GPU initialization...")
+    time.sleep(2)
+    
+    # Check if nvidia-smi sees the GPU
+    try:
+        nvidia_result = subprocess.run(
+            ['nvidia-smi', '--query-gpu=name,memory.total', '--format=csv,noheader'],
+            capture_output=True, text=True, timeout=10
+        )
+        if nvidia_result.returncode == 0 and nvidia_result.stdout.strip():
+            print(f"[GPU Handler] GPU detected: {nvidia_result.stdout.strip()}")
+        else:
+            print("[GPU Handler] nvidia-smi failed or no GPU visible")
+    except Exception as e:
+        print(f"[GPU Handler] nvidia-smi check failed: {e}")
+    
     # First, check if FFmpeg has nvenc support compiled in
     try:
         result = subprocess.run(
@@ -59,34 +76,61 @@ def detect_gpu_encoder() -> bool:
         return False
     
     # Test if NVENC actually works (GPU accessible)
-    try:
-        test_cmd = [
-            'ffmpeg', '-y',
-            '-f', 'lavfi', '-i', 'color=c=black:s=64x64:d=0.1',
-            '-c:v', 'h264_nvenc',
-            '-f', 'null', '-'
-        ]
-        result = subprocess.run(test_cmd, capture_output=True, text=True, timeout=30)
-        
-        if result.returncode == 0:
-            print("[GPU Handler] ✅ NVENC GPU encoder available and working!")
-            GPU_ENCODER_AVAILABLE = True
-            ENCODER_NAME = 'h264_nvenc'
-            ENCODER_PRESET = 'p4'
-            return True
-        else:
-            print(f"[GPU Handler] NVENC test failed: {result.stderr[:200]}")
-            GPU_ENCODER_AVAILABLE = False
-            ENCODER_NAME = 'libx264'
-            ENCODER_PRESET = 'fast'
-            return False
+    # Try multiple times in case GPU is still initializing
+    max_attempts = 3
+    for attempt in range(max_attempts):
+        try:
+            print(f"[GPU Handler] Testing NVENC (attempt {attempt + 1}/{max_attempts})...")
             
-    except Exception as e:
-        print(f"[GPU Handler] NVENC test exception: {e}")
-        GPU_ENCODER_AVAILABLE = False
-        ENCODER_NAME = 'libx264'
-        ENCODER_PRESET = 'fast'
-        return False
+            test_cmd = [
+                'ffmpeg', '-y',
+                '-f', 'lavfi', '-i', 'color=c=black:s=64x64:d=0.1',
+                '-c:v', 'h264_nvenc',
+                '-f', 'null', '-'
+            ]
+            result = subprocess.run(test_cmd, capture_output=True, text=True, timeout=30)
+            
+            if result.returncode == 0:
+                print("[GPU Handler] ✅ NVENC GPU encoder available and working!")
+                GPU_ENCODER_AVAILABLE = True
+                ENCODER_NAME = 'h264_nvenc'
+                ENCODER_PRESET = 'p4'
+                return True
+            else:
+                # Extract the actual error from stderr
+                stderr = result.stderr
+                if 'Cannot load' in stderr or 'No NVENC' in stderr or 'not found' in stderr:
+                    error_msg = "NVENC library not available"
+                elif 'No capable devices' in stderr:
+                    error_msg = "No GPU device found"
+                elif 'OpenEncodeSessionEx failed' in stderr:
+                    error_msg = "GPU encoder session failed"
+                else:
+                    # Get last few lines of error
+                    error_lines = [l for l in stderr.split('\n') if l.strip() and not l.startswith('  ')]
+                    error_msg = error_lines[-1] if error_lines else "Unknown error"
+                
+                print(f"[GPU Handler] NVENC attempt {attempt + 1} failed: {error_msg}")
+                
+                if attempt < max_attempts - 1:
+                    print("[GPU Handler] Retrying in 2 seconds...")
+                    time.sleep(2)
+                    
+        except subprocess.TimeoutExpired:
+            print(f"[GPU Handler] NVENC test timeout on attempt {attempt + 1}")
+            if attempt < max_attempts - 1:
+                time.sleep(2)
+        except Exception as e:
+            print(f"[GPU Handler] NVENC test exception: {e}")
+            if attempt < max_attempts - 1:
+                time.sleep(2)
+    
+    # All attempts failed, use CPU fallback
+    print("[GPU Handler] ⚠️ NVENC not available, using CPU encoder (libx264)")
+    GPU_ENCODER_AVAILABLE = False
+    ENCODER_NAME = 'libx264'
+    ENCODER_PRESET = 'fast'
+    return False
 
 
 def download_file(url: str, dest_path: str) -> bool:
