@@ -183,37 +183,74 @@ Deno.serve(async (req) => {
     // The structure may vary, but typically it's an array with transcript objects
     let transcriptText = '';
     
+    console.log('Apify dataset data (full):', JSON.stringify(transcriptData, null, 2));
+    
     if (transcriptData && transcriptData.length > 0) {
       // Try to find transcript in various possible formats
       const firstItem = transcriptData[0];
       
+      console.log('First item structure:', JSON.stringify(firstItem, null, 2));
+      
       if (firstItem.transcript) {
+        console.log('Found transcript in firstItem.transcript');
         transcriptText = firstItem.transcript;
       } else if (firstItem.text) {
+        console.log('Found transcript in firstItem.text');
         transcriptText = firstItem.text;
       } else if (firstItem.transcripts && Array.isArray(firstItem.transcripts)) {
         // If it's an array of transcript segments, join them
+        console.log('Found transcripts array with', firstItem.transcripts.length, 'segments');
         transcriptText = firstItem.transcripts
           .map((seg: any) => seg.text || seg.transcript || '')
           .join(' ');
+      } else if (firstItem.subtitles && Array.isArray(firstItem.subtitles)) {
+        // Try subtitles field (another common format)
+        console.log('Found subtitles array with', firstItem.subtitles.length, 'segments');
+        transcriptText = firstItem.subtitles
+          .map((seg: any) => seg.text || seg.transcript || '')
+          .join(' ');
       } else if (typeof firstItem === 'string') {
+        console.log('First item is a string');
         transcriptText = firstItem;
       } else {
-        // Try to stringify and extract text
+        // Try to stringify and extract text from any field containing "transcript" or "text"
+        console.log('Trying regex extraction...');
         const jsonStr = JSON.stringify(firstItem);
-        // Look for common transcript fields
+        
+        // Try multiple patterns
         const transcriptMatch = jsonStr.match(/"transcript":\s*"([^"]+)"/i) ||
-                               jsonStr.match(/"text":\s*"([^"]+)"/i);
+                               jsonStr.match(/"text":\s*"([^"]+)"/i) ||
+                               jsonStr.match(/"subtitles":\s*"([^"]+)"/i);
+        
         if (transcriptMatch) {
+          console.log('Found transcript via regex');
           transcriptText = transcriptMatch[1];
+        } else {
+          // Last resort: check all string values in the object
+          console.log('Searching all object values...');
+          const allValues = Object.values(firstItem);
+          for (const value of allValues) {
+            if (typeof value === 'string' && value.length > 100) {
+              console.log('Found long string value, using as transcript');
+              transcriptText = value;
+              break;
+            }
+          }
         }
       }
     }
 
     if (!transcriptText) {
-      console.error('No transcript found in Apify data:', transcriptData);
+      console.error('No transcript found in Apify data. Full data:', JSON.stringify(transcriptData, null, 2));
       return new Response(
-        JSON.stringify({ error: 'Aucune transcription trouvée dans les données Apify' }),
+        JSON.stringify({ 
+          error: 'Aucune transcription trouvée dans les données Apify',
+          debug: {
+            dataReceived: transcriptData,
+            dataLength: transcriptData?.length || 0,
+            firstItemKeys: transcriptData?.[0] ? Object.keys(transcriptData[0]) : []
+          }
+        }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
