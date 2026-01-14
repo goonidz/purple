@@ -68,6 +68,7 @@ def _nvenc_smoke_test() -> None:
     _run_diag("ls -la /dev/nvidia* /dev/nvidia-caps 2>/dev/null || true", timeout=5)
     _run_diag(f"{FFMPEG_BIN} -hide_banner -encoders 2>/dev/null | grep -i nvenc || true", timeout=10)
     # Minimal encode test (no output file)
+    # NOTE: Some NVENC setups reject very small dimensions; use a safe minimum.
     cmd = [
         FFMPEG_BIN,
         "-hide_banner",
@@ -76,7 +77,7 @@ def _nvenc_smoke_test() -> None:
         "-f",
         "lavfi",
         "-i",
-        "color=c=black:s=128x128:d=1,format=yuv420p",
+        "color=c=black:s=640x360:r=30:d=1,format=yuv420p",
         "-c:v",
         "h264_nvenc",
         "-pix_fmt",
@@ -216,7 +217,8 @@ def detect_gpu_encoder() -> bool:
                     '-hide_banner',
                     '-loglevel', 'warning',
                     '-f', 'lavfi',
-                    '-i', 'color=c=black:s=128x128:r=30:d=0.2,format=yuv420p',
+                    # Some NVENC setups reject very small dimensions; use a safe minimum.
+                    '-i', 'color=c=black:s=640x360:r=30:d=0.2,format=yuv420p',
                     '-c:v', 'h264_nvenc',
                     '-gpu', str(gpu_id),
                     '-pix_fmt', 'yuv420p',
