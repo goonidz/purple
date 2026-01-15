@@ -88,8 +88,8 @@ location /api/upload-video {
     proxy_set_header Host $host;
     proxy_cache_bypass $http_upgrade;
     
-    # CRITICAL: Allow large file uploads (500 MB)
-    client_max_body_size 500M;
+    # CRITICAL: Allow unlimited file uploads (0 = pas de limite)
+    client_max_body_size 0;
     
     # Increase timeouts for large uploads
     proxy_read_timeout 300s;
@@ -241,7 +241,7 @@ Ajouter :
 
 ### Erreur "413 Request Entity Too Large"
 
-→ Augmenter `client_max_body_size` dans nginx (voir étape 6)
+→ Vérifier que `client_max_body_size 0;` (illimité) est bien dans nginx (voir étape 6)
 
 ### Erreur "504 Gateway Timeout"
 

@@ -1,20 +1,24 @@
-# Zoom Implementation - CuPy GPU vs OpenCV CPU
+# Zoom Implementation - CuPy GPU + HTTP/2 Downloads
 
-## Versions disponibles
+## Version actuelle : CuPy GPU + HTTP/2 Asyncio (recommandée)
 
-### Version actuelle : CuPy GPU (recommandée)
-- **Fichier** : `handler.py`
-- **Backend** : CuPy `affine_transform` avec `order=5` (quintic spline)
-- **Performance** : 5-10x plus rapide que CPU
-- **Qualité subpixel** : ⭐⭐⭐⭐ (quasi identique à Lanczos4)
+### Optimisations majeures
+- **Backend zoom** : CuPy `affine_transform` avec `order=1` (bilinear)
+- **Downloads** : HTTP/2 multiplexing avec `httpx` + `asyncio` (comme Node.js axios)
+- **Streaming** : Frames streamées directement à FFmpeg (pas de disk I/O)
+- **Performance** : 
+  - Download 102 images : **~32s** (HTTP/2)
+  - Processing 102 scènes : **~200s** (GPU CuPy + 20 workers)
+  - **Total : ~3 minutes pour 9 min de vidéo**
+- **Qualité** : Excellente (bilinear suffit pour zoom 8%)
 - **Fallback** : Utilise automatiquement OpenCV CPU si CuPy n'est pas installé
 
 ### Version backup : OpenCV CPU
 - **Fichier** : `handler.py.opencv_backup`
 - **Backend** : OpenCV `warpAffine` avec `cv2.INTER_LANCZOS4`
+- **Downloads** : ThreadPoolExecutor (20 workers)
 - **Performance** : CPU uniquement, plus lent
 - **Qualité subpixel** : ⭐⭐⭐⭐⭐ (meilleure interpolation)
-- **Avantage** : Pas de dépendances lourdes (CuPy ~2GB)
 
 ## Restaurer la version CPU
 
@@ -25,19 +29,23 @@ cd runpod-handler
 cp handler.py.opencv_backup handler.py
 ```
 
-Et dans `requirements.txt`, commenter CuPy :
+Et dans `requirements.txt`, commenter CuPy et httpx :
 ```txt
-# cupy-cuda12x>=12.0.0  # Désactivé, utilise OpenCV CPU
+# cupy-cuda11x>=11.0.0  # Désactivé, utilise OpenCV CPU
+# httpx[http2]>=0.27.0  # Désactivé, utilise requests avec ThreadPool
 ```
 
 ## Comparaison technique
 
-| Critère | CuPy GPU (actuel) | OpenCV CPU (backup) |
-|---------|-------------------|---------------------|
-| Interpolation | Spline order=5 (6×6 kernel) | Lanczos4 (8×8 kernel) |
+| Critère | CuPy GPU + HTTP/2 (actuel) | OpenCV CPU (backup) |
+|---------|---------------------------|---------------------|
+| **Downloads** | HTTP/2 asyncio (102 imgs) | ThreadPool 20 workers |
+| Temps download | **~32s** | ~35-40s |
+| **Interpolation** | Bilinear order=1 | Lanczos4 (8×8 kernel) |
 | Subpixel precision | ✅ Excellent | ✅ Excellent |
-| Vitesse (125 frames) | ~2-3s | ~10-15s |
-| Dépendances | CuPy (~2GB) | Légères |
+| Vitesse (125 frames) | **~1-2s** | ~5-7s |
+| **Total 102 scènes** | **~3 min** | ~4-5 min |
+| Dépendances | CuPy + httpx (~2GB) | Légères |
 | VRAM GPU | ~500MB | N/A |
 
 ## Architecture

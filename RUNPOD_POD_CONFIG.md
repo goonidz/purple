@@ -60,7 +60,7 @@ RunPod → HTTPS POST → VPS (video-storage-api:3001)
 - ✅ Handler RunPod modifié pour uploader vers VPS (avec fallback Supabase)
 
 **Avantages** :
-- 🚀 Pas de limite de taille (jusqu'à 500 MB configuré, extensible)
+- 🚀 **Pas de limite de taille** (`client_max_body_size 0` = illimité dans Nginx)
 - ⚡ Timeout 5 minutes (vs 60s Supabase)
 - 💰 Gratuit (VPS déjà payé)
 - 🔄 Fallback automatique sur Supabase Storage si VPS fail
@@ -76,11 +76,38 @@ Voir `video-storage-api/DEPLOY.md` pour les détails du déploiement VPS.
 
 ---
 
-### 4. GPU Requirements
-- **Type** : NVIDIA GPU (RTX 3090, RTX 4090, A6000, etc.)
-- **CUDA Version** : 12.x (image compatible avec 12.2+)
+### 4. Optimisations et Performances
 
-### 5. Ports
+**Version actuelle (Janvier 2026)** :
+- ✅ **Downloads HTTP/2** : `httpx` avec asyncio pour télécharger toutes les images en parallèle (~32s pour 102 images)
+- ✅ **GPU Zoom CuPy** : Interpolation bilinear (order=1) sur GPU (~1-2s par scène)
+- ✅ **Streaming FFmpeg** : Frames streamées directement à FFmpeg (pas de disk I/O)
+- ✅ **20 workers** : Processing parallèle de 20 scènes simultanément
+- ✅ **Upload VPS illimité** : Nginx configuré sans limite de taille
+
+**Performances réelles (GPU A40)** :
+- 102 scènes (9 minutes vidéo) : **~3 minutes** de rendering total
+  - Download images : ~32s
+  - Processing scènes : ~200s
+  - Upload VPS : ~60s
+
+**Dépendances clés** :
+- `httpx[http2]>=0.27.0` : Downloads HTTP/2 multiplexing
+- `cupy-cuda11x>=11.0.0` : GPU acceleration (CUDA 11.8 compatible)
+- `opencv-python-headless>=4.8.0` : Fallback CPU + image loading
+
+Voir `runpod-handler/ZOOM_IMPLEMENTATION.md` pour comparaison technique détaillée.
+
+---
+
+### 5. GPU Requirements
+- **Type** : NVIDIA GPU datacenter (A40, A100, L40 recommandés)
+- **CUDA Version** : 11.8+ (handler compatible CUDA 11.x et 12.x)
+- **NVENC** : Unlimited sessions sur datacenter GPUs (vs 3-5 sessions sur consumer GPUs)
+
+**Recommandation** : A40 sur RunPod = excellent rapport qualité/prix (~$0.40/h)
+
+### 6. Ports
 Aucun port public nécessaire (le worker poll Supabase en interne).
 
 ---
