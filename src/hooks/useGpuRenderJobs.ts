@@ -99,7 +99,7 @@ export function useGpuRenderJobs({ projectId, onJobComplete, onJobFailed }: UseG
         },
         (payload) => {
           const job = payload.new as GpuRenderJob;
-          console.log('🔔 [GPU] Realtime update for GPU render job:', payload.eventType, job.id, job.status, job.progress);
+          console.log('🔔 [GPU] Realtime update for GPU render job:', payload.eventType, job.id, job.status, job.progress, 'current_step:', job.current_step);
           
           if (payload.eventType === 'INSERT') {
             console.log('✅ [GPU] New GPU render job inserted:', job.id);
@@ -116,7 +116,7 @@ export function useGpuRenderJobs({ projectId, onJobComplete, onJobFailed }: UseG
               });
             }
           } else if (payload.eventType === 'UPDATE') {
-            console.log('🔄 [GPU] Job updated:', job.id, 'status:', job.status, 'progress:', job.progress);
+            console.log('🔄 [GPU] Job updated:', job.id, 'status:', job.status, 'progress:', job.progress, 'current_step:', job.current_step);
             setAllJobs(prev => prev.map(j => j.id === job.id ? job : j));
             setActiveJobs(prev => {
               const updated = prev.map(j => j.id === job.id ? job : j);
