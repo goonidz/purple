@@ -192,18 +192,10 @@ serve(async (req) => {
       user_id: user.id,
       status: 'pending',
       progress: 0,
-      job_id: null,  // Will be updated with RunPod job ID after submission
-      status_url: null,
-      steps: [],
-      current_step: null,
-      metadata: {
-        framerate,
-        width: projectWidth,
-        height: projectHeight,
-        scenesCount: scenes.length,
-        renderType: 'gpu',
-        runpodEndpoint: runpodEndpointId,
-      },
+      current_step: 'En attente...',
+      job_id: null,  // Will be updated with RunPod job ID
+      status_url: null,  // Will be updated with RunPod status URL
+      payload: renderData,  // Store full render payload
     };
     
     const { data: dbJob, error: dbError } = await supabase
@@ -298,11 +290,15 @@ serve(async (req) => {
       const runpodJobId = runpodResult.id;
       const statusUrl = `https://api.runpod.ai/v2/${runpodEndpointId}/status/${runpodJobId}`;
       
-      // Update DB job with RunPod job ID
-      await supabase
+      // Update DB job with RunPod job ID and status URL
+      const { error: updateError } = await supabase
         .from('gpu_render_jobs')
         .update({ job_id: runpodJobId, status_url: statusUrl })
         .eq('id', dbJob?.id);
+
+      if (updateError) {
+        console.error('[GPU] Failed to update job with RunPod ID:', updateError);
+      }
 
       console.log('[GPU] RunPod job submitted:', runpodJobId);
 
