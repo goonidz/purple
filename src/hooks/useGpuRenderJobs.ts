@@ -9,6 +9,7 @@ export interface GpuRenderJob {
   user_id: string;
   status: GpuRenderJobStatus;
   progress: number;
+  current_step: string | null;
   video_url: string | null;
   error_message: string | null;
   payload: Record<string, any>;
