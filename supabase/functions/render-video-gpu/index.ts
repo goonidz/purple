@@ -184,7 +184,46 @@ serve(async (req) => {
 
     console.log(`[GPU] Calling RunPod endpoint: ${runpodEndpointId}`);
 
-    // Call RunPod Serverless API
+    // Create job in DB FIRST to get the ID
+    console.log('[GPU] Creating GPU render job in database...');
+    
+    const insertData = {
+      project_id: projectId,
+      user_id: user.id,
+      status: 'pending',
+      progress: 0,
+      job_id: null,  // Will be updated with RunPod job ID after submission
+      status_url: null,
+      steps: [],
+      current_step: null,
+      metadata: {
+        framerate,
+        width: projectWidth,
+        height: projectHeight,
+        scenesCount: scenes.length,
+        renderType: 'gpu',
+        runpodEndpoint: runpodEndpointId,
+      },
+    };
+    
+    const { data: dbJob, error: dbError } = await supabase
+      .from('gpu_render_jobs')
+      .insert(insertData)
+      .select()
+      .single();
+
+    if (dbError) {
+      console.error('[GPU] Error creating GPU render job:', dbError);
+      throw new Error(`Failed to create DB job: ${dbError.message}`);
+    }
+    
+    console.log('[GPU] GPU render job created in DB:', dbJob?.id);
+
+    // Now call RunPod with the dbJobId so handler can update DB during render
+    console.log('[GPU] Calling RunPod with dbJobId for real-time DB updates...');
+    
+    renderData.dbJobId = dbJob?.id;  // Add dbJobId to payload
+    
     let runpodResponse;
     try {
       runpodResponse = await fetch(`https://api.runpod.ai/v2/${runpodEndpointId}/run`, {
@@ -256,69 +295,23 @@ serve(async (req) => {
 
     // RunPod returns { id: "job-id", status: "IN_QUEUE" | "IN_PROGRESS" | "COMPLETED" | "FAILED" }
     if (runpodResult.id) {
-      const jobId = runpodResult.id;
-      const statusUrl = `https://api.runpod.ai/v2/${runpodEndpointId}/status/${jobId}`;
+      const runpodJobId = runpodResult.id;
+      const statusUrl = `https://api.runpod.ai/v2/${runpodEndpointId}/status/${runpodJobId}`;
       
-      // Create job in database
-      console.log('[GPU] Creating video render job in database...');
-      
-      const insertData = {
-        project_id: projectId,
-        user_id: user.id,
-        status: 'pending',
-        progress: 0,
-        job_id: jobId,
-        status_url: statusUrl,
-        steps: [],
-        current_step: null,
-        metadata: {
-          framerate,
-          width: projectWidth,
-          height: projectHeight,
-          scenesCount: scenes.length,
-          renderType: 'gpu',
-          runpodEndpoint: runpodEndpointId,
-        },
-      };
-      
-      // Create job in DB FIRST to get the ID
-      const { data: dbJob, error: dbError } = await supabase
+      // Update DB job with RunPod job ID
+      await supabase
         .from('gpu_render_jobs')
-        .insert(insertData)
-        .select()
-        .single();
+        .update({ job_id: runpodJobId, status_url: statusUrl })
+        .eq('id', dbJob?.id);
 
-      if (dbError) {
-        console.error('[GPU] Error creating GPU render job:', dbError);
-        throw new Error(`Failed to create DB job: ${dbError.message}`);
-      }
-      
-      console.log('[GPU] GPU render job created in DB:', dbJob?.id);
-
-      // Now call RunPod with the dbJobId so handler can update DB during render
-      console.log('[GPU] Calling RunPod with dbJobId for real-time DB updates...');
-      
-      renderData.dbJobId = dbJob?.id;  // Add dbJobId to payload
-      
-      const runpodRenderResponse = await fetch(`https://api.runpod.ai/v2/${runpodEndpointId}/run`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${runpodApiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ input: renderData }),
-        signal: AbortSignal.timeout(30000),
-      });
-      
-      const runpodRenderResult = await runpodRenderResponse.json();
-      console.log('[GPU] RunPod render job submitted:', runpodRenderResult);
+      console.log('[GPU] RunPod job submitted:', runpodJobId);
 
       // Return with jobId - frontend will poll gpu_render_jobs table
       return new Response(
         JSON.stringify({
           success: true,
           jobId: dbJob?.id,  // Return DB job ID for frontend polling
-          runpodJobId: jobId,  // Keep RunPod job ID for reference
+          runpodJobId: runpodJobId,  // Keep RunPod job ID for reference
           status: 'pending',
           message: 'GPU render job started. Progress tracked in gpu_render_jobs table.',
           renderType: 'gpu',
