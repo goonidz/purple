@@ -1053,6 +1053,7 @@ def render_video_payload(payload: Dict[str, Any], progress_cb=None, step_cb=None
 
         # Process all scenes in parallel
         MAX_WORKERS = 20  # Reduced to avoid I/O contention
+        step_cb(f"Traitement de {len(scenes)} scènes...")
         print(f"[GPU Handler] Processing {len(scenes)} scenes in parallel ({MAX_WORKERS} workers)...")
         process_start = time.time()
         
@@ -1095,6 +1096,10 @@ def render_video_payload(payload: Dict[str, Any], progress_cb=None, step_cb=None
                 completed += 1
                 print(f"[GPU Handler] Completed scene {completed}/{len(scenes)}")
                 
+                # Update step every 5 scenes
+                if completed % 5 == 0 or completed == len(scenes):
+                    step_cb(f"Scène {completed}/{len(scenes)} terminée...")
+                
                 # Progress 20-80% for processing
                 progress = 20 + int(completed / len(scenes) * 60)
                 progress_cb(progress)
@@ -1102,6 +1107,7 @@ def render_video_payload(payload: Dict[str, Any], progress_cb=None, step_cb=None
         process_time = time.time() - process_start
         print(f"[GPU Handler] Processed {len(scenes)} scenes in {process_time:.1f}s (parallel)")
 
+        step_cb("Assemblage des segments vidéo...")
         print("[GPU Handler] Concatenating segments...")
         concat_path = temp_path / 'concat.mp4'
         if not concatenate_videos(segment_paths, str(concat_path)):
@@ -1109,6 +1115,7 @@ def render_video_payload(payload: Dict[str, Any], progress_cb=None, step_cb=None
 
         progress_cb(85)
 
+        step_cb("Ajout de l'audio...")
         print("[GPU Handler] Adding audio...")
         final_path = temp_path / f'{project_name}.mp4'
         if not add_audio(str(concat_path), str(audio_path), str(final_path)):
@@ -1118,6 +1125,7 @@ def render_video_payload(payload: Dict[str, Any], progress_cb=None, step_cb=None
 
         file_size_mb = os.path.getsize(str(final_path)) / (1024 * 1024)
 
+        step_cb("Upload de la vidéo finale...")
         print("[GPU Handler] Uploading video to VPS...")
         try:
             timestamp = int(time.time())
