@@ -4612,6 +4612,13 @@ const Index = () => {
                                         {'duration_seconds' in job && job.duration_seconds && ` • Durée: ${Math.round(job.duration_seconds)}s`}
                                       </p>
                                     )}
+                                    {job.type === 'gpu' && 'metadata' in job && job.metadata && typeof job.metadata === 'object' && (
+                                      <p className="text-xs text-muted-foreground">
+                                        {(job.metadata as any).fileSizeMB && `Taille: ${(job.metadata as any).fileSizeMB.toFixed(2)} MB`}
+                                        {(job.metadata as any).duration && ` • Rendu en ${Math.round((job.metadata as any).duration)}s`}
+                                        {(job.metadata as any).resolution && ` • ${(job.metadata as any).resolution}`}
+                                      </p>
+                                    )}
                                   </div>
                                 )}
                                 
