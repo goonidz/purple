@@ -472,25 +472,24 @@ def generate_zoom_frames_cupy(
         tx = (1 - s) * focus_x
         ty = (1 - s) * focus_y
         
-        # Process each channel separately with GPU affine transform
-        zoomed_channels = []
+        # Process all 3 channels at once with GPU affine transform
+        # Pre-allocate output array
+        zoomed_gpu = cp.zeros((height, width, 3), dtype=cp.float32)
+        
         for ch in range(3):
             channel = img_gpu[:, :, ch].astype(cp.float32)
             # affine_transform uses matrix that maps output to input coordinates
-            # So we use the inverse transform
-            transformed = cupyx.scipy.ndimage.affine_transform(
+            zoomed_gpu[:, :, ch] = cupyx.scipy.ndimage.affine_transform(
                 channel,
-                matrix=[[inv_s, 0], [0, inv_s]],
-                offset=[-ty * inv_s, -tx * inv_s],
+                matrix=cp.array([[inv_s, 0], [0, inv_s]], dtype=cp.float32),
+                offset=cp.array([-ty * inv_s, -tx * inv_s], dtype=cp.float32),
                 output_shape=(height, width),
-                order=5,  # Quintic spline (high quality like Lanczos)
+                order=3,  # Cubic spline (good quality, faster than order=5)
                 mode='constant',
                 cval=0
             )
-            zoomed_channels.append(transformed)
         
-        # Stack and transfer to CPU
-        zoomed_gpu = cp.stack(zoomed_channels, axis=2)
+        # Transfer to CPU and convert to uint8
         zoomed = cp.asnumpy(zoomed_gpu).clip(0, 255).astype(np.uint8)
         
         # Save frame
@@ -643,7 +642,9 @@ def create_video_segment(
             return True
             
         except Exception as e:
-            print(f"[GPU Handler] OpenCV zoom failed: {e}")
+            print(f"[GPU Handler] Zoom generation failed: {e}")
+            import traceback
+            traceback.print_exc()
             return False
     
     # For pan or static, use FFmpeg filters (no upscale needed)
