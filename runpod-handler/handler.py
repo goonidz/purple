@@ -619,23 +619,34 @@ def create_video_segment(
                     stderr=subprocess.PIPE
                 )
                 
-                # Stream frames one by one to FFmpeg (NO RAM accumulation, NO disk I/O!)
-                frame_count = 0
-                for frame in generate_zoom_frames_cupy_streaming(
-                    image_path, width, height, framerate, duration, effect_type
-                ):
-                    proc.stdin.write(frame.tobytes())
-                    frame_count += 1
-                
-                # Close stdin and wait for FFmpeg to finish
-                proc.stdin.close()
-                stdout, stderr = proc.communicate(timeout=60)
-                
-                if proc.returncode != 0:
-                    print(f"[GPU Handler] FFmpeg streaming error: {stderr.decode()[-500:]}")
-                    return False
-                
-                return True
+                try:
+                    # Stream frames one by one to FFmpeg (NO RAM accumulation, NO disk I/O!)
+                    frame_count = 0
+                    for frame in generate_zoom_frames_cupy_streaming(
+                        image_path, width, height, framerate, duration, effect_type
+                    ):
+                        proc.stdin.write(frame.tobytes())
+                        frame_count += 1
+                    
+                    # Close stdin to signal end of stream
+                    proc.stdin.close()
+                    
+                    # Wait for FFmpeg to finish
+                    stdout, stderr = proc.communicate(timeout=120)
+                    
+                    if proc.returncode != 0:
+                        print(f"[GPU Handler] FFmpeg streaming error: {stderr.decode()[-500:]}")
+                        return False
+                    
+                    return True
+                    
+                except Exception as e:
+                    # Clean up process on error
+                    if proc.stdin and not proc.stdin.closed:
+                        proc.stdin.close()
+                    proc.kill()
+                    proc.wait()
+                    raise  # Re-raise to be caught by outer try/except
                 
             else:
                 # Fallback: OpenCV CPU with disk I/O
