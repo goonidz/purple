@@ -917,7 +917,7 @@ def render_video_payload(payload: Dict[str, Any], progress_cb=None, step_cb=None
             
             return (i, str(segment_path), None)
         
-        with ThreadPoolExecutor(max_workers=30) as executor:
+        with ThreadPoolExecutor(max_workers=10) as executor:
             # Submit all processing tasks (A40 with unlimited NVENC)
             future_to_index = {
                 executor.submit(process_scene_task, i, scene): i 
