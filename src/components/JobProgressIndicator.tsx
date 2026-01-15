@@ -498,10 +498,15 @@ export function GpuRenderJobIndicator({ job, onCancel, className }: GpuRenderJob
           {isActive && job.status !== 'cancelled' && (
             <>
               <Progress value={progressPercent} className="h-1.5 mb-2" />
-              {job.worker_id && (
+              {job.current_step && (
                 <div className="flex items-center gap-2 text-xs mb-2">
                   <Loader2 className="h-3 w-3 text-primary animate-spin flex-shrink-0" />
-                  <span className="text-muted-foreground">Worker: {job.worker_id}</span>
+                  <span className="text-muted-foreground">{job.current_step}</span>
+                </div>
+              )}
+              {job.worker_id && (
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="text-muted-foreground text-xs">Worker: {job.worker_id}</span>
                 </div>
               )}
             </>
