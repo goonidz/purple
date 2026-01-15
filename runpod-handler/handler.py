@@ -1205,7 +1205,39 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
         except Exception:
             pass
 
-    return render_video_payload(job_input, progress_cb=_cb, step_cb=_step_cb)
+    # Run the render
+    result = render_video_payload(job_input, progress_cb=_cb, step_cb=_step_cb)
+    
+    # Update DB with final result (completed or failed)
+    if db_job_id and SUPABASE_URL and SUPABASE_SERVICE_KEY:
+        try:
+            if result.get("success"):
+                print(f"[Serverless] Updating DB job {db_job_id} as completed")
+                update_gpu_job(db_job_id, {
+                    "status": "completed",
+                    "progress": 100,
+                    "video_url": result.get("videoUrl"),
+                    "metadata": {
+                        "duration": result.get("duration"),
+                        "fileSizeMB": result.get("fileSizeMB"),
+                        "scenesCount": result.get("scenesCount"),
+                        "resolution": result.get("resolution"),
+                        "framerate": result.get("framerate"),
+                        "effectType": result.get("effectType"),
+                        "encoder": result.get("encoder"),
+                        "gpuAccelerated": result.get("gpuAccelerated"),
+                    }
+                })
+            else:
+                print(f"[Serverless] Updating DB job {db_job_id} as failed")
+                update_gpu_job(db_job_id, {
+                    "status": "failed",
+                    "error": result.get("error", "Unknown error")
+                })
+        except Exception as e:
+            print(f"[Serverless] Failed to update DB with final result: {e}")
+    
+    return result
 
 
 # RunPod serverless handler
