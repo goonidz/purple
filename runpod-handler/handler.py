@@ -625,25 +625,38 @@ def create_video_segment(
                     for frame in generate_zoom_frames_cupy_streaming(
                         image_path, width, height, framerate, duration, effect_type
                     ):
-                        proc.stdin.write(frame.tobytes())
+                        try:
+                            proc.stdin.write(frame.tobytes())
+                            proc.stdin.flush()
+                        except (BrokenPipeError, IOError) as e:
+                            # FFmpeg died, get error message
+                            print(f"[GPU Handler] Pipe broken at frame {frame_count}: {e}")
+                            break
                         frame_count += 1
                     
                     # Close stdin to signal end of stream
-                    proc.stdin.close()
+                    if proc.stdin and not proc.stdin.closed:
+                        proc.stdin.close()
                     
-                    # Wait for FFmpeg to finish
-                    stdout, stderr = proc.communicate(timeout=120)
+                    # Wait for FFmpeg to finish (use wait() + read(), not communicate())
+                    proc.wait(timeout=120)
+                    stderr = proc.stderr.read().decode() if proc.stderr else ""
                     
                     if proc.returncode != 0:
-                        print(f"[GPU Handler] FFmpeg streaming error: {stderr.decode()[-500:]}")
+                        print(f"[GPU Handler] FFmpeg streaming error (code {proc.returncode}):")
+                        print(f"[GPU Handler] {stderr[-1000:]}")
                         return False
                     
+                    print(f"[GPU Handler] Streamed {frame_count} frames successfully")
                     return True
                     
                 except Exception as e:
                     # Clean up process on error
                     if proc.stdin and not proc.stdin.closed:
-                        proc.stdin.close()
+                        try:
+                            proc.stdin.close()
+                        except:
+                            pass
                     proc.kill()
                     proc.wait()
                     raise  # Re-raise to be caught by outer try/except
