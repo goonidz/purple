@@ -1,99 +1,169 @@
 # RunPod GPU Video Rendering Handler
 
-Ce dossier contient le handler RunPod Serverless pour le rendu vidéo accéléré par GPU.
+Ce dossier contient le handler RunPod pour le rendu vidéo accéléré par GPU (CuPy + NVENC).
 
-## Architecture
+## 🚀 Mode Serverless (Actuel - Janvier 2026)
 
 ```
 Frontend (Toggle GPU ON)
     ↓
 Edge Function (render-video-gpu)
     ↓
-RunPod Serverless API
+RunPod Serverless API (sr4lev8xioj0pv)
     ↓
-Ce Handler (FFmpeg + NVENC)
+Worker (Image Docker Custom)
     ↓
-Supabase Storage (vidéo finale)
+Handler Python (CuPy GPU + NVENC)
+    ↓ (Real-time updates)
+Supabase DB (gpu_render_jobs)
+    ↓ (Realtime subscription)
+Frontend (Progress bar + current_step)
+    ↓ (Upload)
+VPS Storage API (unlimited)
 ```
 
-## Fichiers
+### Avantages Serverless
+- ✅ **Auto-scaling** : Workers démarrent/stoppent automatiquement
+- ✅ **Pay-per-second** : ~$0.00024/s (~5 centimes pour 100 scènes)
+- ✅ **Démarrage instant** : ~5-10s (dépendances pré-installées)
+- ✅ **Progress temps réel** : `current_step` + `progress` en DB
+- ✅ **Upload illimité** : VPS API (pas de limite Supabase)
 
-- `handler.py` - Point d'entrée RunPod Serverless
-- `Dockerfile` - Image Docker avec CUDA + FFmpeg NVENC
-- `requirements.txt` - Dépendances Python
+## 📁 Fichiers
 
-## Déploiement sur RunPod
+- `handler.py` - Point d'entrée RunPod (modes Serverless + Pod + Worker)
+- `Dockerfile.serverless` - Image custom avec dépendances pré-installées
+- `build-serverless.sh` - Script de build et push vers GHCR
+- `requirements.txt` - Dépendances Python (CuPy, httpx, FFmpeg)
+- `.dockerignore` - Fichiers ignorés lors du build
 
-### 1. Créer un compte RunPod
+## 📚 Documentation
 
-1. Aller sur [runpod.io](https://runpod.io)
-2. Créer un compte
-3. Ajouter des crédits
+- **[SERVERLESS_DEPLOY.md](./SERVERLESS_DEPLOY.md)** - Guide complet de déploiement Serverless
+- **[ZOOM_IMPLEMENTATION.md](./ZOOM_IMPLEMENTATION.md)** - Détails techniques CuPy GPU vs OpenCV CPU
+- **[../RUNPOD_POD_CONFIG.md](../RUNPOD_POD_CONFIG.md)** - Configuration complète (Serverless + Pod)
 
-### 2. Construire et pousser l'image Docker
+## ⚡ Quick Start
+
+### 1. Build l'image Docker custom
 
 ```bash
-# Depuis ce dossier
-docker build -t your-dockerhub/videoflow-gpu:latest .
-docker push your-dockerhub/videoflow-gpu:latest
+cd runpod-handler
+./build-serverless.sh
 ```
 
-### 3. Créer un Endpoint Serverless
+### 2. Redémarre les workers
 
-1. Aller dans **Serverless** > **Endpoints**
-2. Cliquer sur **New Endpoint**
-3. Configurer:
-   - **Name**: `videoflow-gpu`
-   - **Docker Image**: `your-dockerhub/videoflow-gpu:latest`
-   - **GPU Type**: RTX 4090 ou A100 (recommandé)
-   - **Max Workers**: 3-5 selon budget
-   - **Idle Timeout**: 30 secondes
-   - **Execution Timeout**: 600 secondes (10 min)
+RunPod Dashboard → Serverless → `sr4lev8xioj0pv` → Workers → Terminate 🗑️
 
-4. **Environment Variables** (dans l'onglet Advanced):
-   ```
-   SUPABASE_URL=https://your-project.supabase.co
-   SUPABASE_SERVICE_KEY=your-service-role-key
-   ```
+### 3. Teste
 
-5. Cliquer **Deploy**
+Lance un rendu GPU depuis le frontend !
 
-### 4. Récupérer les credentials
+**Voir [SERVERLESS_DEPLOY.md](./SERVERLESS_DEPLOY.md) pour le guide complet.**
 
-1. Copier l'**Endpoint ID** (ex: `abc123xyz`)
-2. Aller dans **Settings** > **API Keys**
-3. Créer ou copier votre **API Key**
+---
 
-### 5. Configurer Supabase
+## 🎨 Technologies
 
-Dans le Dashboard Supabase > **Edge Functions** > **Secrets**:
+### Backend Rendu
+- **CuPy** : GPU-accelerated zoom transforms (order=1 bilinear)
+- **httpx + HTTP/2** : Download parallèle d'images (~32s pour 102 images)
+- **FFmpeg + NVENC** : Encoding GPU (h264_nvenc, hevc_nvenc)
+- **20 workers** : Processing parallèle de scènes
 
-```
-RUNPOD_API_KEY=your-runpod-api-key
-RUNPOD_ENDPOINT_ID=your-endpoint-id
-```
+### Performance (GPU A40)
+- **102 scènes** (9 min vidéo) : **~3 minutes** total
+  - Download : ~32s
+  - Processing : ~200s
+  - Upload VPS : ~60s
+- **Speedup vs CPU** : **6-10x plus rapide**
 
-## Test local
-
-```bash
-# Installer les dépendances
-pip install -r requirements.txt
-
-# Tester le handler (nécessite NVIDIA GPU)
-python handler.py
+### Dépendances Clés
+```txt
+cupy-cuda11x>=11.0.0      # GPU acceleration
+httpx[http2]>=0.27.0      # HTTP/2 downloads
+opencv-python-headless    # Fallback CPU
+runpod>=1.0.0            # RunPod SDK
 ```
 
-## Coûts estimés
+---
 
-| GPU | Prix/sec | Vidéo 2min (~30 scenes) |
-|-----|----------|-------------------------|
-| RTX 4090 | $0.00044 | ~$0.02-0.05 |
-| A100 | $0.00139 | ~$0.07-0.15 |
+## 💰 Coûts Serverless
 
-Le rendu est ~10-20x plus rapide qu'en CPU.
+| GPU | Prix/sec | Vidéo 17 scènes (2:34) | Vidéo 100 scènes (9 min) |
+|-----|----------|------------------------|--------------------------|
+| A40 (recommandé) | $0.00024 | **~$0.017** (2¢) | **~$0.048** (5¢) |
+| A100 | $0.00139 | ~$0.097 (10¢) | ~$0.278 (28¢) |
 
-## Monitoring
+**Auto-stop** : $0 quand idle (vs Pod qui coûte $0.86/h même idle).
 
-- Dashboard RunPod: Voir les jobs en cours
-- Logs: Dans l'onglet Logs de l'endpoint
-- Supabase: Table `video_render_jobs` avec `metadata.renderType = 'gpu'`
+---
+
+## 🔧 Modes de fonctionnement
+
+Le handler supporte **3 modes** :
+
+### 1. Serverless (actuel)
+- Trigger : HTTP POST depuis Edge Function
+- Updates DB en temps réel via `update_gpu_job()`
+- Auto-scale workers
+
+### 2. Worker (legacy Pod)
+- Trigger : Polling `claim_gpu_render_job()` RPC
+- Updates DB pendant le rendu
+- Persistant (toujours actif)
+
+### 3. Pod (legacy)
+- Trigger : Manuel / API directe
+- Pas de DB updates
+- Pour debug
+
+Mode déterminé par `RUNPOD_MODE` env var.
+
+---
+
+## 📊 Monitoring
+
+### RunPod Dashboard
+- **Requests** : Liste des jobs (status, durée, coût)
+- **Workers** : Workers actifs, logs en temps réel
+- **Analytics** : Métriques, graphiques, coûts
+
+### Supabase DB
+```sql
+SELECT id, status, progress, current_step, video_url, metadata
+FROM gpu_render_jobs
+WHERE status = 'processing'
+ORDER BY created_at DESC;
+```
+
+### Frontend Console
+```
+🔔 [GPU] Realtime update: pending 20 current_step: Téléchargement de 17 images...
+🔔 [GPU] Realtime update: pending 40 current_step: Scène 10/17 terminée...
+```
+
+---
+
+## 🐛 Troubleshooting
+
+### Image build failed
+- Vérifier Docker running : `docker ps`
+- Login GHCR : `echo $GITHUB_PAT | docker login ghcr.io -u goonidz --password-stdin`
+
+### Worker ne démarre pas
+- Vérifier que l'image est publique sur GHCR
+- Vérifier les env vars dans l'Endpoint
+- Logs RunPod : Dashboard → Workers → Logs
+
+### Progress ne s'affiche pas
+- Vérifier migration DB (`current_step` column)
+- Vérifier Realtime subscription (logs console)
+- Vérifier `GpuRenderJobIndicator` component
+
+**Voir [SERVERLESS_DEPLOY.md](./SERVERLESS_DEPLOY.md) pour plus de détails.**
+
+---
+
+**Système Serverless 100% fonctionnel !** 🎉
