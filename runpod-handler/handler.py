@@ -820,7 +820,7 @@ def concatenate_videos(video_paths: List[str], output_path: str) -> bool:
 
 
 def add_audio(video_path: str, audio_path: str, output_path: str) -> bool:
-    """Add audio to video (copy video stream, encode audio)"""
+    """Add audio to video (copy video stream, encode audio). Audio takes priority."""
     
     cmd = [
         FFMPEG_BIN, '-y',
@@ -831,7 +831,7 @@ def add_audio(video_path: str, audio_path: str, output_path: str) -> bool:
         '-b:a', '192k',
         '-map', '0:v:0',
         '-map', '1:a:0',
-        '-shortest',
+        # No -shortest: keep full audio, extend last video frame if needed
         output_path
     ]
     
