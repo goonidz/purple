@@ -3782,7 +3782,7 @@ const Index = () => {
                                     </Select>
                                     <Select 
                                       value={exportEffectType} 
-                                      onValueChange={(value) => setExportEffectType(value as 'zoom' | 'pan' | 'pan_old' | 'zoom_subpixel' | 'opencv_zoom' | 'none')}
+                                      onValueChange={(value) => setExportEffectType(value as 'opencv_zoom' | 'pan' | 'none')}
                                       disabled={!audioUrl}
                                     >
                                       <SelectTrigger className="w-[180px] h-9">
@@ -3790,24 +3790,8 @@ const Index = () => {
                                       </SelectTrigger>
                                       <SelectContent>
                                         <SelectItem value="none">Aucun effet</SelectItem>
-                                        <SelectItem value="zoom">Zoom (Ken Burns)</SelectItem>
                                         <SelectItem value="pan">Pan (Vitesse constante)</SelectItem>
-                                        <SelectItem value="pan_old">Pan (Old)</SelectItem>
-                                        <SelectItem value="zoom_subpixel">Zoom Subpixel (Exp.)</SelectItem>
-                                        <SelectItem value="opencv_zoom">Open CV Zoom</SelectItem>
-                                      </SelectContent>
-                                    </Select>
-                                    <Select 
-                                      value={exportRenderMethod} 
-                                      onValueChange={(value) => setExportRenderMethod(value as 'standard' | 'lanczos')}
-                                      disabled={!audioUrl}
-                                    >
-                                      <SelectTrigger className="w-[180px] h-9">
-                                        <SelectValue />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        <SelectItem value="standard">Standard (6x upscale)</SelectItem>
-                                        <SelectItem value="lanczos">Lanczos (2x upscale) ⚡</SelectItem>
+                                        <SelectItem value="opencv_zoom">Zoom GPU</SelectItem>
                                       </SelectContent>
                                     </Select>
                                     <div className="flex items-center gap-2 px-2 py-1 bg-muted/50 rounded-md">
