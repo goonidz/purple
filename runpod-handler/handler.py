@@ -1159,35 +1159,53 @@ def render_video_payload(payload: Dict[str, Any], progress_cb=None, step_cb=None
 
 def handler(job: Dict[str, Any]) -> Dict[str, Any]:
     """
-    RunPod handler function
+    RunPod Serverless handler function
     
     Input format:
     {
         "input": {
-            "scenes": [
-                {"index": 0, "startTime": 0, "endTime": 5, "duration": 5, "imageUrl": "...", "text": "..."},
-                ...
-            ],
-            "audioUrl": "https://...",
+            "scenes": [...],
+            "audioUrl": "...",
             "videoSettings": {"width": 1920, "height": 1080, "framerate": 25, "format": "mp4"},
             "projectId": "...",
             "projectName": "...",
             "userId": "...",
             "effectType": "pan",
-            "renderMethod": "standard"
+            "renderMethod": "standard",
+            "dbJobId": "..."  # ID from gpu_render_jobs table (for DB updates)
         }
     }
     """
     
     job_input = job.get('input', {}) or {}
+    db_job_id = job_input.get('dbJobId')  # Get DB job ID from input
 
     def _cb(p: int):
         try:
+            # Update RunPod progress
             runpod.serverless.progress_update(job, p)
+            
+            # Update Supabase DB if dbJobId provided
+            if db_job_id and SUPABASE_URL and SUPABASE_SERVICE_KEY:
+                try:
+                    update_gpu_job(db_job_id, {"progress": p})
+                except Exception as e:
+                    print(f"[Serverless] Failed to update DB progress: {e}")
+        except Exception:
+            pass
+    
+    def _step_cb(step: str):
+        try:
+            # Update current step in DB
+            if db_job_id and SUPABASE_URL and SUPABASE_SERVICE_KEY:
+                try:
+                    update_gpu_job(db_job_id, {"current_step": step})
+                except Exception as e:
+                    print(f"[Serverless] Failed to update DB step: {e}")
         except Exception:
             pass
 
-    return render_video_payload(job_input, progress_cb=_cb)
+    return render_video_payload(job_input, progress_cb=_cb, step_cb=_step_cb)
 
 
 # RunPod serverless handler

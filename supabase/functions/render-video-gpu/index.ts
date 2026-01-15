@@ -281,6 +281,7 @@ serve(async (req) => {
         },
       };
       
+      // Create job in DB FIRST to get the ID
       const { data: dbJob, error: dbError } = await supabase
         .from('gpu_render_jobs')
         .insert(insertData)
@@ -288,20 +289,38 @@ serve(async (req) => {
         .single();
 
       if (dbError) {
-        console.error('[GPU] Error creating video render job:', dbError);
-      } else {
-        console.log('[GPU] Video render job created:', dbJob?.id);
+        console.error('[GPU] Error creating GPU render job:', dbError);
+        throw new Error(`Failed to create DB job: ${dbError.message}`);
       }
+      
+      console.log('[GPU] GPU render job created in DB:', dbJob?.id);
 
-      // Return with jobId - client will poll for status
+      // Now call RunPod with the dbJobId so handler can update DB during render
+      console.log('[GPU] Calling RunPod with dbJobId for real-time DB updates...');
+      
+      renderData.dbJobId = dbJob?.id;  // Add dbJobId to payload
+      
+      const runpodRenderResponse = await fetch(`https://api.runpod.ai/v2/${runpodEndpointId}/run`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${runpodApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ input: renderData }),
+        signal: AbortSignal.timeout(30000),
+      });
+      
+      const runpodRenderResult = await runpodRenderResponse.json();
+      console.log('[GPU] RunPod render job submitted:', runpodRenderResult);
+
+      // Return with jobId - frontend will poll gpu_render_jobs table
       return new Response(
         JSON.stringify({
           success: true,
-          jobId: jobId,
-          dbJobId: dbJob?.id,
-          status: runpodResult.status === 'IN_QUEUE' ? 'pending' : 'processing',
-          message: 'GPU render job started. Use status URL to check progress.',
-          statusUrl: statusUrl,
+          jobId: dbJob?.id,  // Return DB job ID for frontend polling
+          runpodJobId: jobId,  // Keep RunPod job ID for reference
+          status: 'pending',
+          message: 'GPU render job started. Progress tracked in gpu_render_jobs table.',
           renderType: 'gpu',
         }),
         {
