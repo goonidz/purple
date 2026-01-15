@@ -101,7 +101,7 @@ const server = http.createServer((req, res) => {
           log(`Received push event: ${payload.commits.length} commit(s)`, 'yellow');
           log(`Latest commit: ${payload.head_commit.message}`, 'yellow');
           
-          // Check if any commits modified video-render-service/
+          // Check if any commits modified VPS or frontend files
           const affectsVPS = payload.commits.some(commit => {
             const allFiles = [
               ...(commit.added || []),
@@ -110,25 +110,31 @@ const server = http.createServer((req, res) => {
             ];
             return allFiles.some(file => 
               file.startsWith('video-render-service/') || 
+              file.startsWith('src/') ||                    // Frontend React/TS
+              file.startsWith('supabase/functions/') ||     // Edge Functions
               file === 'deploy.sh' ||
               file === 'package.json' ||
-              file === 'webhook-server.js'
+              file === 'webhook-server.js' ||
+              file === 'index.html' ||
+              file === 'vite.config.ts' ||
+              file === 'tsconfig.json' ||
+              file === 'Dockerfile'
             );
           });
           
           if (!affectsVPS) {
-            log('Ignoring push - no changes to video-render-service/', 'yellow');
-            log('(Only runpod-handler or other files changed)', 'yellow');
+            log('Ignoring push - no VPS/frontend changes', 'yellow');
+            log('(Only runpod-handler, docs, or other files changed)', 'yellow');
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ 
               success: true, 
-              message: 'Push ignored - no VPS-related changes',
+              message: 'Push ignored - no VPS/frontend changes',
               skipped: true
             }));
             return;
           }
           
-          log('Changes detected in video-render-service/ - deploying...', 'blue');
+          log('Changes detected in VPS/frontend files - deploying...', 'blue');
           
           deploy()
             .then(() => {
