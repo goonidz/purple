@@ -4,13 +4,13 @@ runpod>=1.6.0
 # HTTP requests for downloading files and API calls
 requests>=2.31.0
 
-# OpenCV for image loading and CPU fallback (high quality subpixel interpolation)
+# OpenCV for image loading and zoom effects (high quality subpixel interpolation)
 opencv-python-headless>=4.8.0
 numpy>=1.24.0
 
-# CuPy for GPU-accelerated image transforms (5-10x faster than CPU)
-# Uses CUDA for affine transforms with order=5 spline interpolation
-cupy-cuda12x>=12.0.0
+# CuPy for GPU-accelerated image transforms (DISABLED: requires CUDA Toolkit)
+# Uncomment if RunPod image has nvidia-cuda-runtime-cu12 installed
+# cupy-cuda12x>=12.0.0
 
 # Supabase client
 supabase>=2.3.0
