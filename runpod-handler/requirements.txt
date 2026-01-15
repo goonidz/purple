@@ -4,9 +4,12 @@ runpod>=1.6.0
 # HTTP requests for downloading files and API calls
 requests>=2.31.0
 
-# OpenCV for zoom effects with warpAffine (high quality Lanczos4 subpixel interpolation)
+# OpenCV for image loading and fallback zoom (Lanczos4)
 opencv-python-headless>=4.8.0
 numpy>=1.24.0
+
+# CuPy for GPU-accelerated zoom (CUDA 11.8 - matches RunPod A40 image)
+cupy-cuda11x>=11.0.0
 
 # Supabase client
 supabase>=2.3.0
