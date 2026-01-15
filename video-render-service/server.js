@@ -48,6 +48,28 @@ app.use(express.json({ limit: '50mb' }));
 // Serve video files directly from temp directory
 app.use('/videos', express.static(TEMP_DIR));
 
+// Download route for videos with proper Content-Disposition header
+app.get('/videos/download/:filename', (req, res) => {
+  const filename = req.params.filename;
+  const filepath = path.join(TEMP_DIR, filename);
+  
+  // Check if file exists
+  if (!fs.existsSync(filepath)) {
+    return res.status(404).json({ error: 'File not found' });
+  }
+  
+  // Get custom filename from query param or use original
+  const downloadName = req.query.name || filename;
+  
+  // Set headers to force download
+  res.setHeader('Content-Type', 'video/mp4');
+  res.setHeader('Content-Disposition', `attachment; filename="${downloadName}"`);
+  
+  // Stream the file
+  const fileStream = fs.createReadStream(filepath);
+  fileStream.pipe(res);
+});
+
 // Supabase client
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;

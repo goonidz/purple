@@ -4594,16 +4594,23 @@ const Index = () => {
                                       </Button>
                                       <Button
                                         onClick={() => {
-                                          const link = document.createElement('a');
-                                          link.href = job.video_url!;
-                                          
                                           // Format: YYYYMMDD_titre.mp4 (without spaces)
-                                          const now = new Date();
-                                          const dateStr = now.toISOString().split('T')[0].replace(/-/g, '');
+                                          const jobDate = new Date(job.created_at);
+                                          const dateStr = jobDate.toISOString().split('T')[0].replace(/-/g, '');
                                           const safeName = (projectName || 'video').replace(/\s+/g, '_').replace(/[/\\?%*:|"<>]/g, '_');
-                                          link.download = `${dateStr}_${safeName}.mp4`;
+                                          const filename = `${dateStr}_${safeName}.mp4`;
                                           
-                                          link.click();
+                                          // Convert viewing URL to download URL with custom filename
+                                          // Ex: http://vps/videos/abc.mp4 -> http://vps/videos/download/abc.mp4?name=20260115_projet.mp4
+                                          const videoUrl = new URL(job.video_url!);
+                                          const pathParts = videoUrl.pathname.split('/');
+                                          const originalFilename = pathParts[pathParts.length - 1];
+                                          pathParts[pathParts.length - 1] = 'download';
+                                          pathParts.push(originalFilename);
+                                          videoUrl.pathname = pathParts.join('/');
+                                          videoUrl.searchParams.set('name', filename);
+                                          
+                                          window.open(videoUrl.toString(), '_blank');
                                         }}
                                         size="sm"
                                         variant="outline"
