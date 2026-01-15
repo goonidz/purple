@@ -4594,22 +4594,9 @@ const Index = () => {
                                       </Button>
                                       <Button
                                         onClick={() => {
-                                          // Format: YYYYMMDD_titre.mp4 (without spaces)
-                                          const jobDate = new Date(job.created_at);
-                                          const dateStr = jobDate.toISOString().split('T')[0].replace(/-/g, '');
-                                          const safeName = (projectName || 'video').replace(/\s+/g, '_').replace(/[/\\?%*:|"<>]/g, '_');
-                                          const filename = `${dateStr}_${safeName}.mp4`;
-                                          
-                                          // Extract filename from video URL
-                                          // Ex: https://purpleai.duckdns.org/rendered-videos/123456-abc.mp4
-                                          const videoUrl = new URL(job.video_url!);
-                                          const pathParts = videoUrl.pathname.split('/');
-                                          const originalFilename = pathParts[pathParts.length - 1];
-                                          
-                                          // Build download URL: /api/download-video/filename?name=custom.mp4
-                                          const downloadUrl = `${videoUrl.origin}/api/download-video/${originalFilename}?name=${encodeURIComponent(filename)}`;
-                                          
-                                          window.open(downloadUrl, '_blank');
+                                          // Le fichier a déjà le bon nom sur le VPS (format: YYYYMMDD_projet.mp4)
+                                          // Télécharge directement
+                                          window.open(job.video_url!, '_blank');
                                         }}
                                         size="sm"
                                         variant="outline"

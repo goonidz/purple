@@ -1134,8 +1134,10 @@ def render_video_payload(payload: Dict[str, Any], progress_cb=None, step_cb=None
         step_cb("Upload de la vidéo finale...")
         print("[GPU Handler] Uploading video to VPS...")
         try:
-            timestamp = int(time.time())
-            filename = f"{timestamp}_{project_name}_{project_id}.mp4"
+            # Format: YYYYMMDD_project_name.mp4 (ex: 20260115_mon_projet.mp4)
+            from datetime import datetime
+            date_str = datetime.now().strftime('%Y%m%d')
+            filename = f"{date_str}_{project_name}.mp4"
             upload_result = upload_to_vps(str(final_path), filename)
             video_url = upload_result['url']
             print(f"[GPU Handler] Uploaded {upload_result['sizeMB']:.2f} MB to VPS")
@@ -1144,7 +1146,9 @@ def render_video_payload(payload: Dict[str, Any], progress_cb=None, step_cb=None
             print(f"[GPU Handler] Falling back to Supabase Storage...")
             # Fallback to Supabase if VPS upload fails
             try:
-                dest_path = f"{user_id}/{project_id}/{timestamp}_{project_name}.mp4"
+                from datetime import datetime
+                date_str = datetime.now().strftime('%Y%m%d')
+                dest_path = f"{user_id}/{project_id}/{date_str}_{project_name}.mp4"
                 video_url = upload_to_supabase(str(final_path), 'rendered-videos', dest_path)
                 print(f"[GPU Handler] Fallback upload successful")
             except Exception as e2:
