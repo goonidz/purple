@@ -470,8 +470,10 @@ def generate_zoom_frames_cupy_streaming(
     h, w = img.shape[:2]
     
     total_frames = int(duration * framerate)
-    zoom_amount = 0.08
-    
+    # Constant zoom speed: 0.8% per second
+    zoom_per_second = 0.008  # 0.8%
+    zoom_amount = zoom_per_second * duration
+
     # Determine focus point
     focus_x, focus_y = w / 2, h / 2
     is_zoom_in = 'zoom_out' not in effect_type
@@ -558,8 +560,10 @@ def generate_zoom_frames_opencv(
     h, w = img.shape[:2]
     
     total_frames = int(duration * framerate)
-    zoom_amount = 0.08  # 8% zoom
-    
+    # Constant zoom speed: 0.8% per second
+    zoom_per_second = 0.008  # 0.8%
+    zoom_amount = zoom_per_second * duration
+
     # Determine focus point and direction
     focus_x, focus_y = w / 2, h / 2
     is_zoom_in = True
