@@ -412,6 +412,14 @@ interface GpuRenderJobIndicatorProps {
 export function GpuRenderJobIndicator({ job, onCancel, className }: GpuRenderJobIndicatorProps) {
   const progressPercent = Math.min(100, job.progress || 0);
   const isActive = job.status === 'pending' || job.status === 'processing';
+  const isCompleted = job.status === 'completed';
+
+  const handleDismiss = () => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(`gpu-render-dismissed-${job.id}`, 'true');
+      window.dispatchEvent(new CustomEvent('gpu-render-dismissed', { detail: job.id }));
+    }
+  };
 
   const getStatusIcon = () => {
     switch (job.status) {
@@ -427,6 +435,36 @@ export function GpuRenderJobIndicator({ job, onCancel, className }: GpuRenderJob
         return null;
     }
   };
+
+  // For completed jobs, only show the success message (no card wrapper)
+  if (isCompleted) {
+    return (
+      <div className="flex items-center gap-2 p-2 bg-muted/50 rounded-md border border-border">
+        <span className="text-lg">⚡</span>
+        <span className="text-sm font-medium text-foreground flex-1">
+          Rendu GPU terminé !
+        </span>
+        {job.video_url && (
+          <a
+            href={job.video_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs text-primary hover:underline"
+          >
+            Voir la vidéo
+          </a>
+        )}
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={handleDismiss}
+          className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
+        >
+          <X className="h-4 w-4" />
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <Card className={cn("p-3 border-primary/20 bg-primary/5", className)}>
