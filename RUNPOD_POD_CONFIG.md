@@ -398,17 +398,43 @@ Si l'image Docker a changé (rebuild) :
 
 ---
 
-## Coût estimé (pay-per-use)
+## Coût estimé
 
-- **RTX 4090** : ~$0.49/h (démarrage : 30-60s, arrêt manuel ou auto)
+### Serverless (recommandé)
+- **A40** : ~$0.00024/seconde (~$0.86/h si toujours actif)
+- **Facturation** : Pay-per-second, auto-stop
+- **Vidéo 17 scènes** (102 images, 2:34) : ~70s total → **$0.017** (~2 centimes)
+- **Vidéo 100 scènes** (9 min) : ~200s total → **$0.048** (~5 centimes)
+
+### Pod (legacy, pay-per-use)
+- **RTX 4090** : ~$0.49/h (démarrage : 30-60s, arrêt manuel)
 - **Vidéo courte** (10 scènes, 60s) : ~2-3 min → ~$0.02-0.04
 - **Vidéo longue** (30 scènes, 3 min) : ~5-8 min → $0.04-0.07
 
-Compare CPU VPS : 15-20 min pour la même vidéo = **6-10x plus rapide sur GPU** ⚡
+### Comparaison CPU VPS
+- **Même vidéo sur CPU** : 15-20 min
+- **GPU Serverless** : ~3 min
+- **Speedup** : **6-10x plus rapide** ⚡
+- **Coût** : ~5 centimes vs gratuit (VPS déjà payé), mais **10x plus rapide**
 
 ---
 
-## Configuration dans RunPod Dashboard
+## Serverless vs Pod : Comparaison
+
+| Critère | Serverless (actuel) | Pod (legacy) |
+|---------|---------------------|--------------|
+| **Démarrage** | ~5-10s (image custom) | ~30-60s |
+| **Coût idle** | $0 (auto-stop) | $0.49/h si oublié |
+| **Scaling** | Auto (0-3 workers) | Manuel |
+| **Progress tracking** | Real-time DB updates | Real-time DB updates |
+| **Complexité** | Simple (HTTP trigger) | Moyenne (polling) |
+| **Recommandé pour** | Production | Dev/Debug |
+
+**Recommandation** : Utilise **Serverless** sauf si tu débug le handler (Pod plus facile à monitorer).
+
+---
+
+## Configuration dans RunPod Dashboard (Pod - Legacy)
 
 URL : https://www.runpod.io/console/pods
 
