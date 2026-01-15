@@ -18,16 +18,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import cv2
 import numpy as np
 
-# CuPy for GPU-accelerated image processing
-try:
-    import cupy as cp
-    import cupyx.scipy.ndimage
-    CUPY_AVAILABLE = True
-    print("[GPU Handler] CuPy GPU acceleration available")
-except ImportError:
-    CUPY_AVAILABLE = False
-    print("[GPU Handler] CuPy not available, falling back to OpenCV CPU")
-
 # Supabase configuration (for uploading results)
 SUPABASE_URL = os.environ.get('SUPABASE_URL', '')
 SUPABASE_SERVICE_KEY = os.environ.get('SUPABASE_SERVICE_KEY', '')
@@ -369,114 +359,6 @@ def get_encoder_args() -> List[str]:
         ]
 
 
-def generate_zoom_frames_cupy(
-    image_path: str,
-    frames_dir: Path,
-    duration: float,
-    width: int,
-    height: int,
-    framerate: int,
-    effect_type: str
-) -> int:
-    """
-    Generate zoom frames using CuPy GPU-accelerated affine transform with order=5 spline.
-    High-quality subpixel interpolation, 5-10x faster than CPU.
-    Returns the number of frames generated.
-    """
-    # Load image (CPU)
-    img = cv2.imread(image_path)
-    if img is None:
-        raise RuntimeError(f"Failed to load image: {image_path}")
-    
-    orig_h, orig_w = img.shape[:2]
-    
-    # Pre-resize/crop to target aspect ratio to avoid black bars
-    target_ratio = width / height
-    orig_ratio = orig_w / orig_h
-    
-    if orig_ratio > target_ratio:
-        # Image is wider than target - crop width
-        new_w = int(orig_h * target_ratio)
-        start_x = (orig_w - new_w) // 2
-        img = img[:, start_x:start_x+new_w]
-    elif orig_ratio < target_ratio:
-        # Image is taller than target - crop height
-        new_h = int(orig_w / target_ratio)
-        start_y = (orig_h - new_h) // 2
-        img = img[start_y:start_y+new_h, :]
-    
-    # Resize to target dimensions with Lanczos4 (high quality)
-    img = cv2.resize(img, (width, height), interpolation=cv2.INTER_LANCZOS4)
-    h, w = img.shape[:2]
-    
-    # Transfer to GPU
-    img_gpu = cp.asarray(img)
-    
-    total_frames = int(duration * framerate)
-    zoom_amount = 0.08  # 8% zoom
-    
-    # Determine focus point and direction
-    focus_x, focus_y = w / 2, h / 2
-    is_zoom_in = True
-    
-    if 'zoom_out' in effect_type:
-        is_zoom_in = False
-    
-    if 'left' in effect_type:
-        focus_x = w / 4
-    elif 'right' in effect_type:
-        focus_x = w * 3 / 4
-    
-    if 'top' in effect_type:
-        focus_y = h / 4
-    elif 'bottom' in effect_type:
-        focus_y = h * 3 / 4
-    
-    # Generate frames with subpixel precision on GPU
-    for i in range(total_frames):
-        progress = i / (total_frames - 1) if total_frames > 1 else 0
-        
-        if is_zoom_in:
-            s = 1.0 + (zoom_amount * progress)
-        else:
-            s = (1.0 + zoom_amount) - (zoom_amount * progress)
-        
-        # Transformation matrix for scaling around focus point
-        # CuPy uses inverse matrix for affine_transform
-        M = np.array([
-            [s, 0, (1 - s) * focus_x],
-            [0, s, (1 - s) * focus_y]
-        ], dtype=np.float32)
-        
-        # Compute inverse transformation
-        M_inv = np.linalg.inv(np.vstack([M, [0, 0, 1]]))[:2]
-        
-        # Apply affine transform on GPU with order=5 spline (high quality subpixel)
-        # Process each channel separately
-        zoomed_channels = []
-        for ch in range(3):
-            channel_gpu = img_gpu[:, :, ch]
-            transformed = cupyx.scipy.ndimage.affine_transform(
-                channel_gpu,
-                M_inv,
-                output_shape=(height, width),
-                order=5,  # Quintic spline - comparable to Lanczos4
-                mode='constant',
-                cval=0
-            )
-            zoomed_channels.append(transformed)
-        
-        # Stack channels and transfer back to CPU
-        zoomed_gpu = cp.stack(zoomed_channels, axis=2)
-        zoomed = cp.asnumpy(zoomed_gpu).astype(np.uint8)
-        
-        # Save frame
-        frame_path = frames_dir / f"frame_{i:05d}.jpg"
-        cv2.imwrite(str(frame_path), zoomed, [int(cv2.IMWRITE_JPEG_QUALITY), 95])
-    
-    return total_frames
-
-
 def generate_zoom_frames_opencv(
     image_path: str,
     frames_dir: Path,
@@ -487,8 +369,7 @@ def generate_zoom_frames_opencv(
     effect_type: str
 ) -> int:
     """
-    Generate zoom frames using OpenCV warpAffine for high-quality subpixel interpolation (CPU).
-    Fallback when CuPy is not available.
+    Generate zoom frames using OpenCV warpAffine for high-quality subpixel interpolation.
     Returns the number of frames generated.
     """
     # Load image
@@ -576,22 +457,14 @@ def create_video_segment(
     is_zoom = 'zoom' in effect_type
     
     if is_zoom:
-        # Use CuPy GPU or OpenCV CPU for zoom effects (high quality subpixel)
+        # Use OpenCV warpAffine for zoom effects (high quality subpixel)
         frames_dir = Path(output_path).parent / f"frames_{Path(output_path).stem}"
         frames_dir.mkdir(exist_ok=True)
         
         try:
-            # Try CuPy GPU first (5-10x faster), fallback to OpenCV CPU
-            if CUPY_AVAILABLE:
-                print(f"[GPU Handler] Using CuPy GPU acceleration for zoom (order=5 spline)")
-                total_frames = generate_zoom_frames_cupy(
-                    image_path, frames_dir, duration, width, height, framerate, effect_type
-                )
-            else:
-                print(f"[GPU Handler] Using OpenCV CPU for zoom (Lanczos4)")
-                total_frames = generate_zoom_frames_opencv(
-                    image_path, frames_dir, duration, width, height, framerate, effect_type
-                )
+            total_frames = generate_zoom_frames_opencv(
+                image_path, frames_dir, duration, width, height, framerate, effect_type
+            )
             
             # Encode frames to video with NVENC
             cmd = [
