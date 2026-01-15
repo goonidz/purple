@@ -72,7 +72,8 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useGenerationJobs, GenerationJob } from "@/hooks/useGenerationJobs";
 import { useVideoRenderJobs, VideoRenderJob } from "@/hooks/useVideoRenderJobs";
-import { ActiveJobsBanner, ActiveVideoRenderJobsBanner } from "@/components/JobProgressIndicator";
+import { useGpuRenderJobs } from "@/hooks/useGpuRenderJobs";
+import { ActiveJobsBanner, ActiveVideoRenderJobsBanner, ActiveGpuRenderJobsBanner } from "@/components/JobProgressIndicator";
 import { ExportPathPresetManager } from "@/components/ExportPathPresetManager";
 import { renderVideo, type SubtitleSettings as RenderSubtitleSettings } from "@/lib/videoRender";
 import { renderVideoGpu } from "@/lib/videoRenderGpu";
@@ -575,11 +576,21 @@ const Index = () => {
     projectId: currentProjectId,
   });
 
+  const {
+    activeJobs: activeGpuRenderJobs,
+    allJobs: allGpuRenderJobs,
+    refreshJobs: refreshGpuRenderJobs,
+  } = useGpuRenderJobs({
+    projectId: currentProjectId,
+  });
+
   // Debug logs
   useEffect(() => {
     console.log('Active video render jobs:', activeVideoRenderJobs.length, activeVideoRenderJobs);
     console.log('All video render jobs:', allVideoRenderJobs.length, allVideoRenderJobs);
-  }, [activeVideoRenderJobs, allVideoRenderJobs]);
+    console.log('[GPU] Active GPU render jobs:', activeGpuRenderJobs.length, activeGpuRenderJobs);
+    console.log('[GPU] All GPU render jobs:', allGpuRenderJobs.length, allGpuRenderJobs);
+  }, [activeVideoRenderJobs, allVideoRenderJobs, activeGpuRenderJobs, allGpuRenderJobs]);
 
   // Keep startJobRef updated so handleJobComplete can use it
   useEffect(() => {
@@ -2971,6 +2982,9 @@ const Index = () => {
         setTimeout(() => refreshVideoRenderJobs(), 2000);
       } else if (isGpuPodJob) {
         toast.success("Rendu GPU (Pod) démarré. Vous pouvez quitter cette page.");
+        // Ensure the new GPU render job appears without manual page refresh
+        setTimeout(() => refreshGpuRenderJobs(), 500);
+        setTimeout(() => refreshGpuRenderJobs(), 2000);
       } else {
         toast.error(result.error || "Erreur lors du démarrage du rendu vidéo");
       }
@@ -3264,7 +3278,7 @@ const Index = () => {
 
             {/* Banner fixe pour les jobs actifs - sticky sous le header */}
             {(() => {
-              // Check if there are any non-dismissed completed jobs
+              // Check if there are any non-dismissed completed jobs (VPS)
               const hasNonDismissedCompleted = allVideoRenderJobs.some(j => {
                 if (j.status === 'completed') {
                   if (typeof window !== 'undefined') {
@@ -3275,8 +3289,20 @@ const Index = () => {
                 }
                 return false;
               });
+
+              // Check if there are any non-dismissed completed GPU jobs
+              const hasNonDismissedGpuCompleted = allGpuRenderJobs.some(j => {
+                if (j.status === 'completed') {
+                  if (typeof window !== 'undefined') {
+                    const dismissedKey = `gpu-render-dismissed-${j.id}`;
+                    return localStorage.getItem(dismissedKey) !== 'true';
+                  }
+                  return true;
+                }
+                return false;
+              });
               
-              const shouldShowBanner = activeJobs.length > 0 || activeVideoRenderJobs.length > 0 || hasNonDismissedCompleted;
+              const shouldShowBanner = activeJobs.length > 0 || activeVideoRenderJobs.length > 0 || activeGpuRenderJobs.length > 0 || hasNonDismissedCompleted || hasNonDismissedGpuCompleted;
               
               if (!shouldShowBanner) return null;
               
@@ -3343,6 +3369,33 @@ const Index = () => {
                         } catch (error) {
                           console.error('Error cancelling job:', error);
                           toast.error('Erreur lors de l\'annulation du rendu');
+                        }
+                      }}
+                    />
+                  )}
+                  {(activeGpuRenderJobs.length > 0 || hasNonDismissedGpuCompleted) && (
+                    <ActiveGpuRenderJobsBanner 
+                      jobs={allGpuRenderJobs}
+                      onCancel={async (jobId) => {
+                        try {
+                          // Update database status to cancelled
+                          const { error } = await supabase
+                            .from('gpu_render_jobs')
+                            .update({ status: 'cancelled' })
+                            .eq('id', jobId);
+                          
+                          if (error) {
+                            toast.error('Erreur lors de l\'annulation du rendu GPU');
+                          } else {
+                            toast.success('Rendu GPU annulé');
+                            // Refresh to update UI
+                            setTimeout(() => {
+                              refreshGpuRenderJobs();
+                            }, 100);
+                          }
+                        } catch (error) {
+                          console.error('[GPU] Error cancelling job:', error);
+                          toast.error('Erreur lors de l\'annulation du rendu GPU');
                         }
                       }}
                     />
