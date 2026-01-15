@@ -4584,6 +4584,11 @@ const Index = () => {
                                         {job.current_step}
                                       </p>
                                     )}
+                                    {job.type === 'gpu' && 'current_step' in job && job.current_step && (
+                                      <p className="text-sm text-muted-foreground">
+                                        {job.current_step}
+                                      </p>
+                                    )}
                                     {job.type === 'gpu' && 'worker_id' in job && job.worker_id && (
                                       <p className="text-sm text-muted-foreground">
                                         Worker: {job.worker_id}
