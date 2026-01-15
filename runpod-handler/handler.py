@@ -642,6 +642,7 @@ def create_video_segment(
                     '-preset', 'fast',
                     '-b:v', '8M',
                     '-pix_fmt', 'yuv420p',
+                    '-t', str(duration),  # Force exact duration to prevent accumulation errors
                     output_path
                 ])
                 
