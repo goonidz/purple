@@ -4596,7 +4596,13 @@ const Index = () => {
                                         onClick={() => {
                                           const link = document.createElement('a');
                                           link.href = job.video_url!;
-                                          link.download = `video-${job.id}.mp4`;
+                                          
+                                          // Format: YYYYMMDD_titre.mp4 (without spaces)
+                                          const now = new Date();
+                                          const dateStr = now.toISOString().split('T')[0].replace(/-/g, '');
+                                          const safeName = (projectName || 'video').replace(/\s+/g, '_').replace(/[/\\?%*:|"<>]/g, '_');
+                                          link.download = `${dateStr}_${safeName}.mp4`;
+                                          
                                           link.click();
                                         }}
                                         size="sm"
