@@ -19,6 +19,7 @@ import re
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
 import cv2
 import numpy as np
 
@@ -1020,8 +1021,25 @@ def render_video_payload(payload: Dict[str, Any], progress_cb=None, step_cb=None
             
             return image_paths_dict
         
-        # Run the async download function
-        image_paths_dict = asyncio.run(download_all_images())
+        # Run async downloads in a separate thread (RunPod Serverless already uses asyncio)
+        def run_in_thread():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                return loop.run_until_complete(download_all_images())
+            finally:
+                loop.close()
+        
+        # Execute in thread to avoid "event loop already running" error
+        result_container = []
+        def thread_target():
+            result_container.append(run_in_thread())
+        
+        thread = threading.Thread(target=thread_target)
+        thread.start()
+        thread.join()
+        
+        image_paths_dict = result_container[0] if result_container else {"error": "Download thread failed"}
         
         # Check for errors
         if isinstance(image_paths_dict, dict) and "error" in image_paths_dict:
