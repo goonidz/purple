@@ -1,12 +1,32 @@
-# Configuration RunPod Pod Template
+# Configuration RunPod (Pod & Serverless)
 
-## ✅ Déploiement terminé
+Ce document couvre **deux modes de déploiement** :
+1. **RunPod Serverless** (recommandé) - Auto-scaling, pay-per-second
+2. **RunPod Pod** (legacy) - Polling persistant
 
-1. **Migration DB** : `gpu_render_jobs` table + `claim_gpu_render_job()` RPC ✅
-2. **Edge Function** : `render-video-gpu-pod` déployée ✅  
-   URL: `https://laqgmqyjstisipsbljha.supabase.co/functions/v1/render-video-gpu-pod`
-3. **Image GHCR** : `ghcr.io/goonidz/purple-runpod-handler:cuda12.2` ✅  
-   SHA: `470b63aba91e614f6485102e3ad54eab84b8c6bb8c9c0354f18fd5d73ef39276`
+## ⚡ Mode Serverless (Recommandé - Janvier 2026)
+
+### ✅ Déploiement Serverless actif
+
+1. **Migration DB** : `gpu_render_jobs` table avec colonnes Serverless ✅
+   - `job_id` : RunPod job ID
+   - `status_url` : RunPod status URL  
+   - `current_step` : Étape en cours (temps réel)
+   - `metadata` : Métadonnées du rendu
+2. **Edge Function** : `render-video-gpu` (mode Serverless) ✅  
+   URL: `https://laqgmqyjstisipsbljha.supabase.co/functions/v1/render-video-gpu`
+3. **Image Docker Custom** : `ghcr.io/goonidz/videoflow-gpu-serverless:latest` ✅  
+   - Toutes les dépendances pre-installées (démarrage instant)
+   - CuPy, httpx, FFmpeg, NVENC support
+4. **RunPod Endpoint** : `sr4lev8xioj0pv` ✅
+5. **Real-time Progress** : Supabase Realtime subscriptions ✅
+
+### Avantages Serverless vs Pod
+- ✅ **Auto-scaling** : Workers démarrent/stoppent automatiquement
+- ✅ **Pay-per-second** : Pas de coût quand idle
+- ✅ **Démarrage instant** : ~5-10s (image custom pré-buildée)
+- ✅ **Progress temps réel** : `current_step` + `progress` dans DB
+- ✅ **Pas de polling** : HTTP trigger direct depuis Edge Function
 
 ---
 
@@ -100,6 +120,131 @@ Voir `runpod-handler/ZOOM_IMPLEMENTATION.md` pour comparaison technique détaill
 
 ---
 
+## Configuration RunPod Serverless Endpoint
+
+### 1. Image Docker Custom
+
+**Image** : `ghcr.io/goonidz/videoflow-gpu-serverless:latest`
+
+Cette image contient **toutes les dépendances pré-installées** :
+- CuPy (CUDA 11.8)
+- httpx[http2]
+- FFmpeg avec NVENC
+- runpod Python SDK
+
+**Pourquoi une image custom ?**
+- ⚡ **Démarrage instant** : ~5-10s (vs 2-3 min pour `pip install`)
+- 💰 **Économies** : Pas de temps facturé pour l'installation
+- 🔒 **Reproductible** : Même environnement à chaque fois
+
+### 2. Build de l'image custom
+
+Quand tu modifies `handler.py` ou `requirements.txt` :
+
+```bash
+cd runpod-handler
+./build-serverless.sh
+```
+
+Le script :
+1. Build l'image pour `linux/amd64`
+2. Push vers GitHub Container Registry (GHCR)
+3. Tag avec `latest` + timestamp
+
+**Important** : L'image doit être **publique** ou RunPod doit avoir les credentials GHCR.
+
+### 3. Configuration de l'Endpoint RunPod
+
+Dashboard URL : https://www.runpod.io/console/serverless
+
+#### Settings
+- **Name** : `purple-gpu-render-serverless`
+- **Endpoint ID** : `sr4lev8xioj0pv`
+- **Container Image** : `ghcr.io/goonidz/videoflow-gpu-serverless:latest`
+- **GPU Types** : A40, A100, L40 (datacenter GPUs avec NVENC illimité)
+
+#### Environment Variables
+
+```bash
+# Supabase (pour real-time DB updates)
+SUPABASE_URL=https://laqgmqyjstisipsbljha.supabase.co
+SUPABASE_SERVICE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+
+# VPS Video Storage (upload illimité)
+VPS_UPLOAD_URL=https://purpleai.duckdns.org/api/upload-video
+VPS_UPLOAD_TOKEN=3d8973d677721dba2bd2b32bde3de73e3112a0c6daf0b5b51b8e87f1780fca30
+
+# GPU
+NVIDIA_VISIBLE_DEVICES=all
+NVIDIA_DRIVER_CAPABILITIES=compute,utility,video
+```
+
+#### Workers Configuration
+- **Min Workers** : 0 (pas de workers quand idle)
+- **Max Workers** : 3 (ajuste selon budget)
+- **Idle Timeout** : 5 secondes
+- **Execution Timeout** : 600 secondes (10 min max par rendu)
+- **GPU Memory** : 16 GB (A40 recommandé)
+
+### 4. Edge Function Configuration
+
+Dans Supabase Dashboard → Edge Functions → `render-video-gpu` :
+
+**Environment Secrets** :
+```bash
+RUNPOD_API_KEY=<ta clé API RunPod>
+RUNPOD_ENDPOINT_ID=sr4lev8xioj0pv
+```
+
+### 5. Workflow Serverless complet
+
+1. **Frontend** : User clique "Render" avec GPU ON
+2. **Edge Function** `render-video-gpu` :
+   - Crée un job dans `gpu_render_jobs` (status=pending, progress=0)
+   - Récupère le `dbJobId`
+   - POST `https://api.runpod.ai/v2/sr4lev8xioj0pv/run` avec payload + `dbJobId`
+3. **RunPod** :
+   - Auto-scale un worker (A40) en ~5-10s
+   - Charge l'image custom (déjà buildée)
+   - Exécute `handler(job)` avec le payload
+4. **Handler Python** :
+   - Reçoit `dbJobId` dans `job['input']['dbJobId']`
+   - Update `gpu_render_jobs` en temps réel :
+     - `current_step`: "Téléchargement de l'audio...", "Scène 5/17...", etc.
+     - `progress`: 0-100%
+   - Render vidéo avec CuPy + NVENC
+   - Upload vers VPS
+   - Update final : `status=completed`, `video_url`, `metadata`
+5. **Frontend** :
+   - Subscribe Realtime à `gpu_render_jobs` (via `useGpuRenderJobs` hook)
+   - Affiche progress bar + `current_step` en temps réel
+   - Montre vidéo finale quand `status=completed`
+
+### 6. Real-time Progress Tracking
+
+**Colonnes DB `gpu_render_jobs`** :
+- `current_step` (TEXT) : "Téléchargement de 17 images...", "Scène 10/17 terminée...", "Upload de la vidéo..."
+- `progress` (INTEGER) : 0-100%
+- `job_id` (TEXT) : RunPod job ID
+- `status_url` (TEXT) : RunPod status URL (pour debugging)
+- `metadata` (JSONB) : `{ duration, fileSizeMB, resolution, encoder, gpuAccelerated }`
+
+**Frontend subscription** :
+```typescript
+supabase
+  .channel('gpu-render-jobs')
+  .on('postgres_changes', {
+    event: '*',
+    schema: 'public',
+    table: 'gpu_render_jobs',
+    filter: `project_id=eq.${projectId}`
+  }, (payload) => {
+    // Update UI avec progress + current_step
+  })
+```
+
+---
+
 ### 5. GPU Requirements
 - **Type** : NVIDIA GPU datacenter (A40, A100, L40 recommandés)
 - **CUDA Version** : 11.8+ (handler compatible CUDA 11.x et 12.x)
@@ -166,7 +311,74 @@ Aucun port public nécessaire (le worker poll Supabase en interne).
 
 ---
 
+## Test Serverless end-to-end
+
+1. **Vérifier l'Endpoint** : RunPod Dashboard → Serverless → `sr4lev8xioj0pv`
+   - Status : **Active**
+   - Workers disponibles : 0 (idle) ou 1+ (actif)
+
+2. **Frontend** : Créer un projet, activer GPU toggle, cliquer "Render"
+
+3. **Observer les logs** :
+   - Console Chrome : `🔔 [GPU] Realtime update... current_step: Téléchargement...`
+   - RunPod Dashboard → Requests : Voir le job en cours
+   - RunPod Dashboard → Workers → Logs : Voir les logs du handler
+
+4. **Vérifier DB** :
+   ```sql
+   SELECT id, status, progress, current_step, video_url, metadata
+   FROM gpu_render_jobs 
+   ORDER BY created_at DESC 
+   LIMIT 5;
+   ```
+
+### Redémarrer un worker Serverless
+
+Si l'image Docker a changé (rebuild) :
+
+1. **RunPod Dashboard** → **Serverless** → `sr4lev8xioj0pv`
+2. **Workers** tab
+3. **Terminate** le worker actif (🗑️)
+4. Un nouveau worker va démarrer automatiquement avec la nouvelle image
+
+**Pas besoin de rebuild l'endpoint** - juste tuer les workers pour forcer le pull de `latest`.
+
+---
+
 ## Troubleshooting
+
+### Serverless
+
+#### Worker reste "throttled"
+- **Normal** : C'est l'état idle (pas de job en cours)
+- Lance un rendu pour voir le worker passer à "running"
+
+#### Erreur "Could not find column 'xxx' in schema cache"
+- **Cause** : Migration DB manquante
+- **Fix** : Appliquer la migration via `scripts/apply-*.cjs`
+- Colonnes requises : `job_id`, `status_url`, `current_step`, `metadata`
+
+#### Frontend ne voit pas le progress
+- Vérifier que `current_step` est bien dans l'interface `GpuRenderJob` (TypeScript)
+- Vérifier les logs console : doit afficher `current_step: ...`
+- Vérifier que `GpuRenderJobIndicator` affiche bien `job.current_step`
+
+#### Image Docker "push access denied"
+- **Cause** : Pas de credentials GHCR
+- **Fix** :
+  ```bash
+  echo $GITHUB_PAT | docker login ghcr.io -u goonidz --password-stdin
+  ```
+- Vérifier que le PAT a les permissions `read:packages` + `write:packages`
+
+#### Handler ne met pas à jour la DB
+- Vérifier que `SUPABASE_SERVICE_KEY` est set dans l'Endpoint
+- Vérifier les logs handler : `[Serverless] Updating DB job...`
+- Tester manuellement la connexion DB depuis le handler
+
+### Pod (Legacy)
+
+#### Le Pod ne claim pas de jobs
 
 ### Le Pod ne claim pas de jobs
 - Vérifier `RUNPOD_MODE=worker` (pas "pod" ni "serverless")
