@@ -3,6 +3,7 @@ runpod>=1.6.0
 
 # HTTP requests for downloading files and API calls
 requests>=2.31.0
+httpx[http2]>=0.27.0
 
 # OpenCV for image loading and fallback zoom (Lanczos4)
 opencv-python-headless>=4.8.0

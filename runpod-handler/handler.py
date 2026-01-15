@@ -11,6 +11,8 @@ import tempfile
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+import httpx
+import asyncio
 import json
 import time
 import re
@@ -317,7 +319,7 @@ def detect_gpu_encoder() -> bool:
 
 
 def download_file(url: str, dest_path: str, session: Optional[requests.Session] = None) -> bool:
-    """Download a file from URL to destination path"""
+    """Download a file from URL to destination path (sync version for backward compat)"""
     try:
         print(f"Downloading: {url}")
         
@@ -333,6 +335,25 @@ def download_file(url: str, dest_path: str, session: Optional[requests.Session] 
             for chunk in response.iter_content(chunk_size=8192):
                 f.write(chunk)
 
+        print(f"Downloaded to: {dest_path}")
+        return True
+    except Exception as e:
+        print(f"Error downloading {url}: {e}")
+        return False
+
+
+async def download_file_async(url: str, dest_path: str, client: httpx.AsyncClient) -> bool:
+    """Download a file from URL using async httpx with HTTP/2 (like axios)"""
+    try:
+        print(f"Downloading: {url}")
+        
+        async with client.stream('GET', url, timeout=120.0) as response:
+            response.raise_for_status()
+            
+            with open(dest_path, 'wb') as f:
+                async for chunk in response.aiter_bytes(chunk_size=8192):
+                    f.write(chunk)
+        
         print(f"Downloaded to: {dest_path}")
         return True
     except Exception as e:
@@ -877,6 +898,30 @@ def download_scene_image(scene_index: int, scene: Dict, temp_path: Path, session
 
     image_path = temp_path / f'image_{scene_index}{ext}'
     if not download_file(image_url, str(image_path), session=session):
+        return (scene_index, None, f"Failed to download image for scene {scene_index}")
+
+    return (scene_index, str(image_path), None)
+
+
+async def download_scene_image_async(scene_index: int, scene: Dict, temp_path: Path, client: httpx.AsyncClient) -> Tuple[int, Optional[str], Optional[str]]:
+    """
+    Download a single scene image using async httpx with HTTP/2 (like axios in Node.js).
+    Returns (index, image_path, error).
+    """
+    image_url = scene.get('imageUrl', '')
+    if not image_url:
+        return (scene_index, None, f"Scene {scene_index} has no image URL")
+
+    ext = '.jpg'
+    if '.png' in image_url.lower():
+        ext = '.png'
+    elif '.webp' in image_url.lower():
+        ext = '.webp'
+
+    image_path = temp_path / f'image_{scene_index}{ext}'
+    success = await download_file_async(image_url, str(image_path), client=client)
+    
+    if not success:
         return (scene_index, None, f"Failed to download image for scene {scene_index}")
 
     return (scene_index, str(image_path), None)
