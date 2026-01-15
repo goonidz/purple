@@ -1039,6 +1039,19 @@ const Index = () => {
       }
       if (data.audio_url) {
         setAudioUrl(data.audio_url);
+      } else if (existingScenes.length > 0) {
+        // Fallback: try to load audio from content_calendar if project has scenes but no audio
+        const { data: calendarEntries } = await supabase
+          .from("content_calendar")
+          .select("audio_url")
+          .eq("project_id", projectId)
+          .not('audio_url', 'is', null)
+          .limit(1);
+        
+        if (calendarEntries && calendarEntries.length > 0 && calendarEntries[0].audio_url) {
+          console.log("Loading audio from calendar entry:", calendarEntries[0].audio_url);
+          setAudioUrl(calendarEntries[0].audio_url);
+        }
       }
       
       // Load user's saved export base path
@@ -1052,7 +1065,7 @@ const Index = () => {
       // Load calendar date and channel if project is linked to calendar
       const { data: calendarEntries, error: calendarError } = await supabase
         .from("content_calendar")
-        .select("scheduled_date, id, channel_id, status, channels(name, color)")
+        .select("scheduled_date, id, channel_id, status, audio_url, channels(name, color)")
         .eq("project_id", projectId);
       
       if (calendarError) {
@@ -3810,7 +3823,6 @@ const Index = () => {
                                     </div>
                                     <Button
                                       onClick={handleRenderVideo}
-                                      disabled={!audioUrl}
                                       size="sm"
                                     >
                                       <Video className="mr-2 h-4 w-4" />
