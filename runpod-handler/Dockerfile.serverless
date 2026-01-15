@@ -1,0 +1,21 @@
+# Dockerfile pour RunPod Serverless
+# Bake handler.py + dependencies pour démarrage instantané
+
+FROM lestermfp/runpod-ffmpeg-cuda:latest
+
+# Set working directory
+WORKDIR /app
+
+# Copy Python files
+COPY handler.py /app/handler.py
+COPY requirements.txt /app/requirements.txt
+
+# Install Python dependencies (baked in image, pas de download à chaque run!)
+RUN python3 -m pip install --no-cache-dir --upgrade pip && \
+    python3 -m pip install --no-cache-dir -r requirements.txt
+
+# Expose no ports (serverless uses internal routing)
+# No EXPOSE needed
+
+# Start handler directly (no start.sh needed!)
+CMD ["python3", "-u", "handler.py"]

@@ -1,0 +1,10 @@
+*.backup
+*.before_*
+__pycache__
+*.pyc
+.git
+.gitignore
+README.md
+ZOOM_IMPLEMENTATION.md
+build-and-push.sh
+start.sh
