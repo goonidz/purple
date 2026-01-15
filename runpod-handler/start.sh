@@ -14,8 +14,5 @@ curl -f -o requirements.txt "https://raw.githubusercontent.com/goonidz/purple/ma
 echo "[Start] Installing Python dependencies..."
 python3 -m pip install --quiet -r requirements.txt
 
-echo "[Start] Installing CUDA runtime libs for CuPy (if not present)..."
-python3 -m pip install --quiet nvidia-cuda-nvrtc-cu12 nvidia-cublas-cu12 nvidia-cudnn-cu12 || echo "CUDA libs install failed, will use CPU fallback"
-
 echo "[Start] Starting handler..."
 exec python3 handler.py
