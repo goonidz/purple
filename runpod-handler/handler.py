@@ -922,14 +922,14 @@ def render_video_payload(payload: Dict[str, Any], progress_cb=None, step_cb=None
         if not download_file(audio_url, str(audio_path)):
             return {"error": "Failed to download audio"}
 
-        # Download ALL images in parallel (20x faster!)
+        # Download ALL images in parallel (unlimited workers for I/O-bound network tasks)
         step_cb(f"Téléchargement de {len(scenes)} images en parallèle...")
-        print(f"[GPU Handler] Downloading {len(scenes)} images in parallel...")
+        print(f"[GPU Handler] Downloading {len(scenes)} images in parallel (unlimited workers)...")
         download_start = time.time()
-        
+
         image_paths = [None] * len(scenes)  # Pre-allocate list
-        
-        with ThreadPoolExecutor(max_workers=20) as executor:
+
+        with ThreadPoolExecutor(max_workers=len(scenes)) as executor:
             # Submit all download tasks
             future_to_index = {
                 executor.submit(download_scene_image, i, scene, temp_path): i 
