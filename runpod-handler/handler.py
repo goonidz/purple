@@ -930,29 +930,29 @@ def render_video_payload(payload: Dict[str, Any], progress_cb=None, step_cb=None
         if not download_file(audio_url, str(audio_path)):
             return {"error": "Failed to download audio"}
 
-        # Download ALL images in parallel with connection pooling (unlimited workers)
+        # Download images in parallel (20 workers = sweet spot: fast but no Supabase rate limit)
         step_cb(f"Téléchargement de {len(scenes)} images en parallèle...")
-        print(f"[GPU Handler] Downloading {len(scenes)} images in parallel (session pooling)...")
+        print(f"[GPU Handler] Downloading {len(scenes)} images in parallel (20 workers)...")
         download_start = time.time()
 
         image_paths = [None] * len(scenes)  # Pre-allocate list
 
-        # Create shared session with large connection pool (default is only 10!)
+        # Create shared session with connection pooling
         download_session = requests.Session()
         retry_strategy = Retry(
-            total=3,
-            backoff_factor=1,
+            total=2,
+            backoff_factor=0.5,
             status_forcelist=[429, 500, 502, 503, 504]
         )
         adapter = HTTPAdapter(
-            pool_connections=100,  # Number of connection pools
-            pool_maxsize=200,      # Max connections per pool (support 200 workers)
+            pool_connections=20,
+            pool_maxsize=30,
             max_retries=retry_strategy
         )
         download_session.mount("https://", adapter)
         download_session.mount("http://", adapter)
         
-        with ThreadPoolExecutor(max_workers=len(scenes)) as executor:
+        with ThreadPoolExecutor(max_workers=20) as executor:
             # Submit all download tasks with shared session
             future_to_index = {
                 executor.submit(download_scene_image, i, scene, temp_path, download_session): i
