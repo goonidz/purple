@@ -9,8 +9,14 @@ VERSION=$(date +%Y%m%d-%H%M%S)
 LATEST_TAG="$IMAGE_NAME:latest"
 VERSION_TAG="$IMAGE_NAME:$VERSION"
 
-# Build the image
-docker build -f Dockerfile.serverless -t $LATEST_TAG -t $VERSION_TAG .
+# Build the image (use --platform for M1/M2 Macs)
+echo "📦 Building for linux/amd64 (RunPod uses x86_64)..."
+docker buildx build --platform linux/amd64 \
+  -f Dockerfile.serverless \
+  -t $LATEST_TAG \
+  -t $VERSION_TAG \
+  --load \
+  .
 
 echo "✅ Image built: $LATEST_TAG"
 echo "✅ Version tag: $VERSION_TAG"
