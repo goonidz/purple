@@ -28,11 +28,16 @@ const storage = multer.diskStorage({
     cb(null, VIDEOS_DIR);
   },
   filename: (req, file, cb) => {
-    // Generate unique filename: timestamp-random.mp4
-    const timestamp = Date.now();
-    const random = crypto.randomBytes(8).toString('hex');
-    const ext = path.extname(file.originalname) || '.mp4';
-    cb(null, `${timestamp}-${random}${ext}`);
+    // Use the original filename sent by the handler (format: YYYYMMDD_project_name.mp4)
+    // If not provided, fallback to timestamp-random.mp4
+    if (file.originalname && file.originalname !== 'video.mp4') {
+      cb(null, file.originalname);
+    } else {
+      const timestamp = Date.now();
+      const random = crypto.randomBytes(8).toString('hex');
+      const ext = path.extname(file.originalname) || '.mp4';
+      cb(null, `${timestamp}-${random}${ext}`);
+    }
   }
 });
 
