@@ -478,7 +478,7 @@ def generate_zoom_frames_cupy_streaming(
                 matrix=cp.array([[inv_s, 0], [0, inv_s]], dtype=cp.float32),
                 offset=cp.array([-ty * inv_s, -tx * inv_s], dtype=cp.float32),
                 output_shape=(height, width),
-                order=3,  # Cubic spline (good quality, fast)
+                order=1,  # Bilinear (3-5x faster than cubic, imperceptible diff for 8% zoom)
                 mode='constant',
                 cval=0
             )
