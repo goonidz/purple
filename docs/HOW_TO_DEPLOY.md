@@ -1,10 +1,11 @@
 # How to deploy (VideoFlow)
 
-This repo has **three** deploy targets:
+This repo has **four** deploy targets:
 
 - **Frontend web app** (Docker + nginx on the VPS)
 - **Supabase Edge Functions** (deployed to the Supabase project)
 - **Video Render Service (VPS)** (`video-render-service/`, managed by PM2 on port 3000)
+- **Video Storage API (VPS)** (`video-storage-api/`, managed by PM2 on port 3001)
 
 This doc is the **fast path** that matches the workflow we used successfully.
 
@@ -206,6 +207,71 @@ If you need to do it manually on the VPS:
 ```bash
 ssh ubuntu@51.91.158.233 "set -e; cd ~/purple; git pull origin main; ./deploy.sh"
 ```
+
+### 4.3 Video Storage API (PM2)
+
+**Pourquoi ?** Bypass les limites de Supabase Storage (50 MB par fichier, timeouts). Les vidéos GPU rendues peuvent facilement dépasser 100-500 MB.
+
+**Ce que ça fait** : API Node.js qui reçoit les uploads vidéo depuis RunPod et les stocke dans `/var/www/rendered-videos/`, servis via nginx.
+
+**Première installation** (à faire une seule fois) :
+
+```bash
+ssh ubuntu@51.91.158.233
+cd ~/purple/video-storage-api
+
+# Installer dépendances
+npm install
+
+# Générer token sécurisé
+openssl rand -hex 32  # COPIE CE TOKEN !
+
+# Créer .env
+nano .env
+# Coller :
+# VIDEO_STORAGE_PORT=3001
+# VIDEOS_DIR=/var/www/rendered-videos
+# PUBLIC_URL_BASE=https://purpleai.duckdns.org/rendered-videos
+# VIDEO_UPLOAD_TOKEN=<le-token-généré>
+
+# Créer dossier de stockage
+sudo mkdir -p /var/www/rendered-videos
+sudo chown ubuntu:ubuntu /var/www/rendered-videos
+
+# Démarrer le service
+pm2 start server.js --name video-storage-api
+pm2 save
+```
+
+**Configuration nginx** (déjà fait normalement) : Les locations `/api/upload-video` et `/rendered-videos/` doivent être dans `/etc/nginx/sites-available/purpleai`.
+
+**Mise à jour après changements** :
+
+```bash
+ssh ubuntu@51.91.158.233 "set -e; cd ~/purple; git pull origin main; cd video-storage-api; pm2 restart video-storage-api; pm2 logs video-storage-api --lines 20 --nostream"
+```
+
+**Health check** :
+
+```bash
+ssh ubuntu@51.91.158.233 "curl -s http://localhost:3001/health"
+# Devrait retourner : {"status":"ok","videosDir":"/var/www/rendered-videos",...}
+```
+
+**Test upload** (depuis ton Mac) :
+
+```bash
+curl -X POST https://purpleai.duckdns.org/api/upload-video
+# Devrait retourner : {"error":"Unauthorized"}
+```
+
+**Configuration RunPod** : Ajoute ces variables d'env dans le Pod Template (voir `RUNPOD_POD_CONFIG.md`) :
+```
+VPS_UPLOAD_URL=https://purpleai.duckdns.org/api/upload-video
+VPS_UPLOAD_TOKEN=<le-token-du-fichier-.env>
+```
+
+Voir `video-storage-api/DEPLOY.md` pour tous les détails.
 
 ---
 
