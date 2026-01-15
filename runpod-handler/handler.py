@@ -314,17 +314,23 @@ def detect_gpu_encoder() -> bool:
     return False
 
 
-def download_file(url: str, dest_path: str) -> bool:
+def download_file(url: str, dest_path: str, session: Optional[requests.Session] = None) -> bool:
     """Download a file from URL to destination path"""
     try:
         print(f"Downloading: {url}")
-        response = requests.get(url, stream=True, timeout=120)
-        response.raise_for_status()
         
+        # Use session if provided (connection pooling), otherwise create new request
+        if session:
+            response = session.get(url, stream=True, timeout=120)
+        else:
+            response = requests.get(url, stream=True, timeout=120)
+        
+        response.raise_for_status()
+
         with open(dest_path, 'wb') as f:
             for chunk in response.iter_content(chunk_size=8192):
                 f.write(chunk)
-        
+
         print(f"Downloaded to: {dest_path}")
         return True
     except Exception as e:
@@ -852,25 +858,25 @@ def update_gpu_job(job_id: str, patch: Dict[str, Any]) -> None:
         raise RuntimeError(f"update gpu_render_jobs failed: {r.status_code} {r.text}")
 
 
-def download_scene_image(scene_index: int, scene: Dict, temp_path: Path) -> Tuple[int, Optional[str], Optional[str]]:
+def download_scene_image(scene_index: int, scene: Dict, temp_path: Path, session: requests.Session) -> Tuple[int, Optional[str], Optional[str]]:
     """
-    Download a single scene image. Returns (index, image_path, error).
-    Used for parallel downloading.
+    Download a single scene image using a shared session (connection pooling).
+    Returns (index, image_path, error).
     """
     image_url = scene.get('imageUrl', '')
     if not image_url:
         return (scene_index, None, f"Scene {scene_index} has no image URL")
-    
+
     ext = '.jpg'
     if '.png' in image_url.lower():
         ext = '.png'
     elif '.webp' in image_url.lower():
         ext = '.webp'
-    
+
     image_path = temp_path / f'image_{scene_index}{ext}'
-    if not download_file(image_url, str(image_path)):
+    if not download_file(image_url, str(image_path), session=session):
         return (scene_index, None, f"Failed to download image for scene {scene_index}")
-    
+
     return (scene_index, str(image_path), None)
 
 
@@ -922,18 +928,20 @@ def render_video_payload(payload: Dict[str, Any], progress_cb=None, step_cb=None
         if not download_file(audio_url, str(audio_path)):
             return {"error": "Failed to download audio"}
 
-        # Download ALL images in parallel (max 50 workers to avoid Supabase rate limiting)
+        # Download ALL images in parallel with connection pooling (unlimited workers)
         step_cb(f"Téléchargement de {len(scenes)} images en parallèle...")
-        download_workers = min(50, len(scenes))  # Cap at 50 to avoid SSL errors
-        print(f"[GPU Handler] Downloading {len(scenes)} images in parallel ({download_workers} workers)...")
+        print(f"[GPU Handler] Downloading {len(scenes)} images in parallel (session pooling)...")
         download_start = time.time()
 
         image_paths = [None] * len(scenes)  # Pre-allocate list
 
-        with ThreadPoolExecutor(max_workers=download_workers) as executor:
-            # Submit all download tasks
+        # Create shared session for connection pooling (like axios in Node.js)
+        download_session = requests.Session()
+        
+        with ThreadPoolExecutor(max_workers=len(scenes)) as executor:
+            # Submit all download tasks with shared session
             future_to_index = {
-                executor.submit(download_scene_image, i, scene, temp_path): i 
+                executor.submit(download_scene_image, i, scene, temp_path, download_session): i
                 for i, scene in enumerate(scenes)
             }
             
