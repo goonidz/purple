@@ -244,7 +244,7 @@ const Index = () => {
   const [exportFormat, setExportFormat] = useState<ExportFormat>("premiere-xml");
   const [exportMode, setExportMode] = useState<ExportMode>("with-images");
   const [exportFramerate, setExportFramerate] = useState<number>(25);
-  const [exportEffectType, setExportEffectType] = useState<'opencv_zoom' | 'pan' | 'none'>('pan');
+  const [exportEffectType, setExportEffectType] = useState<'opencv_zoom' | 'pan' | 'none'>('opencv_zoom');
   const [exportRenderMethod, setExportRenderMethod] = useState<'standard' | 'lanczos'>('standard');
   const [exportBasePath, setExportBasePath] = useState<string>("");
   const [isExporting, setIsExporting] = useState(false);
