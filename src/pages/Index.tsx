@@ -244,12 +244,12 @@ const Index = () => {
   const [exportFormat, setExportFormat] = useState<ExportFormat>("premiere-xml");
   const [exportMode, setExportMode] = useState<ExportMode>("with-images");
   const [exportFramerate, setExportFramerate] = useState<number>(25);
-  const [exportEffectType, setExportEffectType] = useState<'zoom' | 'pan' | 'pan_old' | 'zoom_subpixel' | 'opencv_zoom' | 'none'>('pan');
+  const [exportEffectType, setExportEffectType] = useState<'opencv_zoom' | 'pan' | 'none'>('pan');
   const [exportRenderMethod, setExportRenderMethod] = useState<'standard' | 'lanczos'>('standard');
   const [exportBasePath, setExportBasePath] = useState<string>("");
   const [isExporting, setIsExporting] = useState(false);
   const [isRendering, setIsRendering] = useState(false);
-  const [useGpuRendering, setUseGpuRendering] = useState(false);
+  const [useGpuRendering, setUseGpuRendering] = useState(true);
   const [audioUrl, setAudioUrl] = useState<string>("");
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [isUploadingAudio, setIsUploadingAudio] = useState(false);
