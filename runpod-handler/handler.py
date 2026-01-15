@@ -18,9 +18,13 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import cv2
 import numpy as np
 
-# Supabase configuration (for uploading results)
+# Supabase configuration (for database updates)
 SUPABASE_URL = os.environ.get('SUPABASE_URL', '')
 SUPABASE_SERVICE_KEY = os.environ.get('SUPABASE_SERVICE_KEY', '')
+
+# VPS video storage configuration (for uploading rendered videos)
+VPS_UPLOAD_URL = os.environ.get('VPS_UPLOAD_URL', '')
+VPS_UPLOAD_TOKEN = os.environ.get('VPS_UPLOAD_TOKEN', '')
 
 # FFmpeg binary (allow overriding in RunPod env)
 FFMPEG_BIN = os.environ.get('FFMPEG_BIN', 'ffmpeg')
@@ -314,8 +318,33 @@ def download_file(url: str, dest_path: str) -> bool:
         return False
 
 
+def upload_to_vps(file_path: str, filename: str) -> dict:
+    """
+    Upload a video file to VPS storage API and return the response.
+    Returns dict with 'url', 'filename', 'size', 'sizeMB'
+    """
+    if not VPS_UPLOAD_URL or not VPS_UPLOAD_TOKEN:
+        raise ValueError("VPS upload credentials not configured (VPS_UPLOAD_URL, VPS_UPLOAD_TOKEN)")
+    
+    headers = {
+        'Authorization': f'Bearer {VPS_UPLOAD_TOKEN}',
+    }
+    
+    with open(file_path, 'rb') as f:
+        files = {'video': (filename, f, 'video/mp4')}
+        response = requests.post(VPS_UPLOAD_URL, headers=headers, files=files, timeout=300)
+    
+    if response.status_code not in [200, 201]:
+        raise Exception(f"VPS upload failed: {response.status_code} - {response.text}")
+    
+    return response.json()
+
+
 def upload_to_supabase(file_path: str, bucket: str, dest_path: str) -> str:
-    """Upload a file to Supabase Storage and return the public URL"""
+    """
+    LEGACY: Upload a file to Supabase Storage and return the public URL.
+    This is kept for backwards compatibility but VPS upload is now preferred.
+    """
     if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
         raise ValueError("Supabase credentials not configured")
     
@@ -811,14 +840,24 @@ def render_video_payload(payload: Dict[str, Any], progress_cb=None, step_cb=None
 
         file_size_mb = os.path.getsize(str(final_path)) / (1024 * 1024)
 
-        print("[GPU Handler] Uploading to Supabase...")
+        print("[GPU Handler] Uploading video to VPS...")
         try:
             timestamp = int(time.time())
-            dest_path = f"{user_id}/{project_id}/{timestamp}_{project_name}.mp4"
-            video_url = upload_to_supabase(str(final_path), 'rendered-videos', dest_path)
+            filename = f"{timestamp}_{project_name}_{project_id}.mp4"
+            upload_result = upload_to_vps(str(final_path), filename)
+            video_url = upload_result['url']
+            print(f"[GPU Handler] Uploaded {upload_result['sizeMB']:.2f} MB to VPS")
         except Exception as e:
-            print(f"[GPU Handler] Upload error: {e}")
-            return {"error": f"Failed to upload video: {e}"}
+            print(f"[GPU Handler] VPS upload error: {e}")
+            print(f"[GPU Handler] Falling back to Supabase Storage...")
+            # Fallback to Supabase if VPS upload fails
+            try:
+                dest_path = f"{user_id}/{project_id}/{timestamp}_{project_name}.mp4"
+                video_url = upload_to_supabase(str(final_path), 'rendered-videos', dest_path)
+                print(f"[GPU Handler] Fallback upload successful")
+            except Exception as e2:
+                print(f"[GPU Handler] Supabase upload also failed: {e2}")
+                return {"error": f"Failed to upload video: VPS={e}, Supabase={e2}"}
 
         elapsed_time = time.time() - start_time
         print(f"[GPU Handler] ✅ Render complete in {elapsed_time:.1f}s")
