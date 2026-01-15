@@ -33,7 +33,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Upload, X, Loader2, Image as ImageIcon, RefreshCw, Settings, Download, Video, Type, Check, Copy, FolderOpen, Pencil, AlertCircle, FileText, ArrowUp, MonitorPlay, Cloud, Trash2, Play, Sparkles, User as UserIcon, CheckCircle2, Clock, Maximize2, Calendar, ChevronDown, ChevronUp, Minimize2 } from "lucide-react";
+import { Upload, X, Loader2, Image as ImageIcon, RefreshCw, Settings, Download, Video, Type, Check, Copy, FolderOpen, Pencil, AlertCircle, FileText, ArrowUp, MonitorPlay, Cloud, Trash2, Play, Sparkles, User as UserIcon, CheckCircle2, Clock, Maximize2, Calendar, ChevronDown, ChevronUp, Minimize2, Zap } from "lucide-react";
 import AppHeader from "@/components/AppHeader";
 import { ProjectConfigurationModal } from "@/components/ProjectConfigurationModal";
 import { toast } from "sonner";
@@ -4528,17 +4528,28 @@ const Index = () => {
                 <div className="max-w-6xl mx-auto space-y-4">
                   <Card className="p-6">
                     <h2 className="text-lg font-semibold mb-4">Historique des rendus</h2>
-                    {allVideoRenderJobs.length === 0 ? (
-                      <p className="text-muted-foreground text-center py-8">
-                        Aucun rendu vidéo pour ce projet.
-                      </p>
-                    ) : (
-                      <div className="space-y-4">
-                        {allVideoRenderJobs.map((job) => (
-                          <Card key={job.id} className="p-4">
+                    {(() => {
+                      // Merge VPS and GPU jobs, add type marker, and sort by date
+                      const allJobs = [
+                        ...allVideoRenderJobs.map(j => ({ ...j, type: 'vps' as const })),
+                        ...allGpuRenderJobs.map(j => ({ ...j, type: 'gpu' as const }))
+                      ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+                      if (allJobs.length === 0) {
+                        return (
+                          <p className="text-muted-foreground text-center py-8">
+                            Aucun rendu vidéo pour ce projet.
+                          </p>
+                        );
+                      }
+
+                      return (
+                        <div className="space-y-4">
+                          {allJobs.map((job) => (
+                          <Card key={`${job.type}-${job.id}`} className="p-4">
                             <div className="flex items-start justify-between gap-4">
                               <div className="flex-1 space-y-2">
-                                <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-2 flex-wrap">
                                   {job.status === 'completed' && (
                                     <CheckCircle2 className="h-5 w-5 text-green-500" />
                                   )}
@@ -4554,14 +4565,25 @@ const Index = () => {
                                   <span className="font-medium">
                                     Rendu du {new Date(job.created_at).toLocaleString('fr-FR')}
                                   </span>
+                                  {job.type === 'gpu' && (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 border border-yellow-500/20">
+                                      <Zap className="h-3 w-3" />
+                                      GPU
+                                    </span>
+                                  )}
                                 </div>
                                 
                                 {job.status === 'processing' && (
                                   <>
                                     <Progress value={job.progress || 0} className="h-2" />
-                                    {job.current_step && (
+                                    {job.type === 'vps' && 'current_step' in job && job.current_step && (
                                       <p className="text-sm text-muted-foreground">
                                         {job.current_step}
+                                      </p>
+                                    )}
+                                    {job.type === 'gpu' && 'worker_id' in job && job.worker_id && (
+                                      <p className="text-sm text-muted-foreground">
+                                        Worker: {job.worker_id}
                                       </p>
                                     )}
                                   </>
@@ -4592,10 +4614,10 @@ const Index = () => {
                                         Télécharger
                                       </Button>
                                     </div>
-                                    {job.file_size_mb && (
+                                    {job.type === 'vps' && 'file_size_mb' in job && job.file_size_mb && (
                                       <p className="text-xs text-muted-foreground">
                                         Taille: {job.file_size_mb.toFixed(2)} MB
-                                        {job.duration_seconds && ` • Durée: ${Math.round(job.duration_seconds)}s`}
+                                        {'duration_seconds' in job && job.duration_seconds && ` • Durée: ${Math.round(job.duration_seconds)}s`}
                                       </p>
                                     )}
                                   </div>
@@ -4609,9 +4631,10 @@ const Index = () => {
                               </div>
                             </div>
                           </Card>
-                        ))}
-                      </div>
-                    )}
+                          ))}
+                        </div>
+                      );
+                    })()}
                   </Card>
                 </div>
               </TabsContent>
