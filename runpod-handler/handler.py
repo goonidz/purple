@@ -975,48 +975,63 @@ def render_video_payload(payload: Dict[str, Any], progress_cb=None, step_cb=None
         if not download_file(audio_url, str(audio_path)):
             return {"error": "Failed to download audio"}
 
-        # Download images in parallel (20 workers = sweet spot: fast but no Supabase rate limit)
+        # Download ALL images with HTTP/2 multiplexing (like Node.js axios!)
         step_cb(f"Téléchargement de {len(scenes)} images en parallèle...")
-        print(f"[GPU Handler] Downloading {len(scenes)} images in parallel (20 workers)...")
+        print(f"[GPU Handler] Downloading {len(scenes)} images with HTTP/2 (unlimited workers)...")
         download_start = time.time()
 
-        image_paths = [None] * len(scenes)  # Pre-allocate list
-
-        # Create shared session with connection pooling
-        download_session = requests.Session()
-        retry_strategy = Retry(
-            total=2,
-            backoff_factor=0.5,
-            status_forcelist=[429, 500, 502, 503, 504]
-        )
-        adapter = HTTPAdapter(
-            pool_connections=20,
-            pool_maxsize=30,
-            max_retries=retry_strategy
-        )
-        download_session.mount("https://", adapter)
-        download_session.mount("http://", adapter)
-        
-        with ThreadPoolExecutor(max_workers=20) as executor:
-            # Submit all download tasks with shared session
-            future_to_index = {
-                executor.submit(download_scene_image, i, scene, temp_path, download_session): i
-                for i, scene in enumerate(scenes)
-            }
+        # Run async downloads with HTTP/2
+        async def download_all_images():
+            image_paths_dict = {}
             
-            # Collect results as they complete
-            for future in as_completed(future_to_index):
-                index, image_path, error = future.result()
-                if error:
-                    return {"error": error}
-                image_paths[index] = image_path
+            # Create httpx client with HTTP/2 enabled
+            limits = httpx.Limits(max_connections=100, max_keepalive_connections=50)
+            timeout = httpx.Timeout(120.0, connect=30.0)
+            
+            async with httpx.AsyncClient(
+                http2=True,  # Enable HTTP/2 multiplexing (like axios!)
+                limits=limits,
+                timeout=timeout,
+                follow_redirects=True
+            ) as client:
+                # Create all download tasks
+                tasks = [
+                    download_scene_image_async(i, scene, temp_path, client)
+                    for i, scene in enumerate(scenes)
+                ]
                 
-                # Update progress for downloads (0-20%)
-                progress = int((len([p for p in image_paths if p is not None]) / len(scenes)) * 20)
-                progress_cb(progress)
+                # Execute all downloads concurrently
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+                
+                # Process results
+                for result in results:
+                    if isinstance(result, Exception):
+                        return {"error": f"Download failed: {result}"}
+                    
+                    index, image_path, error = result
+                    if error:
+                        return {"error": error}
+                    
+                    image_paths_dict[index] = image_path
+                    
+                    # Update progress for downloads (0-20%)
+                    progress = int((len(image_paths_dict) / len(scenes)) * 20)
+                    progress_cb(progress)
+            
+            return image_paths_dict
         
+        # Run the async download function
+        image_paths_dict = asyncio.run(download_all_images())
+        
+        # Check for errors
+        if isinstance(image_paths_dict, dict) and "error" in image_paths_dict:
+            return image_paths_dict
+        
+        # Convert dict to list (preserve order)
+        image_paths = [image_paths_dict[i] for i in range(len(scenes))]
+
         download_time = time.time() - download_start
-        print(f"[GPU Handler] Downloaded {len(scenes)} images in {download_time:.1f}s (parallel)")
+        print(f"[GPU Handler] Downloaded {len(scenes)} images in {download_time:.1f}s (HTTP/2)")
 
         # Process all scenes in parallel
         MAX_WORKERS = 20  # Reduced to avoid I/O contention
