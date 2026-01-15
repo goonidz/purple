@@ -282,7 +282,7 @@ serve(async (req) => {
       };
       
       const { data: dbJob, error: dbError } = await supabase
-        .from('video_render_jobs')
+        .from('gpu_render_jobs')
         .insert(insertData)
         .select()
         .single();
