@@ -4600,17 +4600,16 @@ const Index = () => {
                                           const safeName = (projectName || 'video').replace(/\s+/g, '_').replace(/[/\\?%*:|"<>]/g, '_');
                                           const filename = `${dateStr}_${safeName}.mp4`;
                                           
-                                          // Convert viewing URL to download URL with custom filename
-                                          // Ex: http://vps/videos/abc.mp4 -> http://vps/videos/download/abc.mp4?name=20260115_projet.mp4
+                                          // Extract filename from video URL
+                                          // Ex: https://purpleai.duckdns.org/rendered-videos/123456-abc.mp4
                                           const videoUrl = new URL(job.video_url!);
                                           const pathParts = videoUrl.pathname.split('/');
                                           const originalFilename = pathParts[pathParts.length - 1];
-                                          pathParts[pathParts.length - 1] = 'download';
-                                          pathParts.push(originalFilename);
-                                          videoUrl.pathname = pathParts.join('/');
-                                          videoUrl.searchParams.set('name', filename);
                                           
-                                          window.open(videoUrl.toString(), '_blank');
+                                          // Build download URL: /api/download-video/filename?name=custom.mp4
+                                          const downloadUrl = `${videoUrl.origin}/api/download-video/${originalFilename}?name=${encodeURIComponent(filename)}`;
+                                          
+                                          window.open(downloadUrl, '_blank');
                                         }}
                                         size="sm"
                                         variant="outline"

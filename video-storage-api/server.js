@@ -97,6 +97,32 @@ app.post('/api/upload-video', authenticate, upload.single('video'), (req, res) =
   });
 });
 
+// Download video with custom filename (no auth required for downloads)
+app.get('/api/download-video/:filename', (req, res) => {
+  const filename = req.params.filename;
+  const filePath = path.join(VIDEOS_DIR, filename);
+
+  // Security: prevent path traversal
+  if (!filePath.startsWith(VIDEOS_DIR)) {
+    return res.status(400).json({ error: 'Invalid filename' });
+  }
+
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({ error: 'File not found' });
+  }
+
+  // Get custom filename from query param or use original
+  const downloadName = req.query.name || filename;
+
+  // Set headers to force download
+  res.setHeader('Content-Type', 'video/mp4');
+  res.setHeader('Content-Disposition', `attachment; filename="${downloadName}"`);
+
+  // Stream the file
+  const fileStream = fs.createReadStream(filePath);
+  fileStream.pipe(res);
+});
+
 // Delete video endpoint (optional, for cleanup)
 app.delete('/api/delete-video/:filename', authenticate, (req, res) => {
   const filename = req.params.filename;
