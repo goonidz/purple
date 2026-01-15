@@ -404,17 +404,17 @@ def get_encoder_args() -> List[str]:
 
 def generate_zoom_frames_cupy(
     image_path: str,
-    frames_dir: Optional[Path],  # Not used, kept for compatibility
+    frames_dir: Path,
     duration: float,
     width: int,
     height: int,
     framerate: int,
     effect_type: str
-) -> np.ndarray:
+) -> int:
     """
     Generate zoom frames using CuPy GPU for FAST high-quality subpixel interpolation.
-    Returns numpy array of shape (num_frames, height, width, 3) in BGR format.
-    All frames are kept in RAM to pipe directly to FFmpeg (bypass disk I/O).
+    Uses order=5 quintic spline (comparable to Lanczos4).
+    Returns the number of frames generated.
     """
     # Load image with OpenCV (CPU)
     img = cv2.imread(image_path)
@@ -459,24 +459,26 @@ def generate_zoom_frames_cupy(
     # Transfer image to GPU (once)
     img_gpu = cp.asarray(img)
     
-    # Pre-allocate array for all frames in RAM
-    frames = np.zeros((total_frames, height, width, 3), dtype=np.uint8)
-    
     # Generate all frames on GPU
     for i in range(total_frames):
         progress = i / (total_frames - 1) if total_frames > 1 else 0
         s = 1.0 + (zoom_amount * progress) if is_zoom_in else (1.0 + zoom_amount) - (zoom_amount * progress)
         
         # Build transformation matrix
+        # For affine_transform, we need the inverse transform
+        # Original: [s, 0, tx], [0, s, ty] where tx = (1-s)*fx, ty = (1-s)*fy
+        # Inverse: [1/s, 0, -tx/s], [0, 1/s, -ty/s]
         inv_s = 1.0 / s
         tx = (1 - s) * focus_x
         ty = (1 - s) * focus_y
         
         # Process all 3 channels at once with GPU affine transform
+        # Pre-allocate output array
         zoomed_gpu = cp.zeros((height, width, 3), dtype=cp.float32)
         
         for ch in range(3):
             channel = img_gpu[:, :, ch].astype(cp.float32)
+            # affine_transform uses matrix that maps output to input coordinates
             zoomed_gpu[:, :, ch] = cupyx.scipy.ndimage.affine_transform(
                 channel,
                 matrix=cp.array([[inv_s, 0], [0, inv_s]], dtype=cp.float32),
@@ -487,10 +489,14 @@ def generate_zoom_frames_cupy(
                 cval=0
             )
         
-        # Transfer to CPU and store in array (NO disk I/O!)
-        frames[i] = cp.asnumpy(zoomed_gpu).clip(0, 255).astype(np.uint8)
+        # Transfer to CPU and convert to uint8
+        zoomed = cp.asnumpy(zoomed_gpu).clip(0, 255).astype(np.uint8)
+        
+        # Save frame
+        frame_path = frames_dir / f"frame_{i:05d}.jpg"
+        cv2.imwrite(str(frame_path), zoomed, [int(cv2.IMWRITE_JPEG_QUALITY), 95])
     
-    return frames
+    return total_frames
 
 
 def generate_zoom_frames_opencv(
@@ -591,88 +597,49 @@ def create_video_segment(
     is_zoom = 'zoom' in effect_type
     
     if is_zoom:
-        # Use CuPy GPU (fast, pipe direct) or OpenCV CPU (fallback, disk)
+        # Use CuPy GPU (fast) or OpenCV CPU (fallback) for zoom effects
+        frames_dir = Path(output_path).parent / f"frames_{Path(output_path).stem}"
+        frames_dir.mkdir(exist_ok=True)
+        
         try:
             if CUPY_AVAILABLE:
-                # Generate frames in RAM with CuPy GPU
-                frames = generate_zoom_frames_cupy(
-                    image_path, None, duration, width, height, framerate, effect_type
+                total_frames = generate_zoom_frames_cupy(
+                    image_path, frames_dir, duration, width, height, framerate, effect_type
                 )
-                
-                # Pipe frames directly to FFmpeg (no disk I/O!)
-                cmd = [
-                    FFMPEG_BIN, '-y',
-                    '-f', 'rawvideo',
-                    '-vcodec', 'rawvideo',
-                    '-s', f'{width}x{height}',
-                    '-pix_fmt', 'bgr24',  # OpenCV/CuPy use BGR
-                    '-r', str(framerate),
-                    '-i', '-',  # Read from stdin
-                    '-c:v', ENCODER_NAME,
-                ]
-                
-                if GPU_ENCODER_AVAILABLE:
-                    cmd.extend(['-gpu', '0'])
-                
-                cmd.extend([
-                    '-preset', 'fast',
-                    '-b:v', '8M',
-                    '-pix_fmt', 'yuv420p',
-                    output_path
-                ])
-                
-                # Pipe frames to FFmpeg
-                result = subprocess.run(
-                    cmd,
-                    input=frames.tobytes(),
-                    capture_output=True,
-                    timeout=300
-                )
-                
-                if result.returncode != 0:
-                    print(f"[GPU Handler] FFmpeg pipe error: {result.stderr.decode()[-500:]}")
-                    return False
-                
-                return True
-                
             else:
-                # Fallback: OpenCV CPU with disk I/O (old method)
-                frames_dir = Path(output_path).parent / f"frames_{Path(output_path).stem}"
-                frames_dir.mkdir(exist_ok=True)
-                
                 total_frames = generate_zoom_frames_opencv(
                     image_path, frames_dir, duration, width, height, framerate, effect_type
                 )
-                
-                # Encode frames to video with NVENC
-                cmd = [
-                    FFMPEG_BIN, '-y',
-                    '-framerate', str(framerate),
-                    '-i', str(frames_dir / 'frame_%05d.jpg'),
-                    '-c:v', ENCODER_NAME,
-                ]
-                
-                if GPU_ENCODER_AVAILABLE:
-                    cmd.extend(['-gpu', '0'])
-                
-                cmd.extend([
-                    '-preset', 'fast',
-                    '-b:v', '8M',
-                    '-pix_fmt', 'yuv420p',
-                    output_path
-                ])
-                
-                result = subprocess.run(cmd, capture_output=True, text=True)
-                
-                # Cleanup frames
-                import shutil
-                shutil.rmtree(frames_dir, ignore_errors=True)
-                
-                if result.returncode != 0:
-                    print(f"[GPU Handler] FFmpeg error: {result.stderr}")
-                    return False
-                
-                return True
+            
+            # Encode frames to video with NVENC
+            cmd = [
+                FFMPEG_BIN, '-y',
+                '-framerate', str(framerate),
+                '-i', str(frames_dir / 'frame_%05d.jpg'),
+                '-c:v', ENCODER_NAME,
+            ]
+            
+            if GPU_ENCODER_AVAILABLE:
+                cmd.extend(['-gpu', '0'])
+            
+            cmd.extend([
+                '-preset', 'fast',
+                '-b:v', '8M',
+                '-pix_fmt', 'yuv420p',
+                output_path
+            ])
+            
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            
+            # Cleanup frames
+            import shutil
+            shutil.rmtree(frames_dir, ignore_errors=True)
+            
+            if result.returncode != 0:
+                print(f"[GPU Handler] FFmpeg error: {result.stderr}")
+                return False
+            
+            return True
             
         except Exception as e:
             print(f"[GPU Handler] Zoom generation failed: {e}")
