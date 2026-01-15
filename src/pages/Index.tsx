@@ -3810,20 +3810,11 @@ const Index = () => {
                                     </div>
                                     <Button
                                       onClick={handleRenderVideo}
-                                      disabled={isRendering || !audioUrl}
+                                      disabled={!audioUrl}
                                       size="sm"
                                     >
-                                      {isRendering ? (
-                                        <>
-                                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                          Rendu en cours...
-                                        </>
-                                      ) : (
-                                        <>
-                                          <Video className="mr-2 h-4 w-4" />
-                                          Rendu vidéo
-                                        </>
-                                      )}
+                                      <Video className="mr-2 h-4 w-4" />
+                                      Rendu vidéo
                                     </Button>
                                   </>
                                 )}
