@@ -25,7 +25,7 @@ export async function renderVideoGpu(options: VideoRenderOptions): Promise<Video
 
     const { projectId, framerate = 25, width = 1920, height = 1080, subtitleSettings, effectType = 'pan', renderMethod = 'standard' } = options;
 
-    console.log('[GPU] Calling render-video-gpu-pod Edge Function with:', { projectId, framerate, width, height, effectType, renderMethod });
+    console.log('[GPU] Calling render-video-gpu Edge Function (Serverless) with:', { projectId, framerate, width, height, effectType, renderMethod });
     console.log('[GPU] User authenticated:', user.id);
 
     const requestBody = {
@@ -38,7 +38,7 @@ export async function renderVideoGpu(options: VideoRenderOptions): Promise<Video
       renderMethod,
     };
 
-    const { data, error } = await supabase.functions.invoke('render-video-gpu-pod', {
+    const { data, error } = await supabase.functions.invoke('render-video-gpu', {
       body: requestBody,
     });
 
