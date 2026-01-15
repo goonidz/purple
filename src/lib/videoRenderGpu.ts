@@ -88,7 +88,7 @@ export async function pollGpuJobStatusFromDb(jobId: string): Promise<JobStatus> 
   try {
     const { data, error } = await supabase
       .from('gpu_render_jobs')
-      .select('id,status,progress,video_url,error_message,updated_at')
+      .select('id,status,progress,video_url,error_message,current_step,updated_at')
       .eq('id', jobId)
       .single();
 
@@ -103,6 +103,7 @@ export async function pollGpuJobStatusFromDb(jobId: string): Promise<JobStatus> 
       progress: data.progress ?? undefined,
       videoUrl: data.video_url ?? undefined,
       error: data.error_message ?? undefined,
+      currentStep: data.current_step ?? undefined,
     };
   } catch (error: any) {
     console.error('[GPU] Poll job status error:', error);
