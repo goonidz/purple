@@ -469,7 +469,7 @@ def generate_zoom_frames_cupy_streaming(
     img = cv2.resize(img, (width, height), interpolation=cv2.INTER_LANCZOS4)
     h, w = img.shape[:2]
     
-    total_frames = int(duration * framerate)
+    total_frames = round(duration * framerate)  # round() instead of int() to avoid accumulation errors
     # Constant zoom speed: 0.8% per second
     zoom_per_second = 0.008  # 0.8%
     zoom_amount = zoom_per_second * duration
