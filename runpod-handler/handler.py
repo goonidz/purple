@@ -9,6 +9,8 @@ import os
 import subprocess
 import tempfile
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 import json
 import time
 import re
@@ -935,8 +937,20 @@ def render_video_payload(payload: Dict[str, Any], progress_cb=None, step_cb=None
 
         image_paths = [None] * len(scenes)  # Pre-allocate list
 
-        # Create shared session for connection pooling (like axios in Node.js)
+        # Create shared session with large connection pool (default is only 10!)
         download_session = requests.Session()
+        retry_strategy = Retry(
+            total=3,
+            backoff_factor=1,
+            status_forcelist=[429, 500, 502, 503, 504]
+        )
+        adapter = HTTPAdapter(
+            pool_connections=100,  # Number of connection pools
+            pool_maxsize=200,      # Max connections per pool (support 200 workers)
+            max_retries=retry_strategy
+        )
+        download_session.mount("https://", adapter)
+        download_session.mount("http://", adapter)
         
         with ThreadPoolExecutor(max_workers=len(scenes)) as executor:
             # Submit all download tasks with shared session
