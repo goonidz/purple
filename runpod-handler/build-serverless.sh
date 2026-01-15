@@ -3,28 +3,23 @@ set -e
 
 echo "🔨 Building RunPod Serverless image..."
 
-# Image name
-IMAGE_NAME="lestermfp/videoflow-gpu-serverless"
+# Image name (GitHub Container Registry - lié au repo goonidz/purple)
+IMAGE_NAME="ghcr.io/goonidz/videoflow-gpu-serverless"
 VERSION=$(date +%Y%m%d-%H%M%S)
 LATEST_TAG="$IMAGE_NAME:latest"
 VERSION_TAG="$IMAGE_NAME:$VERSION"
 
-# Build the image (use --platform for M1/M2 Macs)
-echo "📦 Building for linux/amd64 (RunPod uses x86_64)..."
+# Build and push the image (use buildx with --push to bypass local load)
+echo "📦 Building and pushing docker image..."
 docker buildx build --platform linux/amd64 \
   -f Dockerfile.serverless \
   -t $LATEST_TAG \
   -t $VERSION_TAG \
-  --load \
+  --push \
   .
 
-echo "✅ Image built: $LATEST_TAG"
+echo "✅ Image built and pushed: $LATEST_TAG"
 echo "✅ Version tag: $VERSION_TAG"
-
-# Push to Docker Hub
-echo "📤 Pushing to Docker Hub..."
-docker push $LATEST_TAG
-docker push $VERSION_TAG
 
 echo ""
 echo "🎉 Build complete!"
