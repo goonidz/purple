@@ -122,8 +122,7 @@ export function useGenerationJobs({ projectId, onJobComplete, onJobFailed, autoR
           .select('*')
           .eq('project_id', projectId)
           .in('status', ['pending', 'processing'])
-          .neq('job_type', 'single_image') // Hide individual image jobs (child jobs)
-          .neq('job_type', 'single_qa') // Hide individual QA jobs (child jobs)
+          .not('job_type', 'in', '("single_image","single_qa")') // Hide child jobs
           .order('created_at', { ascending: false });
 
         if (error) throw error;
@@ -328,8 +327,7 @@ export function useGenerationJobs({ projectId, onJobComplete, onJobFailed, autoR
         .select('*')
         .eq('project_id', projectId)
         .in('status', ['pending', 'processing'])
-        .neq('job_type', 'single_image') // Hide individual image jobs (child jobs)
-        .neq('job_type', 'single_qa') // Hide individual QA jobs (child jobs)
+        .not('job_type', 'in', '("single_image","single_qa")') // Hide child jobs
         .order('created_at', { ascending: false });
 
       if (error) throw error;
