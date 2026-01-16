@@ -1818,12 +1818,8 @@ async function processImagesJob(
 
   if (!project) throw new Error("Project not found");
 
-  // Load LoRA settings: Priority 1) metadata, 2) project, 3) preset
-  let loraUrl = metadata.loraUrl || project.lora_url || null;
-  let loraSteps = metadata.loraSteps || project.lora_steps || 10;
-  
-  // If still no loraUrl, try loading from preset
-  if ((!loraUrl || loraUrl === '') && project.preset_id) {
+  // If project has no lora_url but has preset_id, copy LoRA from preset to project
+  if ((!project.lora_url || project.lora_url === '') && project.preset_id) {
     const { data: preset } = await adminClient
       .from('presets')
       .select('lora_url, lora_steps')
@@ -1831,15 +1827,20 @@ async function processImagesJob(
       .single();
     
     if (preset?.lora_url) {
-      loraUrl = preset.lora_url;
-      loraSteps = preset.lora_steps || 10;
-      console.log(`[processImagesJob] Loaded LoRA from preset: ${loraUrl}, steps: ${loraSteps}`);
+      // Update project with LoRA from preset
+      await adminClient
+        .from('projects')
+        .update({ 
+          lora_url: preset.lora_url, 
+          lora_steps: preset.lora_steps || 10 
+        })
+        .eq('id', projectId);
+      
+      project.lora_url = preset.lora_url;
+      project.lora_steps = preset.lora_steps || 10;
+      console.log(`[processImagesJob] Copied LoRA from preset to project: ${preset.lora_url}, steps: ${project.lora_steps}`);
     }
   }
-  
-  // Store in project object for later use
-  project.lora_url = loraUrl;
-  project.lora_steps = loraSteps;
 
   const prompts = (project.prompts as any[]) || [];
   let imageWidth = project.image_width || 1920;
@@ -1847,7 +1848,7 @@ async function processImagesJob(
   const imageModel = project.image_model || 'seedream-4.5';
   const visualContinuityEnabled = project.visual_continuity_enabled || false;
   
-  console.log(`[processImagesJob] LoRA config: loraUrl=${loraUrl || 'NONE'}, loraSteps=${loraSteps}, source=${metadata.loraUrl ? 'METADATA' : (project.lora_url ? 'PROJECT' : 'PRESET')}`);
+  console.log(`[processImagesJob] Project config: model=${imageModel}, lora_url=${project.lora_url || 'NONE'}, lora_steps=${project.lora_steps || 10}`);
   
   // IMPORTANT: For Z-Image models with 16:9, always generate at 960x544 (will be upscaled later)
   const isZImage = imageModel === 'z-image-turbo' || imageModel === 'z-image-turbo-lora';
@@ -1933,8 +1934,6 @@ async function processImagesJob(
         height: imageHeight,
         styleRefs: styleReferenceUrls,
         useWebhook: true,
-        loraUrl: loraUrl || null,
-        loraSteps: loraSteps || 10,
       },
     }));
     
@@ -2294,14 +2293,14 @@ async function processImagesJob(
         
         requestBody.prompt = finalPrompt;
         
-        // Add LoRA parameters for z-image-turbo-lora model (using local loraUrl variable)
+        // Add LoRA parameters for z-image-turbo-lora model
         if (imageModel === 'z-image-turbo-lora') {
-          if (loraUrl) {
-            requestBody.lora_url = loraUrl;
-            console.log(`[processImagesJob] Adding LoRA to request: ${loraUrl}, steps: ${loraSteps}`);
+          if (project.lora_url) {
+            requestBody.lora_url = project.lora_url;
+            console.log(`[processImagesJob] Adding LoRA to request: ${project.lora_url}, steps: ${project.lora_steps}`);
           }
-          if (loraSteps) {
-            requestBody.lora_steps = loraSteps;
+          if (project.lora_steps) {
+            requestBody.lora_steps = project.lora_steps;
           }
         }
 
@@ -2683,12 +2682,8 @@ async function processTestImagesJob(
 
   if (!project) throw new Error("Project not found");
 
-  // Load LoRA settings: Priority 1) metadata, 2) project, 3) preset
-  let loraUrl = metadata.loraUrl || project.lora_url || null;
-  let loraSteps = metadata.loraSteps || project.lora_steps || 10;
-  
-  // If still no loraUrl, try loading from preset
-  if ((!loraUrl || loraUrl === '') && project.preset_id) {
+  // If project has no lora_url but has preset_id, copy LoRA from preset to project
+  if ((!project.lora_url || project.lora_url === '') && project.preset_id) {
     const { data: preset } = await adminClient
       .from('presets')
       .select('lora_url, lora_steps')
@@ -2696,17 +2691,21 @@ async function processTestImagesJob(
       .single();
     
     if (preset?.lora_url) {
-      loraUrl = preset.lora_url;
-      loraSteps = preset.lora_steps || 10;
-      console.log(`[processTestImagesJob] Loaded LoRA from preset: ${loraUrl}, steps: ${loraSteps}`);
+      await adminClient
+        .from('projects')
+        .update({ 
+          lora_url: preset.lora_url, 
+          lora_steps: preset.lora_steps || 10 
+        })
+        .eq('id', projectId);
+      
+      project.lora_url = preset.lora_url;
+      project.lora_steps = preset.lora_steps || 10;
+      console.log(`[processTestImagesJob] Copied LoRA from preset to project: ${preset.lora_url}, steps: ${project.lora_steps}`);
     }
   }
   
-  // Store in project object for later use
-  project.lora_url = loraUrl;
-  project.lora_steps = loraSteps;
-  
-  console.log(`[processTestImagesJob] LoRA config: loraUrl=${loraUrl || 'NONE'}, loraSteps=${loraSteps}`);
+  console.log(`[processTestImagesJob] Project config: model=${project.image_model}, lora_url=${project.lora_url || 'NONE'}`);
 
   const scenes = (project.scenes as any[]) || [];
   const transcriptData = project.transcript_json as any;
@@ -2877,14 +2876,14 @@ async function processTestImagesJob(
         requestBody.image_urls = styleReferenceUrls;
       }
       
-      // Add LoRA parameters for z-image-turbo-lora model (using local loraUrl variable)
+      // Add LoRA parameters for z-image-turbo-lora model
       if (imageModel === 'z-image-turbo-lora') {
-        if (loraUrl) {
-          requestBody.lora_url = loraUrl;
-          console.log(`[processTestImagesJob] Adding LoRA to request: ${loraUrl}, steps: ${loraSteps}`);
+        if (project.lora_url) {
+          requestBody.lora_url = project.lora_url;
+          console.log(`[processTestImagesJob] Adding LoRA to request: ${project.lora_url}, steps: ${project.lora_steps}`);
         }
-        if (loraSteps) {
-          requestBody.lora_steps = loraSteps;
+        if (project.lora_steps) {
+          requestBody.lora_steps = project.lora_steps;
         }
       }
 
@@ -3360,12 +3359,8 @@ async function processSingleImageJob(
 
   if (!project) throw new Error("Project not found");
 
-  // Load LoRA settings: Priority 1) metadata (from parent job), 2) project, 3) preset
-  let loraUrl = metadata.loraUrl || project.lora_url || null;
-  let loraSteps = metadata.loraSteps || project.lora_steps || 10;
-  
-  // If still no loraUrl, try loading from preset
-  if ((!loraUrl || loraUrl === '') && project.preset_id) {
+  // If project has no lora_url but has preset_id, copy LoRA from preset to project
+  if ((!project.lora_url || project.lora_url === '') && project.preset_id) {
     const { data: preset } = await adminClient
       .from('presets')
       .select('lora_url, lora_steps')
@@ -3373,15 +3368,19 @@ async function processSingleImageJob(
       .single();
     
     if (preset?.lora_url) {
-      loraUrl = preset.lora_url;
-      loraSteps = preset.lora_steps || 10;
-      console.log(`[processSingleImageJob] Loaded LoRA from preset: ${loraUrl}, steps: ${loraSteps}`);
+      await adminClient
+        .from('projects')
+        .update({ 
+          lora_url: preset.lora_url, 
+          lora_steps: preset.lora_steps || 10 
+        })
+        .eq('id', projectId);
+      
+      project.lora_url = preset.lora_url;
+      project.lora_steps = preset.lora_steps || 10;
+      console.log(`[processSingleImageJob] Copied LoRA from preset to project: ${preset.lora_url}, steps: ${project.lora_steps}`);
     }
   }
-  
-  // Store in project object for later use
-  project.lora_url = loraUrl;
-  project.lora_steps = loraSteps;
 
   const prompts = (project.prompts as any[]) || [];
   let imageWidth = project.image_width || 1920;
@@ -3389,7 +3388,7 @@ async function processSingleImageJob(
   const imageModel = project.image_model || 'seedream-4.5';
   const visualContinuityEnabled = project.visual_continuity_enabled || false;
 
-  console.log(`[processSingleImageJob] Scene ${sceneIndex + 1}: model=${imageModel}, loraUrl=${loraUrl || 'NONE'}, loraSteps=${loraSteps}`);
+  console.log(`[processSingleImageJob] Scene ${sceneIndex + 1}: model=${imageModel}, lora_url=${project.lora_url || 'NONE'}, lora_steps=${project.lora_steps || 10}`);
 
   // IMPORTANT: For Z-Image models with 16:9, always generate at 960x544 (will be upscaled later)
   const isZImage = imageModel === 'z-image-turbo' || imageModel === 'z-image-turbo-lora';
@@ -3499,14 +3498,14 @@ async function processSingleImageJob(
     console.log(`  - NO IMAGE REFERENCES - generating without style reference`);
   }
   
-  // Add LoRA parameters for z-image-turbo-lora model (using local loraUrl variable)
+  // Add LoRA parameters for z-image-turbo-lora model
   if (imageModel === 'z-image-turbo-lora') {
-    if (loraUrl) {
-      requestBody.lora_url = loraUrl;
-      console.log(`[processSingleImageJob] Adding LoRA to request: ${loraUrl}, steps: ${loraSteps}`);
+    if (project.lora_url) {
+      requestBody.lora_url = project.lora_url;
+      console.log(`[processSingleImageJob] Adding LoRA to request: ${project.lora_url}, steps: ${project.lora_steps}`);
     }
-    if (loraSteps) {
-      requestBody.lora_steps = loraSteps;
+    if (project.lora_steps) {
+      requestBody.lora_steps = project.lora_steps;
     }
   }
 
@@ -5186,9 +5185,7 @@ async function createSingleImageRegenJob(
         is_regen: true,
         original_prompt: originalPrompt,
         qa_rejection_reason: qaResult?.explication || 'QA rejection',
-        useWebhook: true,
-        loraUrl: loraUrl || null,
-        loraSteps: loraSteps || 10
+        useWebhook: true
       }
     });
   
@@ -5586,12 +5583,8 @@ async function processQARegenJob(
 
   if (!project) throw new Error("Project not found");
 
-  // Load LoRA settings: Priority 1) metadata, 2) project, 3) preset
-  let loraUrl = metadata.loraUrl || project.lora_url || null;
-  let loraSteps = metadata.loraSteps || project.lora_steps || 10;
-  
-  // If still no loraUrl, try loading from preset
-  if ((!loraUrl || loraUrl === '') && project.preset_id) {
+  // If project has no lora_url but has preset_id, copy LoRA from preset to project
+  if ((!project.lora_url || project.lora_url === '') && project.preset_id) {
     const { data: preset } = await adminClient
       .from('presets')
       .select('lora_url, lora_steps')
@@ -5599,22 +5592,26 @@ async function processQARegenJob(
       .single();
     
     if (preset?.lora_url) {
-      loraUrl = preset.lora_url;
-      loraSteps = preset.lora_steps || 10;
-      console.log(`[processQARegenJob] Loaded LoRA from preset: ${loraUrl}, steps: ${loraSteps}`);
+      await adminClient
+        .from('projects')
+        .update({ 
+          lora_url: preset.lora_url, 
+          lora_steps: preset.lora_steps || 10 
+        })
+        .eq('id', projectId);
+      
+      project.lora_url = preset.lora_url;
+      project.lora_steps = preset.lora_steps || 10;
+      console.log(`[processQARegenJob] Copied LoRA from preset to project: ${preset.lora_url}, steps: ${project.lora_steps}`);
     }
   }
-  
-  // Store in project object for later use
-  project.lora_url = loraUrl;
-  project.lora_steps = loraSteps;
 
   const prompts = (project.prompts as any[]) || [];
   let imageWidth = project.image_width || 1920;
   let imageHeight = project.image_height || 1080;
   const imageModel = project.image_model || 'seedream-4.5';
 
-  console.log(`[processQARegenJob] LoRA config: loraUrl=${loraUrl || 'NONE'}, loraSteps=${loraSteps}`);
+  console.log(`[processQARegenJob] Project config: model=${imageModel}, lora_url=${project.lora_url || 'NONE'}, lora_steps=${project.lora_steps || 10}`);
   
   // IMPORTANT: For Z-Image models with 16:9, always generate at 960x544 (will be upscaled later)
   const isZImage = imageModel === 'z-image-turbo' || imageModel === 'z-image-turbo-lora';
@@ -5720,14 +5717,14 @@ async function processQARegenJob(
         requestBody.image_urls = styleReferenceUrls;
       }
       
-      // Add LoRA parameters for z-image-turbo-lora model (using local loraUrl variable)
+      // Add LoRA parameters for z-image-turbo-lora model
       if (imageModel === 'z-image-turbo-lora') {
-        if (loraUrl) {
-          requestBody.lora_url = loraUrl;
-          console.log(`[processQARegenJob] Adding LoRA to request: ${loraUrl}, steps: ${loraSteps}`);
+        if (project.lora_url) {
+          requestBody.lora_url = project.lora_url;
+          console.log(`[processQARegenJob] Adding LoRA to request: ${project.lora_url}, steps: ${project.lora_steps}`);
         }
-        if (loraSteps) {
-          requestBody.lora_steps = loraSteps;
+        if (project.lora_steps) {
+          requestBody.lora_steps = project.lora_steps;
         }
       }
 

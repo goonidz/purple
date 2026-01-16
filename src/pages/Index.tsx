@@ -2420,11 +2420,8 @@ const Index = () => {
       return;
     }
 
-    // Start background job with LoRA settings
-    const result = await startJob('test_images', {
-      loraUrl: loraUrl || null,
-      loraSteps: loraSteps || 10
-    });
+    // Start background job
+    const result = await startJob('test_images');
     if (result) {
       setIsGeneratingPrompts(true);
       setIsGeneratingImages(true);
@@ -2474,14 +2471,11 @@ const Index = () => {
     setIsGeneratingImages(true);
 
     // Start background job with semi-auto chaining enabled
-    // Pass LoRA settings directly to avoid race condition with auto-save
     const result = await startJob('images', { 
       skipExisting,
       semiAutoMode: true, // Enable automatic chaining to QA, regen, and upscale
       qaPrompt: qaPrompt || null, // Pass QA prompt from current preset
-      thumbnailPresetId: null, // No thumbnails for standalone generation
-      loraUrl: loraUrl || null,
-      loraSteps: loraSteps || 10
+      thumbnailPresetId: null // No thumbnails for standalone generation
     });
     if (!result) {
       // If job creation failed, reset the flag
