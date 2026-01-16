@@ -1262,10 +1262,51 @@ async function processPromptsJob(
     // Create individual single_prompt jobs and process them in parallel
     // ========================================================================
     console.log(`[processPromptsJob] Using JOB-BASED parallel architecture (no continuity)`);
-    console.log(`[processPromptsJob] Creating ${allScenesToProcess.length} individual single_prompt jobs`);
     
-    // Create individual jobs for ALL scenes that need prompts (not just chunk)
-    const individualJobs = allScenesToProcess.map(({ scene, index }: any) => ({
+    // CLEANUP: Reset stuck single_prompt jobs (processing for > 2 minutes)
+    const TWO_MINUTES_AGO = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+    const { data: stuckJobs } = await adminClient
+      .from('generation_jobs')
+      .select('id, scene_index')
+      .eq('project_id', projectId)
+      .eq('job_type', 'single_prompt')
+      .eq('status', 'processing')
+      .lt('updated_at', TWO_MINUTES_AGO);
+    
+    if (stuckJobs && stuckJobs.length > 0) {
+      console.log(`[processPromptsJob] CLEANUP: Found ${stuckJobs.length} stuck single_prompt jobs, resetting to pending`);
+      const stuckIds = stuckJobs.map((j: any) => j.id);
+      await adminClient
+        .from('generation_jobs')
+        .update({ status: 'pending', updated_at: new Date().toISOString() })
+        .in('id', stuckIds);
+      console.log(`[processPromptsJob] CLEANUP: Reset ${stuckIds.length} jobs (scenes: ${stuckJobs.map((j: any) => j.scene_index + 1).join(', ')})`);
+    }
+    
+    // Check for existing pending/processing jobs for this project
+    const { data: existingJobs } = await adminClient
+      .from('generation_jobs')
+      .select('id, scene_index, status')
+      .eq('project_id', projectId)
+      .eq('job_type', 'single_prompt')
+      .in('status', ['pending', 'processing']);
+    
+    const existingSceneIndices = new Set((existingJobs || []).map((j: any) => j.scene_index));
+    
+    // Filter out scenes that already have jobs
+    const scenesToCreate = allScenesToProcess.filter(({ index }: any) => !existingSceneIndices.has(index));
+    
+    if (scenesToCreate.length === 0 && existingJobs && existingJobs.length > 0) {
+      console.log(`[processPromptsJob] All ${allScenesToProcess.length} scenes already have jobs, launching pending ones`);
+      // Just launch pending jobs
+      await launchPendingPromptJobs(adminClient, existingJobs.length);
+      throw new Error('WEBHOOK_MODE_ACTIVE');
+    }
+    
+    console.log(`[processPromptsJob] Creating ${scenesToCreate.length} individual single_prompt jobs (${existingSceneIndices.size} already exist)`);
+    
+    // Create individual jobs only for scenes that don't already have jobs
+    const individualJobs = scenesToCreate.map(({ scene, index }: any) => ({
       project_id: projectId,
       user_id: userId,
       job_type: 'single_prompt',
@@ -1286,18 +1327,22 @@ async function processPromptsJob(
       }
     }));
     
-    const { data: createdJobs, error: jobsError } = await adminClient
-      .from('generation_jobs')
-      .insert(individualJobs)
-      .select('id, scene_index');
-    
-    if (jobsError) {
-      throw new Error(`Failed to create individual prompt jobs: ${jobsError.message}`);
+    let createdJobsCount = 0;
+    if (individualJobs.length > 0) {
+      const { data: createdJobs, error: jobsError } = await adminClient
+        .from('generation_jobs')
+        .insert(individualJobs)
+        .select('id, scene_index');
+      
+      if (jobsError) {
+        throw new Error(`Failed to create individual prompt jobs: ${jobsError.message}`);
+      }
+      
+      createdJobsCount = createdJobs?.length || 0;
+      console.log(`[processPromptsJob] Created ${createdJobsCount} individual single_prompt jobs`);
     }
     
-    console.log(`[processPromptsJob] Created ${createdJobs.length} individual single_prompt jobs`);
-    
-    // Update parent job total to reflect all scenes
+    // Update parent job total to reflect all scenes that need prompts
     await adminClient
       .from('generation_jobs')
       .update({ 
@@ -1311,8 +1356,10 @@ async function processPromptsJob(
       })
       .eq('id', jobId);
     
-    // Launch up to PROMPTS_MAX_CONCURRENT jobs
-    await launchPendingPromptJobs(adminClient, createdJobs.length);
+    // Launch pending jobs (both newly created and previously stuck ones)
+    const totalJobsToLaunch = createdJobsCount + (existingJobs?.filter((j: any) => j.status === 'pending').length || 0);
+    console.log(`[processPromptsJob] Launching up to ${totalJobsToLaunch} pending prompt jobs`);
+    await launchPendingPromptJobs(adminClient, totalJobsToLaunch);
     
     console.log(`[processPromptsJob] Parent job ${jobId} stays in processing until all children complete`);
     throw new Error('WEBHOOK_MODE_ACTIVE');
@@ -3200,10 +3247,10 @@ async function processSinglePromptJob(
           })
           .eq('id', job.parent_job_id);
         
-        // Chain to images if configured (optional)
-        const shouldChainToImages = parentJob.metadata?.chainToImages !== false;
+        // Chain to images ONLY if explicitly requested (default: no chaining)
+        const shouldChainToImages = parentJob.metadata?.chainToImages === true;
         if (shouldChainToImages) {
-          console.log(`[processSinglePromptJob] Chaining to images generation...`);
+          console.log(`[processSinglePromptJob] Chaining to images generation (explicitly requested)...`);
           const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
           const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
           

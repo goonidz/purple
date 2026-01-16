@@ -4249,7 +4249,9 @@ const Index = () => {
                                     const clearedPrompts = generatedPrompts.map(p => ({
                                       ...p,
                                       prompt: null,
-                                      imageUrl: null
+                                      imageUrl: null,
+                                      regenerated_prompt: null,
+                                      was_regenerated: false
                                     }));
 
                                     // 1. Update legacy JSON
@@ -4272,7 +4274,9 @@ const Index = () => {
                                         qa_checked: false,
                                         qa_status: null,
                                         qa_explication: null,
-                                        qa_regeneration_prompt: null
+                                        qa_regeneration_prompt: null,
+                                        regenerated_prompt: null,
+                                        was_regenerated: false
                                       })
                                       .eq('project_id', currentProjectId);
                                     if (scenesError) throw scenesError;
@@ -4283,7 +4287,7 @@ const Index = () => {
                                       .delete()
                                       .eq('project_id', currentProjectId);
 
-                                    setGeneratedPrompts(clearedPrompts.map(p => ({ ...p, prompt: undefined, imageUrl: undefined })));
+                                    setGeneratedPrompts(clearedPrompts.map(p => ({ ...p, prompt: undefined, imageUrl: undefined, regenerated_prompt: undefined, was_regenerated: false })));
                                     toast.success("Tous les prompts et images ont été supprimés");
                                   } catch (error) {
                                     console.error('Error deleting prompts:', error);
