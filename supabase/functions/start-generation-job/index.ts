@@ -4429,6 +4429,9 @@ async function launchNextPendingPromptJob(adminClient: any): Promise<void> {
   
   console.log(`[launchNextPendingPromptJob] Attempting to launch ${pendingJobs.length} jobs (slots: ${availableSlots})`);
   
+  // Claim all jobs first, then launch in parallel
+  const claimedJobs: typeof pendingJobs = [];
+  
   for (const jobToClaim of pendingJobs) {
     // Atomic claim
     const { data: claimed, error: claimError } = await adminClient
@@ -4444,45 +4447,38 @@ async function launchNextPendingPromptJob(adminClient: any): Promise<void> {
       continue;
     }
     
-    console.log(`[launchNextPendingPromptJob] Launching single_prompt job ${jobToClaim.id} for scene ${jobToClaim.scene_index + 1}`);
-    
-    // Launch with error handling
-    const promptPromise = (async () => {
-      try {
-        const response = await fetch(`${supabaseUrl}/functions/v1/start-generation-job`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${serviceRoleKey}`
-          },
-          body: JSON.stringify({
-            jobId: jobToClaim.id,
-            projectId: jobToClaim.project_id,
-            userId: jobToClaim.user_id,
-            jobType: 'single_prompt'
-          })
-        });
-        
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.error(`[launchNextPendingPromptJob] Failed to start prompt for scene ${jobToClaim.scene_index + 1}:`, errorText);
-          await adminClient.from('generation_jobs').update({ status: 'failed', error_message: errorText.substring(0, 200) }).eq('id', jobToClaim.id);
-          // Continue the chain
-          await launchNextPendingPromptJob(adminClient);
-        }
-      } catch (err) {
-        console.error(`[launchNextPendingPromptJob] Error for scene ${jobToClaim.scene_index + 1}:`, err);
-        await adminClient.from('generation_jobs').update({ status: 'failed', error_message: String(err).substring(0, 200) }).eq('id', jobToClaim.id);
-        // Continue the chain
-        await launchNextPendingPromptJob(adminClient);
-      }
-    })();
-    
-    // Fire-and-forget for parallel execution
-    if (typeof EdgeRuntime !== 'undefined') {
-      EdgeRuntime.waitUntil(promptPromise);
-    }
+    claimedJobs.push(jobToClaim);
   }
+  
+  // Launch all claimed jobs in parallel
+  await Promise.allSettled(claimedJobs.map(async (job) => {
+    console.log(`[launchNextPendingPromptJob] Launching single_prompt job ${job.id} for scene ${job.scene_index + 1}`);
+    
+    try {
+      const response = await fetch(`${supabaseUrl}/functions/v1/start-generation-job`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${serviceRoleKey}`
+        },
+        body: JSON.stringify({
+          jobId: job.id,
+          projectId: job.project_id,
+          userId: job.user_id,
+          jobType: 'single_prompt'
+        })
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`[launchNextPendingPromptJob] Failed to start prompt for scene ${job.scene_index + 1}:`, errorText);
+        await adminClient.from('generation_jobs').update({ status: 'failed', error_message: errorText.substring(0, 200) }).eq('id', job.id);
+      }
+    } catch (err) {
+      console.error(`[launchNextPendingPromptJob] Error for scene ${job.scene_index + 1}:`, err);
+      await adminClient.from('generation_jobs').update({ status: 'failed', error_message: String(err).substring(0, 200) }).eq('id', job.id);
+    }
+  }));
 }
 
 // Launch multiple pending prompt jobs up to available capacity
@@ -5288,7 +5284,9 @@ async function launchNextPendingUpscaleJobFromQA(
   
   console.log(`[launchNextPendingUpscaleJobFromQA] Attempting to launch ${pendingJobs.length} jobs (slots: ${availableSlots})`);
   
-  // Launch each pending job
+  // Claim all jobs first, then prepare data, then launch in parallel
+  const jobsToLaunch: Array<{job: typeof pendingJobs[0], imageUrl: string}> = [];
+  
   for (const jobToClaim of pendingJobs) {
     // Atomic claim
     const { data: claimed, error: claimError } = await adminClient
@@ -5303,8 +5301,6 @@ async function launchNextPendingUpscaleJobFromQA(
       console.log(`[launchNextPendingUpscaleJobFromQA] Job ${jobToClaim.id} already claimed`);
       continue;
     }
-    
-    console.log(`[launchNextPendingUpscaleJobFromQA] Launching upscale job ${jobToClaim.id} for scene ${jobToClaim.scene_index}`);
     
     // Get image URL from metadata or fetch from project_scenes
     let imageUrl = jobToClaim.metadata?.imageUrl;
@@ -5327,69 +5323,68 @@ async function launchNextPendingUpscaleJobFromQA(
         .from('generation_jobs')
         .update({ status: 'failed', error_message: 'No imageUrl' })
         .eq('id', jobToClaim.id);
-      continue; // Continue to next job instead of returning
+      continue;
     }
     
-    // Call upscale-image Edge Function (fire-and-forget style)
-    const upscalePromise = (async () => {
-      try {
-        const webhookUrl = `${supabaseUrl}/functions/v1/replicate-webhook`;
-        
-        const response = await fetch(`${supabaseUrl}/functions/v1/upscale-image`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${supabaseServiceKey}`
-          },
-          body: JSON.stringify({
-            imageUrl,
-            userId: jobToClaim.user_id,
-            async: true,
-            webhook_url: webhookUrl
-          })
-        });
-        
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.error(`[launchNextPendingUpscaleJobFromQA] Upscale API error for scene ${jobToClaim.scene_index}:`, response.status, errorText);
-          await adminClient
-            .from('generation_jobs')
-            .update({ status: 'failed', error_message: `Upscale failed: ${response.status} - ${errorText.substring(0, 100)}` })
-            .eq('id', jobToClaim.id);
-          return;
-        }
-        
-        const result = await response.json();
-        console.log(`[launchNextPendingUpscaleJobFromQA] Started upscale for scene ${jobToClaim.scene_index}, prediction:`, result.predictionId);
-        
-        // Create pending_prediction entry for webhook tracking
-        if (result.predictionId) {
-          await adminClient
-            .from('pending_predictions')
-            .insert({
-              job_id: jobToClaim.id,
-              prediction_id: result.predictionId,
-              prediction_type: 'upscale',
-              scene_index: jobToClaim.scene_index,
-              project_id: jobToClaim.project_id,
-              user_id: jobToClaim.user_id,
-              status: 'pending'
-            });
-        }
-      } catch (err) {
-        console.error(`[launchNextPendingUpscaleJobFromQA] Error for scene ${jobToClaim.scene_index}:`, err);
+    jobsToLaunch.push({ job: jobToClaim, imageUrl });
+  }
+  
+  // Launch all jobs in parallel
+  const webhookUrl = `${supabaseUrl}/functions/v1/replicate-webhook`;
+  
+  await Promise.allSettled(jobsToLaunch.map(async ({ job, imageUrl }) => {
+    console.log(`[launchNextPendingUpscaleJobFromQA] Launching upscale job ${job.id} for scene ${job.scene_index}`);
+    
+    try {
+      const response = await fetch(`${supabaseUrl}/functions/v1/upscale-image`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabaseServiceKey}`
+        },
+        body: JSON.stringify({
+          imageUrl,
+          userId: job.user_id,
+          async: true,
+          webhook_url: webhookUrl
+        })
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`[launchNextPendingUpscaleJobFromQA] Upscale API error for scene ${job.scene_index}:`, response.status, errorText);
         await adminClient
           .from('generation_jobs')
-          .update({ status: 'failed', error_message: err instanceof Error ? err.message : 'Unknown error' })
-          .eq('id', jobToClaim.id);
+          .update({ status: 'failed', error_message: `Upscale failed: ${response.status} - ${errorText.substring(0, 100)}` })
+          .eq('id', job.id);
+        return;
       }
-    })();
-    
-    // Fire-and-forget for parallel execution
-    if (typeof EdgeRuntime !== 'undefined') {
-      EdgeRuntime.waitUntil(upscalePromise);
+      
+      const result = await response.json();
+      console.log(`[launchNextPendingUpscaleJobFromQA] Started upscale for scene ${job.scene_index}, prediction:`, result.predictionId);
+      
+      // Create pending_prediction entry for webhook tracking
+      if (result.predictionId) {
+        await adminClient
+          .from('pending_predictions')
+          .insert({
+            job_id: job.id,
+            prediction_id: result.predictionId,
+            prediction_type: 'upscale',
+            scene_index: job.scene_index,
+            project_id: job.project_id,
+            user_id: job.user_id,
+            status: 'pending'
+          });
+      }
+    } catch (err) {
+      console.error(`[launchNextPendingUpscaleJobFromQA] Error for scene ${job.scene_index}:`, err);
+      await adminClient
+        .from('generation_jobs')
+        .update({ status: 'failed', error_message: err instanceof Error ? err.message : 'Unknown error' })
+        .eq('id', job.id);
     }
-  }
+  }));
 }
 
 // Update parent progress after upscale completes
@@ -5612,6 +5607,9 @@ async function launchNextPendingQAJob(adminClient: any) {
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
   
+  // Claim all jobs first, then launch in parallel
+  const claimedJobs: typeof pendingJobs = [];
+  
   for (const jobToClaim of pendingJobs) {
     // Atomic claim
     const { data: claimed, error: claimError } = await adminClient
@@ -5627,45 +5625,38 @@ async function launchNextPendingQAJob(adminClient: any) {
       continue;
     }
     
-    console.log(`[launchNextPendingQAJob] Launching single_qa job ${jobToClaim.id} for scene ${jobToClaim.scene_index}`);
-    
-    // Launch with error handling
-    const qaPromise = (async () => {
-      try {
-        const response = await fetch(`${supabaseUrl}/functions/v1/start-generation-job`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${serviceRoleKey}`
-          },
-          body: JSON.stringify({
-            jobId: jobToClaim.id,
-            projectId: jobToClaim.project_id,
-            userId: jobToClaim.user_id,
-            jobType: 'single_qa'
-          })
-        });
-        
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.error(`[launchNextPendingQAJob] Failed to start QA for scene ${jobToClaim.scene_index}:`, errorText);
-          await adminClient.from('generation_jobs').update({ status: 'failed', error_message: errorText.substring(0, 200) }).eq('id', jobToClaim.id);
-          // Continue the chain
-          await launchNextPendingQAJob(adminClient);
-        }
-      } catch (err) {
-        console.error(`[launchNextPendingQAJob] Error for scene ${jobToClaim.scene_index}:`, err);
-        await adminClient.from('generation_jobs').update({ status: 'failed', error_message: String(err).substring(0, 200) }).eq('id', jobToClaim.id);
-        // Continue the chain
-        await launchNextPendingQAJob(adminClient);
-      }
-    })();
-    
-    // Fire-and-forget for parallel execution
-    if (typeof EdgeRuntime !== 'undefined') {
-      EdgeRuntime.waitUntil(qaPromise);
-    }
+    claimedJobs.push(jobToClaim);
   }
+  
+  // Launch all claimed jobs in parallel
+  await Promise.allSettled(claimedJobs.map(async (job) => {
+    console.log(`[launchNextPendingQAJob] Launching single_qa job ${job.id} for scene ${job.scene_index}`);
+    
+    try {
+      const response = await fetch(`${supabaseUrl}/functions/v1/start-generation-job`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${serviceRoleKey}`
+        },
+        body: JSON.stringify({
+          jobId: job.id,
+          projectId: job.project_id,
+          userId: job.user_id,
+          jobType: 'single_qa'
+        })
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`[launchNextPendingQAJob] Failed to start QA for scene ${job.scene_index}:`, errorText);
+        await adminClient.from('generation_jobs').update({ status: 'failed', error_message: errorText.substring(0, 200) }).eq('id', job.id);
+      }
+    } catch (err) {
+      console.error(`[launchNextPendingQAJob] Error for scene ${job.scene_index}:`, err);
+      await adminClient.from('generation_jobs').update({ status: 'failed', error_message: String(err).substring(0, 200) }).eq('id', job.id);
+    }
+  }));
 }
 
 async function processQARegenJob(
