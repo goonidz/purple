@@ -3913,19 +3913,7 @@ const Index = () => {
                           </Button>
                           <Button
                             onClick={() => handleGeneratePrompts(false)}
-                            disabled={
-                              isGeneratingPrompts || 
-                              (!hasTestedFirstTwo && 
-                               generatedPrompts.length === 0 && 
-                               !generatedPrompts.some((p: any) => p && p.prompt))
-                            }
-                            title={
-                              !hasTestedFirstTwo && 
-                              generatedPrompts.length === 0 && 
-                              !generatedPrompts.some((p: any) => p && p.prompt)
-                                ? "Veuillez d'abord tester avec les 2 premières scènes" 
-                                : ""
-                            }
+                            disabled={isGeneratingPrompts}
                             size="sm"
                           >
                             {isGeneratingPrompts ? (
@@ -3945,13 +3933,10 @@ const Index = () => {
                               onClick={() => generateAllImages(true)}
                               disabled={
                                 isGeneratingImages || 
-                                (!hasTestedFirstTwo && !generatedPrompts.some((p: any) => p && (p.prompt || p.imageUrl))) || 
                                 generatedPrompts.length < scenes.length
                               }
                               title={
-                                !hasTestedFirstTwo && !generatedPrompts.some((p: any) => p && (p.prompt || p.imageUrl))
-                                  ? "Veuillez d'abord tester avec les 2 premières scènes" 
-                                  : generatedPrompts.length < scenes.length
+                                generatedPrompts.length < scenes.length
                                   ? "Veuillez d'abord générer tous les prompts"
                                   : ""
                               }
