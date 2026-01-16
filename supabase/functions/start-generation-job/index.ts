@@ -3392,7 +3392,9 @@ async function processSingleImageJob(
   const imageModel = project.image_model || 'seedream-4.5';
   const visualContinuityEnabled = project.visual_continuity_enabled || false;
 
-  console.log(`[processSingleImageJob] Scene ${sceneIndex + 1}: model=${imageModel}, lora_url=${project.lora_url || 'NONE'}, lora_steps=${project.lora_steps || 10}`);
+  console.log(`[processSingleImageJob] Scene ${sceneIndex + 1}: model=${imageModel}`);
+  console.log(`[processSingleImageJob] Scene ${sceneIndex + 1}: lora_url="${project.lora_url}" (type: ${typeof project.lora_url}, truthy: ${!!project.lora_url})`);
+  console.log(`[processSingleImageJob] Scene ${sceneIndex + 1}: lora_steps=${project.lora_steps}`);
 
   // IMPORTANT: For Z-Image models with 16:9, always generate at 960x544 (will be upscaled later)
   const isZImage = imageModel === 'z-image-turbo' || imageModel === 'z-image-turbo-lora';
@@ -3503,14 +3505,18 @@ async function processSingleImageJob(
   }
   
   // Add LoRA parameters for z-image-turbo-lora model
+  console.log(`[processSingleImageJob] LoRA check: imageModel="${imageModel}", project.lora_url="${project.lora_url}"`);
   if (imageModel === 'z-image-turbo-lora') {
+    console.log(`[processSingleImageJob] Model is z-image-turbo-lora, checking lora_url...`);
     if (project.lora_url) {
       requestBody.lora_url = project.lora_url;
-      console.log(`[processSingleImageJob] Adding LoRA to request: ${project.lora_url}, steps: ${project.lora_steps}`);
+      requestBody.lora_steps = project.lora_steps || 10;
+      console.log(`[processSingleImageJob] ✅ ADDING LoRA to request: ${project.lora_url}, steps: ${requestBody.lora_steps}`);
+    } else {
+      console.log(`[processSingleImageJob] ⚠️ NO LoRA - project.lora_url is empty/null`);
     }
-    if (project.lora_steps) {
-      requestBody.lora_steps = project.lora_steps;
-    }
+  } else {
+    console.log(`[processSingleImageJob] Model is NOT z-image-turbo-lora, skipping LoRA`);
   }
 
   // Update job metadata with image model info (for upscaling detection in webhook)
@@ -3526,6 +3532,9 @@ async function processSingleImageJob(
       }
     })
     .eq('id', jobId);
+
+  // Log full requestBody before sending
+  console.log(`[processSingleImageJob] Full requestBody:`, JSON.stringify(requestBody, null, 2));
 
   // Start async generation with webhook
   const startResponse = await fetch(`${supabaseUrl}/functions/v1/generate-image-seedream`, {
