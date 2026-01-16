@@ -1345,11 +1345,33 @@ async function processPromptsJob(
       .eq('id', jobId);
   }
 
-  // Save prompts
+  // Save prompts to legacy JSON
   await adminClient
     .from('projects')
     .update({ prompts: newPrompts })
     .eq('id', projectId);
+
+  // ROBUST ARCHITECTURE: Save each generated prompt to project_scenes table
+  const scenesToUpsert = newPrompts.map((p: any, index: number) => ({
+    project_id: projectId,
+    scene_index: index,
+    prompt: p.prompt,
+    image_url: p.imageUrl || null,
+    continuity_group_id: p.continuityGroupId || null,
+    updated_at: new Date().toISOString()
+  }));
+
+  if (scenesToUpsert.length > 0) {
+    const { error: upsertError } = await adminClient
+      .from('project_scenes')
+      .upsert(scenesToUpsert, { onConflict: 'project_id,scene_index' });
+    
+    if (upsertError) {
+      console.error(`[processPromptsJob] Error upserting to project_scenes:`, upsertError.message);
+    } else {
+      console.log(`[processPromptsJob] Successfully synced ${scenesToUpsert.length} scenes to project_scenes table`);
+    }
+  }
 
   console.log(`CHUNK COMPLETE: Generated ${progress} prompts. ${remainingAfterThisChunk} remaining for next chunks.`);
 
@@ -4306,6 +4328,26 @@ async function updatePromptWithQAResult(
   sceneIndex: number,
   qaResult: any
 ) {
+  // ROBUST ARCHITECTURE: Update project_scenes table
+  const updateData: any = {
+    qa_checked: true,
+    qa_status: qaResult.status === 'OK' ? 'OK' : (qaResult.status === 'REJECT' ? 'REJECT' : 'OK'),
+    qa_explication: qaResult.explication || (qaResult.status === 'ERROR' ? 'QA check failed - assumed OK' : null),
+    qa_regeneration_prompt: qaResult.prompt_regeneration || null,
+    updated_at: new Date().toISOString()
+  };
+
+  const { error: sceneError } = await adminClient
+    .from('project_scenes')
+    .update(updateData)
+    .eq('project_id', projectId)
+    .eq('scene_index', sceneIndex);
+
+  if (sceneError) {
+    console.error(`[updatePromptWithQAResult] Error updating project_scenes:`, sceneError.message);
+  }
+
+  // FALLBACK: Also update legacy JSON
   const { data: project } = await adminClient
     .from('projects')
     .select('prompts')
@@ -4315,13 +4357,8 @@ async function updatePromptWithQAResult(
   if (!project) return;
   
   const prompts = [...(project.prompts as any[])];
-  
   if (qaResult.status === 'OK') {
-    prompts[sceneIndex] = {
-      ...prompts[sceneIndex],
-      qa_checked: true,
-      qa_status: 'OK'
-    };
+    prompts[sceneIndex] = { ...prompts[sceneIndex], qa_checked: true, qa_status: 'OK' };
   } else if (qaResult.status === 'REJECT') {
     prompts[sceneIndex] = {
       ...prompts[sceneIndex],
@@ -4331,19 +4368,10 @@ async function updatePromptWithQAResult(
       qa_regeneration_prompt: qaResult.prompt_regeneration || null
     };
   } else {
-    // Error - mark as OK to not block pipeline
-    prompts[sceneIndex] = {
-      ...prompts[sceneIndex],
-      qa_checked: true,
-      qa_status: 'OK',
-      qa_explication: 'QA check failed - assumed OK'
-    };
+    prompts[sceneIndex] = { ...prompts[sceneIndex], qa_checked: true, qa_status: 'OK', qa_explication: 'QA check failed - assumed OK' };
   }
   
-  await adminClient
-    .from('projects')
-    .update({ prompts })
-    .eq('id', projectId);
+  await adminClient.from('projects').update({ prompts }).eq('id', projectId);
 }
 
 // ========================================================================
@@ -4427,6 +4455,61 @@ async function markSingleQACompleted(
   
   // Launch next pending QA job
   await launchNextPendingQAJob(adminClient);
+  
+  // ATOMIC PIPELINE: Update parent progress metadata so QA bar moves!
+  await updateParentProgressMetadata(adminClient, job.parent_job_id);
+}
+
+// Universal progress update for atomic pipeline
+async function updateParentProgressMetadata(adminClient: any, parentJobId: string) {
+  // Get parent job info
+  const { data: parentJob } = await adminClient
+    .from('generation_jobs')
+    .select('total, metadata, project_id')
+    .eq('id', parentJobId)
+    .single();
+  
+  if (!parentJob || !parentJob.project_id) return;
+  
+  const projectId = parentJob.project_id;
+  const total = parentJob.total || 0;
+  
+  // ROBUST ARCHITECTURE: Count progress from project_scenes (The Source of Truth)
+  const { count: imgDone } = await adminClient
+    .from('project_scenes')
+    .select('id', { count: 'exact', head: true })
+    .eq('project_id', projectId)
+    .not('image_url', 'is', null);
+    
+  const { count: qaDone } = await adminClient
+    .from('project_scenes')
+    .select('id', { count: 'exact', head: true })
+    .eq('project_id', projectId)
+    .not('qa_status', 'is', null);
+    
+  const { count: upscaleDone } = await adminClient
+    .from('project_scenes')
+    .select('id', { count: 'exact', head: true })
+    .eq('project_id', projectId)
+    .not('upscaled_url', 'is', null);
+
+  const newMetadata = {
+    ...(parentJob.metadata || {}),
+    progress_images: imgDone || 0,
+    progress_qa: qaDone || 0,
+    progress_upscale: upscaleDone || 0,
+    total_scenes: total
+  };
+
+  await adminClient
+    .from('generation_jobs')
+    .update({ 
+      metadata: newMetadata,
+      // Main progress column follows upscale completion
+      progress: upscaleDone || 0,
+      updated_at: new Date().toISOString()
+    })
+    .eq('id', parentJobId);
 }
 
 // Create upscale job after QA completes (called from start-generation-job)
@@ -4527,10 +4610,10 @@ async function createSingleImageRegenJob(
 ): Promise<void> {
   console.log(`[createSingleImageRegenJob] Creating regen job for scene ${sceneIndex}`);
   
-  // Get current prompt and image settings
+  // Get current project settings including image model, width, height, and style references
   const { data: project, error: projectError } = await adminClient
     .from('projects')
-    .select('prompts, image_model')
+    .select('prompts, image_model, image_width, image_height, style_reference_urls')
     .eq('id', projectId)
     .single();
   
@@ -4550,7 +4633,7 @@ async function createSingleImageRegenJob(
   // Use the QA-suggested prompt if available, otherwise use original
   const newPrompt = qaResult?.prompt_regeneration || originalPrompt;
   
-  // Create the regen job with is_regen = true
+  // Create the regen job with is_regen = true and FULL project settings
   const { error: insertError } = await adminClient
     .from('generation_jobs')
     .insert({
@@ -4566,6 +4649,9 @@ async function createSingleImageRegenJob(
       metadata: {
         prompt: newPrompt,
         model: project.image_model || 'seedream-4.5',
+        width: project.image_width || 1440,
+        height: project.image_height || 816,
+        styleRefs: project.style_reference_urls || [],
         is_regen: true,
         original_prompt: originalPrompt,
         qa_rejection_reason: qaResult?.explication || 'QA rejection',
@@ -4576,7 +4662,7 @@ async function createSingleImageRegenJob(
   if (insertError) {
     console.error(`[createSingleImageRegenJob] Error creating regen job:`, insertError);
   } else {
-    console.log(`[createSingleImageRegenJob] Created regen job for scene ${sceneIndex} with is_regen=true`);
+    console.log(`[createSingleImageRegenJob] Created regen job for scene ${sceneIndex} with is_regen=true and settings: ${project.image_model} ${project.image_width}x${project.image_height}`);
   }
 }
 
@@ -4644,8 +4730,10 @@ async function launchNextPendingUpscaleJobFromQA(
   }
   
   // Call upscale-image Edge Function
-  setTimeout(() => {
-    fetch(`${supabaseUrl}/functions/v1/upscale-image`, {
+  try {
+    const webhookUrl = `${supabaseUrl}/functions/v1/replicate-webhook`;
+    
+    const response = await fetch(`${supabaseUrl}/functions/v1/upscale-image`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -4653,13 +4741,46 @@ async function launchNextPendingUpscaleJobFromQA(
       },
       body: JSON.stringify({
         imageUrl,
-        jobId: jobToClaim.id,
-        projectId: jobToClaim.project_id,
-        sceneIndex: jobToClaim.scene_index,
-        useWebhook: true
+        userId: jobToClaim.user_id,
+        async: true,
+        webhook_url: webhookUrl
       })
-    }).catch(err => console.error(`[launchNextPendingUpscaleJobFromQA] Error:`, err));
-  }, 0);
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`[launchNextPendingUpscaleJobFromQA] Upscale API error:`, response.status, errorText);
+      await adminClient
+        .from('generation_jobs')
+        .update({ status: 'failed', error_message: `Upscale failed: ${response.status}` })
+        .eq('id', jobToClaim.id);
+      return;
+    }
+    
+    const result = await response.json();
+    console.log(`[launchNextPendingUpscaleJobFromQA] Started upscale for scene ${jobToClaim.scene_index}, prediction:`, result.predictionId);
+    
+    // Create pending_prediction entry for webhook tracking
+    if (result.predictionId) {
+      await adminClient
+        .from('pending_predictions')
+        .insert({
+          job_id: jobToClaim.id,
+          prediction_id: result.predictionId,
+          prediction_type: 'upscale',
+          scene_index: jobToClaim.scene_index,
+          project_id: jobToClaim.project_id,
+          user_id: jobToClaim.user_id,
+          status: 'pending'
+        });
+    }
+  } catch (err) {
+    console.error(`[launchNextPendingUpscaleJobFromQA] Error:`, err);
+    await adminClient
+      .from('generation_jobs')
+      .update({ status: 'failed', error_message: err instanceof Error ? err.message : 'Unknown error' })
+      .eq('id', jobToClaim.id);
+  }
 }
 
 // Update parent progress after upscale completes

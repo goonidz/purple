@@ -63,23 +63,40 @@ export function useGenerationJobs({ projectId, onJobComplete, onJobFailed, autoR
     const targetProjectId = projectIdRef.current || completedJob.project_id;
     
     try {
-      // Fetch current project data to check for missing images
-      const { data: project } = await supabase
-        .from('projects')
-        .select('prompts')
-        .eq('id', targetProjectId)
-        .single();
+      // ROBUST ARCHITECTURE: Fetch from project_scenes (The Source of Truth)
+      const { data: scenes, error: scenesError } = await supabase
+        .from('project_scenes')
+        .select('image_url')
+        .eq('project_id', targetProjectId);
 
-      if (!project?.prompts) return;
+      if (scenesError || !scenes || scenes.length === 0) {
+        // FALLBACK: Legacy JSON
+        const { data: project } = await supabase
+          .from('projects')
+          .select('prompts')
+          .eq('id', targetProjectId)
+          .single();
 
-      const prompts = project.prompts as any[];
-      const missingCount = prompts.filter(p => p && p.prompt && !p.imageUrl).length;
+        if (!project?.prompts) return;
+        const prompts = project.prompts as any[];
+        const missingCount = prompts.filter(p => p && p.prompt && !p.imageUrl).length;
+        
+        console.log(`[LegacyRetry] Missing images: ${missingCount}/${prompts.length}`);
+        if (missingCount === 0) return;
+      } else {
+        const missingCount = scenes.filter(s => !s.image_url).length;
+        console.log(`[RobustRetry] Missing images: ${missingCount}/${scenes.length}`);
+        
+        if (missingCount === 0) {
+          console.log('All images generated successfully!');
+          toast.success(`Toutes les images ont été générées ! (${retryCount > 0 ? `${retryCount + 1} tentatives` : '1 tentative'})`);
+          setRetryCount(0);
+          return;
+        }
+      }
 
-      console.log(`Job completed. Missing images: ${missingCount}/${prompts.length}`);
-
-      if (missingCount > 0) {
-        console.log(`Auto-retrying for ${missingCount} missing images (attempt ${retryCount + 1}/${maxRetries})`);
-        toast.info(`${missingCount} images manquantes. Relance automatique...`);
+      console.log(`Auto-retrying for missing images (attempt ${retryCount + 1}/${maxRetries})`);
+      toast.info(`Images manquantes. Relance automatique...`);
         
         setRetryCount(prev => prev + 1);
         

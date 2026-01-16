@@ -750,25 +750,48 @@ const Index = () => {
   useEffect(() => {
     if (!currentProjectId) return;
 
-    let lastPromptsHash = JSON.stringify(generatedPrompts.map(p => p?.imageUrl || null));
+    let lastHash = "";
 
     const pollInterval = setInterval(async () => {
       try {
-        const { data: projectData } = await supabase
-          .from('projects')
-          .select('prompts')
-          .eq('id', currentProjectId)
-          .single();
+        // Fetch from legacy JSON AND new project_scenes table
+        const [projectRes, scenesRes] = await Promise.all([
+          supabase.from('projects').select('prompts').eq('id', currentProjectId).single(),
+          supabase.from('project_scenes').select('*').eq('project_id', currentProjectId).order('scene_index', { ascending: true })
+        ]);
 
-        if (projectData?.prompts) {
-          const newPrompts = projectData.prompts as unknown as GeneratedPrompt[];
-          // Filter out null/undefined entries and safely access imageUrl
-          const newHash = JSON.stringify(newPrompts.map(p => p?.imageUrl || null));
-          
-          if (newHash !== lastPromptsHash) {
-            console.log('Images updated, refreshing UI');
+        if (scenesRes.data && scenesRes.data.length > 0) {
+          // NEW ROBUST SOURCE: Use project_scenes table
+          const scenesData = scenesRes.data;
+          const newPrompts: GeneratedPrompt[] = scenesData.map(s => ({
+            scene: `Scène ${s.scene_index + 1}`,
+            prompt: s.prompt,
+            imageUrl: s.upscaled_url || s.image_url,
+            imageWidth: s.image_width,
+            imageHeight: s.image_height,
+            qa_checked: s.qa_checked,
+            qa_status: s.qa_status,
+            qa_explication: s.qa_explication,
+            qa_regeneration_prompt: s.qa_regeneration_prompt,
+            isUpscaled: s.is_upscaled,
+            videoUrl: s.video_url,
+            continuityGroupId: s.continuity_group_id
+          }));
+
+          const newHash = JSON.stringify(newPrompts);
+          if (newHash !== lastHash) {
+            console.log('[RobustUI] Scenes updated from project_scenes table');
             setGeneratedPrompts(newPrompts);
-            lastPromptsHash = newHash;
+            lastHash = newHash;
+          }
+        } else if (projectRes.data?.prompts) {
+          // FALLBACK: Use legacy JSON array
+          const legacyPrompts = projectRes.data.prompts as unknown as GeneratedPrompt[];
+          const newHash = JSON.stringify(legacyPrompts);
+          if (newHash !== lastHash) {
+            console.log('[LegacyUI] Scenes updated from JSON prompts');
+            setGeneratedPrompts(legacyPrompts);
+            lastHash = newHash;
           }
         }
       } catch (error) {
