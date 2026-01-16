@@ -1092,7 +1092,7 @@ const Index = () => {
       // Load calendar date and channel if project is linked to calendar
       const { data: calendarEntries, error: calendarError } = await supabase
         .from("content_calendar")
-        .select("scheduled_date, id, channel_id, status, audio_url, channels(name, color)")
+        .select("scheduled_date, id, channel_id, status, audio_url, channels(name, color, project_preset_id)")
         .eq("project_id", projectId);
       
       if (calendarError) {
@@ -1112,9 +1112,46 @@ const Index = () => {
         // Get channel info from calendar entry
         const entryWithChannel = calendarEntries?.find(entry => entry.channel_id && entry.channels);
         if (entryWithChannel && entryWithChannel.channels) {
-          const channelData = entryWithChannel.channels as { name: string; color: string };
+          const channelData = entryWithChannel.channels as { name: string; color: string; project_preset_id?: string };
           setCalendarChannelName(channelData.name);
           setCalendarChannelColor(channelData.color);
+          
+          // Auto-load preset from channel if project doesn't have one set
+          if (channelData.project_preset_id && !projectData.preset_id) {
+            console.log('[loadProjectData] Auto-loading preset from channel:', channelData.project_preset_id);
+            const { data: preset } = await supabase
+              .from('presets')
+              .select('*')
+              .eq('id', channelData.project_preset_id)
+              .single();
+            
+            if (preset) {
+              // Apply preset settings to UI
+              setImageWidth(preset.image_width);
+              setImageHeight(preset.image_height);
+              setAspectRatio(preset.aspect_ratio);
+              setImageModel(preset.image_model);
+              setLoraUrl((preset as any).lora_url || "");
+              setLoraSteps((preset as any).lora_steps || 10);
+              setPromptSystemMessage((preset as any).prompt_system_message || "");
+              setQaPrompt((preset as any).qa_prompt || "");
+              if ((preset as any).style_reference_url) {
+                setStyleReferenceUrls(parseStyleReferenceUrls((preset as any).style_reference_url));
+              }
+              if ((preset as any).example_prompts) {
+                setExamplePrompts((preset as any).example_prompts);
+              }
+              setActivePresetName(preset.name);
+              
+              // Save preset_id to project for backend LoRA loading
+              await supabase
+                .from('projects')
+                .update({ preset_id: channelData.project_preset_id } as any)
+                .eq('id', projectId);
+              
+              console.log('[loadProjectData] Preset loaded from channel:', preset.name);
+            }
+          }
         } else {
           setCalendarChannelName(null);
           setCalendarChannelColor(null);

@@ -439,12 +439,24 @@ export function useGenerationJobs({ projectId, onJobComplete, onJobFailed, autoR
 
   const cancelJob = useCallback(async (jobId: string) => {
     try {
+      // Cancel the parent job
       const { error } = await supabase
         .from('generation_jobs')
         .update({ status: 'cancelled' })
         .eq('id', jobId);
 
       if (error) throw error;
+
+      // Also cancel all child jobs that have this job as parent
+      const { error: childError } = await supabase
+        .from('generation_jobs')
+        .update({ status: 'cancelled' })
+        .eq('metadata->>parentJobId', jobId)
+        .in('status', ['pending', 'processing']);
+
+      if (childError) {
+        console.warn('Error cancelling child jobs:', childError);
+      }
 
       toast.info("Génération annulée");
       setActiveJobs(prev => prev.filter(j => j.id !== jobId));

@@ -1819,7 +1819,8 @@ async function processImagesJob(
   if (!project) throw new Error("Project not found");
 
   // Load LoRA settings from preset if not set on project directly
-  if (!project.lora_url && project.preset_id) {
+  // Check for both null and empty string
+  if ((!project.lora_url || project.lora_url === '') && project.preset_id) {
     const { data: preset } = await adminClient
       .from('presets')
       .select('lora_url, lora_steps')
@@ -1838,6 +1839,8 @@ async function processImagesJob(
   let imageHeight = project.image_height || 1080;
   const imageModel = project.image_model || 'seedream-4.5';
   const visualContinuityEnabled = project.visual_continuity_enabled || false;
+  
+  console.log(`[processImagesJob] Project config: model=${imageModel}, lora_url=${project.lora_url || 'NONE'}, preset_id=${project.preset_id || 'NONE'}`);
   
   // IMPORTANT: For Z-Image models with 16:9, always generate at 960x544 (will be upscaled later)
   const isZImage = imageModel === 'z-image-turbo' || imageModel === 'z-image-turbo-lora';
@@ -2670,7 +2673,8 @@ async function processTestImagesJob(
   if (!project) throw new Error("Project not found");
 
   // Load LoRA settings from preset if not set on project directly
-  if (!project.lora_url && project.preset_id) {
+  // Check for both null and empty string
+  if ((!project.lora_url || project.lora_url === '') && project.preset_id) {
     const { data: preset } = await adminClient
       .from('presets')
       .select('lora_url, lora_steps')
@@ -3336,7 +3340,8 @@ async function processSingleImageJob(
   if (!project) throw new Error("Project not found");
 
   // Load LoRA settings from preset if not set on project directly
-  if (!project.lora_url && project.preset_id) {
+  // Check for both null and empty string
+  if ((!project.lora_url || project.lora_url === '') && project.preset_id) {
     const { data: preset } = await adminClient
       .from('presets')
       .select('lora_url, lora_steps')
@@ -3355,6 +3360,8 @@ async function processSingleImageJob(
   let imageHeight = project.image_height || 1080;
   const imageModel = project.image_model || 'seedream-4.5';
   const visualContinuityEnabled = project.visual_continuity_enabled || false;
+
+  console.log(`[processSingleImageJob] Scene ${sceneIndex + 1}: model=${imageModel}, lora_url=${project.lora_url || 'NONE'}, preset_id=${project.preset_id || 'NONE'}`);
 
   // IMPORTANT: For Z-Image models with 16:9, always generate at 960x544 (will be upscaled later)
   const isZImage = imageModel === 'z-image-turbo' || imageModel === 'z-image-turbo-lora';
@@ -5534,7 +5541,8 @@ async function processQARegenJob(
   if (!project) throw new Error("Project not found");
 
   // Load LoRA settings from preset if not set on project directly
-  if (!project.lora_url && project.preset_id) {
+  // Check for both null and empty string
+  if ((!project.lora_url || project.lora_url === '') && project.preset_id) {
     const { data: preset } = await adminClient
       .from('presets')
       .select('lora_url, lora_steps')
@@ -5552,6 +5560,8 @@ async function processQARegenJob(
   let imageWidth = project.image_width || 1920;
   let imageHeight = project.image_height || 1080;
   const imageModel = project.image_model || 'seedream-4.5';
+
+  console.log(`[processQARegenJob] Project config: model=${imageModel}, lora_url=${project.lora_url || 'NONE'}, preset_id=${project.preset_id || 'NONE'}`);
   
   // IMPORTANT: For Z-Image models with 16:9, always generate at 960x544 (will be upscaled later)
   const isZImage = imageModel === 'z-image-turbo' || imageModel === 'z-image-turbo-lora';
