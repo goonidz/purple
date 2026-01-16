@@ -3129,49 +3129,54 @@ async function processSinglePromptJob(
 
   console.log(`Single prompt job: received prompt for scene ${sceneIndex + 1}`);
 
-  // Re-fetch project to get latest prompts (avoid race conditions)
-  const { data: latestProject, error: refetchError } = await adminClient
-    .from('projects')
-    .select('prompts')
-    .eq('id', projectId)
-    .single();
+  // ATOMIC UPDATE: Use RPC to update prompt at specific index without race conditions
+  // This prevents lost updates when multiple prompt jobs complete simultaneously
+  const { error: rpcError } = await adminClient.rpc('update_prompt_in_array', {
+    p_project_id: projectId,
+    p_scene_index: sceneIndex,
+    p_prompt: newPrompt,
+    p_scene_text: scene.text,
+    p_start_time: scene.startTime,
+    p_end_time: scene.endTime
+  });
+  
+  if (rpcError) {
+    // Fallback to non-atomic update if RPC not available
+    console.warn(`[processSinglePromptJob] Atomic RPC failed, using fallback: ${rpcError.message}`);
+    
+    const { data: latestProject } = await adminClient
+      .from('projects')
+      .select('prompts')
+      .eq('id', projectId)
+      .single();
 
-  if (refetchError) {
-    throw new Error(`Failed to refetch project: ${refetchError.message}`);
-  }
+    const latestPrompts = (latestProject?.prompts as any[]) || [];
+    const updatedPrompts = [...latestPrompts];
+    while (updatedPrompts.length <= sceneIndex) {
+      updatedPrompts.push(null);
+    }
 
-  const latestPrompts = (latestProject.prompts as any[]) || [];
+    updatedPrompts[sceneIndex] = {
+      scene: `Scène ${sceneIndex + 1}`,
+      prompt: newPrompt,
+      text: scene.text,
+      startTime: scene.startTime,
+      endTime: scene.endTime,
+      duration: scene.endTime - scene.startTime,
+      imageUrl: latestPrompts[sceneIndex]?.imageUrl,
+      continuityGroupId: visualContinuityEnabled ? continuityGroupId : null
+    };
 
-  // Update the prompts array
-  const updatedPrompts = [...latestPrompts];
-  while (updatedPrompts.length <= sceneIndex) {
-    updatedPrompts.push(null);
-  }
+    const { error: updateError } = await adminClient
+      .from('projects')
+      .update({ prompts: updatedPrompts })
+      .eq('id', projectId);
 
-  updatedPrompts[sceneIndex] = {
-    scene: `Scène ${sceneIndex + 1}`,
-    prompt: newPrompt,
-    text: scene.text,
-    startTime: scene.startTime,
-    endTime: scene.endTime,
-    duration: scene.endTime - scene.startTime,
-    imageUrl: latestPrompts[sceneIndex]?.imageUrl, // Preserve existing image
-    continuityGroupId: visualContinuityEnabled ? continuityGroupId : null // NOUVEAU: Stocker l'ID du groupe
-  };
-
-  // Save prompts to project with explicit await
-  const { data: updateResult, error: updateError } = await adminClient
-    .from('projects')
-    .update({ prompts: updatedPrompts })
-    .eq('id', projectId)
-    .select('id');
-
-  if (updateError) {
-    throw new Error(`Failed to save prompts: ${updateError.message}`);
-  }
-
-  if (!updateResult || updateResult.length === 0) {
-    throw new Error("Update returned no result - project may not exist");
+    if (updateError) {
+      throw new Error(`Failed to save prompts: ${updateError.message}`);
+    }
+  } else {
+    console.log(`[processSinglePromptJob] Prompt saved atomically for scene ${sceneIndex + 1}`);
   }
 
   console.log(`Single prompt job: prompts saved for scene ${sceneIndex + 1}`);
