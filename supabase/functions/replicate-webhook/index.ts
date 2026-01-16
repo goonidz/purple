@@ -394,7 +394,7 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
   // Get job info first to know the expected total
   const { data: job } = await adminClient
     .from('generation_jobs')
-    .select('job_type, project_id, user_id, metadata, status, total')
+    .select('job_type, project_id, user_id, metadata, status, total, parent_job_id, scene_index')
     .eq('id', jobId)
     .single();
 
@@ -403,6 +403,41 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
   // CRITICAL: Skip if job is already completed or failed
   if (job.status === 'completed' || job.status === 'failed') {
     console.log(`Job ${jobId} already marked as ${job.status}, skipping`);
+    return;
+  }
+  
+  // ========================================================================
+  // NEW SIMPLE ARCHITECTURE: Handle single_image jobs
+  // ========================================================================
+  if (job.job_type === 'single_image') {
+    console.log(`[checkJobCompletion] Handling single_image job ${jobId} for scene ${job.scene_index}, current status: ${job.status}`);
+    
+    // Mark this job as completed (only if not already completed)
+    if (job.status !== 'completed') {
+      const { error: updateError } = await adminClient
+        .from('generation_jobs')
+        .update({
+          status: 'completed',
+          progress: 1,
+          completed_at: new Date().toISOString()
+        })
+        .eq('id', jobId);
+      
+      if (updateError) {
+        console.error(`[checkJobCompletion] Error marking job ${jobId} as completed:`, updateError);
+      } else {
+        console.log(`[checkJobCompletion] Job ${jobId} marked as completed`);
+      }
+    }
+    
+    // Update parent job progress
+    if (job.parent_job_id) {
+      await updateParentJobProgress(adminClient, job.parent_job_id);
+    }
+    
+    // Launch next pending job
+    await launchNextPendingJob(adminClient, Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
+    
     return;
   }
 
@@ -1721,10 +1756,12 @@ async function updateQueueItemStatus(
       updateData.error_message = errorMessage;
     }
 
-    const { error } = await adminClient
+    const { data: updatedItem, error } = await adminClient
       .from('generation_queue')
       .update(updateData)
-      .eq('prediction_id', predictionId);
+      .eq('prediction_id', predictionId)
+      .select('job_id, project_id')
+      .single();
 
     if (error) {
       // Not an error if item doesn't exist - might be old system
@@ -1733,6 +1770,42 @@ async function updateQueueItemStatus(
       }
     } else {
       console.log(`[Queue] Updated queue item for prediction ${predictionId} -> ${status}`);
+      
+      // Update job progress based on completed queue items
+      if (updatedItem?.job_id) {
+        const { data: stats } = await adminClient
+          .from('generation_queue')
+          .select('status')
+          .eq('job_id', updatedItem.job_id);
+        
+        if (stats) {
+          const completed = stats.filter((s: any) => s.status === 'completed').length;
+          const failed = stats.filter((s: any) => s.status === 'failed').length;
+          const total = stats.length;
+          const allDone = completed + failed === total;
+          
+          const jobUpdate: Record<string, any> = {
+            progress: completed,
+            completed: completed + failed,
+            total: total,
+            updated_at: new Date().toISOString(),
+          };
+          
+          // Mark job as completed if all items are done
+          if (allDone) {
+            jobUpdate.status = 'completed';
+            jobUpdate.completed_at = new Date().toISOString();
+            console.log(`[Queue] Job ${updatedItem.job_id} completed: ${completed}/${total} succeeded`);
+          }
+          
+          await adminClient
+            .from('generation_jobs')
+            .update(jobUpdate)
+            .eq('id', updatedItem.job_id);
+          
+          console.log(`[Queue] Updated job progress: ${completed + failed}/${total} (${completed} succeeded, ${failed} failed)`);
+        }
+      }
     }
   } catch (error) {
     console.error(`[Queue] Error updating queue item status:`, error);
@@ -1741,37 +1814,218 @@ async function updateQueueItemStatus(
 
 /**
  * Trigger the queue processor to start the next batch
+ * (DEPRECATED - kept for compatibility)
  */
 async function triggerQueueProcessing(
   supabaseUrl: string,
   supabaseServiceKey: string
 ): Promise<void> {
-  // Use EdgeRuntime.waitUntil to not block the webhook response
-  EdgeRuntime.waitUntil((async () => {
-    try {
-      // Small delay to batch multiple webhook completions
-      await new Promise(resolve => setTimeout(resolve, 200));
-      
-      const response = await fetch(`${supabaseUrl}/functions/v1/process-generation-queue`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${supabaseServiceKey}`,
-        },
-        body: JSON.stringify({ trigger: 'webhook' }),
-      });
+  // TEMPORARILY DISABLED - Prevents infinite loops
+  console.log('[Queue] Auto-trigger disabled (deprecated)');
+}
 
-      if (response.ok) {
-        console.log('[Queue] Triggered next batch processing');
-      } else {
-        // Don't log error if queue is empty or at capacity
-        const result = await response.json().catch(() => ({}));
-        if (result.message !== 'No pending items' && result.message !== 'Global limit reached') {
-          console.error('[Queue] Failed to trigger processing:', result);
-        }
-      }
-    } catch (error) {
-      console.error('[Queue] Error triggering queue processing:', error);
+/**
+ * Update parent job progress and check completion
+ * NEW SIMPLE ARCHITECTURE
+ */
+async function updateParentJobProgress(adminClient: any, parentJobId: string): Promise<void> {
+  console.log(`[updateParentJobProgress] Checking parent job ${parentJobId}`);
+  
+  // Count completed child jobs
+  const { count: completedCount, error: completedError } = await adminClient
+    .from('generation_jobs')
+    .select('id', { count: 'exact', head: true })
+    .eq('parent_job_id', parentJobId)
+    .eq('status', 'completed');
+  
+  // Count all child jobs
+  const { count: totalCount, error: totalError } = await adminClient
+    .from('generation_jobs')
+    .select('id', { count: 'exact', head: true })
+    .eq('parent_job_id', parentJobId);
+  
+  if (completedError || totalError || totalCount === null) {
+    console.error('[updateParentJobProgress] Error counting jobs');
+    return;
+  }
+  
+  const completed = completedCount || 0;
+  const total = totalCount;
+  
+  console.log(`[updateParentJobProgress] Parent ${parentJobId}: ${completed}/${total} completed`);
+  
+  // Update parent job progress
+  const updateData: Record<string, any> = {
+    progress: completed,
+    updated_at: new Date().toISOString(),
+  };
+  
+  // If all done, mark parent as completed and trigger chaining
+  if (completed === total) {
+    updateData.status = 'completed';
+    updateData.completed_at = new Date().toISOString();
+    console.log(`[updateParentJobProgress] All children complete! Marking parent ${parentJobId} as completed`);
+  }
+  
+  const { error: updateError } = await adminClient
+    .from('generation_jobs')
+    .update(updateData)
+    .eq('id', parentJobId);
+  
+  if (updateError) {
+    console.error('[updateParentJobProgress] Error updating parent:', updateError);
+    return;
+  }
+  
+  // If parent completed, trigger semi-auto chaining
+  if (completed === total) {
+    const { data: parentJob } = await adminClient
+      .from('generation_jobs')
+      .select('project_id, user_id, metadata, job_type')
+      .eq('id', parentJobId)
+      .single();
+    
+    if (parentJob?.metadata?.semiAutoMode === true) {
+      console.log(`[updateParentJobProgress] Parent complete, triggering chain for project ${parentJob.project_id}`);
+      
+      // Call start-generation-job to trigger the next step
+      const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+      const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+      
+      setTimeout(() => {
+        fetch(`${supabaseUrl}/functions/v1/start-generation-job-internal-chain`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${supabaseServiceKey}`,
+          },
+          body: JSON.stringify({
+            projectId: parentJob.project_id,
+            userId: parentJob.user_id,
+            completedJobType: parentJob.job_type,
+          }),
+        }).catch(error => {
+          console.error('[updateParentJobProgress] Error triggering chain:', error);
+        });
+      }, 500);
     }
-  })());
+  }
+}
+
+/**
+ * Launch the next pending single_image job if there's capacity
+ * Uses SELECT then UPDATE to prevent race conditions
+ */
+async function launchNextPendingJob(
+  adminClient: any,
+  supabaseUrl: string,
+  supabaseServiceKey: string
+): Promise<void> {
+  const MAX_CONCURRENT = 10;
+  
+  // Check current processing count
+  const { count: processingCount } = await adminClient
+    .from('generation_jobs')
+    .select('id', { count: 'exact', head: true })
+    .eq('status', 'processing')
+    .eq('job_type', 'single_image');
+  
+  if ((processingCount || 0) >= MAX_CONCURRENT) {
+    console.log(`[launchNextPendingJob] No capacity (${processingCount}/${MAX_CONCURRENT} processing)`);
+    return;
+  }
+  
+  // Step 1: Find ONE pending job
+  const { data: pendingJobs, error: selectError } = await adminClient
+    .from('generation_jobs')
+    .select('id, project_id, scene_index, metadata, user_id')
+    .eq('status', 'pending')
+    .eq('job_type', 'single_image')
+    .order('created_at', { ascending: true })
+    .limit(1);
+  
+  if (selectError || !pendingJobs || pendingJobs.length === 0) {
+    console.log('[launchNextPendingJob] No pending jobs found');
+    return;
+  }
+  
+  const jobToClaim = pendingJobs[0];
+  
+  // Step 2: Try to claim it (only if still pending)
+  const { data: updatedJob, error: updateError } = await adminClient
+    .from('generation_jobs')
+    .update({ status: 'processing' })
+    .eq('id', jobToClaim.id)
+    .eq('status', 'pending')  // Only update if still pending (race condition protection)
+    .select('id')
+    .single();
+  
+  if (updateError || !updatedJob) {
+    console.log(`[launchNextPendingJob] Job ${jobToClaim.id} already claimed by another process`);
+    return;
+  }
+  
+  const claimedJob = jobToClaim;
+  
+  console.log(`[launchNextPendingJob] Claimed job ${claimedJob.id} for scene ${claimedJob.scene_index}`);
+  
+  // Call generate-image-seedream
+  try {
+    const response = await fetch(`${supabaseUrl}/functions/v1/generate-image-seedream`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${supabaseServiceKey}`,
+      },
+      body: JSON.stringify({
+        prompt: claimedJob.metadata.prompt,
+        model: claimedJob.metadata.model,
+        width: claimedJob.metadata.width,
+        height: claimedJob.metadata.height,
+        image_urls: claimedJob.metadata.styleRefs || [],
+        async: true,
+        webhook_url: `${supabaseUrl}/functions/v1/replicate-webhook`,
+        userId: claimedJob.user_id,
+        projectId: claimedJob.project_id,
+        sceneIndex: claimedJob.scene_index,
+        jobId: claimedJob.id,
+      }),
+    });
+    
+    if (response.ok) {
+      const result = await response.json();
+      const predictionId = result.predictionId;
+      console.log(`[launchNextPendingJob] Job ${claimedJob.id} started, prediction: ${predictionId}`);
+      
+      // Create pending_prediction entry for webhook tracking
+      await adminClient
+        .from('pending_predictions')
+        .insert({
+          job_id: claimedJob.id,
+          prediction_id: predictionId,
+          prediction_type: 'scene_image',
+          scene_index: claimedJob.scene_index,
+          project_id: claimedJob.project_id,
+          user_id: claimedJob.user_id,
+          metadata: {
+            singleImageJob: true,
+            ...claimedJob.metadata,
+          },
+          status: 'pending',
+        });
+    } else {
+      throw new Error(`Replicate API failed: ${response.status}`);
+    }
+  } catch (error) {
+    console.error(`[launchNextPendingJob] Error for job ${claimedJob.id}:`, error);
+    // Mark as failed
+    await adminClient
+      .from('generation_jobs')
+      .update({ 
+        status: 'failed',
+        error: error instanceof Error ? error.message : 'Unknown error',
+        completed_at: new Date().toISOString()
+      })
+      .eq('id', claimedJob.id);
+  }
 }

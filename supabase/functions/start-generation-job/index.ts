@@ -337,6 +337,8 @@ async function processJob(
       await processSinglePromptJob(jobId, projectId, userId, metadata, authHeader, adminClient);
     } else if (jobType === 'single_image') {
       await processSingleImageJob(jobId, projectId, userId, metadata, authHeader, adminClient);
+    } else if (jobType === 'single_qa') {
+      await processSingleQAJob(jobId, projectId, userId, metadata, authHeader, adminClient);
     } else if (jobType === 'thumbnails') {
       await processThumbnailsJob(jobId, projectId, userId, metadata, authHeader, adminClient);
     } else if (jobType === 'script_generation') {
@@ -420,10 +422,10 @@ async function processJob(
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     
-    // Check if this is webhook mode - job should stay in processing, not fail
-    if (errorMessage === 'WEBHOOK_MODE_ACTIVE') {
-      console.log(`Job ${jobId} is in webhook mode - staying in processing status`);
-      // Don't mark as completed or failed - webhook will handle it
+    // Check if this is webhook mode or parent job mode - job should stay in processing, not fail
+    if (errorMessage === 'WEBHOOK_MODE_ACTIVE' || errorMessage === 'PARENT_JOB_ACTIVE') {
+      console.log(`Job ${jobId} is in ${errorMessage} mode - staying in processing status`);
+      // Don't mark as completed or failed - child jobs will handle completion
       return;
     }
     
@@ -658,53 +660,11 @@ async function chainNextJob(
     console.log(`chainNextJob -> QA check: ${totalWithImages}/${totalWithPrompts} images generated, ${missingImages} missing`);
     
     if (missingImages > 0) {
-      console.log(`BLOCKING QA: ${missingImages} images still missing! Creating images job instead.`);
+      console.log(`BLOCKING QA: ${missingImages} images still missing! Queue system will handle completion.`);
       
-      // Create a new images job to generate the missing images
-      const { data: imagesJob, error: imagesJobError } = await adminClient
-        .from('generation_jobs')
-        .insert({
-          project_id: projectId,
-          user_id: userId,
-          job_type: 'images',
-          status: 'pending',
-          progress: 0,
-          total: Math.min(missingImages, 50),
-          metadata: {
-            semiAutoMode: true,
-            skipExisting: true,
-            useWebhook: true,
-            isChunkContinuation: true,
-            started_at: new Date().toISOString()
-          }
-        })
-        .select()
-        .single();
-      
-      if (imagesJobError) {
-        console.error(`Error creating images job for missing images:`, imagesJobError);
-        return;
-      }
-      
-      console.log(`Created images job ${imagesJob.id} for ${missingImages} missing images`);
-      
-      // Start the images job
-      EdgeRuntime.waitUntil(processChainedJob(
-        imagesJob.id,
-        projectId,
-        'images',
-        userId,
-        {
-          semiAutoMode: true,
-          skipExisting: true,
-          useWebhook: true,
-          isChunkContinuation: true
-        },
-        authHeader,
-        adminClient
-      ));
-      
-      return; // Don't chain to QA yet - images job will chain when complete
+      // With queue system, jobs stay in processing until webhook completes them
+      // Don't create additional jobs - the webhook will handle completion and chaining
+      return;
     }
     
     total = totalWithImages;
@@ -1761,13 +1721,12 @@ async function processImagesJob(
   const skipExisting = metadata.skipExisting !== false;
   
   // ========================================================================
-  // NEW QUEUE-BASED SYSTEM
+  // SIMPLE ARCHITECTURE: 1 JOB PER IMAGE
   // ========================================================================
-  // If useQueue is enabled in metadata, delegate to the new scalable queue
-  // This provides global concurrency control and better parallel project handling
+  // Create individual jobs for each image with global concurrency control
   // ========================================================================
-  if (metadata.useQueue === true) {
-    console.log(`[processImagesJob] Using NEW queue-based system for project ${projectId}`);
+  if (true) {
+    console.log(`[processImagesJob] Using SIMPLE architecture (1 job per image) for project ${projectId}`);
     
     // Get prompts that need images
     const promptsToProcess = prompts
@@ -1776,56 +1735,87 @@ async function processImagesJob(
     
     if (promptsToProcess.length === 0) {
       console.log("[processImagesJob] No images to generate (all have images)");
+      await adminClient
+        .from('generation_jobs')
+        .update({ status: 'completed', completed_at: new Date().toISOString() })
+        .eq('id', jobId);
       return;
     }
     
-    // Build queue items
-    const queueItems = promptsToProcess.map(({ prompt, index }: any) => ({
-      index,
-      payload: {
+    const totalImages = promptsToProcess.length;
+    console.log(`[processImagesJob] Creating ${totalImages} individual jobs (1 per image)`);
+    
+    // Mark parent job as the coordinator
+    await adminClient
+      .from('generation_jobs')
+      .update({
+        total: totalImages,
+        status: 'processing',
+        metadata: {
+          ...metadata,
+          isParentJob: true,
+          childJobsCount: totalImages,
+        },
+      })
+      .eq('id', jobId);
+    
+    // Create individual jobs for each image
+    const individualJobs = promptsToProcess.map(({ prompt, index }: any) => ({
+      project_id: projectId,
+      user_id: userId,
+      job_type: 'single_image',
+      status: 'pending',
+      progress: 0,
+      total: 1,
+      parent_job_id: jobId,
+      scene_index: index,
+      metadata: {
         prompt: prompt.prompt,
         model: imageModel,
         width: imageWidth,
         height: imageHeight,
         styleRefs: styleReferenceUrls,
+        useWebhook: true,
       },
-      priority: metadata.priority || 0,
     }));
     
-    console.log(`[processImagesJob] Enqueueing ${queueItems.length} images via queue system`);
+    const { data: createdJobs, error: jobsError } = await adminClient
+      .from('generation_jobs')
+      .insert(individualJobs)
+      .select('id, scene_index');
     
-    // Call enqueue-generation to add items to the queue
-    try {
-      const response = await fetch(`${supabaseUrl}/functions/v1/enqueue-generation`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${supabaseServiceKey}`,
-        },
-        body: JSON.stringify({
-          projectId,
-          jobId,
-          userId,
-          generationType: 'scene_image',
-          items: queueItems,
-        }),
-      });
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Failed to enqueue: ${errorText}`);
-      }
-      
-      const result = await response.json();
-      console.log(`[processImagesJob] Successfully enqueued ${result.queued} items`);
-      
-      // The queue system handles everything from here (processing, webhooks, progress updates)
-      return;
-      
-    } catch (error) {
-      console.error(`[processImagesJob] Queue system error, falling back to legacy:`, error);
-      // Fall through to legacy system if queue fails
+    if (jobsError) {
+      throw new Error(`Failed to create individual jobs: ${jobsError.message}`);
     }
+    
+    console.log(`[processImagesJob] Created ${createdJobs.length} individual jobs`);
+    
+    // Check global concurrency limit
+    const MAX_CONCURRENT = 10;
+    const { count: processingCount } = await adminClient
+      .from('generation_jobs')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'processing')
+      .eq('job_type', 'single_image');
+    
+    const availableSlots = Math.max(0, MAX_CONCURRENT - (processingCount || 0));
+    const jobsToStart = Math.min(availableSlots, createdJobs.length);
+    
+    console.log(`[processImagesJob] Global: ${processingCount}/${MAX_CONCURRENT} processing, starting ${jobsToStart} jobs`);
+    
+    // Start first batch of jobs
+    if (jobsToStart > 0) {
+      for (let i = 0; i < jobsToStart; i++) {
+        const job = createdJobs[i];
+        // Fire and forget - don't await
+        startSingleImageJob(job.id, adminClient, supabaseUrl, supabaseServiceKey).catch(err => {
+          console.error(`Failed to start job ${job.id}:`, err);
+        });
+      }
+    }
+    
+    console.log(`[processImagesJob] Parent job ${jobId} stays in processing until all children complete`);
+    throw new Error('WEBHOOK_MODE_ACTIVE');
   }
   
   // ========================================================================
@@ -2367,6 +2357,102 @@ async function processImagesJob(
 
   // Job stays in 'processing' status - the webhook will mark it complete and trigger next chunk
   throw new Error("WEBHOOK_MODE_ACTIVE");
+}
+
+/**
+ * Start a single image generation job
+ * Called for individual jobs in the new simple architecture
+ */
+async function startSingleImageJob(
+  jobId: string,
+  adminClient: any,
+  supabaseUrl: string,
+  supabaseServiceKey: string
+): Promise<void> {
+  console.log(`[startSingleImageJob] Starting job ${jobId}`);
+  
+  // Get job details
+  const { data: job, error: jobError } = await adminClient
+    .from('generation_jobs')
+    .select('project_id, scene_index, metadata, user_id')
+    .eq('id', jobId)
+    .single();
+  
+  if (jobError || !job) {
+    console.error(`[startSingleImageJob] Job ${jobId} not found`);
+    return;
+  }
+  
+  const { project_id, scene_index, metadata, user_id } = job;
+  
+  // Mark as processing
+  await adminClient
+    .from('generation_jobs')
+    .update({ status: 'processing' })
+    .eq('id', jobId);
+  
+  console.log(`[startSingleImageJob] Calling Replicate for scene ${scene_index}`);
+  
+  // Call generate-image-seedream
+  try {
+    const response = await fetch(`${supabaseUrl}/functions/v1/generate-image-seedream`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${supabaseServiceKey}`,
+      },
+      body: JSON.stringify({
+        prompt: metadata.prompt,
+        model: metadata.model,
+        width: metadata.width,
+        height: metadata.height,
+        image_urls: metadata.styleRefs || [],
+        async: true,
+        webhook_url: `${supabaseUrl}/functions/v1/replicate-webhook`,
+        userId: user_id,
+        projectId: project_id,
+        sceneIndex: scene_index,
+        jobId: jobId,
+      }),
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Replicate API call failed: ${response.status} - ${errorText}`);
+    }
+    
+    const result = await response.json();
+    const predictionId = result.predictionId;
+    console.log(`[startSingleImageJob] Job ${jobId} started, prediction: ${predictionId}`);
+    
+    // Create pending_prediction entry for webhook tracking
+    await adminClient
+      .from('pending_predictions')
+      .insert({
+        job_id: jobId,
+        prediction_id: predictionId,
+        prediction_type: 'scene_image',
+        scene_index: scene_index,
+        project_id: project_id,
+        user_id: user_id,
+        metadata: {
+          singleImageJob: true,
+          ...metadata,
+        },
+        status: 'pending',
+      });
+    
+  } catch (error) {
+    console.error(`[startSingleImageJob] Error starting job ${jobId}:`, error);
+    await adminClient
+      .from('generation_jobs')
+      .update({ 
+        status: 'failed',
+        error: error instanceof Error ? error.message : 'Unknown error',
+        completed_at: new Date().toISOString()
+      })
+      .eq('id', jobId);
+  }
 }
 
 async function processTranscriptionJob(
@@ -3525,9 +3611,9 @@ async function processUpscaleJob(
   const prompts = (project.prompts as any[]) || [];
   
   // ========================================================================
-  // NEW QUEUE-BASED SYSTEM FOR UPSCALE
+  // NEW QUEUE-BASED SYSTEM FOR UPSCALE (ALWAYS ENABLED)
   // ========================================================================
-  if (metadata.useQueue === true) {
+  if (true) {
     console.log(`[processUpscaleJob] Using NEW queue-based system for project ${projectId}`);
     
     // Get images that need upscaling
@@ -3560,34 +3646,64 @@ async function processUpscaleJob(
     
     console.log(`[processUpscaleJob] Enqueueing ${queueItems.length} upscales via queue system`);
     
-    try {
-      const response = await fetch(`${supabaseUrl}/functions/v1/enqueue-generation`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${supabaseServiceKey}`,
-        },
-        body: JSON.stringify({
-          projectId,
-          jobId,
-          userId,
-          generationType: 'upscale',
-          items: queueItems,
-        }),
-      });
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Failed to enqueue: ${errorText}`);
-      }
-      
-      const result = await response.json();
-      console.log(`[processUpscaleJob] Successfully enqueued ${result.queued} upscales`);
-      return;
-      
-    } catch (error) {
-      console.error(`[processUpscaleJob] Queue system error, falling back to legacy:`, error);
+    const queueInserts = queueItems.map((item) => ({
+      project_id: projectId,
+      job_id: jobId,
+      user_id: userId,
+      generation_type: 'upscale',
+      item_index: item.index,
+      payload: item.payload,
+      priority: item.priority || 0,
+      status: 'pending',
+      retry_count: 0,
+    }));
+
+    const { data: insertedItems, error: insertError } = await adminClient
+      .from('generation_queue')
+      .upsert(queueInserts, {
+        onConflict: 'project_id,generation_type,item_index',
+        ignoreDuplicates: false,
+      })
+      .select('id');
+
+    if (insertError) {
+      throw new Error(`Failed to insert into queue: ${insertError.message}`);
     }
+
+    const queuedCount = insertedItems?.length || queueItems.length;
+    console.log(`[processUpscaleJob] Successfully queued ${queuedCount} upscales`);
+
+    // Update job metadata
+    await adminClient
+      .from('generation_jobs')
+      .update({
+        total: queueItems.length,
+        metadata: {
+          useQueue: true,
+          queuedAt: new Date().toISOString(),
+          generationType: 'upscale',
+        },
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', jobId);
+
+    // Job stays in 'processing' status until webhook completes all items
+    console.log('[processUpscaleJob] Queue filled, job stays in processing until completion');
+    
+    // TEMPORARILY DISABLED - Manual trigger required
+    // fetch(`${supabaseUrl}/functions/v1/process-generation-queue`, {
+    //   method: 'POST',
+    //   headers: {
+    //     'Content-Type': 'application/json',
+    //     'Authorization': `Bearer ${supabaseServiceKey}`,
+    //   },
+    //   body: JSON.stringify({ trigger: 'upscale' }),
+    // }).catch(error => {
+    //   console.error('[processUpscaleJob] Error triggering processing:', error);
+    // });
+    
+    // Throw special error to keep job in processing status
+    throw new Error('WEBHOOK_MODE_ACTIVE');
   }
   
   // ========================================================================
@@ -3933,7 +4049,11 @@ async function processUpscaleJob(
   throw new Error("WEBHOOK_MODE_ACTIVE");
 }
 
-// Process QA job - check all generated images for quality issues
+// ========================================================================
+// NEW SIMPLE ARCHITECTURE: 1 job per QA check
+// ========================================================================
+const QA_MAX_CONCURRENT = 5; // Gemini rate limits
+
 async function processQAJob(
   jobId: string,
   projectId: string,
@@ -3942,7 +4062,7 @@ async function processQAJob(
   authHeader: string,
   adminClient: any
 ) {
-  console.log(`[processQAJob] Starting QA for project ${projectId}`);
+  console.log(`[processQAJob] Starting QA for project ${projectId} (1 job per QA architecture)`);
 
   // Get project data
   const { data: project } = await adminClient
@@ -3955,19 +4075,22 @@ async function processQAJob(
 
   const prompts = (project.prompts as any[]) || [];
   const qaPrompt = metadata.qaPrompt || null;
-  console.log(`[processQAJob] Using ${qaPrompt ? 'custom' : 'default'} QA prompt`);
-  console.log('[processQAJob] qaPrompt length:', qaPrompt?.length || 0);
-  console.log('[processQAJob] qaPrompt preview:', qaPrompt?.substring(0, 200) || 'none');
-  console.log('[processQAJob] qaPrompt contains "SYMBOLES ICONOGRAPHIQUES":', qaPrompt?.includes('SYMBOLES ICONOGRAPHIQUES'));
   
-  // Filter images that need QA
+  // Filter images that need QA (have image but not yet QA checked)
   const imagesToCheck = prompts
     .map((prompt: any, index: number) => ({ prompt, index }))
-    .filter(({ prompt }: any) => prompt && prompt.imageUrl && typeof prompt.imageUrl === 'string' && prompt.imageUrl.trim() !== '');
+    .filter(({ prompt }: any) => 
+      prompt && 
+      prompt.imageUrl && 
+      typeof prompt.imageUrl === 'string' && 
+      prompt.imageUrl.trim() !== '' &&
+      !prompt.qa_checked // Skip already checked
+    );
 
-  console.log(`[processQAJob] Found ${imagesToCheck.length} images to check`);
+  const totalQA = imagesToCheck.length;
+  console.log(`[processQAJob] Found ${totalQA} images to QA check`);
 
-  if (imagesToCheck.length === 0) {
+  if (totalQA === 0) {
     console.log("[processQAJob] No images to check");
     await adminClient
       .from('generation_jobs')
@@ -3981,223 +4104,366 @@ async function processQAJob(
     return;
   }
 
-  // Update job total
-  await adminClient
-    .from('generation_jobs')
-    .update({ total: imagesToCheck.length })
-    .eq('id', jobId);
-
-  let okCount = 0;
-  let rejectCount = 0;
-  let errorCount = 0;
-  const updatedPrompts = [...prompts];
-
-  // Process in chunks of 100 with 2s delay between chunks (reduced to avoid Supabase 503 errors)
-  const CHUNK_SIZE = 100;
-  const chunks: any[][] = [];
-  for (let i = 0; i < imagesToCheck.length; i += CHUNK_SIZE) {
-    chunks.push(imagesToCheck.slice(i, i + CHUNK_SIZE));
-  }
-
-  for (let chunkIdx = 0; chunkIdx < chunks.length; chunkIdx++) {
-    const chunk = chunks[chunkIdx];
-    console.log(`[processQAJob] Processing chunk ${chunkIdx + 1}/${chunks.length} (${chunk.length} images)`);
-    
-    // Log complete QA prompt once per chunk (for debugging)
-    if (chunkIdx === 0) {
-      console.log(`[processQAJob] ========== COMPLETE QA PROMPT (shown once) ==========`);
-      console.log(qaPrompt || 'Using default QA prompt');
-      console.log(`[processQAJob] ========================================================`);
-    }
-
-    // Process chunk in parallel
-    const qaPromises = chunk.map(async ({ prompt, index }: any) => {
-      const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-      const maxRetries = 3;
-      
-      // Retry logic for 503 errors
-      for (let attempt = 0; attempt < maxRetries; attempt++) {
-        try {
-          const response = await fetch(`${supabaseUrl}/functions/v1/qa-image-gemini`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': authHeader
-            },
-            body: JSON.stringify({
-              imageUrl: prompt.imageUrl,
-              userId: userId,
-              qaPrompt: qaPrompt, // Pass custom QA prompt if available
-              sourcePrompt: prompt.prompt || '' // Pass the original prompt that generated the image
-            })
-          });
-
-          // Retry on 503 errors
-          if (response.status === 503 && attempt < maxRetries - 1) {
-            const delay = Math.pow(2, attempt) * 1000; // Exponential backoff: 1s, 2s, 4s
-            console.log(`[processQAJob] Scene ${index + 1}: 503 error, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})`);
-            await new Promise(resolve => setTimeout(resolve, delay));
-            continue;
-          }
-
-          if (!response.ok) {
-            const errorText = await response.text();
-            console.error(`[processQAJob] QA error for scene ${index + 1}: HTTP ${response.status}`, errorText);
-            return { index, status: 'ERROR', error: errorText };
-          }
-
-          const qaResult = await response.json();
-          
-          // Check if the response contains an error (500 errors return JSON with error field)
-          if (qaResult.error || qaResult.status === 'ERROR') {
-            console.error(`[processQAJob] QA error for scene ${index + 1}:`, qaResult.error || qaResult.explication);
-            return { index, status: 'ERROR', error: qaResult.error };
-          }
-          
-          console.log(`[processQAJob] Scene ${index + 1}: ${qaResult.status}`);
-
-          return {
-            index,
-            status: qaResult.status,
-            anomalie: qaResult.anomalie_detectee,
-            explication: qaResult.explication,
-            promptRegeneration: qaResult.prompt_regeneration
-          };
-
-        } catch (error) {
-          // If last attempt, return error
-          if (attempt === maxRetries - 1) {
-            console.error(`[processQAJob] Exception for scene ${index + 1} after ${maxRetries} attempts:`, error);
-            return { index, status: 'ERROR' };
-          }
-          // Otherwise retry
-          const delay = Math.pow(2, attempt) * 1000;
-          console.log(`[processQAJob] Scene ${index + 1}: exception, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})`);
-          await new Promise(resolve => setTimeout(resolve, delay));
-        }
-      }
-      
-      // Should never reach here
-      return { index, status: 'ERROR' };
-    });
-
-    const chunkResults = await Promise.all(qaPromises);
-
-    // Update prompts with QA results
-    chunkResults.forEach((result: any) => {
-      if (result.status === 'OK') {
-        okCount++;
-        updatedPrompts[result.index] = {
-          ...updatedPrompts[result.index],
-          qa_checked: true,
-          qa_status: 'OK'
-        };
-      } else if (result.status === 'REJECT') {
-        rejectCount++;
-        updatedPrompts[result.index] = {
-          ...updatedPrompts[result.index],
-          qa_checked: true,
-          qa_status: 'REJECT',
-          qa_explication: result.explication,
-          qa_regeneration_prompt: result.promptRegeneration || null
-        };
-      } else {
-        // Error during QA - mark as OK to not block pipeline
-        errorCount++;
-        updatedPrompts[result.index] = {
-          ...updatedPrompts[result.index],
-          qa_checked: true,
-          qa_status: 'OK', // Assume OK on QA error to not block
-          qa_explication: 'QA check failed - assumed OK'
-        };
-      }
-    });
-
-    // Update progress
-    const processed = (chunkIdx + 1) * CHUNK_SIZE;
-    const progress = Math.min(processed, imagesToCheck.length);
-    await adminClient
-      .from('generation_jobs')
-      .update({ progress })
-      .eq('id', jobId);
-
-    // Delay between chunks (except after last chunk)
-    if (chunkIdx < chunks.length - 1) {
-      await new Promise(resolve => setTimeout(resolve, 2000));
-    }
-  }
-
-  // Save updated prompts to database
-  const { error: updateError } = await adminClient
-    .from('projects')
-    .update({ prompts: updatedPrompts })
-    .eq('id', projectId);
-
-  if (updateError) {
-    console.error('[processQAJob] Error saving QA results:', updateError);
-    throw updateError;
-  }
-
-  console.log(`[processQAJob] QA complete: ${okCount} OK, ${rejectCount} rejected, ${errorCount} errors`);
-
-  // Determine status and error message
-  const hasErrors = errorCount > 0;
-  const errorMessage = hasErrors 
-    ? `${okCount} OK, ${rejectCount} rejetées, ${errorCount} erreurs (vérifiez votre clé API Gemini)`
-    : null;
-
-  // Mark job as completed
+  // Update this job as parent
   await adminClient
     .from('generation_jobs')
     .update({ 
-      status: 'completed',
-      progress: imagesToCheck.length,
-      error_message: errorMessage,
-      completed_at: new Date().toISOString()
+      total: totalQA,
+      metadata: { ...metadata, isParentJob: true, childJobsCount: totalQA }
     })
     .eq('id', jobId);
 
-  // Chain to next job if semi-auto mode
-  const semiAutoMode = metadata.semiAutoMode === true;
-  if (semiAutoMode) {
-    console.log(`[processQAJob] Semi-auto mode enabled, checking for rejected images to regenerate`);
+  // Create individual single_qa jobs
+  const individualJobs = imagesToCheck.map(({ prompt, index }: any) => ({
+    project_id: projectId,
+    user_id: userId,
+    job_type: 'single_qa',
+    status: 'pending',
+    progress: 0,
+    total: 1,
+    parent_job_id: jobId,
+    scene_index: index,
+    metadata: {
+      imageUrl: prompt.imageUrl,
+      sourcePrompt: prompt.prompt || '',
+      qaPrompt: qaPrompt,
+      semiAutoMode: metadata.semiAutoMode || false,
+      thumbnailPresetId: metadata.thumbnailPresetId || null
+    }
+  }));
+
+  const { data: createdJobs, error: insertError } = await adminClient
+    .from('generation_jobs')
+    .insert(individualJobs)
+    .select('id, scene_index');
+
+  if (insertError) {
+    console.error('[processQAJob] Error creating single_qa jobs:', insertError);
+    throw insertError;
+  }
+
+  console.log(`[processQAJob] Created ${createdJobs.length} single_qa jobs`);
+
+  // Check how many single_qa jobs are already processing
+  const { count: processingCount } = await adminClient
+    .from('generation_jobs')
+    .select('id', { count: 'exact', head: true })
+    .eq('status', 'processing')
+    .eq('job_type', 'single_qa');
+
+  const availableSlots = Math.max(0, QA_MAX_CONCURRENT - (processingCount || 0));
+  const jobsToStart = createdJobs.slice(0, availableSlots);
+
+  console.log(`[processQAJob] Starting ${jobsToStart.length} single_qa jobs (${processingCount || 0} already processing, max ${QA_MAX_CONCURRENT})`);
+
+  // Start the initial batch
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+  
+  for (const job of jobsToStart) {
+    // Mark as processing
+    await adminClient
+      .from('generation_jobs')
+      .update({ status: 'processing' })
+      .eq('id', job.id);
     
-    if (rejectCount > 0) {
-      console.log(`[processQAJob] Found ${rejectCount} rejected images, chaining to qa_regen`);
-      
-      // Create qa_regen job
-      const { data: regenJob, error: regenJobError } = await adminClient
-        .from('generation_jobs')
-        .insert({
-          project_id: projectId,
-          user_id: userId,
-          job_type: 'qa_regen',
-          status: 'pending',
-          progress: 0,
-          total: rejectCount,
-          metadata: {
-            semiAutoMode: true,
-            thumbnailPresetId: metadata.thumbnailPresetId || null,
-            qaPrompt: metadata.qaPrompt || null
-          }
+    // Fire and forget - call start-generation-job for single_qa
+    setTimeout(() => {
+      fetch(`${supabaseUrl}/functions/v1/start-generation-job`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabaseServiceKey}`
+        },
+        body: JSON.stringify({
+          jobId: job.id,
+          projectId,
+          userId,
+          jobType: 'single_qa'
         })
-        .select()
-        .single();
+      }).catch(err => console.error(`[processQAJob] Error starting single_qa job ${job.id}:`, err));
+    }, 0);
+  }
+
+  // Keep parent job in 'processing' - webhook will complete it
+  console.log(`[processQAJob] Parent job ${jobId} stays in processing, single_qa jobs will complete it`);
+  throw new Error('PARENT_JOB_ACTIVE');
+}
+
+// Process a single QA check
+async function processSingleQAJob(
+  jobId: string,
+  projectId: string,
+  userId: string,
+  metadata: Record<string, any>,
+  authHeader: string,
+  adminClient: any
+) {
+  const sceneIndex = metadata.scene_index ?? (await adminClient.from('generation_jobs').select('scene_index').eq('id', jobId).single()).data?.scene_index;
+  
+  console.log(`[processSingleQAJob] Processing QA for scene ${sceneIndex} (job ${jobId})`);
+  
+  const imageUrl = metadata.imageUrl;
+  const sourcePrompt = metadata.sourcePrompt || '';
+  const qaPrompt = metadata.qaPrompt || null;
+  
+  if (!imageUrl) {
+    console.error(`[processSingleQAJob] No imageUrl for job ${jobId}`);
+    await markSingleQACompleted(adminClient, jobId, sceneIndex, 'ERROR', null);
+    return;
+  }
+  
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  const maxRetries = 3;
+  let qaResult: any = null;
+  
+  // Retry logic for API errors
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      const response = await fetch(`${supabaseUrl}/functions/v1/qa-image-gemini`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader
+        },
+        body: JSON.stringify({
+          imageUrl,
+          userId,
+          qaPrompt,
+          sourcePrompt
+        })
+      });
+
+      if (response.status === 503 && attempt < maxRetries - 1) {
+        const delay = Math.pow(2, attempt) * 1000;
+        console.log(`[processSingleQAJob] Scene ${sceneIndex + 1}: 503 error, retrying in ${delay}ms`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        continue;
+      }
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`[processSingleQAJob] QA error for scene ${sceneIndex + 1}: HTTP ${response.status}`, errorText);
+        if (attempt < maxRetries - 1) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          continue;
+        }
+        qaResult = { status: 'ERROR', error: errorText };
+        break;
+      }
+
+      qaResult = await response.json();
       
-      if (regenJobError) {
-        console.error(`[processQAJob] Error creating qa_regen job:`, regenJobError);
-      } else {
-        console.log(`[processQAJob] Created qa_regen job ${regenJob.id}`);
+      if (qaResult.error || qaResult.status === 'ERROR') {
+        console.error(`[processSingleQAJob] QA error for scene ${sceneIndex + 1}:`, qaResult.error);
+        if (attempt < maxRetries - 1) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          continue;
+        }
+      }
+      
+      break; // Success
+    } catch (error) {
+      console.error(`[processSingleQAJob] Exception for scene ${sceneIndex + 1}:`, error);
+      if (attempt < maxRetries - 1) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        continue;
+      }
+      qaResult = { status: 'ERROR' };
+    }
+  }
+  
+  if (!qaResult) {
+    qaResult = { status: 'ERROR' };
+  }
+  
+  console.log(`[processSingleQAJob] Scene ${sceneIndex + 1}: ${qaResult.status}`);
+  
+  // Update the prompt with QA result
+  await updatePromptWithQAResult(adminClient, projectId, sceneIndex, qaResult);
+  
+  // Mark this job as completed and handle continuation
+  await markSingleQACompleted(adminClient, jobId, sceneIndex, qaResult.status, qaResult);
+}
+
+// Update the prompt in the project with QA result
+async function updatePromptWithQAResult(
+  adminClient: any,
+  projectId: string,
+  sceneIndex: number,
+  qaResult: any
+) {
+  const { data: project } = await adminClient
+    .from('projects')
+    .select('prompts')
+    .eq('id', projectId)
+    .single();
+  
+  if (!project) return;
+  
+  const prompts = [...(project.prompts as any[])];
+  
+  if (qaResult.status === 'OK') {
+    prompts[sceneIndex] = {
+      ...prompts[sceneIndex],
+      qa_checked: true,
+      qa_status: 'OK'
+    };
+  } else if (qaResult.status === 'REJECT') {
+    prompts[sceneIndex] = {
+      ...prompts[sceneIndex],
+      qa_checked: true,
+      qa_status: 'REJECT',
+      qa_explication: qaResult.explication,
+      qa_regeneration_prompt: qaResult.prompt_regeneration || null
+    };
+  } else {
+    // Error - mark as OK to not block pipeline
+    prompts[sceneIndex] = {
+      ...prompts[sceneIndex],
+      qa_checked: true,
+      qa_status: 'OK',
+      qa_explication: 'QA check failed - assumed OK'
+    };
+  }
+  
+  await adminClient
+    .from('projects')
+    .update({ prompts })
+    .eq('id', projectId);
+}
+
+// Mark single_qa job as completed and trigger next
+async function markSingleQACompleted(
+  adminClient: any,
+  jobId: string,
+  sceneIndex: number,
+  status: string,
+  qaResult: any
+) {
+  // Get job info
+  const { data: job } = await adminClient
+    .from('generation_jobs')
+    .select('parent_job_id, project_id, user_id, metadata')
+    .eq('id', jobId)
+    .single();
+  
+  // Mark this job as completed
+  await adminClient
+    .from('generation_jobs')
+    .update({
+      status: 'completed',
+      progress: 1,
+      completed_at: new Date().toISOString()
+    })
+    .eq('id', jobId);
+  
+  console.log(`[markSingleQACompleted] Job ${jobId} (scene ${sceneIndex}) completed with status: ${status}`);
+  
+  if (!job?.parent_job_id) return;
+  
+  // Update parent job progress
+  await updateQAParentProgress(adminClient, job.parent_job_id, job.project_id, job.user_id, job.metadata);
+  
+  // Launch next pending single_qa job
+  await launchNextPendingQAJob(adminClient);
+}
+
+// Update QA parent job progress
+async function updateQAParentProgress(
+  adminClient: any,
+  parentJobId: string,
+  projectId: string,
+  userId: string,
+  childMetadata: any
+) {
+  // Count completed child jobs
+  const { count: completedCount } = await adminClient
+    .from('generation_jobs')
+    .select('id', { count: 'exact', head: true })
+    .eq('parent_job_id', parentJobId)
+    .eq('status', 'completed');
+  
+  // Get parent job total
+  const { data: parentJob } = await adminClient
+    .from('generation_jobs')
+    .select('total, metadata')
+    .eq('id', parentJobId)
+    .single();
+  
+  const total = parentJob?.total || 0;
+  const progress = completedCount || 0;
+  
+  console.log(`[updateQAParentProgress] Parent ${parentJobId}: ${progress}/${total} completed`);
+  
+  // Update parent progress
+  await adminClient
+    .from('generation_jobs')
+    .update({ progress })
+    .eq('id', parentJobId);
+  
+  // Check if all done
+  if (progress >= total) {
+    console.log(`[updateQAParentProgress] All QA checks complete for parent ${parentJobId}`);
+    
+    // Count rejected images
+    const { data: project } = await adminClient
+      .from('projects')
+      .select('prompts')
+      .eq('id', projectId)
+      .single();
+    
+    const prompts = (project?.prompts as any[]) || [];
+    const rejectCount = prompts.filter((p: any) => p?.qa_status === 'REJECT').length;
+    const okCount = prompts.filter((p: any) => p?.qa_status === 'OK').length;
+    const errorCount = prompts.filter((p: any) => p?.qa_checked && !p?.qa_status).length;
+    
+    const hasErrors = errorCount > 0;
+    const errorMessage = hasErrors 
+      ? `${okCount} OK, ${rejectCount} rejetées, ${errorCount} erreurs`
+      : null;
+    
+    // Mark parent as completed
+    await adminClient
+      .from('generation_jobs')
+      .update({
+        status: 'completed',
+        error_message: errorMessage,
+        completed_at: new Date().toISOString()
+      })
+      .eq('id', parentJobId);
+    
+    // Chain to next job if semi-auto mode
+    const semiAutoMode = parentJob?.metadata?.semiAutoMode === true;
+    if (semiAutoMode) {
+      if (rejectCount > 0) {
+        console.log(`[updateQAParentProgress] Found ${rejectCount} rejected images, creating qa_regen job`);
         
-        // Start qa_regen job
-        EdgeRuntime.waitUntil((async () => {
+        // Create qa_regen job
+        const { data: regenJob, error: regenJobError } = await adminClient
+          .from('generation_jobs')
+          .insert({
+            project_id: projectId,
+            user_id: userId,
+            job_type: 'qa_regen',
+            status: 'pending',
+            progress: 0,
+            total: rejectCount,
+            metadata: {
+              semiAutoMode: true,
+              thumbnailPresetId: parentJob?.metadata?.thumbnailPresetId || null,
+              qaPrompt: parentJob?.metadata?.qaPrompt || null
+            }
+          })
+          .select()
+          .single();
+        
+        if (!regenJobError && regenJob) {
           const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
           const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
           
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          
-          try {
-            const response = await fetch(`${supabaseUrl}/functions/v1/start-generation-job`, {
+          setTimeout(() => {
+            fetch(`${supabaseUrl}/functions/v1/start-generation-job`, {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
@@ -4208,28 +4474,100 @@ async function processQAJob(
                 projectId,
                 userId,
                 jobType: 'qa_regen',
-                metadata: {
-                  semiAutoMode: true,
-                  thumbnailPresetId: metadata.thumbnailPresetId || null
-                }
+                metadata: { semiAutoMode: true }
               })
-            });
-            
-            if (response.ok) {
-              console.log(`[processQAJob] qa_regen job ${regenJob.id} started successfully`);
-            } else {
-              console.error(`[processQAJob] Failed to start qa_regen job: ${await response.text()}`);
-            }
-          } catch (error) {
-            console.error('[processQAJob] Error starting qa_regen job:', error);
-          }
-        })());
+            }).catch(err => console.error('[updateQAParentProgress] Error starting qa_regen:', err));
+          }, 100);
+        }
+      } else {
+        console.log(`[updateQAParentProgress] No rejected images, chaining to upscale`);
+        const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+        const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+        
+        setTimeout(() => {
+          fetch(`${supabaseUrl}/functions/v1/replicate-webhook`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${serviceRoleKey}`
+            },
+            body: JSON.stringify({
+              type: 'chain_next_job',
+              projectId,
+              userId,
+              completedJobType: 'qa'
+            })
+          }).catch(err => console.error('[updateQAParentProgress] Error chaining:', err));
+        }, 100);
       }
-    } else {
-      console.log(`[processQAJob] No rejected images, chainNextJob will handle upscale`);
-      // NOTE: chainNextJob will be called after this function returns and will handle chaining to upscale
     }
   }
+}
+
+// Launch next pending single_qa job
+async function launchNextPendingQAJob(adminClient: any) {
+  // Check current processing count
+  const { count: processingCount } = await adminClient
+    .from('generation_jobs')
+    .select('id', { count: 'exact', head: true })
+    .eq('status', 'processing')
+    .eq('job_type', 'single_qa');
+  
+  if ((processingCount || 0) >= QA_MAX_CONCURRENT) {
+    console.log(`[launchNextPendingQAJob] No capacity (${processingCount}/${QA_MAX_CONCURRENT} processing)`);
+    return;
+  }
+  
+  // Find next pending single_qa job
+  const { data: pendingJobs } = await adminClient
+    .from('generation_jobs')
+    .select('id, project_id, user_id, scene_index, metadata')
+    .eq('status', 'pending')
+    .eq('job_type', 'single_qa')
+    .order('created_at', { ascending: true })
+    .limit(1);
+  
+  if (!pendingJobs || pendingJobs.length === 0) {
+    console.log('[launchNextPendingQAJob] No pending single_qa jobs');
+    return;
+  }
+  
+  const jobToClaim = pendingJobs[0];
+  
+  // Atomic claim
+  const { data: claimed, error: claimError } = await adminClient
+    .from('generation_jobs')
+    .update({ status: 'processing' })
+    .eq('id', jobToClaim.id)
+    .eq('status', 'pending')
+    .select('id')
+    .single();
+  
+  if (claimError || !claimed) {
+    console.log(`[launchNextPendingQAJob] Job ${jobToClaim.id} already claimed`);
+    return;
+  }
+  
+  console.log(`[launchNextPendingQAJob] Launching single_qa job ${jobToClaim.id} for scene ${jobToClaim.scene_index}`);
+  
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+  
+  setTimeout(() => {
+    fetch(`${supabaseUrl}/functions/v1/start-generation-job`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${serviceRoleKey}`
+      },
+      body: JSON.stringify({
+        jobId: jobToClaim.id,
+        projectId: jobToClaim.project_id,
+        userId: jobToClaim.user_id,
+        jobType: 'single_qa'
+      })
+    }).catch(err => console.error(`[launchNextPendingQAJob] Error starting job ${jobToClaim.id}:`, err));
+  }, 0);
 }
 
 async function processQARegenJob(

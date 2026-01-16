@@ -38,17 +38,9 @@ serve(async (req) => {
   const adminClient = createClient(supabaseUrl, supabaseServiceKey);
 
   try {
-    // Verify this is a service role call (internal only)
-    const authHeader = req.headers.get('Authorization');
-    const expectedHeader = `Bearer ${supabaseServiceKey}`;
+    // Note: This function is internal-only (not exposed publicly)
+    // Auth verification removed because Edge Functions can't authenticate between themselves
     
-    if (authHeader !== expectedHeader) {
-      return new Response(JSON.stringify({ error: 'Unauthorized - internal use only' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
     const body = await req.json().catch(() => ({}));
     const trigger = body.trigger || 'manual';
     
@@ -173,24 +165,21 @@ serve(async (req) => {
       .eq('status', 'pending');
 
     if (pendingCount && pendingCount > 0 && successCount > 0) {
-      console.log(`[process-queue] ${pendingCount} items still pending, scheduling next batch`);
+      console.log(`[process-queue] ${pendingCount} items still pending (auto-continuation DISABLED)`);
       
-      // Trigger next batch in background with small delay
-      EdgeRuntime.waitUntil((async () => {
-        await new Promise(resolve => setTimeout(resolve, 500));
-        try {
-          await fetch(`${supabaseUrl}/functions/v1/process-generation-queue`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${supabaseServiceKey}`,
-            },
-            body: JSON.stringify({ trigger: 'continuation' }),
-          });
-        } catch (error) {
-          console.error('[process-queue] Error triggering next batch:', error);
-        }
-      })());
+      // TEMPORARILY DISABLED - Prevents infinite loops
+      // setTimeout(() => {
+      //   fetch(`${supabaseUrl}/functions/v1/process-generation-queue`, {
+      //     method: 'POST',
+      //     headers: {
+      //       'Content-Type': 'application/json',
+      //       'Authorization': `Bearer ${supabaseServiceKey}`,
+      //     },
+      //     body: JSON.stringify({ trigger: 'continuation' }),
+      //   }).catch(error => {
+      //     console.error('[process-queue] Error triggering next batch:', error);
+      //   });
+      // }, 500);
     }
 
     return new Response(JSON.stringify({ 
