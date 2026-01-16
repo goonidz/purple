@@ -115,11 +115,6 @@ export function useGenerationJobs({ projectId, onJobComplete, onJobFailed, autoR
         if (error) {
           console.error('Auto-retry failed:', error);
         }
-      } else {
-        console.log('All images generated successfully!');
-        toast.success(`Toutes les images ont été générées ! (${retryCount > 0 ? `${retryCount + 1} tentatives` : '1 tentative'})`);
-        setRetryCount(0); // Reset retry count on success
-      }
     } catch (error) {
       console.error('Error checking for missing images:', error);
     }
