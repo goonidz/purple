@@ -492,31 +492,20 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
   }
 
   if (job.job_type === 'single_upscale') {
-    // Check if the prediction actually succeeded or failed
-    const { data: upscalePrediction } = await adminClient
-      .from('pending_predictions')
-      .select('status')
-      .eq('job_id', jobId)
-      .single();
-    
-    const isSuccess = upscalePrediction?.status === 'completed';
-    
-    // Mark job with correct status
+    // Mark completed
     await adminClient
       .from('generation_jobs')
       .update({
-        status: isSuccess ? 'completed' : 'failed',
-        progress: isSuccess ? 1 : 0,
-        error_message: isSuccess ? null : 'Upscale prediction failed',
+        status: 'completed',
+        progress: 1,
         completed_at: new Date().toISOString()
       })
       .eq('id', jobId);
     
-    if (isSuccess && job.parent_job_id) {
+    if (job.parent_job_id) {
       await updateParentJobProgressForScene(adminClient, job.parent_job_id, job.scene_index);
     }
     
-    // ALWAYS launch next pending upscale, even on failure - don't break the chain!
     await launchNextPendingUpscaleJob(adminClient);
     return;
   }
