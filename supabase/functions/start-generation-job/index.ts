@@ -1933,9 +1933,13 @@ async function processImagesJob(
         width: imageWidth,
         height: imageHeight,
         styleRefs: styleReferenceUrls,
+        loraUrl: project.lora_url || null,
+        loraSteps: project.lora_steps || 10,
         useWebhook: true,
       },
     }));
+    
+    console.log(`[processImagesJob] Jobs metadata includes loraUrl: ${project.lora_url || 'NONE'}`);
     
     const { data: createdJobs, error: jobsError } = await adminClient
       .from('generation_jobs')
@@ -2556,25 +2560,34 @@ async function startSingleImageJob(
   
   // Call generate-image-seedream
   try {
+    const requestBody: any = {
+      prompt: metadata.prompt,
+      model: metadata.model,
+      width: metadata.width,
+      height: metadata.height,
+      image_urls: metadata.styleRefs || [],
+      async: true,
+      webhook_url: `${supabaseUrl}/functions/v1/replicate-webhook`,
+      userId: user_id,
+      projectId: project_id,
+      sceneIndex: scene_index,
+      jobId: jobId,
+    };
+    
+    // Add LoRA from metadata if present
+    if (metadata.loraUrl) {
+      requestBody.lora_url = metadata.loraUrl;
+      requestBody.lora_steps = metadata.loraSteps || 10;
+      console.log(`[startSingleImageJob] Adding LoRA to request: ${metadata.loraUrl}, steps: ${requestBody.lora_steps}`);
+    }
+    
     const response = await fetch(`${supabaseUrl}/functions/v1/generate-image-seedream`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${supabaseServiceKey}`,
       },
-      body: JSON.stringify({
-        prompt: metadata.prompt,
-        model: metadata.model,
-        width: metadata.width,
-        height: metadata.height,
-        image_urls: metadata.styleRefs || [],
-        async: true,
-        webhook_url: `${supabaseUrl}/functions/v1/replicate-webhook`,
-        userId: user_id,
-        projectId: project_id,
-        sceneIndex: scene_index,
-        jobId: jobId,
-      }),
+      body: JSON.stringify(requestBody),
     });
     
     if (!response.ok) {
@@ -5195,6 +5208,8 @@ async function createSingleImageRegenJob(
         width: project.image_width || 1440,
         height: project.image_height || 816,
         styleRefs: styleReferenceUrls,
+        loraUrl: loraUrl || null,
+        loraSteps: loraSteps || 10,
         is_regen: true,
         original_prompt: originalPrompt,
         qa_rejection_reason: qaResult?.explication || 'QA rejection',
@@ -5205,7 +5220,7 @@ async function createSingleImageRegenJob(
   if (insertError) {
     console.error(`[createSingleImageRegenJob] Error creating regen job:`, insertError);
   } else {
-    console.log(`[createSingleImageRegenJob] Created regen job for scene ${sceneIndex} with is_regen=true and settings: ${project.image_model} ${project.image_width}x${project.image_height}`);
+    console.log(`[createSingleImageRegenJob] Created regen job for scene ${sceneIndex} with is_regen=true, loraUrl: ${loraUrl || 'NONE'}`);
   }
 }
 
