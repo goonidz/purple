@@ -4195,20 +4195,33 @@ async function processSingleQAJob(
   jobId: string,
   projectId: string,
   userId: string,
-  metadata: Record<string, any>,
+  _metadata: Record<string, any>,
   authHeader: string,
   adminClient: any
 ) {
-  const sceneIndex = metadata.scene_index ?? (await adminClient.from('generation_jobs').select('scene_index').eq('id', jobId).single()).data?.scene_index;
+  // Get job data from DB (metadata is stored in the job, not passed via HTTP)
+  const { data: job, error: jobError } = await adminClient
+    .from('generation_jobs')
+    .select('scene_index, metadata')
+    .eq('id', jobId)
+    .single();
+  
+  if (jobError || !job) {
+    console.error(`[processSingleQAJob] Job ${jobId} not found:`, jobError);
+    return;
+  }
+  
+  const sceneIndex = job.scene_index;
+  const jobMetadata = job.metadata || {};
   
   console.log(`[processSingleQAJob] Processing QA for scene ${sceneIndex} (job ${jobId})`);
   
-  const imageUrl = metadata.imageUrl;
-  const sourcePrompt = metadata.sourcePrompt || '';
-  const qaPrompt = metadata.qaPrompt || null;
+  const imageUrl = jobMetadata.imageUrl;
+  const sourcePrompt = jobMetadata.sourcePrompt || '';
+  const qaPrompt = jobMetadata.qaPrompt || null;
   
   if (!imageUrl) {
-    console.error(`[processSingleQAJob] No imageUrl for job ${jobId}`);
+    console.error(`[processSingleQAJob] No imageUrl for job ${jobId}, metadata:`, jobMetadata);
     await markSingleQACompleted(adminClient, jobId, sceneIndex, 'ERROR', null);
     return;
   }

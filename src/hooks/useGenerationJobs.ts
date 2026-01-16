@@ -122,11 +122,14 @@ export function useGenerationJobs({ projectId, onJobComplete, onJobFailed, autoR
           .select('*')
           .eq('project_id', projectId)
           .in('status', ['pending', 'processing'])
-          .not('job_type', 'in', '("single_image","single_qa")') // Hide child jobs
           .order('created_at', { ascending: false });
 
         if (error) throw error;
-        setActiveJobs((data || []) as unknown as GenerationJob[]);
+        // Filter out child jobs (single_image, single_qa) client-side
+        const filteredJobs = (data || []).filter(
+          (job: any) => job.job_type !== 'single_image' && job.job_type !== 'single_qa'
+        );
+        setActiveJobs(filteredJobs as unknown as GenerationJob[]);
       } catch (error) {
         console.error('Error fetching initial active jobs:', error);
       }
@@ -327,13 +330,15 @@ export function useGenerationJobs({ projectId, onJobComplete, onJobFailed, autoR
         .select('*')
         .eq('project_id', projectId)
         .in('status', ['pending', 'processing'])
-        .not('job_type', 'in', '("single_image","single_qa")') // Hide child jobs
         .order('created_at', { ascending: false });
 
       if (error) throw error;
 
-      // Type cast to handle the enum types
-      setActiveJobs((data || []) as unknown as GenerationJob[]);
+      // Filter out child jobs (single_image, single_qa) client-side
+      const filteredJobs = (data || []).filter(
+        (job: any) => job.job_type !== 'single_image' && job.job_type !== 'single_qa'
+      );
+      setActiveJobs(filteredJobs as unknown as GenerationJob[]);
       
       // Reset retry count when manually fetching jobs
       setRetryCount(0);
