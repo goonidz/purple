@@ -21,6 +21,27 @@ serve(async (req) => {
   try {
     const payload = await req.json();
     
+    // ========================================================================
+    // ATOMIC PIPELINE: Handle special message types
+    // ========================================================================
+    if (payload.type === 'launch_next_image_job') {
+      console.log('[webhook] Received launch_next_image_job trigger');
+      await launchNextPendingJob(adminClient, supabaseUrl, supabaseServiceKey);
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    
+    if (payload.type === 'chain_next_job') {
+      console.log('[webhook] Received chain_next_job trigger:', payload.completedJobType);
+      await chainNextJobFromWebhook(adminClient, payload.projectId, payload.userId, payload.completedJobType, {});
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    
     console.log("Webhook received:", {
       id: payload.id,
       status: payload.status,
@@ -407,7 +428,8 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
   }
   
   // ========================================================================
-  // NEW SIMPLE ARCHITECTURE: Handle single_image jobs
+  // ATOMIC PIPELINE: Handle single_image jobs
+  // Flow: single_image -> single_qa -> single_upscale
   // ========================================================================
   if (job.job_type === 'single_image') {
     console.log(`[checkJobCompletion] Handling single_image job ${jobId} for scene ${job.scene_index}, current status: ${job.status}`);
@@ -430,13 +452,51 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
       }
     }
     
-    // Update parent job progress
+    // ATOMIC PIPELINE: Create QA job immediately for this scene
     if (job.parent_job_id) {
-      await updateParentJobProgress(adminClient, job.parent_job_id);
+      const isRegen = job.metadata?.is_regen === true;
+      await createSingleQAJob(adminClient, job.project_id, job.user_id, job.scene_index, job.parent_job_id, isRegen);
+      await launchNextPendingQAJob(adminClient);
     }
     
-    // Launch next pending job
+    // Launch next pending image job
     await launchNextPendingJob(adminClient, Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
+    
+    return;
+  }
+
+  // ========================================================================
+  // ATOMIC PIPELINE: Handle single_upscale jobs
+  // This is the final step: single_image -> single_qa -> single_upscale
+  // ========================================================================
+  if (job.job_type === 'single_upscale') {
+    console.log(`[checkJobCompletion] Handling single_upscale job ${jobId} for scene ${job.scene_index}, current status: ${job.status}`);
+    
+    // Mark this job as completed (only if not already completed)
+    if (job.status !== 'completed') {
+      const { error: updateError } = await adminClient
+        .from('generation_jobs')
+        .update({
+          status: 'completed',
+          progress: 1,
+          completed_at: new Date().toISOString()
+        })
+        .eq('id', jobId);
+      
+      if (updateError) {
+        console.error(`[checkJobCompletion] Error marking upscale job ${jobId} as completed:`, updateError);
+      } else {
+        console.log(`[checkJobCompletion] Upscale job ${jobId} marked as completed`);
+      }
+    }
+    
+    // ATOMIC PIPELINE: Update parent progress (scene is now fully complete)
+    if (job.parent_job_id) {
+      await updateParentJobProgressForScene(adminClient, job.parent_job_id, job.scene_index);
+    }
+    
+    // Launch next pending upscale job
+    await launchNextPendingUpscaleJob(adminClient);
     
     return;
   }
@@ -2027,5 +2087,388 @@ async function launchNextPendingJob(
         completed_at: new Date().toISOString()
       })
       .eq('id', claimedJob.id);
+  }
+}
+
+// ========================================================================
+// ATOMIC PIPELINE: Create QA job after image completes
+// ========================================================================
+async function createSingleQAJob(
+  adminClient: any,
+  projectId: string,
+  userId: string,
+  sceneIndex: number,
+  parentJobId: string,
+  isRegen: boolean = false
+): Promise<void> {
+  console.log(`[createSingleQAJob] Creating QA job for scene ${sceneIndex}, isRegen: ${isRegen}`);
+  
+  // Get the image URL from the project
+  const { data: project } = await adminClient
+    .from('projects')
+    .select('prompts, preset_id')
+    .eq('id', projectId)
+    .single();
+  
+  if (!project) {
+    console.error(`[createSingleQAJob] Project ${projectId} not found`);
+    return;
+  }
+  
+  const prompts = (project.prompts as any[]) || [];
+  const prompt = prompts[sceneIndex];
+  
+  if (!prompt?.imageUrl) {
+    console.error(`[createSingleQAJob] No imageUrl for scene ${sceneIndex}`);
+    return;
+  }
+  
+  // Get QA prompt from preset if available
+  let qaPrompt = null;
+  if (project.preset_id) {
+    const { data: preset } = await adminClient
+      .from('presets')
+      .select('qa_prompt')
+      .eq('id', project.preset_id)
+      .single();
+    qaPrompt = preset?.qa_prompt || null;
+  }
+  
+  // Create the QA job
+  const { error: insertError } = await adminClient
+    .from('generation_jobs')
+    .insert({
+      project_id: projectId,
+      user_id: userId,
+      job_type: 'single_qa',
+      status: 'pending',
+      progress: 0,
+      total: 1,
+      scene_index: sceneIndex,
+      parent_job_id: parentJobId,
+      is_regen: isRegen,
+      metadata: {
+        imageUrl: prompt.imageUrl,
+        sourcePrompt: prompt.prompt || '',
+        qaPrompt: qaPrompt,
+        is_regen: isRegen,
+        semiAutoMode: true
+      }
+    });
+  
+  if (insertError) {
+    console.error(`[createSingleQAJob] Error creating QA job:`, insertError);
+  } else {
+    console.log(`[createSingleQAJob] Created QA job for scene ${sceneIndex}`);
+  }
+}
+
+// ========================================================================
+// ATOMIC PIPELINE: Launch next pending QA job (for replicate-webhook)
+// ========================================================================
+const QA_MAX_CONCURRENT = 100;
+
+async function launchNextPendingQAJob(adminClient: any): Promise<void> {
+  // Check current processing count
+  const { count: processingCount } = await adminClient
+    .from('generation_jobs')
+    .select('id', { count: 'exact', head: true })
+    .eq('status', 'processing')
+    .eq('job_type', 'single_qa');
+  
+  if ((processingCount || 0) >= QA_MAX_CONCURRENT) {
+    console.log(`[launchNextPendingQAJob] No capacity (${processingCount}/${QA_MAX_CONCURRENT} processing)`);
+    return;
+  }
+  
+  // Find ONE pending QA job
+  const { data: pendingJobs } = await adminClient
+    .from('generation_jobs')
+    .select('id, project_id, user_id, scene_index, metadata')
+    .eq('status', 'pending')
+    .eq('job_type', 'single_qa')
+    .order('created_at', { ascending: true })
+    .limit(1);
+  
+  if (!pendingJobs || pendingJobs.length === 0) {
+    console.log('[launchNextPendingQAJob] No pending QA jobs');
+    return;
+  }
+  
+  const jobToClaim = pendingJobs[0];
+  
+  // Atomic claim
+  const { data: claimed, error: claimError } = await adminClient
+    .from('generation_jobs')
+    .update({ status: 'processing' })
+    .eq('id', jobToClaim.id)
+    .eq('status', 'pending')
+    .select('id')
+    .single();
+  
+  if (claimError || !claimed) {
+    console.log(`[launchNextPendingQAJob] Job ${jobToClaim.id} already claimed`);
+    return;
+  }
+  
+  console.log(`[launchNextPendingQAJob] Launching QA job ${jobToClaim.id} for scene ${jobToClaim.scene_index}`);
+  
+  const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+  const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+  
+  // Fire and forget - call start-generation-job for the QA
+  setTimeout(() => {
+    fetch(`${supabaseUrl}/functions/v1/start-generation-job`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${supabaseServiceKey}`
+      },
+      body: JSON.stringify({
+        jobId: jobToClaim.id,
+        projectId: jobToClaim.project_id,
+        userId: jobToClaim.user_id,
+        jobType: 'single_qa'
+      })
+    }).catch(err => console.error(`[launchNextPendingQAJob] Error starting job ${jobToClaim.id}:`, err));
+  }, 0);
+}
+
+// ========================================================================
+// ATOMIC PIPELINE: Create upscale job after QA completes
+// ========================================================================
+async function createSingleUpscaleJob(
+  adminClient: any,
+  projectId: string,
+  userId: string,
+  sceneIndex: number,
+  parentJobId: string
+): Promise<void> {
+  console.log(`[createSingleUpscaleJob] Creating upscale job for scene ${sceneIndex}`);
+  
+  // Get the image URL from the project
+  const { data: project } = await adminClient
+    .from('projects')
+    .select('prompts, image_model')
+    .eq('id', projectId)
+    .single();
+  
+  if (!project) {
+    console.error(`[createSingleUpscaleJob] Project ${projectId} not found`);
+    return;
+  }
+  
+  const prompts = (project.prompts as any[]) || [];
+  const prompt = prompts[sceneIndex];
+  
+  if (!prompt?.imageUrl) {
+    console.error(`[createSingleUpscaleJob] No imageUrl for scene ${sceneIndex}`);
+    return;
+  }
+  
+  // Check if this image model needs upscaling (Z-Image models are already high-res)
+  const imageModel = project.image_model || 'seedream-4.5';
+  const needsUpscale = !imageModel.toLowerCase().includes('z-image');
+  
+  if (!needsUpscale) {
+    console.log(`[createSingleUpscaleJob] Skipping upscale for Z-Image model, scene ${sceneIndex}`);
+    // Mark scene as complete by directly updating parent progress
+    await updateParentJobProgressForScene(adminClient, parentJobId, sceneIndex);
+    return;
+  }
+  
+  // Create the upscale job
+  const { error: insertError } = await adminClient
+    .from('generation_jobs')
+    .insert({
+      project_id: projectId,
+      user_id: userId,
+      job_type: 'single_upscale',
+      status: 'pending',
+      progress: 0,
+      total: 1,
+      scene_index: sceneIndex,
+      parent_job_id: parentJobId,
+      metadata: {
+        imageUrl: prompt.imageUrl,
+        semiAutoMode: true
+      }
+    });
+  
+  if (insertError) {
+    console.error(`[createSingleUpscaleJob] Error creating upscale job:`, insertError);
+  } else {
+    console.log(`[createSingleUpscaleJob] Created upscale job for scene ${sceneIndex}`);
+  }
+}
+
+// ========================================================================
+// ATOMIC PIPELINE: Launch next pending upscale job
+// ========================================================================
+const UPSCALE_MAX_CONCURRENT = 10;
+
+async function launchNextPendingUpscaleJob(adminClient: any): Promise<void> {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+  const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+  
+  // Check current processing count
+  const { count: processingCount } = await adminClient
+    .from('generation_jobs')
+    .select('id', { count: 'exact', head: true })
+    .eq('status', 'processing')
+    .eq('job_type', 'single_upscale');
+  
+  if ((processingCount || 0) >= UPSCALE_MAX_CONCURRENT) {
+    console.log(`[launchNextPendingUpscaleJob] No capacity (${processingCount}/${UPSCALE_MAX_CONCURRENT} processing)`);
+    return;
+  }
+  
+  // Find ONE pending upscale job
+  const { data: pendingJobs } = await adminClient
+    .from('generation_jobs')
+    .select('id, project_id, user_id, scene_index, metadata')
+    .eq('status', 'pending')
+    .eq('job_type', 'single_upscale')
+    .order('created_at', { ascending: true })
+    .limit(1);
+  
+  if (!pendingJobs || pendingJobs.length === 0) {
+    console.log('[launchNextPendingUpscaleJob] No pending upscale jobs');
+    return;
+  }
+  
+  const jobToClaim = pendingJobs[0];
+  
+  // Atomic claim
+  const { data: claimed, error: claimError } = await adminClient
+    .from('generation_jobs')
+    .update({ status: 'processing' })
+    .eq('id', jobToClaim.id)
+    .eq('status', 'pending')
+    .select('id')
+    .single();
+  
+  if (claimError || !claimed) {
+    console.log(`[launchNextPendingUpscaleJob] Job ${jobToClaim.id} already claimed`);
+    return;
+  }
+  
+  console.log(`[launchNextPendingUpscaleJob] Launching upscale job ${jobToClaim.id} for scene ${jobToClaim.scene_index}`);
+  
+  // Get image URL
+  const imageUrl = jobToClaim.metadata?.imageUrl;
+  if (!imageUrl) {
+    console.error(`[launchNextPendingUpscaleJob] No imageUrl for job ${jobToClaim.id}`);
+    await adminClient
+      .from('generation_jobs')
+      .update({ status: 'failed', error_message: 'No imageUrl' })
+      .eq('id', jobToClaim.id);
+    return;
+  }
+  
+  // Call upscale-image Edge Function
+  try {
+    const response = await fetch(`${supabaseUrl}/functions/v1/upscale-image`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${supabaseServiceKey}`
+      },
+      body: JSON.stringify({
+        imageUrl,
+        jobId: jobToClaim.id,
+        projectId: jobToClaim.project_id,
+        sceneIndex: jobToClaim.scene_index,
+        useWebhook: true
+      })
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Upscale API failed: ${response.status}`);
+    }
+    
+    const result = await response.json();
+    
+    // Store prediction ID for webhook tracking
+    if (result.predictionId) {
+      await adminClient
+        .from('pending_predictions')
+        .insert({
+          job_id: jobToClaim.id,
+          prediction_id: result.predictionId,
+          prediction_type: 'upscale',
+          scene_index: jobToClaim.scene_index,
+          project_id: jobToClaim.project_id,
+          user_id: jobToClaim.user_id,
+          status: 'pending'
+        });
+    }
+    
+    console.log(`[launchNextPendingUpscaleJob] Started upscale prediction ${result.predictionId} for scene ${jobToClaim.scene_index}`);
+    
+  } catch (error) {
+    console.error(`[launchNextPendingUpscaleJob] Error for job ${jobToClaim.id}:`, error);
+    await adminClient
+      .from('generation_jobs')
+      .update({ 
+        status: 'failed',
+        error_message: error instanceof Error ? error.message : 'Unknown error',
+        completed_at: new Date().toISOString()
+      })
+      .eq('id', jobToClaim.id);
+  }
+}
+
+// ========================================================================
+// ATOMIC PIPELINE: Update parent progress when a scene is fully complete
+// ========================================================================
+async function updateParentJobProgressForScene(
+  adminClient: any,
+  parentJobId: string,
+  sceneIndex: number
+): Promise<void> {
+  console.log(`[updateParentJobProgressForScene] Scene ${sceneIndex} complete, updating parent ${parentJobId}`);
+  
+  // Get parent job info
+  const { data: parentJob } = await adminClient
+    .from('generation_jobs')
+    .select('total, project_id, user_id, metadata')
+    .eq('id', parentJobId)
+    .single();
+  
+  if (!parentJob) return;
+  
+  // Count completed upscale jobs (or completed QA if upscale skipped)
+  // For simplicity, count distinct scenes that have completed their pipeline
+  const { data: completedUpscales } = await adminClient
+    .from('generation_jobs')
+    .select('scene_index')
+    .eq('parent_job_id', parentJobId)
+    .eq('job_type', 'single_upscale')
+    .eq('status', 'completed');
+  
+  const completedScenes = new Set((completedUpscales || []).map((j: any) => j.scene_index));
+  const completedCount = completedScenes.size;
+  const total = parentJob.total || 0;
+  
+  console.log(`[updateParentJobProgressForScene] Parent ${parentJobId}: ${completedCount}/${total} scenes complete`);
+  
+  // Update parent progress
+  await adminClient
+    .from('generation_jobs')
+    .update({ progress: completedCount })
+    .eq('id', parentJobId);
+  
+  // Check if all scenes are complete
+  if (completedCount >= total) {
+    console.log(`[updateParentJobProgressForScene] All ${total} scenes complete! Marking parent as completed`);
+    
+    await adminClient
+      .from('generation_jobs')
+      .update({
+        status: 'completed',
+        completed_at: new Date().toISOString()
+      })
+      .eq('id', parentJobId);
   }
 }

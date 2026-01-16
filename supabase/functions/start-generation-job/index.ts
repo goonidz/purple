@@ -4052,7 +4052,7 @@ async function processUpscaleJob(
 // ========================================================================
 // NEW SIMPLE ARCHITECTURE: 1 job per QA check
 // ========================================================================
-const QA_MAX_CONCURRENT = 5; // Gemini rate limits
+const QA_MAX_CONCURRENT = 100;
 
 async function processQAJob(
   jobId: string,
@@ -4346,7 +4346,10 @@ async function updatePromptWithQAResult(
     .eq('id', projectId);
 }
 
-// Mark single_qa job as completed and trigger next
+// ========================================================================
+// ATOMIC PIPELINE: Mark QA completed and trigger next step
+// Flow: QA OK -> upscale | QA REJECT -> regen (1x max) -> upscale
+// ========================================================================
 async function markSingleQACompleted(
   adminClient: any,
   jobId: string,
@@ -4354,10 +4357,10 @@ async function markSingleQACompleted(
   status: string,
   qaResult: any
 ) {
-  // Get job info
+  // Get job info including is_regen flag
   const { data: job } = await adminClient
     .from('generation_jobs')
-    .select('parent_job_id, project_id, user_id, metadata')
+    .select('parent_job_id, project_id, user_id, metadata, is_regen')
     .eq('id', jobId)
     .single();
   
@@ -4371,15 +4374,321 @@ async function markSingleQACompleted(
     })
     .eq('id', jobId);
   
-  console.log(`[markSingleQACompleted] Job ${jobId} (scene ${sceneIndex}) completed with status: ${status}`);
+  console.log(`[markSingleQACompleted] Job ${jobId} (scene ${sceneIndex}) completed with status: ${status}, is_regen: ${job?.is_regen}`);
   
   if (!job?.parent_job_id) return;
   
-  // Update parent job progress
-  await updateQAParentProgress(adminClient, job.parent_job_id, job.project_id, job.user_id, job.metadata);
+  const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+  const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
   
-  // Launch next pending single_qa job
+  // ATOMIC PIPELINE: Determine next step based on QA result
+  if (status === 'OK' || status === 'ERROR') {
+    // QA OK or error (assume OK) -> Create upscale job
+    console.log(`[markSingleQACompleted] Scene ${sceneIndex}: QA ${status}, creating upscale job`);
+    await createSingleUpscaleJobFromQA(adminClient, job.project_id, job.user_id, sceneIndex, job.parent_job_id);
+    await launchNextPendingUpscaleJobFromQA(adminClient, supabaseUrl, supabaseServiceKey);
+    
+  } else if (status === 'REJECT') {
+    const isAlreadyRegen = job.is_regen === true || job.metadata?.is_regen === true;
+    
+    if (isAlreadyRegen) {
+      // Already regenerated once -> force OK and create upscale
+      console.log(`[markSingleQACompleted] Scene ${sceneIndex}: REJECT after regen, forcing OK and upscale`);
+      
+      // Update prompt to show it was force-accepted
+      await updatePromptWithQAResult(adminClient, job.project_id, sceneIndex, {
+        status: 'OK',
+        explication: 'Forcé OK après régénération (limite 1 regen atteinte)'
+      });
+      
+      await createSingleUpscaleJobFromQA(adminClient, job.project_id, job.user_id, sceneIndex, job.parent_job_id);
+      await launchNextPendingUpscaleJobFromQA(adminClient, supabaseUrl, supabaseServiceKey);
+      
+    } else {
+      // First rejection -> regenerate image
+      console.log(`[markSingleQACompleted] Scene ${sceneIndex}: REJECT, creating regen job`);
+      await createSingleImageRegenJob(adminClient, job.project_id, job.user_id, sceneIndex, job.parent_job_id, qaResult);
+      
+      // Launch the regen job
+      setTimeout(() => {
+        fetch(`${supabaseUrl}/functions/v1/replicate-webhook`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${supabaseServiceKey}`
+          },
+          body: JSON.stringify({
+            type: 'launch_next_image_job'
+          })
+        }).catch(err => console.error('[markSingleQACompleted] Error launching regen:', err));
+      }, 100);
+    }
+  }
+  
+  // Launch next pending QA job
   await launchNextPendingQAJob(adminClient);
+}
+
+// Create upscale job after QA completes (called from start-generation-job)
+async function createSingleUpscaleJobFromQA(
+  adminClient: any,
+  projectId: string,
+  userId: string,
+  sceneIndex: number,
+  parentJobId: string
+): Promise<void> {
+  console.log(`[createSingleUpscaleJobFromQA] Creating upscale job for scene ${sceneIndex}`);
+  
+  // Get the image URL from the project
+  const { data: project } = await adminClient
+    .from('projects')
+    .select('prompts, image_model')
+    .eq('id', projectId)
+    .single();
+  
+  if (!project) {
+    console.error(`[createSingleUpscaleJobFromQA] Project ${projectId} not found`);
+    return;
+  }
+  
+  const prompts = (project.prompts as any[]) || [];
+  const prompt = prompts[sceneIndex];
+  
+  if (!prompt?.imageUrl) {
+    console.error(`[createSingleUpscaleJobFromQA] No imageUrl for scene ${sceneIndex}`);
+    return;
+  }
+  
+  // Check if this image model needs upscaling (Z-Image models are already high-res)
+  const imageModel = project.image_model || 'seedream-4.5';
+  const needsUpscale = !imageModel.toLowerCase().includes('z-image');
+  
+  if (!needsUpscale) {
+    console.log(`[createSingleUpscaleJobFromQA] Skipping upscale for Z-Image model, scene ${sceneIndex}`);
+    // Directly update parent progress since we're skipping upscale
+    await updateParentProgressAfterUpscale(adminClient, parentJobId, sceneIndex);
+    return;
+  }
+  
+  // Create the upscale job
+  const { error: insertError } = await adminClient
+    .from('generation_jobs')
+    .insert({
+      project_id: projectId,
+      user_id: userId,
+      job_type: 'single_upscale',
+      status: 'pending',
+      progress: 0,
+      total: 1,
+      scene_index: sceneIndex,
+      parent_job_id: parentJobId,
+      metadata: {
+        imageUrl: prompt.imageUrl,
+        semiAutoMode: true
+      }
+    });
+  
+  if (insertError) {
+    console.error(`[createSingleUpscaleJobFromQA] Error creating upscale job:`, insertError);
+  } else {
+    console.log(`[createSingleUpscaleJobFromQA] Created upscale job for scene ${sceneIndex}`);
+  }
+}
+
+// Create regen job after QA rejects image
+async function createSingleImageRegenJob(
+  adminClient: any,
+  projectId: string,
+  userId: string,
+  sceneIndex: number,
+  parentJobId: string,
+  qaResult: any
+): Promise<void> {
+  console.log(`[createSingleImageRegenJob] Creating regen job for scene ${sceneIndex}`);
+  
+  // Get current prompt and image settings
+  const { data: project } = await adminClient
+    .from('projects')
+    .select('prompts, image_model, image_width, image_height, style_reference_urls')
+    .eq('id', projectId)
+    .single();
+  
+  if (!project) {
+    console.error(`[createSingleImageRegenJob] Project ${projectId} not found`);
+    return;
+  }
+  
+  const prompts = (project.prompts as any[]) || [];
+  const originalPrompt = prompts[sceneIndex]?.prompt || '';
+  
+  // Use the QA-suggested prompt if available, otherwise use original
+  const newPrompt = qaResult?.prompt_regeneration || originalPrompt;
+  
+  // Create the regen job with is_regen = true
+  const { error: insertError } = await adminClient
+    .from('generation_jobs')
+    .insert({
+      project_id: projectId,
+      user_id: userId,
+      job_type: 'single_image',
+      status: 'pending',
+      progress: 0,
+      total: 1,
+      scene_index: sceneIndex,
+      parent_job_id: parentJobId,
+      is_regen: true,
+      metadata: {
+        prompt: newPrompt,
+        model: project.image_model || 'seedream-4.5',
+        width: project.image_width || 1440,
+        height: project.image_height || 816,
+        styleRefs: project.style_reference_urls || [],
+        is_regen: true,
+        original_prompt: originalPrompt,
+        qa_rejection_reason: qaResult?.explication || 'QA rejection',
+        useWebhook: true
+      }
+    });
+  
+  if (insertError) {
+    console.error(`[createSingleImageRegenJob] Error creating regen job:`, insertError);
+  } else {
+    console.log(`[createSingleImageRegenJob] Created regen job for scene ${sceneIndex} with is_regen=true`);
+  }
+}
+
+// Launch next pending upscale job (called from start-generation-job)
+const UPSCALE_MAX_CONCURRENT = 10;
+
+async function launchNextPendingUpscaleJobFromQA(
+  adminClient: any,
+  supabaseUrl: string,
+  supabaseServiceKey: string
+): Promise<void> {
+  // Check current processing count
+  const { count: processingCount } = await adminClient
+    .from('generation_jobs')
+    .select('id', { count: 'exact', head: true })
+    .eq('status', 'processing')
+    .eq('job_type', 'single_upscale');
+  
+  if ((processingCount || 0) >= UPSCALE_MAX_CONCURRENT) {
+    console.log(`[launchNextPendingUpscaleJobFromQA] No capacity (${processingCount}/${UPSCALE_MAX_CONCURRENT} processing)`);
+    return;
+  }
+  
+  // Find ONE pending upscale job
+  const { data: pendingJobs } = await adminClient
+    .from('generation_jobs')
+    .select('id, project_id, user_id, scene_index, metadata')
+    .eq('status', 'pending')
+    .eq('job_type', 'single_upscale')
+    .order('created_at', { ascending: true })
+    .limit(1);
+  
+  if (!pendingJobs || pendingJobs.length === 0) {
+    console.log('[launchNextPendingUpscaleJobFromQA] No pending upscale jobs');
+    return;
+  }
+  
+  const jobToClaim = pendingJobs[0];
+  
+  // Atomic claim
+  const { data: claimed, error: claimError } = await adminClient
+    .from('generation_jobs')
+    .update({ status: 'processing' })
+    .eq('id', jobToClaim.id)
+    .eq('status', 'pending')
+    .select('id')
+    .single();
+  
+  if (claimError || !claimed) {
+    console.log(`[launchNextPendingUpscaleJobFromQA] Job ${jobToClaim.id} already claimed`);
+    return;
+  }
+  
+  console.log(`[launchNextPendingUpscaleJobFromQA] Launching upscale job ${jobToClaim.id} for scene ${jobToClaim.scene_index}`);
+  
+  // Get image URL
+  const imageUrl = jobToClaim.metadata?.imageUrl;
+  if (!imageUrl) {
+    console.error(`[launchNextPendingUpscaleJobFromQA] No imageUrl for job ${jobToClaim.id}`);
+    await adminClient
+      .from('generation_jobs')
+      .update({ status: 'failed', error_message: 'No imageUrl' })
+      .eq('id', jobToClaim.id);
+    return;
+  }
+  
+  // Call upscale-image Edge Function
+  setTimeout(() => {
+    fetch(`${supabaseUrl}/functions/v1/upscale-image`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${supabaseServiceKey}`
+      },
+      body: JSON.stringify({
+        imageUrl,
+        jobId: jobToClaim.id,
+        projectId: jobToClaim.project_id,
+        sceneIndex: jobToClaim.scene_index,
+        useWebhook: true
+      })
+    }).catch(err => console.error(`[launchNextPendingUpscaleJobFromQA] Error:`, err));
+  }, 0);
+}
+
+// Update parent progress after upscale completes
+async function updateParentProgressAfterUpscale(
+  adminClient: any,
+  parentJobId: string,
+  sceneIndex: number
+): Promise<void> {
+  console.log(`[updateParentProgressAfterUpscale] Scene ${sceneIndex} complete, updating parent ${parentJobId}`);
+  
+  // Get parent job info
+  const { data: parentJob } = await adminClient
+    .from('generation_jobs')
+    .select('total, project_id, user_id')
+    .eq('id', parentJobId)
+    .single();
+  
+  if (!parentJob) return;
+  
+  // Count completed scenes by counting upscale jobs OR QA jobs that skipped upscale
+  // For simplicity, we count unique scene_index values that have upscale completed
+  const { data: completedUpscales } = await adminClient
+    .from('generation_jobs')
+    .select('scene_index')
+    .eq('parent_job_id', parentJobId)
+    .eq('job_type', 'single_upscale')
+    .eq('status', 'completed');
+  
+  const completedScenes = new Set((completedUpscales || []).map((j: any) => j.scene_index));
+  const completedCount = completedScenes.size;
+  const total = parentJob.total || 0;
+  
+  console.log(`[updateParentProgressAfterUpscale] Parent ${parentJobId}: ${completedCount}/${total} scenes complete`);
+  
+  // Update parent progress
+  await adminClient
+    .from('generation_jobs')
+    .update({ progress: completedCount })
+    .eq('id', parentJobId);
+  
+  // Check if all scenes are complete
+  if (completedCount >= total) {
+    console.log(`[updateParentProgressAfterUpscale] All ${total} scenes complete! Marking parent as completed`);
+    
+    await adminClient
+      .from('generation_jobs')
+      .update({
+        status: 'completed',
+        completed_at: new Date().toISOString()
+      })
+      .eq('id', parentJobId);
+  }
 }
 
 // Update QA parent job progress
