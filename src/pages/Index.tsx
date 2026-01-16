@@ -422,60 +422,88 @@ const Index = () => {
     const shouldReload = !['single_animation'].includes(job.job_type);
     const projectId = currentProjectIdRef.current;
     if (shouldReload && projectId) {
-      // Fetch fresh data from database
-      supabase
-        .from("projects")
-        .select("*")
-        .eq("id", projectId)
-        .single()
-        .then(({ data, error }) => {
-          if (error || !data) {
-            console.error("Error reloading project data:", error);
-            return;
-          }
-          
-          // Update transcript data
-          if (data.transcript_json) {
-            setTranscriptData(data.transcript_json as unknown as TranscriptData);
-          }
-          
-          // Update scenes
-          const existingScenes = (data.scenes as unknown as Scene[]) || [];
-          setScenes(existingScenes);
-          
-          // Update prompts
+      // Fetch fresh data from BOTH project table AND project_scenes (robust source)
+      Promise.all([
+        supabase.from("projects").select("*").eq("id", projectId).single(),
+        supabase.from("project_scenes").select("*").eq("project_id", projectId).order("scene_index", { ascending: true })
+      ]).then(([projectRes, scenesRes]) => {
+        const { data, error } = projectRes;
+        if (error || !data) {
+          console.error("Error reloading project data:", error);
+          return;
+        }
+        
+        // Update transcript data
+        if (data.transcript_json) {
+          setTranscriptData(data.transcript_json as unknown as TranscriptData);
+        }
+        
+        // Update scenes
+        const existingScenes = (data.scenes as unknown as Scene[]) || [];
+        setScenes(existingScenes);
+        
+        // Update prompts - use project_scenes (robust) if available, fallback to legacy JSON
+        let promptsWithGroups: GeneratedPrompt[];
+        if (scenesRes.data && scenesRes.data.length > 0) {
+          // ROBUST SOURCE: project_scenes table
+          const newPrompts: GeneratedPrompt[] = scenesRes.data.map((s: any) => ({
+            scene: `Scène ${s.scene_index + 1}`,
+            prompt: s.prompt,
+            text: s.text,
+            startTime: s.start_time,
+            endTime: s.end_time,
+            duration: s.duration,
+            imageUrl: s.upscaled_url || s.image_url,
+            imageWidth: s.image_width,
+            imageHeight: s.image_height,
+            qa_checked: s.qa_checked,
+            qa_status: s.qa_status,
+            qa_explication: s.qa_explication,
+            qa_regeneration_prompt: s.qa_regeneration_prompt,
+            was_regenerated: s.was_regenerated,
+            manually_regenerated: s.was_regenerated,
+            regenerated_prompt: s.regenerated_prompt,
+            isUpscaled: s.is_upscaled,
+            videoUrl: s.video_url,
+            continuityGroupId: s.continuity_group_id
+          }));
+          promptsWithGroups = calculateGroupsIfMissing(newPrompts);
+          console.log(`[handleJobComplete] Loaded ${promptsWithGroups.length} prompts from project_scenes`);
+        } else {
+          // FALLBACK: legacy JSON
           const validPrompts = ((data.prompts as unknown as GeneratedPrompt[]) || []).filter(p => p !== null);
-          // Calculer les groupes si manquants (rétrocompatibilité)
-          const promptsWithGroups = calculateGroupsIfMissing(validPrompts);
-          setGeneratedPrompts(promptsWithGroups);
-          
-          // Load regenerated scenes state from prompts
-          const regeneratedIndices = promptsWithGroups
-            .map((p, idx) => p?.manually_regenerated ? idx : -1)
-            .filter(idx => idx !== -1);
-          setRegeneratedScenes(new Set(regeneratedIndices));
-          
-          // Update audio URL
-          if (data.audio_url) {
-            setAudioUrl(data.audio_url);
-          }
-          
-          // Update image dimensions (especially important after upscale)
-          if (data.image_width) {
-            setImageWidth(data.image_width);
-          }
-          if (data.image_height) {
-            setImageHeight(data.image_height);
-          }
-          if (data.aspect_ratio) {
-            setAspectRatio(data.aspect_ratio);
-          }
-          
-          // If transcription just completed and no scenes yet, show configuration modal
-          if (job.job_type === 'transcription' && data.transcript_json && existingScenes.length === 0) {
-            setShowConfigurationModal(true);
-          }
-        });
+          promptsWithGroups = calculateGroupsIfMissing(validPrompts);
+          console.log(`[handleJobComplete] Loaded ${promptsWithGroups.length} prompts from legacy JSON`);
+        }
+        setGeneratedPrompts(promptsWithGroups);
+        
+        // Load regenerated scenes state from prompts
+        const regeneratedIndices = promptsWithGroups
+          .map((p, idx) => p?.manually_regenerated ? idx : -1)
+          .filter(idx => idx !== -1);
+        setRegeneratedScenes(new Set(regeneratedIndices));
+        
+        // Update audio URL
+        if (data.audio_url) {
+          setAudioUrl(data.audio_url);
+        }
+        
+        // Update image dimensions (especially important after upscale)
+        if (data.image_width) {
+          setImageWidth(data.image_width);
+        }
+        if (data.image_height) {
+          setImageHeight(data.image_height);
+        }
+        if (data.aspect_ratio) {
+          setAspectRatio(data.aspect_ratio);
+        }
+        
+        // If transcription just completed and no scenes yet, show configuration modal
+        if (job.job_type === 'transcription' && data.transcript_json && existingScenes.length === 0) {
+          setShowConfigurationModal(true);
+        }
+      });
     } else if (job.job_type === 'single_animation' && projectId) {
       // For single_animation, wait a bit then refresh prompts to get the videoUrl
       // The polling in handleAnimateScene should have already updated the state,
@@ -1116,13 +1144,14 @@ const Index = () => {
           setCalendarChannelName(channelData.name);
           setCalendarChannelColor(channelData.color);
           
-          // Auto-load preset from channel if project doesn't have one set
-          if (channelData.project_preset_id && !projectData.preset_id) {
-            console.log('[loadProjectData] Auto-loading preset from channel:', channelData.project_preset_id);
+          // Load preset from channel OR from project's saved preset_id
+          const presetIdToLoad = projectData.preset_id || channelData.project_preset_id;
+          if (presetIdToLoad) {
+            console.log('[loadProjectData] Loading preset:', presetIdToLoad, projectData.preset_id ? '(from project)' : '(from channel)');
             const { data: preset } = await supabase
               .from('presets')
               .select('*')
-              .eq('id', channelData.project_preset_id)
+              .eq('id', presetIdToLoad)
               .single();
             
             if (preset) {
@@ -1143,13 +1172,15 @@ const Index = () => {
               }
               setActivePresetName(preset.name);
               
-              // Save preset_id to project for backend LoRA loading
-              await supabase
-                .from('projects')
-                .update({ preset_id: channelData.project_preset_id } as any)
-                .eq('id', projectId);
+              // Save preset_id to project if not already set (for backend LoRA loading)
+              if (!projectData.preset_id && channelData.project_preset_id) {
+                await supabase
+                  .from('projects')
+                  .update({ preset_id: channelData.project_preset_id } as any)
+                  .eq('id', projectId);
+              }
               
-              console.log('[loadProjectData] Preset loaded from channel:', preset.name);
+              console.log('[loadProjectData] Preset loaded:', preset.name);
             }
           }
         } else {
