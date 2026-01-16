@@ -5224,7 +5224,7 @@ async function createSingleImageRegenJob(
   }
 }
 
-// Launch next pending upscale job (called from start-generation-job)
+// Launch next pending upscale jobs (called from start-generation-job)
 const UPSCALE_MAX_CONCURRENT = 20;
 
 async function launchNextPendingUpscaleJobFromQA(
@@ -5239,105 +5239,130 @@ async function launchNextPendingUpscaleJobFromQA(
     .eq('status', 'processing')
     .eq('job_type', 'single_upscale');
   
-  if ((processingCount || 0) >= UPSCALE_MAX_CONCURRENT) {
+  const availableSlots = UPSCALE_MAX_CONCURRENT - (processingCount || 0);
+  
+  if (availableSlots <= 0) {
     console.log(`[launchNextPendingUpscaleJobFromQA] No capacity (${processingCount}/${UPSCALE_MAX_CONCURRENT} processing)`);
     return;
   }
   
-  // Find ONE pending upscale job
+  // Find ALL pending upscale jobs up to available slots
   const { data: pendingJobs } = await adminClient
     .from('generation_jobs')
     .select('id, project_id, user_id, scene_index, metadata')
     .eq('status', 'pending')
     .eq('job_type', 'single_upscale')
     .order('created_at', { ascending: true })
-    .limit(1);
+    .limit(availableSlots);
   
   if (!pendingJobs || pendingJobs.length === 0) {
     console.log('[launchNextPendingUpscaleJobFromQA] No pending upscale jobs');
     return;
   }
   
-  const jobToClaim = pendingJobs[0];
+  console.log(`[launchNextPendingUpscaleJobFromQA] Attempting to launch ${pendingJobs.length} jobs (slots: ${availableSlots})`);
   
-  // Atomic claim
-  const { data: claimed, error: claimError } = await adminClient
-    .from('generation_jobs')
-    .update({ status: 'processing' })
-    .eq('id', jobToClaim.id)
-    .eq('status', 'pending')
-    .select('id')
-    .single();
-  
-  if (claimError || !claimed) {
-    console.log(`[launchNextPendingUpscaleJobFromQA] Job ${jobToClaim.id} already claimed`);
-    return;
-  }
-  
-  console.log(`[launchNextPendingUpscaleJobFromQA] Launching upscale job ${jobToClaim.id} for scene ${jobToClaim.scene_index}`);
-  
-  // Get image URL
-  const imageUrl = jobToClaim.metadata?.imageUrl;
-  if (!imageUrl) {
-    console.error(`[launchNextPendingUpscaleJobFromQA] No imageUrl for job ${jobToClaim.id}`);
-    await adminClient
+  // Launch each pending job
+  for (const jobToClaim of pendingJobs) {
+    // Atomic claim
+    const { data: claimed, error: claimError } = await adminClient
       .from('generation_jobs')
-      .update({ status: 'failed', error_message: 'No imageUrl' })
-      .eq('id', jobToClaim.id);
-    return;
-  }
-  
-  // Call upscale-image Edge Function
-  try {
-    const webhookUrl = `${supabaseUrl}/functions/v1/replicate-webhook`;
+      .update({ status: 'processing', started_at: new Date().toISOString() })
+      .eq('id', jobToClaim.id)
+      .eq('status', 'pending')
+      .select('id')
+      .single();
     
-    const response = await fetch(`${supabaseUrl}/functions/v1/upscale-image`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${supabaseServiceKey}`
-      },
-      body: JSON.stringify({
-        imageUrl,
-        userId: jobToClaim.user_id,
-        async: true,
-        webhook_url: webhookUrl
-      })
-    });
+    if (claimError || !claimed) {
+      console.log(`[launchNextPendingUpscaleJobFromQA] Job ${jobToClaim.id} already claimed`);
+      continue;
+    }
     
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`[launchNextPendingUpscaleJobFromQA] Upscale API error:`, response.status, errorText);
+    console.log(`[launchNextPendingUpscaleJobFromQA] Launching upscale job ${jobToClaim.id} for scene ${jobToClaim.scene_index}`);
+    
+    // Get image URL from metadata or fetch from project_scenes
+    let imageUrl = jobToClaim.metadata?.imageUrl;
+    
+    if (!imageUrl) {
+      // Try to get image URL from project_scenes
+      const { data: scene } = await adminClient
+        .from('project_scenes')
+        .select('image_url')
+        .eq('project_id', jobToClaim.project_id)
+        .eq('scene_index', jobToClaim.scene_index)
+        .single();
+      
+      imageUrl = scene?.image_url;
+    }
+    
+    if (!imageUrl) {
+      console.error(`[launchNextPendingUpscaleJobFromQA] No imageUrl for job ${jobToClaim.id}`);
       await adminClient
         .from('generation_jobs')
-        .update({ status: 'failed', error_message: `Upscale failed: ${response.status}` })
+        .update({ status: 'failed', error_message: 'No imageUrl' })
         .eq('id', jobToClaim.id);
-      return;
+      continue; // Continue to next job instead of returning
     }
     
-    const result = await response.json();
-    console.log(`[launchNextPendingUpscaleJobFromQA] Started upscale for scene ${jobToClaim.scene_index}, prediction:`, result.predictionId);
-    
-    // Create pending_prediction entry for webhook tracking
-    if (result.predictionId) {
-      await adminClient
-        .from('pending_predictions')
-        .insert({
-          job_id: jobToClaim.id,
-          prediction_id: result.predictionId,
-          prediction_type: 'upscale',
-          scene_index: jobToClaim.scene_index,
-          project_id: jobToClaim.project_id,
-          user_id: jobToClaim.user_id,
-          status: 'pending'
+    // Call upscale-image Edge Function (fire-and-forget style)
+    const upscalePromise = (async () => {
+      try {
+        const webhookUrl = `${supabaseUrl}/functions/v1/replicate-webhook`;
+        
+        const response = await fetch(`${supabaseUrl}/functions/v1/upscale-image`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${supabaseServiceKey}`
+          },
+          body: JSON.stringify({
+            imageUrl,
+            userId: jobToClaim.user_id,
+            async: true,
+            webhook_url: webhookUrl
+          })
         });
+        
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error(`[launchNextPendingUpscaleJobFromQA] Upscale API error for scene ${jobToClaim.scene_index}:`, response.status, errorText);
+          await adminClient
+            .from('generation_jobs')
+            .update({ status: 'failed', error_message: `Upscale failed: ${response.status} - ${errorText.substring(0, 100)}` })
+            .eq('id', jobToClaim.id);
+          return;
+        }
+        
+        const result = await response.json();
+        console.log(`[launchNextPendingUpscaleJobFromQA] Started upscale for scene ${jobToClaim.scene_index}, prediction:`, result.predictionId);
+        
+        // Create pending_prediction entry for webhook tracking
+        if (result.predictionId) {
+          await adminClient
+            .from('pending_predictions')
+            .insert({
+              job_id: jobToClaim.id,
+              prediction_id: result.predictionId,
+              prediction_type: 'upscale',
+              scene_index: jobToClaim.scene_index,
+              project_id: jobToClaim.project_id,
+              user_id: jobToClaim.user_id,
+              status: 'pending'
+            });
+        }
+      } catch (err) {
+        console.error(`[launchNextPendingUpscaleJobFromQA] Error for scene ${jobToClaim.scene_index}:`, err);
+        await adminClient
+          .from('generation_jobs')
+          .update({ status: 'failed', error_message: err instanceof Error ? err.message : 'Unknown error' })
+          .eq('id', jobToClaim.id);
+      }
+    })();
+    
+    // Fire-and-forget for parallel execution
+    if (typeof EdgeRuntime !== 'undefined') {
+      EdgeRuntime.waitUntil(upscalePromise);
     }
-  } catch (err) {
-    console.error(`[launchNextPendingUpscaleJobFromQA] Error:`, err);
-    await adminClient
-      .from('generation_jobs')
-      .update({ status: 'failed', error_message: err instanceof Error ? err.message : 'Unknown error' })
-      .eq('id', jobToClaim.id);
   }
 }
 

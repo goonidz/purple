@@ -492,20 +492,31 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
   }
 
   if (job.job_type === 'single_upscale') {
-    // Mark completed
+    // Check if the prediction actually succeeded or failed
+    const { data: upscalePrediction } = await adminClient
+      .from('pending_predictions')
+      .select('status')
+      .eq('job_id', jobId)
+      .single();
+    
+    const isSuccess = upscalePrediction?.status === 'completed';
+    
+    // Mark job with correct status
     await adminClient
       .from('generation_jobs')
       .update({
-        status: 'completed',
-        progress: 1,
+        status: isSuccess ? 'completed' : 'failed',
+        progress: isSuccess ? 1 : 0,
+        error_message: isSuccess ? null : 'Upscale prediction failed',
         completed_at: new Date().toISOString()
       })
       .eq('id', jobId);
     
-    if (job.parent_job_id) {
+    if (isSuccess && job.parent_job_id) {
       await updateParentJobProgressForScene(adminClient, job.parent_job_id, job.scene_index);
     }
     
+    // ALWAYS launch next pending upscale, even on failure - don't break the chain!
     await launchNextPendingUpscaleJob(adminClient);
     return;
   }
@@ -935,10 +946,14 @@ async function launchNextPendingUpscaleJob(adminClient: any) {
             const errorText = await res.text();
             console.error(`[launchNextPendingUpscaleJob] Failed to start upscale for scene ${sceneIndex + 1}:`, errorText);
             await adminClient.from('generation_jobs').update({ status: 'failed', error_message: errorText.substring(0, 200) }).eq('id', pending.id);
+            // Continue the chain - launch next job to fill this failed slot
+            await launchNextPendingUpscaleJob(adminClient);
           }
         } catch (err) {
           console.error(`[launchNextPendingUpscaleJob] Error for scene ${sceneIndex + 1}:`, err);
           await adminClient.from('generation_jobs').update({ status: 'failed', error_message: String(err).substring(0, 200) }).eq('id', pending.id);
+          // Continue the chain - launch next job to fill this failed slot
+          await launchNextPendingUpscaleJob(adminClient);
         }
       })();
 
@@ -948,6 +963,11 @@ async function launchNextPendingUpscaleJob(adminClient: any) {
     } else {
       console.error(`[launchNextPendingUpscaleJob] No image_url found for scene ${sceneIndex + 1}`);
       await adminClient.from('generation_jobs').update({ status: 'failed', error_message: 'No image_url for upscale' }).eq('id', pending.id);
+      // Continue the chain - don't let missing image block other upscales
+      // Use fire-and-forget to avoid blocking the loop
+      if (typeof EdgeRuntime !== 'undefined') {
+        EdgeRuntime.waitUntil(launchNextPendingUpscaleJob(adminClient));
+      }
     }
   }
 }
