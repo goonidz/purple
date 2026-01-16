@@ -90,7 +90,7 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Fetch project data
+    // Fetch project data (includes prompts JSON with timing data)
     const { data: project, error: projectError } = await supabase
       .from("projects")
       .select("*")
@@ -105,25 +105,40 @@ serve(async (req) => {
       throw new Error("Project has no audio file");
     }
 
-    // Fetch scenes from project_scenes table (source of truth)
+    // Get timing data from projects.prompts (legacy JSON)
+    const promptsJson = project.prompts as any[] || [];
+    if (promptsJson.length === 0) {
+      throw new Error("Project has no scene timing data (prompts JSON is empty)");
+    }
+
+    // Fetch image URLs from project_scenes table (source of truth for images)
     const { data: projectScenes, error: scenesError } = await supabase
       .from("project_scenes")
-      .select("scene_index, text, prompt, start_time, end_time, duration, image_url, upscaled_url")
+      .select("scene_index, image_url, upscaled_url")
       .eq("project_id", projectId)
       .order("scene_index", { ascending: true });
 
-    if (scenesError) throw scenesError;
-
-    if (!projectScenes || projectScenes.length === 0) {
-      throw new Error("Project has no scenes");
+    if (scenesError) {
+      console.warn("[GPU] Could not fetch project_scenes, using prompts JSON for images:", scenesError.message);
     }
 
-    // Map to Scene format, using upscaled_url if available, otherwise image_url
-    const scenes: Scene[] = projectScenes.map(s => ({
-      startTime: s.start_time,
-      endTime: s.end_time,
-      imageUrl: s.upscaled_url || s.image_url,
-      text: s.text || '',
+    // Build a map of scene_index -> image URL from project_scenes
+    const imageUrlMap = new Map<number, string>();
+    if (projectScenes) {
+      for (const s of projectScenes) {
+        const url = s.upscaled_url || s.image_url;
+        if (url) {
+          imageUrlMap.set(s.scene_index, url);
+        }
+      }
+    }
+
+    // Merge: timing from prompts JSON, images from project_scenes (with fallback to prompts JSON)
+    const scenes: Scene[] = promptsJson.map((p, index) => ({
+      startTime: p.startTime,
+      endTime: p.endTime,
+      imageUrl: imageUrlMap.get(index) || p.imageUrl,  // Prefer project_scenes, fallback to JSON
+      text: p.text || '',
     }));
 
     // Check if all scenes have images
