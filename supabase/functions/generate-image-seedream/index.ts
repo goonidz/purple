@@ -123,6 +123,10 @@ Deno.serve(async (req) => {
 
     const sanitizedPrompt = sanitizePrompt(body.prompt)
     
+    // DEBUG: Log what we received
+    console.log(`[generate-image-seedream] Received body.lora_url: "${body.lora_url}" (type: ${typeof body.lora_url})`);
+    console.log(`[generate-image-seedream] Received body.lora_steps: "${body.lora_steps}"`);
+    
     // Determine which model to use (default to seedream-4.5)
     const modelVersion = body.model || 'seedream-4.5';
     
