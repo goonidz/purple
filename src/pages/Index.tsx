@@ -4246,38 +4246,17 @@ const Index = () => {
                                 onClick={async () => {
                                   if (!currentProjectId || !user) return;
                                   try {
-                                    const clearedPrompts = generatedPrompts.map(p => ({
-                                      ...p,
-                                      prompt: null,
-                                      imageUrl: null,
-                                      regenerated_prompt: null,
-                                      was_regenerated: false
-                                    }));
-
-                                    // 1. Update legacy JSON
+                                    // 1. Clear legacy JSON completely (empty array)
                                     const { error: projectError } = await supabase
                                       .from('projects')
-                                      .update({ prompts: clearedPrompts as any })
+                                      .update({ prompts: [] })
                                       .eq('id', currentProjectId);
                                     if (projectError) throw projectError;
 
-                                    // 2. Update ROBUST table
+                                    // 2. Delete all scenes from ROBUST table
                                     const { error: scenesError } = await supabase
                                       .from('project_scenes')
-                                      .update({ 
-                                        prompt: null,
-                                        image_url: null,
-                                        image_width: null,
-                                        image_height: null,
-                                        upscaled_url: null,
-                                        is_upscaled: false,
-                                        qa_checked: false,
-                                        qa_status: null,
-                                        qa_explication: null,
-                                        qa_regeneration_prompt: null,
-                                        regenerated_prompt: null,
-                                        was_regenerated: false
-                                      })
+                                      .delete()
                                       .eq('project_id', currentProjectId);
                                     if (scenesError) throw scenesError;
 
@@ -4287,8 +4266,15 @@ const Index = () => {
                                       .delete()
                                       .eq('project_id', currentProjectId);
 
-                                    setGeneratedPrompts(clearedPrompts.map(p => ({ ...p, prompt: undefined, imageUrl: undefined, regenerated_prompt: undefined, was_regenerated: false })));
-                                    toast.success("Tous les prompts et images ont été supprimés");
+                                    // 4. Cancel any pending jobs for this project
+                                    await supabase
+                                      .from('generation_jobs')
+                                      .update({ status: 'cancelled' })
+                                      .eq('project_id', currentProjectId)
+                                      .in('status', ['pending', 'processing']);
+
+                                    setGeneratedPrompts([]);
+                                    toast.success("Tous les prompts ont été supprimés de la base de données");
                                   } catch (error) {
                                     console.error('Error deleting prompts:', error);
                                     toast.error("Erreur lors de la suppression des prompts");
