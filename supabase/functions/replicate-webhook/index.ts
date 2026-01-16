@@ -2104,17 +2104,22 @@ async function createSingleQAJob(
   parentJobId: string,
   isRegen: boolean = false
 ): Promise<void> {
-  console.log(`[createSingleQAJob] Creating QA job for scene ${sceneIndex}, isRegen: ${isRegen}`);
+  console.log(`[createSingleQAJob] Creating QA job for scene ${sceneIndex}, isRegen: ${isRegen}, projectId: ${projectId}`);
   
   // Get the image URL from the project
-  const { data: project } = await adminClient
+  const { data: project, error: projectError } = await adminClient
     .from('projects')
-    .select('prompts, preset_id')
+    .select('prompts')
     .eq('id', projectId)
     .single();
   
+  if (projectError) {
+    console.error(`[createSingleQAJob] Error fetching project ${projectId}:`, projectError.message, projectError.code);
+    return;
+  }
+  
   if (!project) {
-    console.error(`[createSingleQAJob] Project ${projectId} not found`);
+    console.error(`[createSingleQAJob] Project ${projectId} not found (no data)`);
     return;
   }
   
@@ -2126,16 +2131,8 @@ async function createSingleQAJob(
     return;
   }
   
-  // Get QA prompt from preset if available
-  let qaPrompt = null;
-  if (project.preset_id) {
-    const { data: preset } = await adminClient
-      .from('presets')
-      .select('qa_prompt')
-      .eq('id', project.preset_id)
-      .single();
-    qaPrompt = preset?.qa_prompt || null;
-  }
+  // QA prompt will be fetched by start-generation-job if needed
+  const qaPrompt = null;
   
   // Create the QA job
   const { error: insertError } = await adminClient
