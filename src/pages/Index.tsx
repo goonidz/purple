@@ -257,7 +257,6 @@ const Index = () => {
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [isUploadingAudio, setIsUploadingAudio] = useState(false);
   const [isDraggingAudio, setIsDraggingAudio] = useState(false);
-  const [hasTestedFirstTwo, setHasTestedFirstTwo] = useState(false);
   const [thumbnailDialogOpen, setThumbnailDialogOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<string>("video");
   const [imageGenerationProgress, setImageGenerationProgress] = useState(0);
@@ -335,7 +334,6 @@ const Index = () => {
       const messages: Record<string, string> = {
         'transcription': 'Transcription terminée !',
         'thumbnails': 'Miniatures générées en arrière-plan !',
-        'test_images': 'Test des 2 premières scènes terminé !',
         'single_prompt': 'Prompt généré !',
         'single_image': 'Image générée !',
         'single_animation': 'Scène animée avec succès !',
@@ -402,10 +400,6 @@ const Index = () => {
           toast.success(`🎉 Génération complète (sans miniatures - ${reason}) !`);
         }
       }
-    } else if (job.job_type === 'test_images') {
-      setIsGeneratingPrompts(false);
-      setIsGeneratingImages(false);
-      setHasTestedFirstTwo(true);
     } else if (job.job_type === 'single_prompt') {
       setGeneratingPromptIndex(null);
       setRegeneratingPromptIndex(null);
@@ -571,9 +565,6 @@ const Index = () => {
       setIsGeneratingPrompts(false);
     } else if (job.job_type === 'images') {
       setIsGeneratingImages(false);
-    } else if (job.job_type === 'test_images') {
-      setIsGeneratingPrompts(false);
-      setIsGeneratingImages(false);
     } else if (job.job_type === 'single_prompt') {
       setGeneratingPromptIndex(null);
       setRegeneratingPromptIndex(null);
@@ -630,8 +621,8 @@ const Index = () => {
 
   // Sync generating states with active jobs
   useEffect(() => {
-    setIsGeneratingPrompts(hasActiveJob('prompts') || hasActiveJob('test_images'));
-    setIsGeneratingImages(hasActiveJob('images') || hasActiveJob('test_images'));
+    setIsGeneratingPrompts(hasActiveJob('prompts'));
+    setIsGeneratingImages(hasActiveJob('images'));
   }, [activeJobs, hasActiveJob]);
 
   // Scroll to top button visibility
@@ -977,16 +968,6 @@ const Index = () => {
         .map((p, idx) => p?.manually_regenerated ? idx : -1)
         .filter(idx => idx !== -1);
       setRegeneratedScenes(new Set(regeneratedIndices));
-      
-      // Check if test has already been done (at least 2 scenes with images)
-      // OR if there are already prompts/images in the project (meaning work has been done)
-      const firstTwoWithImages = validPrompts.slice(0, 2).filter(p => p && p.imageUrl).length;
-      const hasExistingPrompts = validPrompts.length > 0 && validPrompts.some(p => p && p.prompt);
-      const hasExistingImages = validPrompts.some(p => p && p.imageUrl);
-      
-      if (firstTwoWithImages >= 2 || hasExistingPrompts || hasExistingImages) {
-        setHasTestedFirstTwo(true);
-      }
       
       // Load image dimensions and aspect ratio
       if (projectData.image_width) setImageWidth(projectData.image_width);
@@ -2433,33 +2414,6 @@ const Index = () => {
       }
       toast.error(`Erreur lors de l'animation: ${errorMessage}`);
       setAnimatingSceneIndex(null);
-    }
-  };
-
-  const handleTestFirstTwo = async () => {
-    if (scenes.length === 0) {
-      toast.error("Veuillez d'abord générer les scènes");
-      return;
-    }
-
-    if (!currentProjectId) {
-      toast.error("Veuillez d'abord sélectionner ou créer un projet");
-      return;
-    }
-
-    // Check if already has active job
-    if (hasActiveJob('test_images')) {
-      toast.info("Un test est déjà en cours");
-      return;
-    }
-
-    // Start background job
-    const result = await startJob('test_images');
-    if (result) {
-      setIsGeneratingPrompts(true);
-      setIsGeneratingImages(true);
-      setGeneratedPrompts([]); // Clear prompts to show fresh results
-      toast.info("Test des 2 premières scènes lancé en arrière-plan. Vous pouvez quitter cette page.");
     }
   };
 
@@ -3930,23 +3884,6 @@ const Index = () => {
                         {/* Boutons d'action - sur une ligne séparée */}
                         <div className="flex flex-wrap gap-2 items-center">
                           <Button
-                            onClick={handleTestFirstTwo}
-                            disabled={isGeneratingPrompts || isGeneratingImages}
-                            size="sm"
-                          >
-                            {isGeneratingPrompts || isGeneratingImages ? (
-                              <>
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                Test en cours...
-                              </>
-                            ) : (
-                              <>
-                                <Sparkles className="mr-2 h-4 w-4" />
-                                Tester (2 premières)
-                              </>
-                            )}
-                          </Button>
-                          <Button
                             onClick={() => handleGeneratePrompts(false)}
                             disabled={isGeneratingPrompts}
                             size="sm"
@@ -5111,7 +5048,6 @@ const Index = () => {
                     
                     setScenes(newScenes);
                     setGeneratedPrompts([]);
-                    setHasTestedFirstTwo(false);
                     
                     // Save to database
                     if (currentProjectId) {
