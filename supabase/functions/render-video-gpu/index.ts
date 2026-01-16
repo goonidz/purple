@@ -99,21 +99,43 @@ serve(async (req) => {
 
     if (projectError) throw projectError;
 
-    const scenes = project.prompts as Scene[];
     const audioUrl = project.audio_url;
 
     if (!audioUrl) {
       throw new Error("Project has no audio file");
     }
 
-    if (!scenes || scenes.length === 0) {
+    // Fetch scenes from project_scenes table (source of truth)
+    const { data: projectScenes, error: scenesError } = await supabase
+      .from("project_scenes")
+      .select("scene_index, text, prompt, start_time, end_time, duration, image_url, upscaled_url")
+      .eq("project_id", projectId)
+      .order("scene_index", { ascending: true });
+
+    if (scenesError) throw scenesError;
+
+    if (!projectScenes || projectScenes.length === 0) {
       throw new Error("Project has no scenes");
     }
+
+    // Map to Scene format, using upscaled_url if available, otherwise image_url
+    const scenes: Scene[] = projectScenes.map(s => ({
+      startTime: s.start_time,
+      endTime: s.end_time,
+      imageUrl: s.upscaled_url || s.image_url,
+      text: s.text || '',
+    }));
 
     // Check if all scenes have images
     const missingImages = scenes.filter((s: Scene) => !s.imageUrl);
     if (missingImages.length > 0) {
       throw new Error(`${missingImages.length} scene(s) are missing images`);
+    }
+
+    // Check if all scenes have valid timing
+    const invalidTiming = scenes.filter((s: Scene) => s.startTime == null || s.endTime == null);
+    if (invalidTiming.length > 0) {
+      throw new Error(`${invalidTiming.length} scene(s) have missing timing data (startTime/endTime)`);
     }
 
     // Use project dimensions from DB, fallback to request dimensions

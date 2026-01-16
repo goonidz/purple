@@ -3381,7 +3381,7 @@ const Index = () => {
               if (!shouldShowBanner) return null;
               
               return (
-                <div className="sticky top-20 z-30 bg-background border rounded-lg p-3 mb-4 shadow-md space-y-2">
+                <div className="sticky top-[88px] z-30 bg-background border rounded-lg p-3 mb-4 shadow-md space-y-2">
                   {activeJobs.length > 0 && (
                     <ActiveJobsBanner 
                       jobs={activeJobs} 
