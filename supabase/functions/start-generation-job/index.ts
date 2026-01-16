@@ -4459,13 +4459,34 @@ async function createSingleUpscaleJobFromQA(
     return;
   }
   
-  // Check if this image model needs upscaling (Z-Image models are already high-res)
+  // Check if this image model needs upscaling
+  // Seedream models are already high-res (1440x816), Z-Image needs upscaling
   const imageModel = project.image_model || 'seedream-4.5';
-  const needsUpscale = !imageModel.toLowerCase().includes('z-image');
+  const isSeedream = imageModel.toLowerCase().includes('seedream');
+  const needsUpscale = !isSeedream;
   
   if (!needsUpscale) {
-    console.log(`[createSingleUpscaleJobFromQA] Skipping upscale for Z-Image model, scene ${sceneIndex}`);
-    // Directly update parent progress since we're skipping upscale
+    console.log(`[createSingleUpscaleJobFromQA] Seedream model, creating completed upscale job for scene ${sceneIndex}`);
+    // Create a completed upscale job so progress tracking works
+    await adminClient
+      .from('generation_jobs')
+      .insert({
+        project_id: projectId,
+        user_id: userId,
+        job_type: 'single_upscale',
+        status: 'completed',
+        progress: 1,
+        total: 1,
+        scene_index: sceneIndex,
+        parent_job_id: parentJobId,
+        completed_at: new Date().toISOString(),
+        metadata: {
+          imageUrl: prompt.imageUrl,
+          skipped: true,
+          reason: 'Seedream model already high-res'
+        }
+      });
+    // Update parent progress
     await updateParentProgressAfterUpscale(adminClient, parentJobId, sceneIndex);
     return;
   }
@@ -4507,11 +4528,16 @@ async function createSingleImageRegenJob(
   console.log(`[createSingleImageRegenJob] Creating regen job for scene ${sceneIndex}`);
   
   // Get current prompt and image settings
-  const { data: project } = await adminClient
+  const { data: project, error: projectError } = await adminClient
     .from('projects')
-    .select('prompts, image_model, image_width, image_height, style_reference_urls')
+    .select('prompts, image_model')
     .eq('id', projectId)
     .single();
+  
+  if (projectError) {
+    console.error(`[createSingleImageRegenJob] Error fetching project ${projectId}:`, projectError.message);
+    return;
+  }
   
   if (!project) {
     console.error(`[createSingleImageRegenJob] Project ${projectId} not found`);
@@ -4540,9 +4566,6 @@ async function createSingleImageRegenJob(
       metadata: {
         prompt: newPrompt,
         model: project.image_model || 'seedream-4.5',
-        width: project.image_width || 1440,
-        height: project.image_height || 816,
-        styleRefs: project.style_reference_urls || [],
         is_regen: true,
         original_prompt: originalPrompt,
         qa_rejection_reason: qaResult?.explication || 'QA rejection',
