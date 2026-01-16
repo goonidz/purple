@@ -3042,6 +3042,7 @@ const Index = () => {
   };
 
   const handleLoadPreset = async (preset: {
+    id: string;
     name: string;
     scene_duration_0to1: number;
     scene_duration_1to3: number;
@@ -3060,6 +3061,14 @@ const Index = () => {
     lora_steps?: number;
     qa_prompt?: string | null;
   }) => {
+    // Save preset_id to project for backend LoRA loading
+    if (currentProjectId && preset.id) {
+      await supabase
+        .from('projects')
+        .update({ preset_id: preset.id } as any)
+        .eq('id', currentProjectId);
+      console.log('[handleLoadPreset] Saved preset_id to project:', preset.id);
+    }
     // Use duration_ranges if available, otherwise build from legacy format
     if (preset.duration_ranges && preset.duration_ranges.length > 0) {
       setDurationRanges(preset.duration_ranges);

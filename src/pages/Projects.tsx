@@ -62,6 +62,7 @@ const Projects = () => {
   const [imageModel, setImageModel] = useState("seedream-4.5");
   const [loraUrl, setLoraUrl] = useState("");
   const [loraSteps, setLoraSteps] = useState(10);
+  const [selectedPresetId, setSelectedPresetId] = useState<string | null>(null);
   const [promptSystemMessage, setPromptSystemMessage] = useState("");
   const [qaPrompt, setQaPrompt] = useState("");
   const [styleReferenceFiles, setStyleReferenceFiles] = useState<File[]>([]);
@@ -579,11 +580,12 @@ const Projects = () => {
           image_model: imageModel,
           lora_url: loraUrl || null,
           lora_steps: loraSteps,
+          preset_id: selectedPresetId || null,
           prompt_system_message: promptSystemMessage || null,
           style_reference_url: serializeStyleReferenceUrls(styleReferenceUrls),
           scenes: generatedScenes as any,
           thumbnail_preset_id: thumbnailPresetId || null,
-        })
+        } as any)
         .eq("id", projectId);
 
       if (error) throw error;
@@ -926,6 +928,7 @@ const Projects = () => {
                           setImageModel(preset.image_model);
                           setLoraUrl(preset.lora_url || "");
                           setLoraSteps(preset.lora_steps || 10);
+                          setSelectedPresetId(preset.id);
                           setStyleReferenceUrls(parseStyleReferenceUrls(preset.style_reference_url));
                           setPromptSystemMessage(preset.prompt_system_message || "");
                           setQaPrompt(preset.qa_prompt || "");

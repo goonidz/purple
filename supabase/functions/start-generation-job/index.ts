@@ -1818,6 +1818,21 @@ async function processImagesJob(
 
   if (!project) throw new Error("Project not found");
 
+  // Load LoRA settings from preset if not set on project directly
+  if (!project.lora_url && project.preset_id) {
+    const { data: preset } = await adminClient
+      .from('presets')
+      .select('lora_url, lora_steps')
+      .eq('id', project.preset_id)
+      .single();
+    
+    if (preset?.lora_url) {
+      project.lora_url = preset.lora_url;
+      project.lora_steps = preset.lora_steps || 10;
+      console.log(`[processImagesJob] Loaded LoRA from preset: ${preset.lora_url}, steps: ${project.lora_steps}`);
+    }
+  }
+
   const prompts = (project.prompts as any[]) || [];
   let imageWidth = project.image_width || 1920;
   let imageHeight = project.image_height || 1080;
@@ -2654,6 +2669,21 @@ async function processTestImagesJob(
 
   if (!project) throw new Error("Project not found");
 
+  // Load LoRA settings from preset if not set on project directly
+  if (!project.lora_url && project.preset_id) {
+    const { data: preset } = await adminClient
+      .from('presets')
+      .select('lora_url, lora_steps')
+      .eq('id', project.preset_id)
+      .single();
+    
+    if (preset?.lora_url) {
+      project.lora_url = preset.lora_url;
+      project.lora_steps = preset.lora_steps || 10;
+      console.log(`[processTestImagesJob] Loaded LoRA from preset: ${preset.lora_url}, steps: ${project.lora_steps}`);
+    }
+  }
+
   const scenes = (project.scenes as any[]) || [];
   const transcriptData = project.transcript_json as any;
   const examplePrompts = (project.example_prompts as string[]) || [];
@@ -3304,6 +3334,21 @@ async function processSingleImageJob(
     .single();
 
   if (!project) throw new Error("Project not found");
+
+  // Load LoRA settings from preset if not set on project directly
+  if (!project.lora_url && project.preset_id) {
+    const { data: preset } = await adminClient
+      .from('presets')
+      .select('lora_url, lora_steps')
+      .eq('id', project.preset_id)
+      .single();
+    
+    if (preset?.lora_url) {
+      project.lora_url = preset.lora_url;
+      project.lora_steps = preset.lora_steps || 10;
+      console.log(`[processSingleImageJob] Loaded LoRA from preset: ${preset.lora_url}, steps: ${project.lora_steps}`);
+    }
+  }
 
   const prompts = (project.prompts as any[]) || [];
   let imageWidth = project.image_width || 1920;
@@ -5487,6 +5532,21 @@ async function processQARegenJob(
     .single();
 
   if (!project) throw new Error("Project not found");
+
+  // Load LoRA settings from preset if not set on project directly
+  if (!project.lora_url && project.preset_id) {
+    const { data: preset } = await adminClient
+      .from('presets')
+      .select('lora_url, lora_steps')
+      .eq('id', project.preset_id)
+      .single();
+    
+    if (preset?.lora_url) {
+      project.lora_url = preset.lora_url;
+      project.lora_steps = preset.lora_steps || 10;
+      console.log(`[processQARegenJob] Loaded LoRA from preset: ${preset.lora_url}, steps: ${project.lora_steps}`);
+    }
+  }
 
   const prompts = (project.prompts as any[]) || [];
   let imageWidth = project.image_width || 1920;

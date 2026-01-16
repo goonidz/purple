@@ -540,9 +540,10 @@ export const ProjectConfigurationModal = ({
           image_model: imageModel,
           lora_url: loraUrl || null,
           lora_steps: loraSteps,
+          preset_id: selectedPresetId || null,
           style_reference_url: styleReferenceUrls.length > 0 ? JSON.stringify(styleReferenceUrls) : null,
           thumbnail_preset_id: selectedThumbnailPresetId || null,
-        })
+        } as any)
         .eq("id", currentProjectId);
 
       if (error) throw error;
