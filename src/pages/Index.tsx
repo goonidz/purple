@@ -3704,6 +3704,17 @@ const Index = () => {
                   currentPresetId={currentPresetId || undefined}
                 />
 
+                {activePresetName && (
+                  <Card className="p-3 bg-primary/10 border-primary/30 mb-4">
+                    <div className="flex items-center gap-2">
+                      <Check className="h-4 w-4 text-primary" />
+                      <span className="text-sm font-medium">
+                        Preset actif : <span className="text-primary">{activePresetName}</span>
+                      </span>
+                    </div>
+                  </Card>
+                )}
+
                 {/* CTA when transcription is done but no scenes AND no prompts yet */}
                 {transcriptData && scenes.length === 0 && generatedPrompts.length === 0 && (
                   <Card className="p-6 border-2 border-primary/50 bg-primary/5 mb-6">
