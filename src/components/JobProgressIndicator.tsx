@@ -18,6 +18,15 @@ export function JobProgressIndicator({ job, onCancel, className }: JobProgressIn
   // For chunked jobs, calculate global progress using metadata
   const metadata = job.metadata || {};
   
+  // Check if this is an atomic pipeline job (images with semiAutoMode)
+  const isAtomicPipeline = job.job_type === 'images' && (metadata.semiAutoMode === true || metadata.progress_images !== undefined);
+  
+  // For atomic pipeline, get phase progress from metadata
+  const totalScenes = metadata.total_scenes || job.total || 1;
+  const progressImages = metadata.progress_images || 0;
+  const progressQA = metadata.progress_qa || 0;
+  const progressUpscale = metadata.progress_upscale || 0;
+  
   // For upscale jobs specifically, ensure we use the correct total
   let totalItems: number;
   let globalProgress: number;
@@ -32,6 +41,17 @@ export function JobProgressIndicator({ job, onCancel, className }: JobProgressIn
     
     // For upscale, job.progress is already calculated as global progress in the webhook
     globalProgress = job.progress || 0;
+  } else if (isAtomicPipeline) {
+    // For atomic pipeline, show overall progress based on current phase
+    totalItems = totalScenes;
+    // Show upscale progress if upscales have started, otherwise QA, otherwise images
+    if (progressUpscale > 0) {
+      globalProgress = progressUpscale;
+    } else if (progressQA > 0) {
+      globalProgress = progressImages; // Keep showing image progress during QA
+    } else {
+      globalProgress = progressImages;
+    }
   } else {
     // For other job types
     totalItems = metadata.totalGlobal || metadata.totalImages || metadata.totalPrompts || metadata.totalMissing || job.total || 1;
@@ -88,6 +108,65 @@ export function JobProgressIndicator({ job, onCancel, className }: JobProgressIn
         return null;
     }
   };
+
+  // For atomic pipeline, render 3 progress bars
+  if (isAtomicPipeline && isActive) {
+    const imagesPercent = totalScenes > 0 ? Math.min(100, (progressImages / totalScenes) * 100) : 0;
+    const qaPercent = totalScenes > 0 ? Math.min(100, (progressQA / totalScenes) * 100) : 0;
+    const upscalePercent = totalScenes > 0 ? Math.min(100, (progressUpscale / totalScenes) * 100) : 0;
+    
+    return (
+      <Card className={cn("p-3 border-primary/20 bg-primary/5", className)}>
+        <div className="flex items-start gap-2">
+          <div className="flex-shrink-0 mt-0.5">
+            {getStatusIcon()}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 mb-2">
+              <span className="text-sm font-medium">Pipeline de génération</span>
+              {onCancel && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => onCancel(job.id)}
+                  className="h-6 px-2 text-xs text-muted-foreground hover:text-destructive flex-shrink-0"
+                >
+                  <Square className="h-3 w-3 mr-1" />
+                  Arrêter
+                </Button>
+              )}
+            </div>
+            
+            {/* Images progress */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground w-16">Images</span>
+                <Progress value={imagesPercent} className="h-1.5 flex-1" />
+                <span className="text-xs text-muted-foreground w-12 text-right">{progressImages}/{totalScenes}</span>
+              </div>
+              
+              {/* QA progress */}
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground w-16">QA</span>
+                <Progress value={qaPercent} className="h-1.5 flex-1" />
+                <span className="text-xs text-muted-foreground w-12 text-right">{progressQA}/{totalScenes}</span>
+              </div>
+              
+              {/* Upscale progress */}
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground w-16">Upscale</span>
+                <Progress value={upscalePercent} className="h-1.5 flex-1" />
+                <span className="text-xs text-muted-foreground w-12 text-right">{progressUpscale}/{totalScenes}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground mt-2">
+          Vous pouvez quitter cette page. La génération continue en arrière-plan.
+        </p>
+      </Card>
+    );
+  }
 
   return (
     <Card className={cn("p-3 border-primary/20 bg-primary/5", className)}>

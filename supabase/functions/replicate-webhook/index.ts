@@ -454,9 +454,12 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
     
     // ATOMIC PIPELINE: Create QA job immediately for this scene
     if (job.parent_job_id) {
-      const isRegen = job.metadata?.is_regen === true;
+      const isRegen = job.metadata?.is_regen === true || job.is_regen === true;
       await createSingleQAJob(adminClient, job.project_id, job.user_id, job.scene_index, job.parent_job_id, isRegen);
       await launchNextPendingQAJob(adminClient);
+      
+      // Update parent progress to show image completion progress
+      await updateParentImageProgress(adminClient, job.parent_job_id);
     }
     
     // Launch next pending image job
@@ -2438,29 +2441,57 @@ async function updateParentJobProgressForScene(
   
   if (!parentJob) return;
   
-  // Count completed upscale jobs (or completed QA if upscale skipped)
-  // For simplicity, count distinct scenes that have completed their pipeline
-  const { data: completedUpscales } = await adminClient
+  const total = parentJob.total || 0;
+  
+  // Count completed jobs for each phase
+  const { count: completedImages } = await adminClient
     .from('generation_jobs')
-    .select('scene_index')
+    .select('id', { count: 'exact', head: true })
+    .eq('parent_job_id', parentJobId)
+    .eq('job_type', 'single_image')
+    .eq('status', 'completed')
+    .or('is_regen.is.null,is_regen.eq.false');
+  
+  const { count: completedQA } = await adminClient
+    .from('generation_jobs')
+    .select('id', { count: 'exact', head: true })
+    .eq('parent_job_id', parentJobId)
+    .eq('job_type', 'single_qa')
+    .eq('status', 'completed');
+  
+  const { count: completedUpscale } = await adminClient
+    .from('generation_jobs')
+    .select('id', { count: 'exact', head: true })
     .eq('parent_job_id', parentJobId)
     .eq('job_type', 'single_upscale')
     .eq('status', 'completed');
   
-  const completedScenes = new Set((completedUpscales || []).map((j: any) => j.scene_index));
-  const completedCount = completedScenes.size;
-  const total = parentJob.total || 0;
+  const progressImages = completedImages || 0;
+  const progressQA = completedQA || 0;
+  const progressUpscale = completedUpscale || 0;
   
-  console.log(`[updateParentJobProgressForScene] Parent ${parentJobId}: ${completedCount}/${total} scenes complete`);
+  console.log(`[updateParentJobProgressForScene] Parent ${parentJobId}: images=${progressImages}/${total}, qa=${progressQA}/${total}, upscale=${progressUpscale}/${total}`);
   
-  // Update parent progress
+  // Update parent with phase progress in metadata
+  const newMetadata = {
+    ...(parentJob.metadata || {}),
+    progress_images: progressImages,
+    progress_qa: progressQA,
+    progress_upscale: progressUpscale,
+    total_scenes: total
+  };
+  
+  // Update parent progress (show upscale progress as main since we're in upscale phase)
   await adminClient
     .from('generation_jobs')
-    .update({ progress: completedCount })
+    .update({ 
+      progress: progressUpscale,
+      metadata: newMetadata
+    })
     .eq('id', parentJobId);
   
-  // Check if all scenes are complete
-  if (completedCount >= total) {
+  // Check if all upscales are complete
+  if (progressUpscale >= total) {
     console.log(`[updateParentJobProgressForScene] All ${total} scenes complete! Marking parent as completed`);
     
     await adminClient
@@ -2471,4 +2502,71 @@ async function updateParentJobProgressForScene(
       })
       .eq('id', parentJobId);
   }
+}
+
+// ========================================================================
+// ATOMIC PIPELINE: Update parent progress with 3-phase tracking
+// Stores progress_images, progress_qa, progress_upscale in metadata
+// ========================================================================
+async function updateParentImageProgress(
+  adminClient: any,
+  parentJobId: string
+): Promise<void> {
+  // Get parent job info
+  const { data: parentJob } = await adminClient
+    .from('generation_jobs')
+    .select('total, metadata')
+    .eq('id', parentJobId)
+    .single();
+  
+  if (!parentJob) return;
+  
+  const total = parentJob.total || 0;
+  
+  // Count completed jobs for each phase
+  const { count: completedImages } = await adminClient
+    .from('generation_jobs')
+    .select('id', { count: 'exact', head: true })
+    .eq('parent_job_id', parentJobId)
+    .eq('job_type', 'single_image')
+    .eq('status', 'completed')
+    .or('is_regen.is.null,is_regen.eq.false');
+  
+  const { count: completedQA } = await adminClient
+    .from('generation_jobs')
+    .select('id', { count: 'exact', head: true })
+    .eq('parent_job_id', parentJobId)
+    .eq('job_type', 'single_qa')
+    .eq('status', 'completed');
+  
+  const { count: completedUpscale } = await adminClient
+    .from('generation_jobs')
+    .select('id', { count: 'exact', head: true })
+    .eq('parent_job_id', parentJobId)
+    .eq('job_type', 'single_upscale')
+    .eq('status', 'completed');
+  
+  const progressImages = completedImages || 0;
+  const progressQA = completedQA || 0;
+  const progressUpscale = completedUpscale || 0;
+  
+  console.log(`[updateParentImageProgress] Parent ${parentJobId}: images=${progressImages}/${total}, qa=${progressQA}/${total}, upscale=${progressUpscale}/${total}`);
+  
+  // Update parent with phase progress in metadata
+  const newMetadata = {
+    ...(parentJob.metadata || {}),
+    progress_images: progressImages,
+    progress_qa: progressQA,
+    progress_upscale: progressUpscale,
+    total_scenes: total
+  };
+  
+  // Main progress shows image progress for loading bar
+  await adminClient
+    .from('generation_jobs')
+    .update({ 
+      progress: progressImages,
+      metadata: newMetadata
+    })
+    .eq('id', parentJobId);
 }
