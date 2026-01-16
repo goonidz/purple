@@ -139,6 +139,12 @@ export function JobProgressIndicator({ job, onCancel, className }: JobProgressIn
             
             {/* Images progress */}
             <div className="space-y-2">
+              {progressImages === 0 && (
+                <div className="flex items-center gap-2 mb-2 p-1.5 bg-yellow-500/10 border border-yellow-500/20 rounded text-[10px] text-yellow-600 dark:text-yellow-500 animate-pulse">
+                  <AlertCircle className="h-3 w-3 flex-shrink-0" />
+                  <span>Démarrage en cours (1-2 min)... Les GPU se lancent.</span>
+                </div>
+              )}
               <div className="flex items-center gap-2">
                 <span className="text-xs text-muted-foreground w-16">Images</span>
                 <Progress value={imagesPercent} className="h-1.5 flex-1" />
@@ -197,7 +203,15 @@ export function JobProgressIndicator({ job, onCancel, className }: JobProgressIn
             )}
           </div>
           {isActive && (
-            <Progress value={progressPercent} className="h-1.5" />
+            <>
+              <Progress value={progressPercent} className="h-1.5" />
+              {globalProgress === 0 && (job.job_type === 'images' || job.job_type === 'upscale' || job.job_type === 'thumbnails') && (
+                <p className="text-[10px] text-yellow-600 dark:text-yellow-500 mt-1.5 animate-pulse flex items-center gap-1">
+                  <AlertCircle className="h-3 w-3" />
+                  Démarrage en cours (1-2 min)... Les GPU se lancent.
+                </p>
+              )}
+            </>
           )}
           {job.status === 'failed' && job.error_message && (
             <p className="text-xs text-destructive mt-1 line-clamp-2">

@@ -546,8 +546,10 @@ async function updateParentProgressFromScenes(adminClient: any, parentJobId: str
   await adminClient
     .from('generation_jobs')
     .update({ 
-      progress: progressImages || 0,
-      metadata: newMetadata
+      // CRITICAL: progress column must follow upscaleDone to keep job "processing"
+      progress: progressUpscale || 0,
+      metadata: newMetadata,
+      updated_at: new Date().toISOString()
     })
     .eq('id', parentJobId);
 }
