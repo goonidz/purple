@@ -1716,12 +1716,7 @@ async function processImagesJob(
   adminClient: any
 ) {
   const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
-  
-  // CHUNK SETTINGS - optimized for speed while avoiding timeout
-  const FIRST_CHUNK_SIZE = 30; // First chunk (was 20)
-  const SUBSEQUENT_CHUNK_SIZE = 50; // Subsequent chunks
-  const isFirstChunk = !metadata.isChunkContinuation;
-  const CHUNK_SIZE = isFirstChunk ? FIRST_CHUNK_SIZE : SUBSEQUENT_CHUNK_SIZE;
+  const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
   
   // Get project data
   const { data: project } = await adminClient
@@ -1762,8 +1757,86 @@ async function processImagesJob(
     }
   }
 
-  // Filter prompts that need images - ALWAYS re-filter from DB to get fresh state
+  // Filter prompts that need images
   const skipExisting = metadata.skipExisting !== false;
+  
+  // ========================================================================
+  // NEW QUEUE-BASED SYSTEM
+  // ========================================================================
+  // If useQueue is enabled in metadata, delegate to the new scalable queue
+  // This provides global concurrency control and better parallel project handling
+  // ========================================================================
+  if (metadata.useQueue === true) {
+    console.log(`[processImagesJob] Using NEW queue-based system for project ${projectId}`);
+    
+    // Get prompts that need images
+    const promptsToProcess = prompts
+      .map((prompt: any, index: number) => ({ prompt, index }))
+      .filter(({ prompt }: any) => prompt && prompt.prompt && (!skipExisting || !prompt.imageUrl));
+    
+    if (promptsToProcess.length === 0) {
+      console.log("[processImagesJob] No images to generate (all have images)");
+      return;
+    }
+    
+    // Build queue items
+    const queueItems = promptsToProcess.map(({ prompt, index }: any) => ({
+      index,
+      payload: {
+        prompt: prompt.prompt,
+        model: imageModel,
+        width: imageWidth,
+        height: imageHeight,
+        styleRefs: styleReferenceUrls,
+      },
+      priority: metadata.priority || 0,
+    }));
+    
+    console.log(`[processImagesJob] Enqueueing ${queueItems.length} images via queue system`);
+    
+    // Call enqueue-generation to add items to the queue
+    try {
+      const response = await fetch(`${supabaseUrl}/functions/v1/enqueue-generation`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabaseServiceKey}`,
+        },
+        body: JSON.stringify({
+          projectId,
+          jobId,
+          userId,
+          generationType: 'scene_image',
+          items: queueItems,
+        }),
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to enqueue: ${errorText}`);
+      }
+      
+      const result = await response.json();
+      console.log(`[processImagesJob] Successfully enqueued ${result.queued} items`);
+      
+      // The queue system handles everything from here (processing, webhooks, progress updates)
+      return;
+      
+    } catch (error) {
+      console.error(`[processImagesJob] Queue system error, falling back to legacy:`, error);
+      // Fall through to legacy system if queue fails
+    }
+  }
+  
+  // ========================================================================
+  // LEGACY SYSTEM (unchanged for backward compatibility)
+  // ========================================================================
+  
+  // CHUNK SETTINGS - optimized for speed while avoiding timeout
+  const FIRST_CHUNK_SIZE = 30; // First chunk (was 20)
+  const SUBSEQUENT_CHUNK_SIZE = 50; // Subsequent chunks
+  const isFirstChunk = !metadata.isChunkContinuation;
+  const CHUNK_SIZE = isFirstChunk ? FIRST_CHUNK_SIZE : SUBSEQUENT_CHUNK_SIZE;
   
   // FIRST: Clean up stuck predictions (pending/processing for > 5 minutes)
   // This allows scenes with stuck predictions to be retried
@@ -3438,9 +3511,7 @@ async function processUpscaleJob(
   adminClient: any
 ) {
   const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
-  
-  // CHUNK SETTINGS - optimized for speed while avoiding timeout
-  const CHUNK_SIZE = 30; // Process 30 images per chunk (was 20)
+  const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
   
   // Get project data
   const { data: project } = await adminClient
@@ -3452,6 +3523,79 @@ async function processUpscaleJob(
   if (!project) throw new Error("Project not found");
 
   const prompts = (project.prompts as any[]) || [];
+  
+  // ========================================================================
+  // NEW QUEUE-BASED SYSTEM FOR UPSCALE
+  // ========================================================================
+  if (metadata.useQueue === true) {
+    console.log(`[processUpscaleJob] Using NEW queue-based system for project ${projectId}`);
+    
+    // Get images that need upscaling
+    const imagesToUpscale = prompts
+      .map((prompt: any, index: number) => ({ prompt, index }))
+      .filter(({ prompt, index }: any) => {
+        if (!prompt || !prompt.imageUrl) return false;
+        if (prompt.isUpscaled === true) return false;
+        const imgWidth = prompt.imageWidth || 0;
+        const imgHeight = prompt.imageHeight || 0;
+        if (imgWidth >= 1920 && imgHeight >= 1080) return false;
+        return true;
+      });
+    
+    if (imagesToUpscale.length === 0) {
+      console.log("[processUpscaleJob] No images to upscale");
+      return;
+    }
+    
+    // Build queue items
+    const queueItems = imagesToUpscale.map(({ prompt, index }: any) => ({
+      index,
+      payload: {
+        imageUrl: prompt.imageUrl,
+        scale: 2,
+        faceEnhance: false,
+      },
+      priority: metadata.priority || 0,
+    }));
+    
+    console.log(`[processUpscaleJob] Enqueueing ${queueItems.length} upscales via queue system`);
+    
+    try {
+      const response = await fetch(`${supabaseUrl}/functions/v1/enqueue-generation`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabaseServiceKey}`,
+        },
+        body: JSON.stringify({
+          projectId,
+          jobId,
+          userId,
+          generationType: 'upscale',
+          items: queueItems,
+        }),
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to enqueue: ${errorText}`);
+      }
+      
+      const result = await response.json();
+      console.log(`[processUpscaleJob] Successfully enqueued ${result.queued} upscales`);
+      return;
+      
+    } catch (error) {
+      console.error(`[processUpscaleJob] Queue system error, falling back to legacy:`, error);
+    }
+  }
+  
+  // ========================================================================
+  // LEGACY SYSTEM (unchanged for backward compatibility)
+  // ========================================================================
+  
+  // CHUNK SETTINGS - optimized for speed while avoiding timeout
+  const CHUNK_SIZE = 30; // Process 30 images per chunk (was 20)
   
   // Get images that need upscaling:
   // - Have imageUrl (generated)

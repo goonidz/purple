@@ -91,7 +91,7 @@ export function useGenerationJobs({ projectId, onJobComplete, onJobFailed, autoR
           body: { 
             projectId: targetProjectId, 
             jobType: 'images', 
-            metadata: { skipExisting: true, autoRetry: true } 
+            metadata: { skipExisting: true, autoRetry: true, useQueue: true } 
           }
         });
 
@@ -351,8 +351,14 @@ export function useGenerationJobs({ projectId, onJobComplete, onJobFailed, autoR
     setIsLoading(true);
 
     try {
+      // Enable new queue-based system for images and upscale jobs
+      const enhancedMetadata = {
+        ...metadata,
+        useQueue: jobType === 'images' || jobType === 'upscale' ? true : metadata.useQueue,
+      };
+
       const { data, error } = await supabase.functions.invoke('start-generation-job', {
-        body: { projectId: targetProjectId, jobType, metadata }
+        body: { projectId: targetProjectId, jobType, metadata: enhancedMetadata }
       });
 
       if (error) throw error;

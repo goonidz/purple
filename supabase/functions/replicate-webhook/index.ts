@@ -137,6 +137,12 @@ serve(async (req) => {
 
           // Check if all predictions for this job are complete
           await checkJobCompletion(adminClient, prediction.job_id);
+          
+          // NEW: Update generation_queue if this prediction came from the queue
+          await updateQueueItemStatus(adminClient, predictionId, 'completed', publicUrl);
+          
+          // NEW: Trigger next batch processing
+          await triggerQueueProcessing(supabaseUrl, supabaseServiceKey);
 
         } catch (error) {
           console.error(`Error processing successful prediction:`, error);
@@ -150,6 +156,12 @@ serve(async (req) => {
             .eq('id', prediction.id);
             
           await checkJobCompletion(adminClient, prediction.job_id);
+          
+          // NEW: Update queue item as failed
+          await updateQueueItemStatus(adminClient, predictionId, 'failed', null, error instanceof Error ? error.message : 'Unknown error');
+          
+          // NEW: Trigger next batch even on failure
+          await triggerQueueProcessing(supabaseUrl, supabaseServiceKey);
         }
       }
     } else if (status === 'failed' || status === 'canceled') {
@@ -167,6 +179,12 @@ serve(async (req) => {
         .eq('id', prediction.id);
 
       await checkJobCompletion(adminClient, prediction.job_id);
+      
+      // NEW: Update queue item as failed
+      await updateQueueItemStatus(adminClient, predictionId, 'failed', null, typeof errorDetail === 'string' ? errorDetail.substring(0, 500) : `Generation ${status}`);
+      
+      // NEW: Trigger next batch even on failure
+      await triggerQueueProcessing(supabaseUrl, supabaseServiceKey);
     }
     // For 'starting' or 'processing' statuses, do nothing - wait for completion
 
@@ -1673,4 +1691,87 @@ async function chainNextJobFromWebhook(
   } catch (fetchError) {
     console.error(`Error triggering chained job:`, fetchError);
   }
+}
+
+// ============================================================================
+// NEW: Queue-based generation support
+// ============================================================================
+
+/**
+ * Update generation_queue item status when a prediction completes
+ */
+async function updateQueueItemStatus(
+  adminClient: any,
+  predictionId: string,
+  status: 'completed' | 'failed',
+  resultUrl: string | null,
+  errorMessage?: string
+): Promise<void> {
+  try {
+    const updateData: Record<string, any> = {
+      status,
+      completed_at: new Date().toISOString(),
+    };
+    
+    if (resultUrl) {
+      updateData.result_url = resultUrl;
+    }
+    
+    if (errorMessage) {
+      updateData.error_message = errorMessage;
+    }
+
+    const { error } = await adminClient
+      .from('generation_queue')
+      .update(updateData)
+      .eq('prediction_id', predictionId);
+
+    if (error) {
+      // Not an error if item doesn't exist - might be old system
+      if (error.code !== 'PGRST116') {
+        console.log(`[Queue] No queue item found for prediction ${predictionId} (using old system)`);
+      }
+    } else {
+      console.log(`[Queue] Updated queue item for prediction ${predictionId} -> ${status}`);
+    }
+  } catch (error) {
+    console.error(`[Queue] Error updating queue item status:`, error);
+  }
+}
+
+/**
+ * Trigger the queue processor to start the next batch
+ */
+async function triggerQueueProcessing(
+  supabaseUrl: string,
+  supabaseServiceKey: string
+): Promise<void> {
+  // Use EdgeRuntime.waitUntil to not block the webhook response
+  EdgeRuntime.waitUntil((async () => {
+    try {
+      // Small delay to batch multiple webhook completions
+      await new Promise(resolve => setTimeout(resolve, 200));
+      
+      const response = await fetch(`${supabaseUrl}/functions/v1/process-generation-queue`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabaseServiceKey}`,
+        },
+        body: JSON.stringify({ trigger: 'webhook' }),
+      });
+
+      if (response.ok) {
+        console.log('[Queue] Triggered next batch processing');
+      } else {
+        // Don't log error if queue is empty or at capacity
+        const result = await response.json().catch(() => ({}));
+        if (result.message !== 'No pending items' && result.message !== 'Global limit reached') {
+          console.error('[Queue] Failed to trigger processing:', result);
+        }
+      }
+    } catch (error) {
+      console.error('[Queue] Error triggering queue processing:', error);
+    }
+  })());
 }
