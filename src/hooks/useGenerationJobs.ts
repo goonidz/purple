@@ -122,6 +122,7 @@ export function useGenerationJobs({ projectId, onJobComplete, onJobFailed, autoR
           .select('*')
           .eq('project_id', projectId)
           .in('status', ['pending', 'processing'])
+          .neq('job_type', 'single_image') // Hide individual image jobs (child jobs)
           .order('created_at', { ascending: false });
 
         if (error) throw error;
@@ -149,6 +150,8 @@ export function useGenerationJobs({ projectId, onJobComplete, onJobFailed, autoR
           
           if (payload.eventType === 'INSERT') {
             const newJob = payload.new as GenerationJob;
+            // Ignore individual image jobs (child jobs)
+            if (newJob.job_type === 'single_image') return;
             setActiveJobs(prev => {
               // Check if job already exists
               if (prev.find(j => j.id === newJob.id)) return prev;
@@ -156,6 +159,8 @@ export function useGenerationJobs({ projectId, onJobComplete, onJobFailed, autoR
             });
           } else if (payload.eventType === 'UPDATE') {
             const updatedJob = payload.new as GenerationJob;
+            // Ignore individual image jobs (child jobs)
+            if (updatedJob.job_type === 'single_image') return;
             
             setActiveJobs(prev => {
               // If we no longer track this job (already removed), ignore the update
@@ -322,6 +327,7 @@ export function useGenerationJobs({ projectId, onJobComplete, onJobFailed, autoR
         .select('*')
         .eq('project_id', projectId)
         .in('status', ['pending', 'processing'])
+        .neq('job_type', 'single_image') // Hide individual image jobs (child jobs)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
