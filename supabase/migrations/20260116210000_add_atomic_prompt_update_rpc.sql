@@ -20,8 +20,8 @@ BEGIN
   WHERE id = p_project_id
   FOR UPDATE;
   
-  -- Initialize array if null
-  IF current_prompts IS NULL THEN
+  -- Initialize array if null OR not an array (handles edge cases)
+  IF current_prompts IS NULL OR jsonb_typeof(current_prompts) != 'array' THEN
     current_prompts := '[]'::JSONB;
   END IF;
   
@@ -34,6 +34,11 @@ BEGIN
   
   -- Build the new prompt object, preserving existing fields
   new_prompt := COALESCE(current_prompts->p_scene_index, '{}'::JSONB);
+  
+  -- Handle case where existing value is null or not an object
+  IF new_prompt IS NULL OR jsonb_typeof(new_prompt) != 'object' THEN
+    new_prompt := '{}'::JSONB;
+  END IF;
   
   -- Update fields
   new_prompt := jsonb_set(new_prompt, '{scene}', to_jsonb('Scène ' || (p_scene_index + 1)));
