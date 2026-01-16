@@ -506,7 +506,7 @@ export function SceneGrid({
                       </div>
                     </TooltipTrigger>
                     <TooltipContent>
-                      <p>{prompt?.was_regenerated ? 'Qualité validée après régénération' : 'Qualité validée automatiquement'}</p>
+                      <p>{prompt?.was_regenerated ? 'Image régénérée après rejet qualité' : 'Qualité validée automatiquement'}</p>
                     </TooltipContent>
                   </Tooltip>
                 </TooltipProvider>
