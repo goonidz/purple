@@ -3257,10 +3257,14 @@ async function processSinglePromptJob(
     .eq('id', jobId)
     .single();
 
-  // Update this job's progress
+  // Mark this job as completed
   await adminClient
     .from('generation_jobs')
-    .update({ progress: 1 })
+    .update({ 
+      progress: 1, 
+      status: 'completed',
+      completed_at: new Date().toISOString()
+    })
     .eq('id', jobId);
 
   // If this job has a parent, update parent progress and check completion
@@ -3283,7 +3287,7 @@ async function processSinglePromptJob(
       .single();
     
     if (parentJob) {
-      const newProgress = (completedCount || 0) + 1; // +1 for this job that just completed
+      const newProgress = completedCount || 0; // This job is already marked completed, so it's included in the count
       
       // Update parent progress
       await adminClient
