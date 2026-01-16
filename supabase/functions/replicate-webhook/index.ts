@@ -563,7 +563,7 @@ async function chainNextJobFromWebhook(
 }
 
 async function launchNextPendingJob(adminClient: any, supabaseUrl: string, supabaseServiceKey: string) {
-  const MAX_CONCURRENT = 10;
+  const MAX_CONCURRENT = 20;
   const { count: processingCount } = await adminClient
     .from('generation_jobs')
     .select('id', { count: 'exact', head: true })
@@ -680,7 +680,7 @@ async function launchNextPendingQAJob(adminClient: any) {
 }
 
 async function launchNextPendingUpscaleJob(adminClient: any) {
-  const MAX_UP = 10;
+  const MAX_UP = 20;
   const { count } = await adminClient.from('generation_jobs').select('id', { count: 'exact', head: true }).eq('status', 'processing').eq('job_type', 'single_upscale');
   if ((count || 0) >= MAX_UP) return;
 

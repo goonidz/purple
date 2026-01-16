@@ -104,7 +104,7 @@ serve(async (req) => {
       return prompt;
     });
 
-    // Save updated prompts
+    // Save updated prompts to legacy JSON
     const { error: updateError } = await adminClient
       .from('projects')
       .update({ prompts: updatedPrompts })
@@ -116,6 +116,23 @@ serve(async (req) => {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
+    }
+
+    // ROBUST ARCHITECTURE: Also sync to project_scenes table
+    if (repairedCount > 0) {
+      console.log(`Syncing ${repairedCount} repaired images to project_scenes`);
+      for (const [index, imageUrl] of imageMap.entries()) {
+        if (prompts[index] && !prompts[index].imageUrl) {
+          await adminClient
+            .from('project_scenes')
+            .upsert({
+              project_id: projectId,
+              scene_index: index,
+              image_url: imageUrl,
+              updated_at: new Date().toISOString()
+            }, { onConflict: 'project_id,scene_index' });
+        }
+      }
     }
 
     console.log(`Repaired ${repairedCount} images`);

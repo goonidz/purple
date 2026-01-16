@@ -998,6 +998,7 @@ async function processPromptsJob(
       total: scenesToProcess.length,
       metadata: {
         ...metadata,
+        totalGlobal: scenes.length,
         chunkSize: scenesToProcess.length,
         totalMissing: allScenesToProcess.length,
         remainingAfterChunk: remainingAfterThisChunk
@@ -1777,6 +1778,7 @@ async function processImagesJob(
           ...metadata,
           isParentJob: true,
           childJobsCount: totalImages,
+          total_scenes: prompts.length // Add this for UI consistency
         },
       })
       .eq('id', jobId);
@@ -1813,7 +1815,7 @@ async function processImagesJob(
     console.log(`[processImagesJob] Created ${createdJobs.length} individual jobs`);
     
     // Check global concurrency limit
-    const MAX_CONCURRENT = 10;
+    const MAX_CONCURRENT = 20;
     const { count: processingCount } = await adminClient
       .from('generation_jobs')
       .select('id', { count: 'exact', head: true })
@@ -1920,6 +1922,7 @@ async function processImagesJob(
       total: promptsToProcess.length,
       metadata: {
         ...metadata,
+        totalGlobal: prompts.length,
         chunkSize: promptsToProcess.length,
         totalImages: allPromptsToProcess.length,
         remainingAfterChunk: remainingAfterThisChunk,
@@ -4667,7 +4670,7 @@ async function createSingleImageRegenJob(
 }
 
 // Launch next pending upscale job (called from start-generation-job)
-const UPSCALE_MAX_CONCURRENT = 10;
+const UPSCALE_MAX_CONCURRENT = 20;
 
 async function launchNextPendingUpscaleJobFromQA(
   adminClient: any,

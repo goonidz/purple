@@ -4130,11 +4130,36 @@ const Index = () => {
                                       const { imageUrl, ...rest } = p;
                                       return { ...rest, imageUrl: null };
                                     });
-                                    const { error } = await supabase
+                                    
+                                    // 1. Update legacy JSON
+                                    const { error: projectError } = await supabase
                                       .from('projects')
                                       .update({ prompts: clearedPrompts as any })
                                       .eq('id', currentProjectId);
-                                    if (error) throw error;
+                                    if (projectError) throw projectError;
+
+                                    // 2. Update ROBUST table
+                                    const { error: scenesError } = await supabase
+                                      .from('project_scenes')
+                                      .update({ 
+                                        image_url: null,
+                                        image_width: null,
+                                        image_height: null,
+                                        upscaled_url: null,
+                                        is_upscaled: false,
+                                        qa_checked: false,
+                                        qa_status: null
+                                      })
+                                      .eq('project_id', currentProjectId);
+                                    if (scenesError) throw scenesError;
+
+                                    // 3. Clear history from pending_predictions to prevent "repair" from bringing them back
+                                    await supabase
+                                      .from('pending_predictions')
+                                      .delete()
+                                      .eq('project_id', currentProjectId)
+                                      .eq('prediction_type', 'scene_image');
+
                                     setGeneratedPrompts(clearedPrompts.map(p => ({ ...p, imageUrl: undefined })));
                                     toast.success("Toutes les images ont été supprimées");
                                   } catch (error) {
@@ -4155,11 +4180,38 @@ const Index = () => {
                                       prompt: null,
                                       imageUrl: null
                                     }));
-                                    const { error } = await supabase
+
+                                    // 1. Update legacy JSON
+                                    const { error: projectError } = await supabase
                                       .from('projects')
                                       .update({ prompts: clearedPrompts as any })
                                       .eq('id', currentProjectId);
-                                    if (error) throw error;
+                                    if (projectError) throw projectError;
+
+                                    // 2. Update ROBUST table
+                                    const { error: scenesError } = await supabase
+                                      .from('project_scenes')
+                                      .update({ 
+                                        prompt: null,
+                                        image_url: null,
+                                        image_width: null,
+                                        image_height: null,
+                                        upscaled_url: null,
+                                        is_upscaled: false,
+                                        qa_checked: false,
+                                        qa_status: null,
+                                        qa_explication: null,
+                                        qa_regeneration_prompt: null
+                                      })
+                                      .eq('project_id', currentProjectId);
+                                    if (scenesError) throw scenesError;
+
+                                    // 3. Clear history from pending_predictions
+                                    await supabase
+                                      .from('pending_predictions')
+                                      .delete()
+                                      .eq('project_id', currentProjectId);
+
                                     setGeneratedPrompts(clearedPrompts.map(p => ({ ...p, prompt: undefined, imageUrl: undefined })));
                                     toast.success("Tous les prompts et images ont été supprimés");
                                   } catch (error) {
