@@ -221,6 +221,7 @@ const Index = () => {
   const [uploadedStyleImageUrl, setUploadedStyleImageUrl] = useState<string>("");
   const [isUploadingStyleImage, setIsUploadingStyleImage] = useState(false);
   const [activePresetName, setActivePresetName] = useState<string | null>(null);
+  const [currentPresetId, setCurrentPresetId] = useState<string | null>(null);
   const [regeneratingPromptIndex, setRegeneratingPromptIndex] = useState<number | null>(null);
   const [confirmRegeneratePrompt, setConfirmRegeneratePrompt] = useState<number | null>(null);
   const [confirmRegenerateImage, setConfirmRegenerateImage] = useState<number | null>(null);
@@ -1171,6 +1172,7 @@ const Index = () => {
                 setExamplePrompts((preset as any).example_prompts);
               }
               setActivePresetName(preset.name);
+              setCurrentPresetId(presetIdToLoad);
               
               // Save preset_id to project if not already set (for backend LoRA loading)
               if (!projectData.preset_id && channelData.project_preset_id) {
@@ -3137,6 +3139,7 @@ const Index = () => {
         .eq('id', currentProjectId);
       console.log('[handleLoadPreset] Saved preset_id to project:', preset.id);
     }
+    setCurrentPresetId(preset.id);
     // Use duration_ranges if available, otherwise build from legacy format
     if (preset.duration_ranges && preset.duration_ranges.length > 0) {
       setDurationRanges(preset.duration_ranges);
@@ -3698,18 +3701,8 @@ const Index = () => {
                     qaPrompt,
                   }}
                   onLoadPreset={handleLoadPreset}
+                  currentPresetId={currentPresetId || undefined}
                 />
-
-                {activePresetName && (
-                  <Card className="p-3 bg-primary/10 border-primary/30 mb-4">
-                    <div className="flex items-center gap-2">
-                      <Check className="h-4 w-4 text-primary" />
-                      <span className="text-sm font-medium">
-                        Preset actif : <span className="text-primary">{activePresetName}</span>
-                      </span>
-                    </div>
-                  </Card>
-                )}
 
                 {/* CTA when transcription is done but no scenes AND no prompts yet */}
                 {transcriptData && scenes.length === 0 && generatedPrompts.length === 0 && (
@@ -4992,6 +4985,7 @@ const Index = () => {
                   }}
                   autoLoadPresetId={sessionStorage.getItem("auto_load_project_preset_id") || undefined}
                   onLoadPreset={handleLoadPreset}
+                  currentPresetId={currentPresetId || undefined}
                 />
               </div>
 

@@ -186,15 +186,16 @@ interface PresetManagerProps {
   };
   onLoadPreset: (preset: Preset) => void;
   autoLoadPresetId?: string; // Optional: preset ID to auto-load from sessionStorage
+  currentPresetId?: string; // Optional: preset ID to pre-select in dropdown
 }
 
-export const PresetManager = ({ currentConfig, onLoadPreset, autoLoadPresetId }: PresetManagerProps) => {
+export const PresetManager = ({ currentConfig, onLoadPreset, autoLoadPresetId, currentPresetId }: PresetManagerProps) => {
   const [presets, setPresets] = useState<Preset[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [newPresetName, setNewPresetName] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [selectedPresetId, setSelectedPresetId] = useState<string>("");
+  const [selectedPresetId, setSelectedPresetId] = useState<string>(currentPresetId || "");
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
   const [isDuplicateDialogOpen, setIsDuplicateDialogOpen] = useState(false);
@@ -237,6 +238,13 @@ export const PresetManager = ({ currentConfig, onLoadPreset, autoLoadPresetId }:
     loadPresets();
     loadLoraPresets();
   }, []);
+
+  // Sync selectedPresetId with currentPresetId when it changes
+  useEffect(() => {
+    if (currentPresetId && currentPresetId !== selectedPresetId) {
+      setSelectedPresetId(currentPresetId);
+    }
+  }, [currentPresetId]);
 
   // Auto-load preset from sessionStorage if autoLoadPresetId is provided
   useEffect(() => {
