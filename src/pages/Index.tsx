@@ -4145,7 +4145,7 @@ const Index = () => {
                                   size="sm"
                                 >
                                   <Check className="mr-2 h-4 w-4" />
-                                  Vérifier
+                                  Vérifier upscale
                                 </Button>
                               </div>
                             </div>
