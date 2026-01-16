@@ -3881,442 +3881,449 @@ const Index = () => {
                           </div>
                         </div>
                         
-                        {/* Boutons d'action - sur une ligne séparée */}
-                        <div className="flex flex-wrap gap-2 items-center">
-                          <Button
-                            onClick={() => handleGeneratePrompts(false)}
-                            disabled={isGeneratingPrompts}
-                            size="sm"
-                          >
-                            {isGeneratingPrompts ? (
-                              <>
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                Génération...
-                              </>
-                            ) : (
-                              <>
-                                <Sparkles className="mr-2 h-4 w-4" />
-                                Générer tous les prompts
-                              </>
-                            )}
-                          </Button>
-                          {generatedPrompts.length > 0 && (
-                            <Button
-                              onClick={() => {
-                                // Check for missing prompts (null entries or empty prompt)
-                                const missingPromptIndices = generatedPrompts
-                                  .map((p, index) => ({ prompt: p, index }))
-                                  .filter(item => !item.prompt || !item.prompt.prompt)
-                                  .map(item => item.index + 1);
-                                
-                                const presentCount = generatedPrompts.filter(p => p && p.prompt).length;
-                                
-                                if (missingPromptIndices.length > 0) {
-                                  toast.error(
-                                    `⚠️ ${missingPromptIndices.length} scène(s) sans prompt : ${missingPromptIndices.slice(0, 10).join(", ")}${missingPromptIndices.length > 10 ? '...' : ''}`,
-                                    { duration: 10000 }
-                                  );
-                                } else {
-                                  toast.success(`✅ Tous les prompts sont présents (${presentCount}/${scenes.length})`);
-                                }
-                              }}
-                              variant="outline"
-                              size="sm"
-                              title="Vérifier si tous les prompts sont générés"
-                            >
-                              <Check className="mr-2 h-4 w-4" />
-                              Vérifier prompts
-                            </Button>
-                          )}
-                          {generatedPrompts.length > 0 && (
-                            <Button
-                              onClick={() => generateAllImages(true)}
-                              disabled={
-                                isGeneratingImages || 
-                                generatedPrompts.length < scenes.length
-                              }
-                              title={
-                                generatedPrompts.length < scenes.length
-                                  ? "Veuillez d'abord générer tous les prompts"
-                                  : ""
-                              }
-                              size="sm"
-                            >
-                              {isGeneratingImages ? (
-                                <>
-                                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                  Images en cours...
-                                </>
-                              ) : (
-                                <>
-                                  <ImageIcon className="mr-2 h-4 w-4" />
-                                  Générer toutes les images
-                                </>
-                              )}
-                            </Button>
-                          )}
-                          {generatedPrompts.length > 0 && !isGeneratingImages && (imageModel === 'z-image-turbo' || imageModel === 'z-image-turbo-lora') && aspectRatio === '16:9' && generatedPrompts.some((p: any) => p && p.imageUrl) && (
-                            <Button
-                              onClick={generateUpscale}
-                              disabled={hasActiveJob('upscale')}
-                              title="Upscaler toutes les images en 1920x1088"
-                              size="sm"
-                              variant="outline"
-                            >
-                              {hasActiveJob('upscale') ? (
-                                <>
-                                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                  Upscaling en cours...
-                                </>
-                              ) : (
-                                <>
-                                  <Maximize2 className="mr-2 h-4 w-4" />
-                                  Upscaler les images (1920x1088)
-                                </>
-                              )}
-                            </Button>
-                          )}
-                          {generatedPrompts.length > 0 && !isGeneratingImages && generatedPrompts.some((p: any) => p && p.imageUrl) && (
-                            <Button
-                              onClick={runManualQA}
-                              disabled={false}
-                              title="Vérifier la qualité des images (détection d'artefacts et erreurs)"
-                              size="sm"
-                              variant="outline"
-                            >
-                              <CheckCircle2 className="mr-2 h-4 w-4" />
-                              Vérifier qualité (QA)
-                            </Button>
-                          )}
-                          {generatedPrompts.length > 0 && !isGeneratingImages && (
-                            <Button
-                              onClick={() => {
-                                // Check for missing prompts (null entries)
-                                const missingPromptIndices = generatedPrompts
-                                  .map((p, index) => ({ prompt: p, index }))
-                                  .filter(item => !item.prompt || !item.prompt.prompt)
-                                  .map(item => item.index + 1);
-                                
-                                // Check for missing images (prompt exists but no imageUrl)
-                                const missingImageIndices = generatedPrompts
-                                  .map((p, index) => ({ prompt: p, index }))
-                                  .filter(item => item.prompt && item.prompt.prompt && !item.prompt.imageUrl)
-                                  .map(item => item.index + 1);
-                                
-                                if (missingPromptIndices.length > 0) {
-                                  toast.error(
-                                    `⚠️ ${missingPromptIndices.length} scène(s) sans prompt : ${missingPromptIndices.join(", ")}. Régénérez les prompts d'abord.`,
-                                    { duration: 10000 }
-                                  );
-                                  setMissingImagesInfo({
-                                    count: missingPromptIndices.length + missingImageIndices.length,
-                                    indices: [...missingPromptIndices, ...missingImageIndices]
-                                  });
-                                } else if (missingImageIndices.length === 0) {
-                                  setMissingImagesInfo(null);
-                                  toast.success("✅ Toutes les images ont été générées !");
-                                } else {
-                                  setMissingImagesInfo({
-                                    count: missingImageIndices.length,
-                                    indices: missingImageIndices
-                                  });
-                                  toast.warning(
-                                    `⚠️ ${missingImageIndices.length} scène(s) sans image : ${missingImageIndices.join(", ")}`,
-                                    { duration: 8000 }
-                                  );
-                                }
-                              }}
-                              variant="outline"
-                              size="sm"
-                            >
-                              <AlertCircle className="mr-2 h-4 w-4" />
-                              Vérifier images
-                            </Button>
-                          )}
-                          {generatedPrompts.length > 0 && !isGeneratingImages && (imageModel === 'z-image-turbo' || imageModel === 'z-image-turbo-lora') && aspectRatio === '16:9' && (
-                            <Button
-                              onClick={async () => {
-                                // First, check for stuck jobs and resolve them
-                                if (currentProjectId) {
-                                  try {
-                                    console.log("[Vérifier upscale] Checking for stuck upscale jobs...");
-                                    const response = await supabase.functions.invoke('check-stuck-jobs', {
-                                      body: { projectId: currentProjectId }
-                                    });
+                        {/* Boutons d'action - organisés en groupes */}
+                        <div className="flex flex-col gap-3">
+                          {/* Ligne 1: Prompts */}
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-medium text-muted-foreground w-16">Prompts</span>
+                            <div className="flex items-center gap-2">
+                              <Button
+                                onClick={() => handleGeneratePrompts(false)}
+                                disabled={isGeneratingPrompts}
+                                size="sm"
+                              >
+                                {isGeneratingPrompts ? (
+                                  <>
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                    Génération...
+                                  </>
+                                ) : (
+                                  <>
+                                    <Sparkles className="mr-2 h-4 w-4" />
+                                    Générer
+                                  </>
+                                )}
+                              </Button>
+                              {generatedPrompts.length > 0 && (
+                                <Button
+                                  onClick={() => {
+                                    const missingPromptIndices = generatedPrompts
+                                      .map((p, index) => ({ prompt: p, index }))
+                                      .filter(item => !item.prompt || !item.prompt.prompt)
+                                      .map(item => item.index + 1);
                                     
-                                    if (response.data?.results) {
-                                      const stuckResults = response.data.results.filter((r: any) => 
-                                        r.action === 'completed' || r.action === 'marked_failed' || r.action === 'upscale_chunk_continued'
+                                    const presentCount = generatedPrompts.filter(p => p && p.prompt).length;
+                                    
+                                    if (missingPromptIndices.length > 0) {
+                                      toast.error(
+                                        `⚠️ ${missingPromptIndices.length} scène(s) sans prompt : ${missingPromptIndices.slice(0, 10).join(", ")}${missingPromptIndices.length > 10 ? '...' : ''}`,
+                                        { duration: 10000 }
                                       );
-                                      if (stuckResults.length > 0) {
-                                        console.log("[Vérifier upscale] Resolved stuck jobs:", stuckResults);
-                                        toast.info(`${stuckResults.length} job(s) bloqué(s) résolu(s)`);
+                                    } else {
+                                      toast.success(`✅ Tous les prompts sont présents (${presentCount}/${scenes.length})`);
+                                    }
+                                  }}
+                                  variant="outline"
+                                  size="sm"
+                                  title="Vérifier si tous les prompts sont générés"
+                                >
+                                  <Check className="mr-2 h-4 w-4" />
+                                  Vérifier
+                                </Button>
+                              )}
+                              {isGeneratingPrompts && getJobByType('prompts') && (
+                                <Button
+                                  onClick={() => {
+                                    const job = getJobByType('prompts');
+                                    if (job) cancelJob(job.id);
+                                  }}
+                                  variant="ghost"
+                                  size="sm"
+                                  className="text-destructive hover:text-destructive"
+                                >
+                                  <X className="mr-1 h-4 w-4" />
+                                  Annuler
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                          
+                          {/* Ligne 2: Images */}
+                          {generatedPrompts.length > 0 && (
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-medium text-muted-foreground w-16">Images</span>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <Button
+                                  onClick={() => generateAllImages(true)}
+                                  disabled={
+                                    isGeneratingImages || 
+                                    generatedPrompts.length < scenes.length
+                                  }
+                                  title={
+                                    generatedPrompts.length < scenes.length
+                                      ? "Veuillez d'abord générer tous les prompts"
+                                      : ""
+                                  }
+                                  size="sm"
+                                >
+                                  {isGeneratingImages ? (
+                                    <>
+                                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                      En cours...
+                                    </>
+                                  ) : (
+                                    <>
+                                      <ImageIcon className="mr-2 h-4 w-4" />
+                                      Générer
+                                    </>
+                                  )}
+                                </Button>
+                                {!isGeneratingImages && (
+                                  <Button
+                                    onClick={() => {
+                                      const missingPromptIndices = generatedPrompts
+                                        .map((p, index) => ({ prompt: p, index }))
+                                        .filter(item => !item.prompt || !item.prompt.prompt)
+                                        .map(item => item.index + 1);
+                                      
+                                      const missingImageIndices = generatedPrompts
+                                        .map((p, index) => ({ prompt: p, index }))
+                                        .filter(item => item.prompt && item.prompt.prompt && !item.prompt.imageUrl)
+                                        .map(item => item.index + 1);
+                                      
+                                      if (missingPromptIndices.length > 0) {
+                                        toast.error(
+                                          `⚠️ ${missingPromptIndices.length} scène(s) sans prompt : ${missingPromptIndices.join(", ")}. Régénérez les prompts d'abord.`,
+                                          { duration: 10000 }
+                                        );
+                                        setMissingImagesInfo({
+                                          count: missingPromptIndices.length + missingImageIndices.length,
+                                          indices: [...missingPromptIndices, ...missingImageIndices]
+                                        });
+                                      } else if (missingImageIndices.length === 0) {
+                                        setMissingImagesInfo(null);
+                                        toast.success("✅ Toutes les images ont été générées !");
+                                      } else {
+                                        setMissingImagesInfo({
+                                          count: missingImageIndices.length,
+                                          indices: missingImageIndices
+                                        });
+                                        toast.warning(
+                                          `⚠️ ${missingImageIndices.length} scène(s) sans image : ${missingImageIndices.join(", ")}`,
+                                          { duration: 8000 }
+                                        );
+                                      }
+                                    }}
+                                    variant="outline"
+                                    size="sm"
+                                  >
+                                    <Check className="mr-2 h-4 w-4" />
+                                    Vérifier
+                                  </Button>
+                                )}
+                                {!isGeneratingImages && generatedPrompts.some((p: any) => p && p.imageUrl) && (
+                                  <Button
+                                    onClick={runManualQA}
+                                    title="Vérifier la qualité des images (détection d'artefacts et erreurs)"
+                                    size="sm"
+                                    variant="outline"
+                                  >
+                                    <CheckCircle2 className="mr-2 h-4 w-4" />
+                                    QA
+                                  </Button>
+                                )}
+                                {isGeneratingImages && getJobByType('images') && (
+                                  <Button
+                                    onClick={() => {
+                                      const job = getJobByType('images');
+                                      if (job) cancelJob(job.id);
+                                    }}
+                                    variant="ghost"
+                                    size="sm"
+                                    className="text-destructive hover:text-destructive"
+                                  >
+                                    <X className="mr-1 h-4 w-4" />
+                                    Annuler
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                          
+                          {/* Ligne 3: Upscale (si applicable) */}
+                          {generatedPrompts.length > 0 && !isGeneratingImages && (imageModel === 'z-image-turbo' || imageModel === 'z-image-turbo-lora') && aspectRatio === '16:9' && generatedPrompts.some((p: any) => p && p.imageUrl) && (
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-medium text-muted-foreground w-16">Upscale</span>
+                              <div className="flex items-center gap-2">
+                                <Button
+                                  onClick={generateUpscale}
+                                  disabled={hasActiveJob('upscale')}
+                                  title="Upscaler toutes les images en 1920x1088"
+                                  size="sm"
+                                >
+                                  {hasActiveJob('upscale') ? (
+                                    <>
+                                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                      En cours...
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Maximize2 className="mr-2 h-4 w-4" />
+                                      Lancer (1920x1088)
+                                    </>
+                                  )}
+                                </Button>
+                                <Button
+                                  onClick={async () => {
+                                    if (currentProjectId) {
+                                      try {
+                                        console.log("[Vérifier upscale] Checking for stuck upscale jobs...");
+                                        const response = await supabase.functions.invoke('check-stuck-jobs', {
+                                          body: { projectId: currentProjectId }
+                                        });
+                                        
+                                        if (response.data?.results) {
+                                          const stuckResults = response.data.results.filter((r: any) => 
+                                            r.action === 'completed' || r.action === 'marked_failed' || r.action === 'upscale_chunk_continued'
+                                          );
+                                          if (stuckResults.length > 0) {
+                                            console.log("[Vérifier upscale] Resolved stuck jobs:", stuckResults);
+                                            toast.info(`${stuckResults.length} job(s) bloqué(s) résolu(s)`);
+                                          }
+                                        }
+                                      } catch (error) {
+                                        console.error("[Vérifier upscale] Error checking stuck jobs:", error);
                                       }
                                     }
-                                  } catch (error) {
-                                    console.error("[Vérifier upscale] Error checking stuck jobs:", error);
-                                  }
-                                }
-                                
-                                // Then check upscale status
-                                const imagesWithUrl = generatedPrompts.filter((p: any) => p && p.imageUrl);
-                                
-                                let needsUpscale = 0;
-                                let alreadyUpscaled = 0;
-                                let highRes = 0;
-                                const needsUpscaleIndices: number[] = [];
-                                
-                                imagesWithUrl.forEach((p: any, idx: number) => {
-                                  const originalIndex = generatedPrompts.findIndex((gp: any) => gp === p);
-                                  
-                                  // Check if already marked as upscaled
-                                  if (p.isUpscaled === true) {
-                                    alreadyUpscaled++;
-                                    return;
-                                  }
-                                  
-                                  // Check if already high-res (>= 1920x1080)
-                                  const imgWidth = p.imageWidth || 0;
-                                  const imgHeight = p.imageHeight || 0;
-                                  if (imgWidth >= 1920 && imgHeight >= 1080) {
-                                    highRes++;
-                                    return;
-                                  }
-                                  
-                                  // Needs upscaling
-                                  needsUpscale++;
-                                  needsUpscaleIndices.push(originalIndex + 1);
-                                });
-                                
-                                setUpscaleInfo({
-                                  needsUpscale,
-                                  alreadyUpscaled,
-                                  highRes,
-                                  indices: needsUpscaleIndices
-                                });
-                                
-                                if (needsUpscale === 0) {
-                                  const total = alreadyUpscaled + highRes;
-                                  toast.success(`✅ Toutes les ${total} images sont en haute résolution !`);
-                                } else {
-                                  const done = alreadyUpscaled + highRes;
-                                  const total = done + needsUpscale;
-                                  toast.warning(
-                                    `⚠️ ${needsUpscale}/${total} image(s) à upscaler (scènes ${needsUpscaleIndices.join(", ")})`,
-                                    { duration: 8000 }
-                                  );
-                                }
-                              }}
-                              variant="outline"
-                              size="sm"
-                            >
-                              <Maximize2 className="mr-2 h-4 w-4" />
-                              Vérifier upscale
-                            </Button>
-                          )}
-                          {generatedPrompts.length > 0 && selectedScenes.size > 0 && (
-                            <Button
-                              onClick={exportSelectedScenes}
-                              variant="outline"
-                              size="sm"
-                            >
-                              <Download className="mr-2 h-4 w-4" />
-                              Exporter sélection ({selectedScenes.size})
-                            </Button>
-                          )}
-                          {isGeneratingPrompts && getJobByType('prompts') && (
-                            <Button
-                              onClick={() => {
-                                const job = getJobByType('prompts');
-                                if (job) cancelJob(job.id);
-                              }}
-                              variant="destructive"
-                              size="sm"
-                            >
-                              Annuler prompts
-                            </Button>
-                          )}
-                          {isGeneratingImages && getJobByType('images') && (
-                            <Button
-                              onClick={() => {
-                                const job = getJobByType('images');
-                                if (job) cancelJob(job.id);
-                              }}
-                              variant="destructive"
-                              size="sm"
-                            >
-                              Annuler images
-                            </Button>
-                          )}
-                          {/* Delete dropdown for images/prompts */}
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="destructive" size="sm">
-                                <Trash2 className="mr-2 h-4 w-4" />
-                                Supprimer
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem
-                                onClick={async () => {
-                                  if (!currentProjectId || !user) return;
-                                  if (!confirm("Voulez-vous vraiment réinitialiser toutes les images et vidéos de ce projet ? Les prompts seront conservés.")) return;
-                                  
-                                  try {
-                                    // 1. Prepare cleared prompts (keep text and prompt)
-                                    const clearedPrompts = generatedPrompts.map(p => ({
-                                      scene: p.scene,
-                                      text: p.text,
-                                      prompt: p.prompt,
-                                      startTime: p.startTime,
-                                      endTime: p.endTime,
-                                      duration: p.duration,
-                                      continuityGroupId: p.continuityGroupId
-                                    }));
-
-                                    // 2. Update legacy JSON
-                                    const { error: projectError } = await supabase
-                                      .from('projects')
-                                      .update({ prompts: clearedPrompts as any })
-                                      .eq('id', currentProjectId);
-                                    if (projectError) throw projectError;
-
-                                    // 3. Update ROBUST table
-                                    const { error: scenesError } = await supabase
-                                      .from('project_scenes')
-                                      .update({ 
-                                        image_url: null,
-                                        image_width: null,
-                                        image_height: null,
-                                        upscaled_url: null,
-                                        is_upscaled: false,
-                                        qa_checked: false,
-                                        qa_status: null,
-                                        qa_explication: null,
-                                        qa_regeneration_prompt: null,
-                                        video_url: null
-                                      })
-                                      .eq('project_id', currentProjectId);
-                                    if (scenesError) throw scenesError;
-
-                                    // 4. Delete ALL predictions history
-                                    await supabase
-                                      .from('pending_predictions')
-                                      .delete()
-                                      .eq('project_id', currentProjectId);
-
-                                    // 5. Cancel all active jobs
-                                    await supabase
-                                      .from('generation_jobs')
-                                      .update({ status: 'cancelled' })
-                                      .eq('project_id', currentProjectId)
-                                      .in('status', ['pending', 'processing']);
-
-                                    setGeneratedPrompts(clearedPrompts as any);
-                                    toast.success("Projet réinitialisé (prompts conservés)");
-                                  } catch (error) {
-                                    console.error('Error resetting project:', error);
-                                    toast.error("Erreur lors de la réinitialisation");
-                                  }
-                                }}
-                              >
-                                <RotateCcw className="mr-2 h-4 w-4" />
-                                Reset complet (Garder prompts)
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={async () => {
-                                  if (!currentProjectId || !user) return;
-                                  try {
-                                    const clearedPrompts = generatedPrompts.map(p => {
-                                      const { imageUrl, ...rest } = p;
-                                      return { ...rest, imageUrl: null };
+                                    
+                                    const imagesWithUrl = generatedPrompts.filter((p: any) => p && p.imageUrl);
+                                    
+                                    let needsUpscale = 0;
+                                    let alreadyUpscaled = 0;
+                                    let highRes = 0;
+                                    const needsUpscaleIndices: number[] = [];
+                                    
+                                    imagesWithUrl.forEach((p: any, idx: number) => {
+                                      const originalIndex = generatedPrompts.findIndex((gp: any) => gp === p);
+                                      
+                                      if (p.isUpscaled === true) {
+                                        alreadyUpscaled++;
+                                        return;
+                                      }
+                                      
+                                      const imgWidth = p.imageWidth || 0;
+                                      const imgHeight = p.imageHeight || 0;
+                                      if (imgWidth >= 1920 && imgHeight >= 1080) {
+                                        highRes++;
+                                        return;
+                                      }
+                                      
+                                      needsUpscale++;
+                                      needsUpscaleIndices.push(originalIndex + 1);
                                     });
                                     
-                                    // 1. Update legacy JSON
-                                    const { error: projectError } = await supabase
-                                      .from('projects')
-                                      .update({ prompts: clearedPrompts as any })
-                                      .eq('id', currentProjectId);
-                                    if (projectError) throw projectError;
+                                    setUpscaleInfo({
+                                      needsUpscale,
+                                      alreadyUpscaled,
+                                      highRes,
+                                      indices: needsUpscaleIndices
+                                    });
+                                    
+                                    if (needsUpscale === 0) {
+                                      const total = alreadyUpscaled + highRes;
+                                      toast.success(`✅ Toutes les ${total} images sont en haute résolution !`);
+                                    } else {
+                                      const done = alreadyUpscaled + highRes;
+                                      const total = done + needsUpscale;
+                                      toast.warning(
+                                        `⚠️ ${needsUpscale}/${total} image(s) à upscaler (scènes ${needsUpscaleIndices.join(", ")})`,
+                                        { duration: 8000 }
+                                      );
+                                    }
+                                  }}
+                                  variant="outline"
+                                  size="sm"
+                                >
+                                  <Check className="mr-2 h-4 w-4" />
+                                  Vérifier
+                                </Button>
+                              </div>
+                            </div>
+                          )}
+                          
+                          {/* Ligne 4: Actions (export, supprimer) */}
+                          <div className="flex items-center gap-2 pt-2 border-t">
+                            <span className="text-xs font-medium text-muted-foreground w-16">Actions</span>
+                            <div className="flex items-center gap-2">
+                              {generatedPrompts.length > 0 && selectedScenes.size > 0 && (
+                                <Button
+                                  onClick={exportSelectedScenes}
+                                  variant="outline"
+                                  size="sm"
+                                >
+                                  <Download className="mr-2 h-4 w-4" />
+                                  Exporter ({selectedScenes.size})
+                                </Button>
+                              )}
+                              {/* Delete dropdown for images/prompts */}
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="outline" size="sm" className="text-destructive hover:text-destructive border-destructive/30 hover:border-destructive/50 hover:bg-destructive/10">
+                                    <Trash2 className="mr-2 h-4 w-4" />
+                                    Supprimer
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuItem
+                                    onClick={async () => {
+                                      if (!currentProjectId || !user) return;
+                                      if (!confirm("Voulez-vous vraiment réinitialiser toutes les images et vidéos de ce projet ? Les prompts seront conservés.")) return;
+                                      
+                                      try {
+                                        const clearedPrompts = generatedPrompts.map(p => ({
+                                          scene: p.scene,
+                                          text: p.text,
+                                          prompt: p.prompt,
+                                          startTime: p.startTime,
+                                          endTime: p.endTime,
+                                          duration: p.duration,
+                                          continuityGroupId: p.continuityGroupId
+                                        }));
 
-                                    // 2. Update ROBUST table
-                                    const { error: scenesError } = await supabase
-                                      .from('project_scenes')
-                                      .update({ 
-                                        image_url: null,
-                                        image_width: null,
-                                        image_height: null,
-                                        upscaled_url: null,
-                                        is_upscaled: false,
-                                        qa_checked: false,
-                                        qa_status: null,
-                                        video_url: null
-                                      })
-                                      .eq('project_id', currentProjectId);
-                                    if (scenesError) throw scenesError;
+                                        const { error: projectError } = await supabase
+                                          .from('projects')
+                                          .update({ prompts: clearedPrompts as any })
+                                          .eq('id', currentProjectId);
+                                        if (projectError) throw projectError;
 
-                                    // 3. Clear history from pending_predictions to prevent "repair" from bringing them back
-                                    await supabase
-                                      .from('pending_predictions')
-                                      .delete()
-                                      .eq('project_id', currentProjectId)
-                                      .eq('prediction_type', 'scene_image');
+                                        const { error: scenesError } = await supabase
+                                          .from('project_scenes')
+                                          .update({ 
+                                            image_url: null,
+                                            image_width: null,
+                                            image_height: null,
+                                            upscaled_url: null,
+                                            is_upscaled: false,
+                                            qa_checked: false,
+                                            qa_status: null,
+                                            qa_explication: null,
+                                            qa_regeneration_prompt: null,
+                                            video_url: null
+                                          })
+                                          .eq('project_id', currentProjectId);
+                                        if (scenesError) throw scenesError;
 
-                                    setGeneratedPrompts(clearedPrompts.map(p => ({ ...p, imageUrl: undefined })));
-                                    toast.success("Toutes les images ont été supprimées");
-                                  } catch (error) {
-                                    console.error('Error deleting images:', error);
-                                    toast.error("Erreur lors de la suppression des images");
-                                  }
-                                }}
-                              >
-                                <ImageIcon className="mr-2 h-4 w-4" />
-                                Supprimer les images
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={async () => {
-                                  if (!currentProjectId || !user) return;
-                                  try {
-                                    // 1. Clear legacy JSON completely (empty array)
-                                    const { error: projectError } = await supabase
-                                      .from('projects')
-                                      .update({ prompts: [] })
-                                      .eq('id', currentProjectId);
-                                    if (projectError) throw projectError;
+                                        await supabase
+                                          .from('pending_predictions')
+                                          .delete()
+                                          .eq('project_id', currentProjectId);
 
-                                    // 2. Delete all scenes from ROBUST table
-                                    const { error: scenesError } = await supabase
-                                      .from('project_scenes')
-                                      .delete()
-                                      .eq('project_id', currentProjectId);
-                                    if (scenesError) throw scenesError;
+                                        await supabase
+                                          .from('generation_jobs')
+                                          .update({ status: 'cancelled' })
+                                          .eq('project_id', currentProjectId)
+                                          .in('status', ['pending', 'processing']);
 
-                                    // 3. Clear history from pending_predictions
-                                    await supabase
-                                      .from('pending_predictions')
-                                      .delete()
-                                      .eq('project_id', currentProjectId);
+                                        setGeneratedPrompts(clearedPrompts as any);
+                                        toast.success("Projet réinitialisé (prompts conservés)");
+                                      } catch (error) {
+                                        console.error('Error resetting project:', error);
+                                        toast.error("Erreur lors de la réinitialisation");
+                                      }
+                                    }}
+                                  >
+                                    <RotateCcw className="mr-2 h-4 w-4" />
+                                    Reset complet (Garder prompts)
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    onClick={async () => {
+                                      if (!currentProjectId || !user) return;
+                                      try {
+                                        const clearedPrompts = generatedPrompts.map(p => {
+                                          const { imageUrl, ...rest } = p;
+                                          return { ...rest, imageUrl: null };
+                                        });
+                                        
+                                        const { error: projectError } = await supabase
+                                          .from('projects')
+                                          .update({ prompts: clearedPrompts as any })
+                                          .eq('id', currentProjectId);
+                                        if (projectError) throw projectError;
 
-                                    // 4. Cancel any pending jobs for this project
-                                    await supabase
-                                      .from('generation_jobs')
-                                      .update({ status: 'cancelled' })
-                                      .eq('project_id', currentProjectId)
-                                      .in('status', ['pending', 'processing']);
+                                        const { error: scenesError } = await supabase
+                                          .from('project_scenes')
+                                          .update({ 
+                                            image_url: null,
+                                            image_width: null,
+                                            image_height: null,
+                                            upscaled_url: null,
+                                            is_upscaled: false,
+                                            qa_checked: false,
+                                            qa_status: null,
+                                            video_url: null
+                                          })
+                                          .eq('project_id', currentProjectId);
+                                        if (scenesError) throw scenesError;
 
-                                    setGeneratedPrompts([]);
-                                    toast.success("Tous les prompts ont été supprimés de la base de données");
-                                  } catch (error) {
-                                    console.error('Error deleting prompts:', error);
-                                    toast.error("Erreur lors de la suppression des prompts");
-                                  }
-                                }}
-                              >
-                                <FileText className="mr-2 h-4 w-4" />
-                                Supprimer les prompts
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+                                        await supabase
+                                          .from('pending_predictions')
+                                          .delete()
+                                          .eq('project_id', currentProjectId)
+                                          .eq('prediction_type', 'scene_image');
+
+                                        setGeneratedPrompts(clearedPrompts.map(p => ({ ...p, imageUrl: undefined })));
+                                        toast.success("Toutes les images ont été supprimées");
+                                      } catch (error) {
+                                        console.error('Error deleting images:', error);
+                                        toast.error("Erreur lors de la suppression des images");
+                                      }
+                                    }}
+                                  >
+                                    <ImageIcon className="mr-2 h-4 w-4" />
+                                    Supprimer les images
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    onClick={async () => {
+                                      if (!currentProjectId || !user) return;
+                                      try {
+                                        const { error: projectError } = await supabase
+                                          .from('projects')
+                                          .update({ prompts: [] })
+                                          .eq('id', currentProjectId);
+                                        if (projectError) throw projectError;
+
+                                        const { error: scenesError } = await supabase
+                                          .from('project_scenes')
+                                          .delete()
+                                          .eq('project_id', currentProjectId);
+                                        if (scenesError) throw scenesError;
+
+                                        await supabase
+                                          .from('pending_predictions')
+                                          .delete()
+                                          .eq('project_id', currentProjectId);
+
+                                        await supabase
+                                          .from('generation_jobs')
+                                          .update({ status: 'cancelled' })
+                                          .eq('project_id', currentProjectId)
+                                          .in('status', ['pending', 'processing']);
+
+                                        setGeneratedPrompts([]);
+                                        toast.success("Tous les prompts ont été supprimés de la base de données");
+                                      } catch (error) {
+                                        console.error('Error deleting prompts:', error);
+                                        toast.error("Erreur lors de la suppression des prompts");
+                                      }
+                                    }}
+                                  >
+                                    <FileText className="mr-2 h-4 w-4" />
+                                    Supprimer les prompts
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </div>
+                          </div>
                         </div>
                       </div>
                       
