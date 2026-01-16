@@ -105,11 +105,14 @@ serve(async (req) => {
       throw new Error("Project has no audio file");
     }
 
-    // Get timing data from projects.prompts (legacy JSON)
-    const promptsJson = project.prompts as any[] || [];
-    if (promptsJson.length === 0) {
-      throw new Error("Project has no scene timing data (prompts JSON is empty)");
+    // Get timing data from projects.scenes (source of truth for timing)
+    const scenesJson = project.scenes as any[] || [];
+    if (scenesJson.length === 0) {
+      throw new Error("Project has no scenes (scenes JSON is empty)");
     }
+
+    // Get prompts data for text
+    const promptsJson = project.prompts as any[] || [];
 
     // Fetch image URLs from project_scenes table (source of truth for images)
     const { data: projectScenes, error: scenesError } = await supabase
@@ -133,12 +136,12 @@ serve(async (req) => {
       }
     }
 
-    // Merge: timing from prompts JSON, images from project_scenes (with fallback to prompts JSON)
-    const scenes: Scene[] = promptsJson.map((p, index) => ({
-      startTime: p.startTime,
-      endTime: p.endTime,
-      imageUrl: imageUrlMap.get(index) || p.imageUrl,  // Prefer project_scenes, fallback to JSON
-      text: p.text || '',
+    // Merge: timing from scenes JSON, images from project_scenes (with fallback to prompts JSON)
+    const scenes: Scene[] = scenesJson.map((s, index) => ({
+      startTime: s.startTime,
+      endTime: s.endTime,
+      imageUrl: imageUrlMap.get(index) || promptsJson[index]?.imageUrl,  // Prefer project_scenes, fallback to prompts JSON
+      text: s.text || promptsJson[index]?.text || '',
     }));
 
     // Check if all scenes have images
