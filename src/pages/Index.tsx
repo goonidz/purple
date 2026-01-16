@@ -3900,7 +3900,7 @@ const Index = () => {
                                 ) : (
                                   <>
                                     <Sparkles className="mr-2 h-4 w-4" />
-                                    Générer
+                                    Générer prompts
                                   </>
                                 )}
                               </Button>
@@ -3974,7 +3974,7 @@ const Index = () => {
                                   ) : (
                                     <>
                                       <ImageIcon className="mr-2 h-4 w-4" />
-                                      Générer
+                                      Générer images
                                     </>
                                   )}
                                 </Button>
