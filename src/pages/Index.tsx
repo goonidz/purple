@@ -3965,6 +3965,34 @@ const Index = () => {
                           </Button>
                           {generatedPrompts.length > 0 && (
                             <Button
+                              onClick={() => {
+                                // Check for missing prompts (null entries or empty prompt)
+                                const missingPromptIndices = generatedPrompts
+                                  .map((p, index) => ({ prompt: p, index }))
+                                  .filter(item => !item.prompt || !item.prompt.prompt)
+                                  .map(item => item.index + 1);
+                                
+                                const presentCount = generatedPrompts.filter(p => p && p.prompt).length;
+                                
+                                if (missingPromptIndices.length > 0) {
+                                  toast.error(
+                                    `⚠️ ${missingPromptIndices.length} scène(s) sans prompt : ${missingPromptIndices.slice(0, 10).join(", ")}${missingPromptIndices.length > 10 ? '...' : ''}`,
+                                    { duration: 10000 }
+                                  );
+                                } else {
+                                  toast.success(`✅ Tous les prompts sont présents (${presentCount}/${scenes.length})`);
+                                }
+                              }}
+                              variant="outline"
+                              size="sm"
+                              title="Vérifier si tous les prompts sont générés"
+                            >
+                              <Check className="mr-2 h-4 w-4" />
+                              Vérifier prompts
+                            </Button>
+                          )}
+                          {generatedPrompts.length > 0 && (
+                            <Button
                               onClick={() => generateAllImages(true)}
                               disabled={
                                 isGeneratingImages || 
