@@ -729,11 +729,16 @@ async function launchNextPendingJob(adminClient: any, supabaseUrl: string, supab
           });
         } else {
           const errorText = await response.text();
+          console.error(`[launchNextPendingJob] Failed to start image for scene ${jobToClaim.scene_index + 1}:`, errorText);
           await adminClient.from('generation_jobs').update({ status: 'failed', error_message: errorText.substring(0, 200) }).eq('id', jobToClaim.id);
+          // Continue the chain - launch next job to fill this failed slot
+          await launchNextPendingJob(adminClient, supabaseUrl, supabaseServiceKey);
         }
       } catch (error) {
-        console.error(`[launchNextPendingJob] Error:`, error);
+        console.error(`[launchNextPendingJob] Error for scene ${jobToClaim.scene_index + 1}:`, error);
         await adminClient.from('generation_jobs').update({ status: 'failed', error_message: String(error).substring(0, 200) }).eq('id', jobToClaim.id);
+        // Continue the chain - launch next job to fill this failed slot
+        await launchNextPendingJob(adminClient, supabaseUrl, supabaseServiceKey);
       }
     })();
 
@@ -837,11 +842,16 @@ async function launchNextPendingQAJob(adminClient: any) {
         });
         if (!response.ok) {
           const errorText = await response.text();
+          console.error(`[launchNextPendingQAJob] Failed to start QA for scene ${pending.scene_index + 1}:`, errorText);
           await adminClient.from('generation_jobs').update({ status: 'failed', error_message: errorText.substring(0, 200) }).eq('id', pending.id);
+          // Continue the chain - launch next job to fill this failed slot
+          await launchNextPendingQAJob(adminClient);
         }
       } catch (err) {
-        console.error(err);
+        console.error(`[launchNextPendingQAJob] Error for scene ${pending.scene_index + 1}:`, err);
         await adminClient.from('generation_jobs').update({ status: 'failed', error_message: String(err).substring(0, 200) }).eq('id', pending.id);
+        // Continue the chain - launch next job to fill this failed slot
+        await launchNextPendingQAJob(adminClient);
       }
     })();
 
