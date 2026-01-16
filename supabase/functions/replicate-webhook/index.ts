@@ -674,25 +674,35 @@ async function launchNextPendingJob(adminClient: any, supabaseUrl: string, supab
           }
         }
 
+        // Build request body with LoRA if present
+        const requestBody: any = {
+          prompt: jobToClaim.metadata.prompt,
+          model: imageModel,
+          width: finalWidth,
+          height: finalHeight,
+          image_urls: jobToClaim.metadata.styleRefs || [],
+          async: true,
+          webhook_url: `${supabaseUrl}/functions/v1/replicate-webhook`,
+          userId: jobToClaim.user_id,
+          projectId: jobToClaim.project_id,
+          sceneIndex: jobToClaim.scene_index,
+          jobId: jobToClaim.id,
+        };
+        
+        // Add LoRA from metadata if present
+        if (jobToClaim.metadata.loraUrl) {
+          requestBody.lora_url = jobToClaim.metadata.loraUrl;
+          requestBody.lora_steps = jobToClaim.metadata.loraSteps || 10;
+          console.log(`[launchNextPendingJob] Adding LoRA to request: ${jobToClaim.metadata.loraUrl}`);
+        }
+
         const response = await fetch(`${supabaseUrl}/functions/v1/generate-image-seedream`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${supabaseServiceKey}`,
           },
-          body: JSON.stringify({
-            prompt: jobToClaim.metadata.prompt,
-            model: imageModel,
-            width: finalWidth,
-            height: finalHeight,
-            image_urls: jobToClaim.metadata.styleRefs || [],
-            async: true,
-            webhook_url: `${supabaseUrl}/functions/v1/replicate-webhook`,
-            userId: jobToClaim.user_id,
-            projectId: jobToClaim.project_id,
-            sceneIndex: jobToClaim.scene_index,
-            jobId: jobToClaim.id,
-          }),
+          body: JSON.stringify(requestBody),
         });
         
         if (response.ok) {
