@@ -4125,6 +4125,72 @@ const Index = () => {
                               <DropdownMenuItem
                                 onClick={async () => {
                                   if (!currentProjectId || !user) return;
+                                  if (!confirm("Voulez-vous vraiment réinitialiser toutes les images et vidéos de ce projet ? Les prompts seront conservés.")) return;
+                                  
+                                  try {
+                                    // 1. Prepare cleared prompts (keep text and prompt)
+                                    const clearedPrompts = generatedPrompts.map(p => ({
+                                      scene: p.scene,
+                                      text: p.text,
+                                      prompt: p.prompt,
+                                      startTime: p.startTime,
+                                      endTime: p.endTime,
+                                      duration: p.duration,
+                                      continuityGroupId: p.continuityGroupId
+                                    }));
+
+                                    // 2. Update legacy JSON
+                                    const { error: projectError } = await supabase
+                                      .from('projects')
+                                      .update({ prompts: clearedPrompts as any })
+                                      .eq('id', currentProjectId);
+                                    if (projectError) throw projectError;
+
+                                    // 3. Update ROBUST table
+                                    const { error: scenesError } = await supabase
+                                      .from('project_scenes')
+                                      .update({ 
+                                        image_url: null,
+                                        image_width: null,
+                                        image_height: null,
+                                        upscaled_url: null,
+                                        is_upscaled: false,
+                                        qa_checked: false,
+                                        qa_status: null,
+                                        qa_explication: null,
+                                        qa_regeneration_prompt: null,
+                                        video_url: null
+                                      })
+                                      .eq('project_id', currentProjectId);
+                                    if (scenesError) throw scenesError;
+
+                                    // 4. Delete ALL predictions history
+                                    await supabase
+                                      .from('pending_predictions')
+                                      .delete()
+                                      .eq('project_id', currentProjectId);
+
+                                    // 5. Cancel all active jobs
+                                    await supabase
+                                      .from('generation_jobs')
+                                      .update({ status: 'cancelled' })
+                                      .eq('project_id', currentProjectId)
+                                      .in('status', ['pending', 'processing']);
+
+                                    setGeneratedPrompts(clearedPrompts as any);
+                                    toast.success("Projet réinitialisé (prompts conservés)");
+                                  } catch (error) {
+                                    console.error('Error resetting project:', error);
+                                    toast.error("Erreur lors de la réinitialisation");
+                                  }
+                                }}
+                              >
+                                <RotateCcw className="mr-2 h-4 w-4" />
+                                Reset complet (Garder prompts)
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={async () => {
+                                  if (!currentProjectId || !user) return;
                                   try {
                                     const clearedPrompts = generatedPrompts.map(p => {
                                       const { imageUrl, ...rest } = p;
@@ -4148,7 +4214,8 @@ const Index = () => {
                                         upscaled_url: null,
                                         is_upscaled: false,
                                         qa_checked: false,
-                                        qa_status: null
+                                        qa_status: null,
+                                        video_url: null
                                       })
                                       .eq('project_id', currentProjectId);
                                     if (scenesError) throw scenesError;
