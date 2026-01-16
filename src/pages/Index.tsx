@@ -96,6 +96,8 @@ interface GeneratedPrompt {
   qa_explication?: string;
   qa_regeneration_prompt?: string;
   qa_regenerated?: boolean;
+  was_regenerated?: boolean;
+  regenerated_prompt?: string;
 }
 
 // Fonction pour calculer les groupes si continuityGroupId manquant (rétrocompatibilité)
@@ -773,6 +775,8 @@ const Index = () => {
             qa_status: s.qa_status,
             qa_explication: s.qa_explication,
             qa_regeneration_prompt: s.qa_regeneration_prompt,
+            was_regenerated: s.was_regenerated,
+            regenerated_prompt: s.regenerated_prompt,
             isUpscaled: s.is_upscaled,
             videoUrl: s.video_url,
             continuityGroupId: s.continuity_group_id

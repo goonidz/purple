@@ -26,7 +26,24 @@ serve(async (req) => {
     // ========================================================================
     if (payload.type === 'launch_next_image_job') {
       console.log('[webhook] Received launch_next_image_job trigger');
-      await launchNextPendingJob(adminClient, supabaseUrl, supabaseServiceKey);
+      if (typeof EdgeRuntime !== 'undefined') {
+        EdgeRuntime.waitUntil(launchNextPendingJob(adminClient, supabaseUrl, supabaseServiceKey));
+      } else {
+        await launchNextPendingJob(adminClient, supabaseUrl, supabaseServiceKey);
+      }
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    
+    if (payload.type === 'launch_next_qa_job') {
+      console.log('[webhook] Received launch_next_qa_job trigger');
+      if (typeof EdgeRuntime !== 'undefined') {
+        EdgeRuntime.waitUntil(launchNextPendingQAJob(adminClient));
+      } else {
+        await launchNextPendingQAJob(adminClient);
+      }
       return new Response(JSON.stringify({ ok: true }), {
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -35,8 +52,9 @@ serve(async (req) => {
     
     if (payload.type === 'launch_pending_upscales') {
       console.log('[webhook] Received launch_pending_upscales trigger');
-      // Launch multiple pending upscales (up to 10)
-      for (let i = 0; i < 10; i++) {
+      if (typeof EdgeRuntime !== 'undefined') {
+        EdgeRuntime.waitUntil(launchNextPendingUpscaleJob(adminClient));
+      } else {
         await launchNextPendingUpscaleJob(adminClient);
       }
       return new Response(JSON.stringify({ ok: true }), {
@@ -101,86 +119,85 @@ serve(async (req) => {
 
     // Handle based on status
     if (status === 'succeeded' && output) {
-      // Handle script generation (text output)
-      if (prediction.prediction_type === 'script') {
-        await handleScriptCompletion(adminClient, prediction, output);
-        return new Response(JSON.stringify({ ok: true }), {
-          status: 200,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      }
-      
-      // Handle image generation
-      const imageOutput = Array.isArray(output) ? output[0] : output;
-      
-      if (imageOutput) {
+      // Create a background promise for the heavy processing
+      const processTask = (async () => {
         try {
-          // Download and upload to Supabase Storage
-          const imageResponse = await fetch(imageOutput);
-          if (!imageResponse.ok) {
-            throw new Error(`Failed to fetch image: ${imageResponse.status}`);
+          // Handle script generation (text output)
+          if (prediction.prediction_type === 'script') {
+            await handleScriptCompletion(adminClient, prediction, output);
+            return;
           }
           
-          const blob = await imageResponse.blob();
-          const timestamp = Date.now();
+          // Handle image generation
+          const imageOutput = Array.isArray(output) ? output[0] : output;
           
-          // Determine filename based on prediction type
-          let filename: string;
-          if (prediction.prediction_type === 'thumbnail') {
-            filename = `${prediction.project_id}/thumb_v${(prediction.thumbnail_index || 0) + 1}_${timestamp}.jpg`;
-          } else if (prediction.prediction_type === 'upscale') {
-            filename = `${prediction.project_id}/scene_${(prediction.scene_index || 0) + 1}_upscaled_${timestamp}.jpg`;
-          } else {
-            filename = `${prediction.project_id}/scene_${(prediction.scene_index || 0) + 1}_${timestamp}.jpg`;
+          if (imageOutput) {
+            // Download and upload to Supabase Storage
+            const imageResponse = await fetch(imageOutput);
+            if (!imageResponse.ok) {
+              throw new Error(`Failed to fetch image: ${imageResponse.status}`);
+            }
+            
+            const blob = await imageResponse.blob();
+            const timestamp = Date.now();
+            
+            // Determine filename based on prediction type
+            let filename: string;
+            if (prediction.prediction_type === 'thumbnail') {
+              filename = `${prediction.project_id}/thumb_v${(prediction.thumbnail_index || 0) + 1}_${timestamp}.jpg`;
+            } else if (prediction.prediction_type === 'upscale') {
+              filename = `${prediction.project_id}/scene_${(prediction.scene_index || 0) + 1}_upscaled_${timestamp}.jpg`;
+            } else {
+              filename = `${prediction.project_id}/scene_${(prediction.scene_index || 0) + 1}_${timestamp}.jpg`;
+            }
+
+            const { error: uploadError } = await adminClient.storage
+              .from('generated-images')
+              .upload(filename, blob, {
+                contentType: 'image/jpeg',
+                upsert: true
+              });
+
+            if (uploadError) {
+              throw new Error(`Storage upload failed: ${uploadError.message}`);
+            }
+
+            const { data: { publicUrl } } = adminClient.storage
+              .from('generated-images')
+              .getPublicUrl(filename);
+
+            console.log(`Image uploaded to storage: ${publicUrl}`);
+
+            // Update pending_predictions with result
+            await adminClient
+              .from('pending_predictions')
+              .update({
+                status: 'completed',
+                result_url: publicUrl,
+                completed_at: new Date().toISOString()
+              })
+              .eq('id', prediction.id);
+
+            // Update the relevant data based on prediction type
+            if (prediction.prediction_type === 'scene_image') {
+              await updateSceneImage(adminClient, prediction, publicUrl);
+            } else if (prediction.prediction_type === 'thumbnail') {
+              await updateThumbnail(adminClient, prediction, publicUrl);
+            } else if (prediction.prediction_type === 'upscale') {
+              await updateUpscaledImage(adminClient, prediction, publicUrl);
+            }
+
+            // Check if all predictions for this job are complete
+            await checkJobCompletion(adminClient, prediction.job_id);
+            
+            // NEW: Update generation_queue if this prediction came from the queue
+            await updateQueueItemStatus(adminClient, predictionId, 'completed', publicUrl);
+            
+            // NEW: Trigger next batch processing
+            await triggerQueueProcessing(supabaseUrl, supabaseServiceKey);
           }
-
-          const { error: uploadError } = await adminClient.storage
-            .from('generated-images')
-            .upload(filename, blob, {
-              contentType: 'image/jpeg',
-              upsert: true
-            });
-
-          if (uploadError) {
-            throw new Error(`Storage upload failed: ${uploadError.message}`);
-          }
-
-          const { data: { publicUrl } } = adminClient.storage
-            .from('generated-images')
-            .getPublicUrl(filename);
-
-          console.log(`Image uploaded to storage: ${publicUrl}`);
-
-          // Update pending_predictions with result
-          await adminClient
-            .from('pending_predictions')
-            .update({
-              status: 'completed',
-              result_url: publicUrl,
-              completed_at: new Date().toISOString()
-            })
-            .eq('id', prediction.id);
-
-          // Update the relevant data based on prediction type
-          if (prediction.prediction_type === 'scene_image') {
-            await updateSceneImage(adminClient, prediction, publicUrl);
-          } else if (prediction.prediction_type === 'thumbnail') {
-            await updateThumbnail(adminClient, prediction, publicUrl);
-          } else if (prediction.prediction_type === 'upscale') {
-            await updateUpscaledImage(adminClient, prediction, publicUrl);
-          }
-
-          // Check if all predictions for this job are complete
-          await checkJobCompletion(adminClient, prediction.job_id);
-          
-          // NEW: Update generation_queue if this prediction came from the queue
-          await updateQueueItemStatus(adminClient, predictionId, 'completed', publicUrl);
-          
-          // NEW: Trigger next batch processing
-          await triggerQueueProcessing(supabaseUrl, supabaseServiceKey);
-
         } catch (error) {
-          console.error(`Error processing successful prediction:`, error);
+          console.error(`Error in background processing:`, error);
           await adminClient
             .from('pending_predictions')
             .update({
@@ -191,14 +208,20 @@ serve(async (req) => {
             .eq('id', prediction.id);
             
           await checkJobCompletion(adminClient, prediction.job_id);
-          
-          // NEW: Update queue item as failed
           await updateQueueItemStatus(adminClient, predictionId, 'failed', null, error instanceof Error ? error.message : 'Unknown error');
-          
-          // NEW: Trigger next batch even on failure
           await triggerQueueProcessing(supabaseUrl, supabaseServiceKey);
         }
+      })();
+
+      // Use waitUntil to let the background task finish
+      if (typeof EdgeRuntime !== 'undefined') {
+        EdgeRuntime.waitUntil(processTask);
       }
+      
+      return new Response(JSON.stringify({ ok: true, message: "Background processing started" }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     } else if (status === 'failed' || status === 'canceled') {
       // Capture detailed error from Replicate payload
       const errorDetail = payload.error || payload.logs || `Generation ${status}`;
@@ -273,14 +296,36 @@ async function updateSceneImage(adminClient: any, prediction: any, imageUrl: str
   const imageWidth = metadata.imageWidth || metadata.width || 0;
   const imageHeight = metadata.imageHeight || metadata.height || 0;
 
+  // Check if this is a regenerated image - if so, save the regenerated prompt
+  let regeneratedPrompt: string | null = null;
+  if (prediction.job_id) {
+    const { data: job } = await adminClient
+      .from('generation_jobs')
+      .select('is_regen, metadata')
+      .eq('id', prediction.job_id)
+      .single();
+    
+    if (job?.is_regen === true && job?.metadata?.prompt) {
+      regeneratedPrompt = job.metadata.prompt;
+      console.log(`[updateSceneImage] Scene ${sceneIndex + 1} is regenerated, saving new prompt`);
+    }
+  }
+
   console.log(`[updateSceneImage] Writing to project_scenes for scene ${sceneIndex + 1}`);
 
   // 1. Update the robust normalized table
-  await upsertProjectScene(adminClient, prediction.project_id, sceneIndex, {
+  const updateData: any = {
     image_url: imageUrl,
     image_width: imageWidth > 0 ? imageWidth : null,
     image_height: imageHeight > 0 ? imageHeight : null
-  });
+  };
+  
+  // Add regenerated_prompt if this is a regen
+  if (regeneratedPrompt) {
+    updateData.regenerated_prompt = regeneratedPrompt;
+  }
+  
+  await upsertProjectScene(adminClient, prediction.project_id, sceneIndex, updateData);
 
   // 2. FALLBACK: Also update the legacy JSON array for backward compatibility
   try {
@@ -419,7 +464,7 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
   }
   
   if (job.job_type === 'single_image') {
-    console.log(`[checkJobCompletion] Handling single_image job ${jobId}`);
+    console.log(`[checkJobCompletion] Handling single_image job ${jobId} for scene ${job.scene_index + 1}`);
     
     // Mark completed
     await adminClient
@@ -434,6 +479,7 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
     if (job.parent_job_id) {
       const isRegen = job.metadata?.is_regen === true || job.is_regen === true;
       // Trigger QA
+      console.log(`[checkJobCompletion] Creating QA job for scene ${job.scene_index + 1}, isRegen: ${isRegen}`);
       await createSingleQAJob(adminClient, job.project_id, job.user_id, job.scene_index, job.parent_job_id, isRegen);
       await launchNextPendingQAJob(adminClient);
       
@@ -566,76 +612,119 @@ async function chainNextJobFromWebhook(
 
 async function launchNextPendingJob(adminClient: any, supabaseUrl: string, supabaseServiceKey: string) {
   const MAX_CONCURRENT = 20;
+  
+  // Proactive cleanup: Fail jobs stuck in processing for > 15 mins
+  const timeoutLimit = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+  await adminClient
+    .from('generation_jobs')
+    .update({ status: 'failed', error_message: 'Stuck in processing (timeout)' })
+    .eq('status', 'processing')
+    .eq('job_type', 'single_image')
+    .lt('created_at', timeoutLimit);
+
+  // 1. Get current processing count
   const { count: processingCount } = await adminClient
     .from('generation_jobs')
     .select('id', { count: 'exact', head: true })
     .eq('status', 'processing')
     .eq('job_type', 'single_image');
   
-  if ((processingCount || 0) >= MAX_CONCURRENT) return;
+  const availableSlots = MAX_CONCURRENT - (processingCount || 0);
+  if (availableSlots <= 0) return;
 
+  // 2. Find ALL pending jobs up to the number of available slots
   const { data: pendingJobs } = await adminClient
     .from('generation_jobs')
     .select('id, project_id, scene_index, metadata, user_id')
     .eq('status', 'pending')
     .eq('job_type', 'single_image')
     .order('created_at', { ascending: true })
-    .limit(1);
+    .limit(availableSlots);
   
   if (!pendingJobs || pendingJobs.length === 0) return;
-  const jobToClaim = pendingJobs[0];
 
-  const { data: claimed } = await adminClient
-    .from('generation_jobs')
-    .update({ status: 'processing' })
-    .eq('id', jobToClaim.id)
-    .eq('status', 'pending')
-    .select('id')
-    .single();
-  
-  if (!claimed) return;
-
-  try {
-    const response = await fetch(`${supabaseUrl}/functions/v1/generate-image-seedream`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${supabaseServiceKey}`,
-      },
-      body: JSON.stringify({
-        prompt: jobToClaim.metadata.prompt,
-        model: jobToClaim.metadata.model,
-        width: jobToClaim.metadata.width,
-        height: jobToClaim.metadata.height,
-        image_urls: jobToClaim.metadata.styleRefs || [],
-        async: true,
-        webhook_url: `${supabaseUrl}/functions/v1/replicate-webhook`,
-        userId: jobToClaim.user_id,
-        projectId: jobToClaim.project_id,
-        sceneIndex: jobToClaim.scene_index,
-        jobId: jobToClaim.id,
-      }),
-    });
+  for (const jobToClaim of pendingJobs) {
+    const { data: claimed } = await adminClient
+      .from('generation_jobs')
+      .update({ status: 'processing' })
+      .eq('id', jobToClaim.id)
+      .eq('status', 'pending')
+      .select('id')
+      .single();
     
-    if (response.ok) {
-      const result = await response.json();
-      await adminClient.from('pending_predictions').insert({
-        job_id: jobToClaim.id,
-        prediction_id: result.predictionId,
-        prediction_type: 'scene_image',
-        scene_index: jobToClaim.scene_index,
-        project_id: jobToClaim.project_id,
-        user_id: jobToClaim.user_id,
-        status: 'pending',
-      });
+    if (!claimed) continue;
+
+    const imagePromise = (async () => {
+      try {
+        console.log(`[launchNextPendingJob] Launching image for scene ${jobToClaim.scene_index + 1} of project ${jobToClaim.project_id}`);
+        
+        // Handle Z-Image turbo resolution logic (960x544 for 16:9)
+        let finalWidth = jobToClaim.metadata.width || 1440;
+        let finalHeight = jobToClaim.metadata.height || 816;
+        const imageModel = jobToClaim.metadata.model || 'seedream-4.5';
+        
+        const isZImage = imageModel === 'z-image-turbo' || imageModel === 'z-image-turbo-lora';
+        if (isZImage) {
+          const ratio = finalWidth / finalHeight;
+          const is16x9 = Math.abs(ratio - (16 / 9)) < 0.1;
+          if (is16x9) {
+            console.log(`[launchNextPendingJob] Z-Image 16:9 detected - forcing 960x544`);
+            finalWidth = 960;
+            finalHeight = 544;
+          }
+        }
+
+        const response = await fetch(`${supabaseUrl}/functions/v1/generate-image-seedream`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${supabaseServiceKey}`,
+          },
+          body: JSON.stringify({
+            prompt: jobToClaim.metadata.prompt,
+            model: imageModel,
+            width: finalWidth,
+            height: finalHeight,
+            image_urls: jobToClaim.metadata.styleRefs || [],
+            async: true,
+            webhook_url: `${supabaseUrl}/functions/v1/replicate-webhook`,
+            userId: jobToClaim.user_id,
+            projectId: jobToClaim.project_id,
+            sceneIndex: jobToClaim.scene_index,
+            jobId: jobToClaim.id,
+          }),
+        });
+        
+        if (response.ok) {
+          const result = await response.json();
+          await adminClient.from('pending_predictions').insert({
+            job_id: jobToClaim.id,
+            prediction_id: result.predictionId,
+            prediction_type: 'scene_image',
+            scene_index: jobToClaim.scene_index,
+            project_id: jobToClaim.project_id,
+            user_id: jobToClaim.user_id,
+            status: 'pending',
+          });
+        } else {
+          const errorText = await response.text();
+          await adminClient.from('generation_jobs').update({ status: 'failed', error_message: errorText.substring(0, 200) }).eq('id', jobToClaim.id);
+        }
+      } catch (error) {
+        console.error(`[launchNextPendingJob] Error:`, error);
+        await adminClient.from('generation_jobs').update({ status: 'failed', error_message: String(error).substring(0, 200) }).eq('id', jobToClaim.id);
+      }
+    })();
+
+    if (typeof EdgeRuntime !== 'undefined') {
+      EdgeRuntime.waitUntil(imagePromise);
     }
-  } catch (error) {
-    console.error(`[launchNextPendingJob] Error:`, error);
-    await adminClient.from('generation_jobs').update({ status: 'failed', error_message: String(error) }).eq('id', jobToClaim.id);
   }
 }
 
 async function createSingleQAJob(adminClient: any, projectId: string, userId: string, sceneIndex: number, parentJobId: string, isRegen: boolean) {
+  console.log(`[createSingleQAJob] Creating QA job for scene ${sceneIndex + 1} of project ${projectId}`);
+  
   // Get scene data from project_scenes
   const { data: scene } = await adminClient
     .from('project_scenes')
@@ -644,7 +733,12 @@ async function createSingleQAJob(adminClient: any, projectId: string, userId: st
     .eq('scene_index', sceneIndex)
     .single();
 
-  if (!scene?.image_url) return;
+  if (!scene?.image_url) {
+    console.error(`[createSingleQAJob] CRITICAL: No image_url found for scene ${sceneIndex + 1} in project_scenes - QA job NOT created!`);
+    return;
+  }
+  
+  console.log(`[createSingleQAJob] Found image_url for scene ${sceneIndex + 1}: ${scene.image_url.substring(0, 80)}...`);
 
   await adminClient.from('generation_jobs').insert({
     project_id: projectId,
@@ -665,48 +759,185 @@ async function createSingleQAJob(adminClient: any, projectId: string, userId: st
 
 async function launchNextPendingQAJob(adminClient: any) {
   const MAX_QA = 100;
-  const { count } = await adminClient.from('generation_jobs').select('id', { count: 'exact', head: true }).eq('status', 'processing').eq('job_type', 'single_qa');
-  if ((count || 0) >= MAX_QA) return;
+  
+  // Proactive cleanup: Fail jobs stuck in processing for > 15 mins
+  const timeoutLimit = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+  await adminClient
+    .from('generation_jobs')
+    .update({ status: 'failed', error_message: 'Stuck in processing (timeout)' })
+    .eq('status', 'processing')
+    .eq('job_type', 'single_qa')
+    .lt('created_at', timeoutLimit);
 
-  const { data: pending } = await adminClient.from('generation_jobs').select('*').eq('status', 'pending').eq('job_type', 'single_qa').limit(1);
-  if (!pending || pending.length === 0) return;
+  // 1. Get current processing count
+  const { count: processingCount } = await adminClient
+    .from('generation_jobs')
+    .select('id', { count: 'exact', head: true })
+    .eq('status', 'processing')
+    .eq('job_type', 'single_qa');
+  
+  const availableSlots = MAX_QA - (processingCount || 0);
+  if (availableSlots <= 0) return;
 
-  const { data: claimed } = await adminClient.from('generation_jobs').update({ status: 'processing' }).eq('id', pending[0].id).eq('status', 'pending').select('id').single();
-  if (!claimed) return;
+  // 2. Find ALL pending jobs up to the number of available slots
+  const { data: pendingJobs } = await adminClient
+    .from('generation_jobs')
+    .select('*')
+    .eq('status', 'pending')
+    .eq('job_type', 'single_qa')
+    .order('created_at', { ascending: true })
+    .limit(availableSlots);
+  
+  if (!pendingJobs || pendingJobs.length === 0) {
+    console.log('[launchNextPendingQAJob] No pending single_qa jobs');
+    return;
+  }
+  
+  console.log(`[launchNextPendingQAJob] Found ${pendingJobs.length} pending QA jobs to launch`);
 
-  fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/start-generation-job`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}` },
-    body: JSON.stringify({ jobId: pending[0].id, projectId: pending[0].project_id, userId: pending[0].user_id, jobType: 'single_qa' })
-  }).catch(err => console.error(err));
+  for (const pending of pendingJobs) {
+    const { data: claimed } = await adminClient
+      .from('generation_jobs')
+      .update({ status: 'processing' })
+      .eq('id', pending.id)
+      .eq('status', 'pending')
+      .select('id')
+      .single();
+    
+    if (!claimed) continue;
+
+    const qaPromise = (async () => {
+      try {
+        console.log(`[launchNextPendingQAJob] Launching QA for scene ${pending.scene_index + 1} of project ${pending.project_id}`);
+        const response = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/start-generation-job`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}` },
+          body: JSON.stringify({ jobId: pending.id, projectId: pending.project_id, userId: pending.user_id, jobType: 'single_qa' })
+        });
+        if (!response.ok) {
+          const errorText = await response.text();
+          await adminClient.from('generation_jobs').update({ status: 'failed', error_message: errorText.substring(0, 200) }).eq('id', pending.id);
+        }
+      } catch (err) {
+        console.error(err);
+        await adminClient.from('generation_jobs').update({ status: 'failed', error_message: String(err).substring(0, 200) }).eq('id', pending.id);
+      }
+    })();
+
+    if (typeof EdgeRuntime !== 'undefined') {
+      EdgeRuntime.waitUntil(qaPromise);
+    }
+  }
 }
 
 async function launchNextPendingUpscaleJob(adminClient: any) {
   const MAX_UP = 20;
-  const { count } = await adminClient.from('generation_jobs').select('id', { count: 'exact', head: true }).eq('status', 'processing').eq('job_type', 'single_upscale');
-  if ((count || 0) >= MAX_UP) return;
+  
+  // Proactive cleanup: Fail jobs stuck in processing for > 15 mins
+  const timeoutLimit = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+  await adminClient
+    .from('generation_jobs')
+    .update({ status: 'failed', error_message: 'Stuck in processing (timeout)' })
+    .eq('status', 'processing')
+    .eq('job_type', 'single_upscale')
+    .lt('created_at', timeoutLimit);
 
-  const { data: pending } = await adminClient.from('generation_jobs').select('*').eq('status', 'pending').eq('job_type', 'single_upscale').limit(1);
-  if (!pending || pending.length === 0) return;
+  // 1. Get current processing count
+  const { count: processingCount } = await adminClient
+    .from('generation_jobs')
+    .select('id', { count: 'exact', head: true })
+    .eq('status', 'processing')
+    .eq('job_type', 'single_upscale');
+  
+  const availableSlots = MAX_UP - (processingCount || 0);
+  console.log(`[launchNextPendingUpscaleJob] Processing: ${processingCount}/${MAX_UP}, Available: ${availableSlots}`);
+  
+  if (availableSlots <= 0) return;
 
-  const { data: claimed } = await adminClient.from('generation_jobs').update({ status: 'processing' }).eq('id', pending[0].id).eq('status', 'pending').select('id').single();
-  if (!claimed) return;
+  // 2. Find ALL pending upscale jobs up to the number of available slots
+  const { data: pendingJobs } = await adminClient
+    .from('generation_jobs')
+    .select('*')
+    .eq('status', 'pending')
+    .eq('job_type', 'single_upscale')
+    .order('created_at', { ascending: true })
+    .limit(availableSlots);
+  
+  if (!pendingJobs || pendingJobs.length === 0) {
+    console.log(`[launchNextPendingUpscaleJob] No pending jobs to launch`);
+    return;
+  }
 
-  const sceneIndex = pending[0].scene_index;
-  const { data: scene } = await adminClient.from('project_scenes').select('image_url').eq('project_id', pending[0].project_id).eq('scene_index', sceneIndex).single();
+  console.log(`[launchNextPendingUpscaleJob] Attempting to launch ${pendingJobs.length} jobs`);
 
-  if (scene?.image_url) {
-    const res = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/upscale-image`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}` },
-      body: JSON.stringify({ imageUrl: scene.image_url, userId: pending[0].user_id, async: true, webhook_url: `${Deno.env.get('SUPABASE_URL')}/functions/v1/replicate-webhook` })
-    });
-    if (res.ok) {
-      const result = await res.json();
-      await adminClient.from('pending_predictions').insert({
-        job_id: pending[0].id, prediction_id: result.predictionId, prediction_type: 'upscale',
-        scene_index: sceneIndex, project_id: pending[0].project_id, user_id: pending[0].user_id, status: 'pending'
-      });
+  // 3. Launch each pending job
+  for (const pending of pendingJobs) {
+    const { data: claimed } = await adminClient
+      .from('generation_jobs')
+      .update({ status: 'processing' })
+      .eq('id', pending.id)
+      .eq('status', 'pending')
+      .select('id')
+      .single();
+    
+    if (!claimed) continue;
+
+    const sceneIndex = pending.scene_index;
+    const { data: scene } = await adminClient
+      .from('project_scenes')
+      .select('image_url')
+      .eq('project_id', pending.project_id)
+      .eq('scene_index', sceneIndex)
+      .single();
+
+    if (scene?.image_url) {
+      console.log(`[launchNextPendingUpscaleJob] Launching upscale for scene ${sceneIndex + 1} of project ${pending.project_id}`);
+      
+      // Use fire-and-forget for the individual API call to not block the loop
+      const upscalePromise = (async () => {
+        try {
+          const res = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/upscale-image`, {
+            method: 'POST',
+            headers: { 
+              'Content-Type': 'application/json', 
+              'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}` 
+            },
+            body: JSON.stringify({ 
+              imageUrl: scene.image_url, 
+              userId: pending.user_id, 
+              async: true, 
+              webhook_url: `${Deno.env.get('SUPABASE_URL')}/functions/v1/replicate-webhook` 
+            })
+          });
+          
+          if (res.ok) {
+            const result = await res.json();
+            await adminClient.from('pending_predictions').insert({
+              job_id: pending.id, 
+              prediction_id: result.predictionId, 
+              prediction_type: 'upscale',
+              scene_index: sceneIndex, 
+              project_id: pending.project_id, 
+              user_id: pending.user_id, 
+              status: 'pending'
+            });
+          } else {
+            const errorText = await res.text();
+            console.error(`[launchNextPendingUpscaleJob] Failed to start upscale for scene ${sceneIndex + 1}:`, errorText);
+            await adminClient.from('generation_jobs').update({ status: 'failed', error_message: errorText.substring(0, 200) }).eq('id', pending.id);
+          }
+        } catch (err) {
+          console.error(`[launchNextPendingUpscaleJob] Error for scene ${sceneIndex + 1}:`, err);
+          await adminClient.from('generation_jobs').update({ status: 'failed', error_message: String(err).substring(0, 200) }).eq('id', pending.id);
+        }
+      })();
+
+      if (typeof EdgeRuntime !== 'undefined') {
+        EdgeRuntime.waitUntil(upscalePromise);
+      }
+    } else {
+      console.error(`[launchNextPendingUpscaleJob] No image_url found for scene ${sceneIndex + 1}`);
+      await adminClient.from('generation_jobs').update({ status: 'failed', error_message: 'No image_url for upscale' }).eq('id', pending.id);
     }
   }
 }

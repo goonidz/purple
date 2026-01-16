@@ -43,6 +43,8 @@ interface GeneratedPrompt {
   qa_status?: 'OK' | 'REJECT';
   qa_explication?: string;
   qa_regeneration_prompt?: string;
+  was_regenerated?: boolean;
+  regenerated_prompt?: string;
 }
 
 interface SceneGridProps {
@@ -212,9 +214,29 @@ export function SceneGrid({
               </div>
               {prompt?.prompt ? (
                 <div className="group relative">
-                  <p className="text-sm text-muted-foreground whitespace-pre-wrap break-words">
-                    {prompt.prompt}
-                  </p>
+                  {/* Show regenerated prompt if exists, otherwise original */}
+                  {prompt?.regenerated_prompt ? (
+                    <div className="space-y-2">
+                      <div>
+                        <span className="text-xs font-medium text-blue-500">Prompt régénéré :</span>
+                        <p className="text-sm text-muted-foreground whitespace-pre-wrap break-words">
+                          {prompt.regenerated_prompt}
+                        </p>
+                      </div>
+                      <details className="text-xs">
+                        <summary className="cursor-pointer text-muted-foreground/60 hover:text-muted-foreground">
+                          Voir prompt original
+                        </summary>
+                        <p className="mt-1 text-muted-foreground/60 whitespace-pre-wrap break-words">
+                          {prompt.prompt}
+                        </p>
+                      </details>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground whitespace-pre-wrap break-words">
+                      {prompt.prompt}
+                    </p>
+                  )}
                   <div
                     className={`absolute top-0 right-0 flex gap-0.5 transition-opacity ${
                       editingPromptIndex === index || regeneratingPromptIndex === index
@@ -474,17 +496,17 @@ export function SceneGrid({
                   </Tooltip>
                 </TooltipProvider>
               )}
-              {/* QA Status badge - OK */}
+              {/* QA Status badge - OK (green) or Regenerated (blue) */}
               {prompt?.qa_checked && prompt?.qa_status === 'OK' && (
                 <TooltipProvider>
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <div className="bg-green-500 text-white rounded-full p-1 shadow-md cursor-help">
+                      <div className={`${prompt?.was_regenerated ? 'bg-blue-500' : 'bg-green-500'} text-white rounded-full p-1 shadow-md cursor-help`}>
                         <Check className="h-3.5 w-3.5" />
                       </div>
                     </TooltipTrigger>
                     <TooltipContent>
-                      <p>Qualité validée automatiquement</p>
+                      <p>{prompt?.was_regenerated ? 'Qualité validée après régénération' : 'Qualité validée automatiquement'}</p>
                     </TooltipContent>
                   </Tooltip>
                 </TooltipProvider>

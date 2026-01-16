@@ -137,9 +137,9 @@ export function useGenerationJobs({ projectId, onJobComplete, onJobFailed, autoR
           .order('created_at', { ascending: false });
 
         if (error) throw error;
-        // Filter out child jobs (single_image, single_qa, single_upscale) client-side
+        // Filter out child jobs (single_prompt, single_image, single_qa, single_upscale) client-side
         const filteredJobs = (data || []).filter(
-          (job: any) => job.job_type !== 'single_image' && job.job_type !== 'single_qa' && job.job_type !== 'single_upscale'
+          (job: any) => job.job_type !== 'single_prompt' && job.job_type !== 'single_image' && job.job_type !== 'single_qa' && job.job_type !== 'single_upscale'
         );
         setActiveJobs(filteredJobs as unknown as GenerationJob[]);
       } catch (error) {
@@ -166,7 +166,7 @@ export function useGenerationJobs({ projectId, onJobComplete, onJobFailed, autoR
           if (payload.eventType === 'INSERT') {
             const newJob = payload.new as GenerationJob;
             // Ignore individual child jobs
-            if (newJob.job_type === 'single_image' || newJob.job_type === 'single_qa' || newJob.job_type === 'single_upscale') return;
+            if (newJob.job_type === 'single_prompt' || newJob.job_type === 'single_image' || newJob.job_type === 'single_qa' || newJob.job_type === 'single_upscale') return;
             setActiveJobs(prev => {
               // Check if job already exists
               if (prev.find(j => j.id === newJob.id)) return prev;
@@ -175,7 +175,7 @@ export function useGenerationJobs({ projectId, onJobComplete, onJobFailed, autoR
           } else if (payload.eventType === 'UPDATE') {
             const updatedJob = payload.new as GenerationJob;
             // Ignore individual child jobs
-            if (updatedJob.job_type === 'single_image' || updatedJob.job_type === 'single_qa' || updatedJob.job_type === 'single_upscale') return;
+            if (updatedJob.job_type === 'single_prompt' || updatedJob.job_type === 'single_image' || updatedJob.job_type === 'single_qa' || updatedJob.job_type === 'single_upscale') return;
             
             setActiveJobs(prev => {
               // If we no longer track this job (already removed), ignore the update
@@ -346,9 +346,9 @@ export function useGenerationJobs({ projectId, onJobComplete, onJobFailed, autoR
 
       if (error) throw error;
 
-      // Filter out child jobs (single_image, single_qa, single_upscale) client-side
+      // Filter out child jobs (single_prompt, single_image, single_qa, single_upscale) client-side
       const filteredJobs = (data || []).filter(
-        (job: any) => job.job_type !== 'single_image' && job.job_type !== 'single_qa' && job.job_type !== 'single_upscale'
+        (job: any) => job.job_type !== 'single_prompt' && job.job_type !== 'single_image' && job.job_type !== 'single_qa' && job.job_type !== 'single_upscale'
       );
       setActiveJobs(filteredJobs as unknown as GenerationJob[]);
       

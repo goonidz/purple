@@ -1256,8 +1256,69 @@ async function processPromptsJob(
     const maxGroupId = groupValues.length > 0 ? Math.max(...groupValues) : 0;
     console.log(`[processPromptsJob] Sequential processing complete. Created ${maxGroupId} continuity groups`);
     
+  } else if (!visualContinuityEnabled) {
+    // ========================================================================
+    // NEW JOB-BASED PARALLEL ARCHITECTURE (no continuity)
+    // Create individual single_prompt jobs and process them in parallel
+    // ========================================================================
+    console.log(`[processPromptsJob] Using JOB-BASED parallel architecture (no continuity)`);
+    console.log(`[processPromptsJob] Creating ${allScenesToProcess.length} individual single_prompt jobs`);
+    
+    // Create individual jobs for ALL scenes that need prompts (not just chunk)
+    const individualJobs = allScenesToProcess.map(({ scene, index }: any) => ({
+      project_id: projectId,
+      user_id: userId,
+      job_type: 'single_prompt',
+      status: 'pending',
+      scene_index: index,
+      total: 1,
+      progress: 0,
+      parent_job_id: jobId,
+      metadata: {
+        sceneIndex: index,
+        sceneText: scene.text,
+        startTime: scene.startTime,
+        endTime: scene.endTime,
+        summary,
+        examplePrompts: filteredExamples,
+        customSystemPrompt,
+        totalScenes: scenes.length
+      }
+    }));
+    
+    const { data: createdJobs, error: jobsError } = await adminClient
+      .from('generation_jobs')
+      .insert(individualJobs)
+      .select('id, scene_index');
+    
+    if (jobsError) {
+      throw new Error(`Failed to create individual prompt jobs: ${jobsError.message}`);
+    }
+    
+    console.log(`[processPromptsJob] Created ${createdJobs.length} individual single_prompt jobs`);
+    
+    // Update parent job total to reflect all scenes
+    await adminClient
+      .from('generation_jobs')
+      .update({ 
+        total: allScenesToProcess.length,
+        metadata: {
+          ...metadata,
+          totalGlobal: scenes.length,
+          totalMissing: allScenesToProcess.length,
+          useJobBasedParallel: true
+        }
+      })
+      .eq('id', jobId);
+    
+    // Launch up to PROMPTS_MAX_CONCURRENT jobs
+    await launchPendingPromptJobs(adminClient, createdJobs.length);
+    
+    console.log(`[processPromptsJob] Parent job ${jobId} stays in processing until all children complete`);
+    throw new Error('WEBHOOK_MODE_ACTIVE');
+    
   } else {
-    // PARALLEL processing (original behavior)
+    // PARALLEL processing with continuity (original behavior - uses pre-analyzed continuity data)
     const batchPromises = scenesToProcess.map(async ({ scene, index }: any) => {
       // Get previous prompts for context
       const previousPrompts = newPrompts
@@ -2840,6 +2901,8 @@ async function processSinglePromptJob(
   adminClient: any
 ) {
   const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+  const internalAuthHeader = `Bearer ${serviceRoleKey}`;
   const sceneIndex = metadata.sceneIndex as number;
 
   if (sceneIndex === undefined || sceneIndex === null) {
@@ -2924,7 +2987,7 @@ async function processSinglePromptJob(
         const continuityResponse = await fetch(`${supabaseUrl}/functions/v1/analyze-scene-continuity`, {
           method: 'POST',
           headers: {
-            'Authorization': authHeader,
+            'Authorization': internalAuthHeader,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
@@ -2984,7 +3047,7 @@ async function processSinglePromptJob(
   const response = await fetch(`${supabaseUrl}/functions/v1/generate-prompts`, {
     method: 'POST',
     headers: {
-      'Authorization': authHeader,
+      'Authorization': internalAuthHeader,
       'Content-Type': 'application/json',
     },
         body: JSON.stringify({
@@ -3066,11 +3129,104 @@ async function processSinglePromptJob(
 
   console.log(`Single prompt job: prompts saved for scene ${sceneIndex + 1}`);
 
-  // Update progress
+  // Also save to project_scenes table for consistency
+  const { error: sceneError } = await adminClient
+    .from('project_scenes')
+    .upsert({
+      project_id: projectId,
+      scene_index: sceneIndex,
+      prompt: newPrompt,
+      continuity_group_id: visualContinuityEnabled ? continuityGroupId : null,
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'project_id,scene_index' });
+  
+  if (sceneError) {
+    console.error(`[processSinglePromptJob] Error upserting to project_scenes:`, sceneError.message);
+  }
+
+  // Get job info to check for parent
+  const { data: job } = await adminClient
+    .from('generation_jobs')
+    .select('parent_job_id')
+    .eq('id', jobId)
+    .single();
+
+  // Update this job's progress
   await adminClient
     .from('generation_jobs')
     .update({ progress: 1 })
     .eq('id', jobId);
+
+  // If this job has a parent, update parent progress and check completion
+  if (job?.parent_job_id) {
+    console.log(`[processSinglePromptJob] Scene ${sceneIndex + 1}: Updating parent job ${job.parent_job_id}`);
+    
+    // Count completed sibling jobs
+    const { count: completedCount } = await adminClient
+      .from('generation_jobs')
+      .select('id', { count: 'exact', head: true })
+      .eq('parent_job_id', job.parent_job_id)
+      .eq('job_type', 'single_prompt')
+      .eq('status', 'completed');
+    
+    // Get parent job total
+    const { data: parentJob } = await adminClient
+      .from('generation_jobs')
+      .select('total, project_id, user_id, metadata')
+      .eq('id', job.parent_job_id)
+      .single();
+    
+    if (parentJob) {
+      const newProgress = (completedCount || 0) + 1; // +1 for this job that just completed
+      
+      // Update parent progress
+      await adminClient
+        .from('generation_jobs')
+        .update({ progress: newProgress })
+        .eq('id', job.parent_job_id);
+      
+      console.log(`[processSinglePromptJob] Parent progress: ${newProgress}/${parentJob.total}`);
+      
+      // Check if all prompts are done
+      if (newProgress >= parentJob.total) {
+        console.log(`[processSinglePromptJob] All ${parentJob.total} prompts complete! Marking parent as completed.`);
+        
+        // Mark parent as completed
+        await adminClient
+          .from('generation_jobs')
+          .update({ 
+            status: 'completed',
+            completed_at: new Date().toISOString()
+          })
+          .eq('id', job.parent_job_id);
+        
+        // Chain to images if configured (optional)
+        const shouldChainToImages = parentJob.metadata?.chainToImages !== false;
+        if (shouldChainToImages) {
+          console.log(`[processSinglePromptJob] Chaining to images generation...`);
+          const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+          const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+          
+          // Create images job
+          fetch(`${supabaseUrl}/functions/v1/start-generation-job`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${serviceRoleKey}`
+            },
+            body: JSON.stringify({
+              projectId: parentJob.project_id,
+              userId: parentJob.user_id,
+              jobType: 'images'
+            })
+          }).catch(err => console.error(`[processSinglePromptJob] Error chaining to images:`, err));
+        }
+      } else {
+        // Launch next pending prompt job
+        await launchNextPendingPromptJob(adminClient);
+      }
+    }
+  }
 }
 
 async function processSingleImageJob(
@@ -4075,6 +4231,149 @@ async function processUpscaleJob(
 }
 
 // ========================================================================
+// PARALLEL PROMPTS ARCHITECTURE: 1 job per prompt
+// ========================================================================
+const PROMPTS_MAX_CONCURRENT = 100;
+
+// Launch next pending single_prompt job
+async function launchNextPendingPromptJob(adminClient: any): Promise<void> {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+  
+  // Check current processing count
+  const { count: processingCount } = await adminClient
+    .from('generation_jobs')
+    .select('id', { count: 'exact', head: true })
+    .eq('status', 'processing')
+    .eq('job_type', 'single_prompt');
+  
+  if ((processingCount || 0) >= PROMPTS_MAX_CONCURRENT) {
+    console.log(`[launchNextPendingPromptJob] No capacity (${processingCount}/${PROMPTS_MAX_CONCURRENT} processing)`);
+    return;
+  }
+  
+  // Find next pending single_prompt job
+  const { data: pendingJobs } = await adminClient
+    .from('generation_jobs')
+    .select('id, project_id, user_id, scene_index, metadata')
+    .eq('status', 'pending')
+    .eq('job_type', 'single_prompt')
+    .order('scene_index', { ascending: true }) // Process in scene order
+    .order('created_at', { ascending: true })
+    .limit(1);
+  
+  if (!pendingJobs || pendingJobs.length === 0) {
+    console.log('[launchNextPendingPromptJob] No pending single_prompt jobs');
+    return;
+  }
+  
+  const jobToClaim = pendingJobs[0];
+  
+  // Atomic claim
+  const { data: claimed, error: claimError } = await adminClient
+    .from('generation_jobs')
+    .update({ status: 'processing' })
+    .eq('id', jobToClaim.id)
+    .eq('status', 'pending')
+    .select('id')
+    .single();
+  
+  if (claimError || !claimed) {
+    console.log(`[launchNextPendingPromptJob] Job ${jobToClaim.id} already claimed`);
+    return;
+  }
+  
+  console.log(`[launchNextPendingPromptJob] Launching single_prompt job ${jobToClaim.id} for scene ${jobToClaim.scene_index + 1}`);
+  
+  // Launch immediately (fire and forget)
+  fetch(`${supabaseUrl}/functions/v1/start-generation-job`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${serviceRoleKey}`
+    },
+    body: JSON.stringify({
+      jobId: jobToClaim.id,
+      projectId: jobToClaim.project_id,
+      userId: jobToClaim.user_id,
+      jobType: 'single_prompt'
+    })
+  }).catch(err => console.error(`[launchNextPendingPromptJob] Error starting job ${jobToClaim.id}:`, err));
+}
+
+// Launch multiple pending prompt jobs up to available capacity
+async function launchPendingPromptJobs(adminClient: any, count: number): Promise<void> {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+  
+  // Check current processing count
+  const { count: processingCount } = await adminClient
+    .from('generation_jobs')
+    .select('id', { count: 'exact', head: true })
+    .eq('status', 'processing')
+    .eq('job_type', 'single_prompt');
+  
+  const availableSlots = Math.max(0, PROMPTS_MAX_CONCURRENT - (processingCount || 0));
+  const jobsToLaunch = Math.min(availableSlots, count);
+  
+  if (jobsToLaunch === 0) {
+    console.log(`[launchPendingPromptJobs] No capacity (${processingCount}/${PROMPTS_MAX_CONCURRENT} processing)`);
+    return;
+  }
+  
+  // Find pending jobs
+  const { data: pendingJobs } = await adminClient
+    .from('generation_jobs')
+    .select('id, project_id, user_id, scene_index, metadata')
+    .eq('status', 'pending')
+    .eq('job_type', 'single_prompt')
+    .order('scene_index', { ascending: true })
+    .order('created_at', { ascending: true })
+    .limit(jobsToLaunch);
+  
+  if (!pendingJobs || pendingJobs.length === 0) {
+    console.log('[launchPendingPromptJobs] No pending single_prompt jobs');
+    return;
+  }
+  
+  console.log(`[launchPendingPromptJobs] Launching ${pendingJobs.length} prompt jobs (${processingCount}/${PROMPTS_MAX_CONCURRENT} already processing)`);
+  
+  // Claim and launch each job
+  for (const job of pendingJobs) {
+    // Atomic claim
+    const { data: claimed, error: claimError } = await adminClient
+      .from('generation_jobs')
+      .update({ status: 'processing' })
+      .eq('id', job.id)
+      .eq('status', 'pending')
+      .select('id')
+      .single();
+    
+    if (claimError || !claimed) {
+      console.log(`[launchPendingPromptJobs] Job ${job.id} already claimed, skipping`);
+      continue;
+    }
+    
+    console.log(`[launchPendingPromptJobs] Launching scene ${job.scene_index + 1}`);
+    
+    // Fire and forget
+    fetch(`${supabaseUrl}/functions/v1/start-generation-job`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${serviceRoleKey}`
+      },
+      body: JSON.stringify({
+        jobId: job.id,
+        projectId: job.project_id,
+        userId: job.user_id,
+        jobType: 'single_prompt'
+      })
+    }).catch(err => console.error(`[launchPendingPromptJobs] Error starting job ${job.id}:`, err));
+  }
+}
+
+// ========================================================================
 // NEW SIMPLE ARCHITECTURE: 1 job per QA check
 // ========================================================================
 const QA_MAX_CONCURRENT = 100;
@@ -4192,22 +4491,20 @@ async function processQAJob(
       .update({ status: 'processing' })
       .eq('id', job.id);
     
-    // Fire and forget - call start-generation-job for single_qa
-    setTimeout(() => {
-      fetch(`${supabaseUrl}/functions/v1/start-generation-job`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${supabaseServiceKey}`
-        },
-        body: JSON.stringify({
-          jobId: job.id,
-          projectId,
-          userId,
-          jobType: 'single_qa'
-        })
-      }).catch(err => console.error(`[processQAJob] Error starting single_qa job ${job.id}:`, err));
-    }, 0);
+    // Call start-generation-job for single_qa immediately (no setTimeout)
+    fetch(`${supabaseUrl}/functions/v1/start-generation-job`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${supabaseServiceKey}`
+      },
+      body: JSON.stringify({
+        jobId: job.id,
+        projectId,
+        userId,
+        jobType: 'single_qa'
+      })
+    }).catch(err => console.error(`[processQAJob] Error starting single_qa job ${job.id}:`, err));
   }
 
   // Keep parent job in 'processing' - webhook will complete it
@@ -4331,7 +4628,9 @@ async function updatePromptWithQAResult(
   sceneIndex: number,
   qaResult: any
 ) {
-  // ROBUST ARCHITECTURE: Update project_scenes table
+  console.log(`[updatePromptWithQAResult] Updating QA for scene ${sceneIndex + 1} with status: ${qaResult.status}`);
+  
+  // ROBUST ARCHITECTURE: Update project_scenes table (ATOMIC - preferred)
   const updateData: any = {
     qa_checked: true,
     qa_status: qaResult.status === 'OK' ? 'OK' : (qaResult.status === 'REJECT' ? 'REJECT' : 'OK'),
@@ -4340,41 +4639,101 @@ async function updatePromptWithQAResult(
     updated_at: new Date().toISOString()
   };
 
-  const { error: sceneError } = await adminClient
+  const { error: sceneError, data: updatedScene } = await adminClient
     .from('project_scenes')
     .update(updateData)
     .eq('project_id', projectId)
-    .eq('scene_index', sceneIndex);
+    .eq('scene_index', sceneIndex)
+    .select('scene_index, qa_checked, qa_status')
+    .single();
 
   if (sceneError) {
-    console.error(`[updatePromptWithQAResult] Error updating project_scenes:`, sceneError.message);
+    console.error(`[updatePromptWithQAResult] Error updating project_scenes for scene ${sceneIndex + 1}:`, sceneError.message);
+  } else {
+    console.log(`[updatePromptWithQAResult] Successfully updated project_scenes for scene ${sceneIndex + 1}: qa_checked=${updatedScene?.qa_checked}, qa_status=${updatedScene?.qa_status}`);
   }
 
-  // FALLBACK: Also update legacy JSON
-  const { data: project } = await adminClient
-    .from('projects')
-    .select('prompts')
-    .eq('id', projectId)
-    .single();
-  
-  if (!project) return;
-  
-  const prompts = [...(project.prompts as any[])];
-  if (qaResult.status === 'OK') {
-    prompts[sceneIndex] = { ...prompts[sceneIndex], qa_checked: true, qa_status: 'OK' };
-  } else if (qaResult.status === 'REJECT') {
-    prompts[sceneIndex] = {
-      ...prompts[sceneIndex],
-      qa_checked: true,
-      qa_status: 'REJECT',
-      qa_explication: qaResult.explication,
-      qa_regeneration_prompt: qaResult.prompt_regeneration || null
-    };
-  } else {
-    prompts[sceneIndex] = { ...prompts[sceneIndex], qa_checked: true, qa_status: 'OK', qa_explication: 'QA check failed - assumed OK' };
+  // FALLBACK: Also update legacy JSON using atomic RPC if available, otherwise best-effort
+  try {
+    // Try atomic update via RPC first
+    const { error: rpcError } = await adminClient.rpc('update_prompt_qa_status', {
+      p_project_id: projectId,
+      p_scene_index: sceneIndex,
+      p_qa_checked: true,
+      p_qa_status: qaResult.status === 'OK' ? 'OK' : (qaResult.status === 'REJECT' ? 'REJECT' : 'OK'),
+      p_qa_explication: qaResult.explication || null,
+      p_qa_regeneration_prompt: qaResult.prompt_regeneration || null
+    });
+    
+    if (rpcError) {
+      // RPC doesn't exist yet, fall back to non-atomic update (with warning)
+      console.warn(`[updatePromptWithQAResult] RPC not available, using non-atomic fallback for legacy JSON (race condition risk)`);
+      
+      const { data: project } = await adminClient
+        .from('projects')
+        .select('prompts')
+        .eq('id', projectId)
+        .single();
+      
+      if (!project) return;
+      
+      const prompts = [...(project.prompts as any[])];
+      if (qaResult.status === 'OK') {
+        prompts[sceneIndex] = { ...prompts[sceneIndex], qa_checked: true, qa_status: 'OK' };
+      } else if (qaResult.status === 'REJECT') {
+        prompts[sceneIndex] = {
+          ...prompts[sceneIndex],
+          qa_checked: true,
+          qa_status: 'REJECT',
+          qa_explication: qaResult.explication,
+          qa_regeneration_prompt: qaResult.prompt_regeneration || null
+        };
+      } else {
+        prompts[sceneIndex] = { ...prompts[sceneIndex], qa_checked: true, qa_status: 'OK', qa_explication: 'QA check failed - assumed OK' };
+      }
+      
+      await adminClient.from('projects').update({ prompts }).eq('id', projectId);
+    } else {
+      console.log(`[updatePromptWithQAResult] Successfully updated legacy JSON via atomic RPC for scene ${sceneIndex + 1}`);
+    }
+  } catch (err) {
+    console.warn(`[updatePromptWithQAResult] Legacy JSON update failed (ignored):`, err);
   }
+}
+
+// Mark a scene as having been regenerated (for UI display - blue badge instead of green)
+async function markSceneAsRegenerated(
+  adminClient: any,
+  projectId: string,
+  sceneIndex: number
+) {
+  console.log(`[markSceneAsRegenerated] Marking scene ${sceneIndex + 1} as regenerated`);
   
-  await adminClient.from('projects').update({ prompts }).eq('id', projectId);
+  // Update project_scenes
+  await adminClient
+    .from('project_scenes')
+    .update({ was_regenerated: true })
+    .eq('project_id', projectId)
+    .eq('scene_index', sceneIndex);
+  
+  // Update legacy JSON
+  try {
+    const { data: project } = await adminClient
+      .from('projects')
+      .select('prompts')
+      .eq('id', projectId)
+      .single();
+    
+    if (project?.prompts) {
+      const prompts = [...(project.prompts as any[])];
+      if (prompts[sceneIndex]) {
+        prompts[sceneIndex] = { ...prompts[sceneIndex], was_regenerated: true };
+        await adminClient.from('projects').update({ prompts }).eq('id', projectId);
+      }
+    }
+  } catch (err) {
+    console.warn(`[markSceneAsRegenerated] Legacy JSON update failed (ignored):`, err);
+  }
 }
 
 // ========================================================================
@@ -4412,25 +4771,35 @@ async function markSingleQACompleted(
   const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
   const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
   
+  // Check if this is a regenerated scene
+  const isRegenScene = job.is_regen === true || job.metadata?.is_regen === true;
+  
   // ATOMIC PIPELINE: Determine next step based on QA result
   if (status === 'OK' || status === 'ERROR') {
     // QA OK or error (assume OK) -> Create upscale job
-    console.log(`[markSingleQACompleted] Scene ${sceneIndex}: QA ${status}, creating upscale job`);
+    console.log(`[markSingleQACompleted] Scene ${sceneIndex}: QA ${status}, creating upscale job (is_regen: ${isRegenScene})`);
+    
+    // If this was a regenerated scene, mark it as such
+    if (isRegenScene) {
+      await markSceneAsRegenerated(adminClient, job.project_id, sceneIndex);
+    }
+    
     await createSingleUpscaleJobFromQA(adminClient, job.project_id, job.user_id, sceneIndex, job.parent_job_id);
     await launchNextPendingUpscaleJobFromQA(adminClient, supabaseUrl, supabaseServiceKey);
     
   } else if (status === 'REJECT') {
-    const isAlreadyRegen = job.is_regen === true || job.metadata?.is_regen === true;
+    const isAlreadyRegen = isRegenScene;
     
     if (isAlreadyRegen) {
       // Already regenerated once -> force OK and create upscale
       console.log(`[markSingleQACompleted] Scene ${sceneIndex}: REJECT after regen, forcing OK and upscale`);
       
-      // Update prompt to show it was force-accepted
+      // Update prompt to show it was force-accepted AND mark as regenerated
       await updatePromptWithQAResult(adminClient, job.project_id, sceneIndex, {
         status: 'OK',
         explication: 'Forcé OK après régénération (limite 1 regen atteinte)'
       });
+      await markSceneAsRegenerated(adminClient, job.project_id, sceneIndex);
       
       await createSingleUpscaleJobFromQA(adminClient, job.project_id, job.user_id, sceneIndex, job.parent_job_id);
       await launchNextPendingUpscaleJobFromQA(adminClient, supabaseUrl, supabaseServiceKey);
@@ -4440,19 +4809,18 @@ async function markSingleQACompleted(
       console.log(`[markSingleQACompleted] Scene ${sceneIndex}: REJECT, creating regen job`);
       await createSingleImageRegenJob(adminClient, job.project_id, job.user_id, sceneIndex, job.parent_job_id, qaResult);
       
-      // Launch the regen job
-      setTimeout(() => {
-        fetch(`${supabaseUrl}/functions/v1/replicate-webhook`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${supabaseServiceKey}`
-          },
-          body: JSON.stringify({
-            type: 'launch_next_image_job'
-          })
-        }).catch(err => console.error('[markSingleQACompleted] Error launching regen:', err));
-      }, 100);
+      // Launch the regen job immediately (no setTimeout - it's unreliable in Edge Functions)
+      console.log(`[markSingleQACompleted] Launching regen job for scene ${sceneIndex}`);
+      await fetch(`${supabaseUrl}/functions/v1/replicate-webhook`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabaseServiceKey}`
+        },
+        body: JSON.stringify({
+          type: 'launch_next_image_job'
+        })
+      }).catch(err => console.error('[markSingleQACompleted] Error launching regen:', err));
     }
   }
   
@@ -4616,7 +4984,7 @@ async function createSingleImageRegenJob(
   // Get current project settings including image model, width, height, and style references
   const { data: project, error: projectError } = await adminClient
     .from('projects')
-    .select('prompts, image_model, image_width, image_height, style_reference_urls')
+    .select('prompts, image_model, image_width, image_height, style_reference_url')
     .eq('id', projectId)
     .single();
   
@@ -4636,6 +5004,18 @@ async function createSingleImageRegenJob(
   // Use the QA-suggested prompt if available, otherwise use original
   const newPrompt = qaResult?.prompt_regeneration || originalPrompt;
   
+  // Parse style references
+  let styleReferenceUrls: string[] = [];
+  if (project.style_reference_url) {
+    try {
+      styleReferenceUrls = JSON.parse(project.style_reference_url);
+    } catch {
+      if (project.style_reference_url) {
+        styleReferenceUrls = [project.style_reference_url];
+      }
+    }
+  }
+  
   // Create the regen job with is_regen = true and FULL project settings
   const { error: insertError } = await adminClient
     .from('generation_jobs')
@@ -4654,7 +5034,7 @@ async function createSingleImageRegenJob(
         model: project.image_model || 'seedream-4.5',
         width: project.image_width || 1440,
         height: project.image_height || 816,
-        styleRefs: project.style_reference_urls || [],
+        styleRefs: styleReferenceUrls,
         is_regen: true,
         original_prompt: originalPrompt,
         qa_rejection_reason: qaResult?.explication || 'QA rejection',
@@ -4931,43 +5311,41 @@ async function updateQAParentProgress(
           const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
           const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
           
-          setTimeout(() => {
-            fetch(`${supabaseUrl}/functions/v1/start-generation-job`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${serviceRoleKey}`
-              },
-              body: JSON.stringify({
-                jobId: regenJob.id,
-                projectId,
-                userId,
-                jobType: 'qa_regen',
-                metadata: { semiAutoMode: true }
-              })
-            }).catch(err => console.error('[updateQAParentProgress] Error starting qa_regen:', err));
-          }, 100);
-        }
-      } else {
-        console.log(`[updateQAParentProgress] No rejected images, chaining to upscale`);
-        const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-        const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-        
-        setTimeout(() => {
-          fetch(`${supabaseUrl}/functions/v1/replicate-webhook`, {
+          // No setTimeout - launch immediately
+          fetch(`${supabaseUrl}/functions/v1/start-generation-job`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
               'Authorization': `Bearer ${serviceRoleKey}`
             },
             body: JSON.stringify({
-              type: 'chain_next_job',
+              jobId: regenJob.id,
               projectId,
               userId,
-              completedJobType: 'qa'
+              jobType: 'qa_regen',
+              metadata: { semiAutoMode: true }
             })
-          }).catch(err => console.error('[updateQAParentProgress] Error chaining:', err));
-        }, 100);
+          }).catch(err => console.error('[updateQAParentProgress] Error starting qa_regen:', err));
+        }
+      } else {
+        console.log(`[updateQAParentProgress] No rejected images, chaining to upscale`);
+        const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+        const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+        
+        // No setTimeout - launch immediately
+        fetch(`${supabaseUrl}/functions/v1/replicate-webhook`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${serviceRoleKey}`
+          },
+          body: JSON.stringify({
+            type: 'chain_next_job',
+            projectId,
+            userId,
+            completedJobType: 'qa'
+          })
+        }).catch(err => console.error('[updateQAParentProgress] Error chaining:', err));
       }
     }
   }
@@ -5022,21 +5400,20 @@ async function launchNextPendingQAJob(adminClient: any) {
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
   
-  setTimeout(() => {
-    fetch(`${supabaseUrl}/functions/v1/start-generation-job`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${serviceRoleKey}`
-      },
-      body: JSON.stringify({
-        jobId: jobToClaim.id,
-        projectId: jobToClaim.project_id,
-        userId: jobToClaim.user_id,
-        jobType: 'single_qa'
-      })
-    }).catch(err => console.error(`[launchNextPendingQAJob] Error starting job ${jobToClaim.id}:`, err));
-  }, 0);
+  // No setTimeout - launch immediately
+  fetch(`${supabaseUrl}/functions/v1/start-generation-job`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${serviceRoleKey}`
+    },
+    body: JSON.stringify({
+      jobId: jobToClaim.id,
+      projectId: jobToClaim.project_id,
+      userId: jobToClaim.user_id,
+      jobType: 'single_qa'
+    })
+  }).catch(err => console.error(`[launchNextPendingQAJob] Error starting job ${jobToClaim.id}:`, err));
 }
 
 async function processQARegenJob(
