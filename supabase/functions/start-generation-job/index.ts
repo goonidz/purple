@@ -2294,12 +2294,14 @@ async function processImagesJob(
         
         requestBody.prompt = finalPrompt;
         
+        // Add LoRA parameters for z-image-turbo-lora model (using local loraUrl variable)
         if (imageModel === 'z-image-turbo-lora') {
-          if (project.lora_url) {
-            requestBody.lora_url = project.lora_url;
+          if (loraUrl) {
+            requestBody.lora_url = loraUrl;
+            console.log(`[processImagesJob] Adding LoRA to request: ${loraUrl}, steps: ${loraSteps}`);
           }
-          if (project.lora_steps) {
-            requestBody.lora_steps = project.lora_steps;
+          if (loraSteps) {
+            requestBody.lora_steps = loraSteps;
           }
         }
 
@@ -2875,13 +2877,14 @@ async function processTestImagesJob(
         requestBody.image_urls = styleReferenceUrls;
       }
       
-      // Add LoRA parameters for z-image-turbo-lora model
+      // Add LoRA parameters for z-image-turbo-lora model (using local loraUrl variable)
       if (imageModel === 'z-image-turbo-lora') {
-        if (project.lora_url) {
-          requestBody.lora_url = project.lora_url;
+        if (loraUrl) {
+          requestBody.lora_url = loraUrl;
+          console.log(`[processTestImagesJob] Adding LoRA to request: ${loraUrl}, steps: ${loraSteps}`);
         }
-        if (project.lora_steps) {
-          requestBody.lora_steps = project.lora_steps;
+        if (loraSteps) {
+          requestBody.lora_steps = loraSteps;
         }
       }
 
@@ -3496,13 +3499,14 @@ async function processSingleImageJob(
     console.log(`  - NO IMAGE REFERENCES - generating without style reference`);
   }
   
-  // Add LoRA parameters for z-image-turbo-lora model
+  // Add LoRA parameters for z-image-turbo-lora model (using local loraUrl variable)
   if (imageModel === 'z-image-turbo-lora') {
-    if (project.lora_url) {
-      requestBody.lora_url = project.lora_url;
+    if (loraUrl) {
+      requestBody.lora_url = loraUrl;
+      console.log(`[processSingleImageJob] Adding LoRA to request: ${loraUrl}, steps: ${loraSteps}`);
     }
-    if (project.lora_steps) {
-      requestBody.lora_steps = project.lora_steps;
+    if (loraSteps) {
+      requestBody.lora_steps = loraSteps;
     }
   }
 
@@ -5716,13 +5720,14 @@ async function processQARegenJob(
         requestBody.image_urls = styleReferenceUrls;
       }
       
-      // Add LoRA parameters for z-image-turbo-lora model
+      // Add LoRA parameters for z-image-turbo-lora model (using local loraUrl variable)
       if (imageModel === 'z-image-turbo-lora') {
-        if (project.lora_url) {
-          requestBody.lora_url = project.lora_url;
+        if (loraUrl) {
+          requestBody.lora_url = loraUrl;
+          console.log(`[processQARegenJob] Adding LoRA to request: ${loraUrl}, steps: ${loraSteps}`);
         }
-        if (project.lora_steps) {
-          requestBody.lora_steps = project.lora_steps;
+        if (loraSteps) {
+          requestBody.lora_steps = loraSteps;
         }
       }
 
