@@ -245,9 +245,15 @@ serve(async (req) => {
     } else if (jobType === 'audio_generation') {
       total = 1; // Single audio generation
     } else if (jobType === 'upscale') {
-      // Count images that need upscaling (Z-Image 16:9 images)
-      const prompts = (project?.prompts as any[]) || [];
-      total = prompts.filter((p: any) => p && p.imageUrl).length;
+      // Count images that need upscaling
+      // If sceneIndices is provided, only count those specific scenes
+      const sceneIndices = metadata.sceneIndices as number[] | undefined;
+      if (sceneIndices && sceneIndices.length > 0) {
+        total = sceneIndices.length;
+      } else {
+        const prompts = (project?.prompts as any[]) || [];
+        total = prompts.filter((p: any) => p && p.imageUrl).length;
+      }
     } else if (jobType === 'qa') {
       // Count images to check for quality
       const prompts = (project?.prompts as any[]) || [];
@@ -3987,9 +3993,15 @@ async function processUpscaleJob(
     console.log(`[processUpscaleJob] Using NEW queue-based system for project ${projectId}`);
     
     // Get images that need upscaling
+    // If sceneIndices is provided, only process those specific scenes
+    const sceneIndices = metadata.sceneIndices as number[] | undefined;
     const imagesToUpscale = prompts
       .map((prompt: any, index: number) => ({ prompt, index }))
       .filter(({ prompt, index }: any) => {
+        // If sceneIndices is specified, only include those scenes
+        if (sceneIndices && sceneIndices.length > 0) {
+          if (!sceneIndices.includes(index)) return false;
+        }
         if (!prompt || !prompt.imageUrl) return false;
         if (prompt.isUpscaled === true) return false;
         const imgWidth = prompt.imageWidth || 0;

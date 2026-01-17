@@ -4561,9 +4561,15 @@ const Index = () => {
                               {upscaleInfo.highRes > 0 && ` • ${upscaleInfo.highRes} haute-résolution`}
                             </p>
                             <Button
-                              onClick={() => {
+                              onClick={async () => {
+                                // Convert 1-based scene numbers to 0-based indices
+                                const sceneIndices = upscaleInfo.indices.map(i => i - 1);
                                 setUpscaleInfo(null);
-                                generateUpscale();
+                                console.log(`[Upscale] Starting upscale for scenes: ${sceneIndices.join(', ')}`);
+                                const result = await startJob('upscale', { sceneIndices });
+                                if (result) {
+                                  toast.info(`Upscaling de ${sceneIndices.length} image(s) lancé en arrière-plan.`);
+                                }
                               }}
                               className="w-full"
                               variant="default"
