@@ -4012,79 +4012,65 @@ async function processUpscaleJob(
     
     if (imagesToUpscale.length === 0) {
       console.log("[processUpscaleJob] No images to upscale");
+      await adminClient
+        .from('generation_jobs')
+        .update({ status: 'completed', completed_at: new Date().toISOString() })
+        .eq('id', jobId);
       return;
     }
     
-    // Build queue items
-    const queueItems = imagesToUpscale.map(({ prompt, index }: any) => ({
-      index,
-      payload: {
-        imageUrl: prompt.imageUrl,
-        scale: 2,
-        faceEnhance: false,
-      },
-      priority: metadata.priority || 0,
-    }));
+    const totalImages = imagesToUpscale.length;
+    const isSingleUpscale = sceneIndices && sceneIndices.length === 1;
+    console.log(`[processUpscaleJob] Creating ${totalImages} individual single_upscale jobs${isSingleUpscale ? ' [SINGLE]' : ''}`);
     
-    console.log(`[processUpscaleJob] Enqueueing ${queueItems.length} upscales via queue system`);
-    
-    const queueInserts = queueItems.map((item) => ({
-      project_id: projectId,
-      job_id: jobId,
-      user_id: userId,
-      generation_type: 'upscale',
-      item_index: item.index,
-      payload: item.payload,
-      priority: item.priority || 0,
-      status: 'pending',
-      retry_count: 0,
-    }));
-
-    const { data: insertedItems, error: insertError } = await adminClient
-      .from('generation_queue')
-      .upsert(queueInserts, {
-        onConflict: 'project_id,generation_type,item_index',
-        ignoreDuplicates: false,
-      })
-      .select('id');
-
-    if (insertError) {
-      throw new Error(`Failed to insert into queue: ${insertError.message}`);
-    }
-
-    const queuedCount = insertedItems?.length || queueItems.length;
-    console.log(`[processUpscaleJob] Successfully queued ${queuedCount} upscales`);
-
-    // Update job metadata
+    // Mark parent job as the coordinator
     await adminClient
       .from('generation_jobs')
       .update({
-        total: queueItems.length,
+        total: totalImages,
+        status: 'processing',
         metadata: {
-          useQueue: true,
-          queuedAt: new Date().toISOString(),
-          generationType: 'upscale',
+          ...metadata,
+          isParentJob: true,
+          childJobsCount: totalImages,
+          total_scenes: isSingleUpscale ? totalImages : prompts.length
         },
-        updated_at: new Date().toISOString(),
       })
       .eq('id', jobId);
-
-    // Job stays in 'processing' status until webhook completes all items
-    console.log('[processUpscaleJob] Queue filled, job stays in processing until completion');
     
-    // TEMPORARILY DISABLED - Manual trigger required
-    // fetch(`${supabaseUrl}/functions/v1/process-generation-queue`, {
-    //   method: 'POST',
-    //   headers: {
-    //     'Content-Type': 'application/json',
-    //     'Authorization': `Bearer ${supabaseServiceKey}`,
-    //   },
-    //   body: JSON.stringify({ trigger: 'upscale' }),
-    // }).catch(error => {
-    //   console.error('[processUpscaleJob] Error triggering processing:', error);
-    // });
+    // Create individual single_upscale jobs (same pattern as images)
+    const individualJobs = imagesToUpscale.map(({ prompt, index }: any) => ({
+      project_id: projectId,
+      user_id: userId,
+      job_type: 'single_upscale',
+      status: 'pending',
+      progress: 0,
+      total: 1,
+      parent_job_id: jobId,
+      scene_index: index,
+      metadata: {
+        imageUrl: prompt.imageUrl,
+        scale: 2,
+        faceEnhance: false,
+        useWebhook: true,
+      },
+    }));
     
-    // Throw special error to keep job in processing status
+    const { data: createdJobs, error: jobsError } = await adminClient
+      .from('generation_jobs')
+      .insert(individualJobs)
+      .select('id, scene_index');
+    
+    if (jobsError) {
+      throw new Error(`Failed to create upscale jobs: ${jobsError.message}`);
+    }
+    
+    console.log(`[processUpscaleJob] Created ${createdJobs.length} individual single_upscale jobs`);
+    
+    // Launch pending upscale jobs (respects global concurrency)
+    await launchNextPendingUpscaleJobFromQA(adminClient, supabaseUrl, supabaseServiceKey);
+    
+    // Job stays in 'processing' status until all children complete
     throw new Error('WEBHOOK_MODE_ACTIVE');
   }
   
