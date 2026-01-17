@@ -4553,14 +4553,11 @@ const Index = () => {
                     projectId={currentProjectId || ""}
                     videoScript={generatedPrompts.filter(p => p).map(p => p.text).join(" ")}
                     videoTitle={projectName}
-                    scenes={generatedPrompts
-                      .filter(p => p)
-                      .map(p => ({
-                        text: p.text,
-                        startTime: p.startTime,
-                        endTime: p.endTime
-                      }))
-                    }
+                    scenes={scenes.map(s => ({
+                      text: s.text,
+                      startTime: s.startTime,
+                      endTime: s.endTime
+                    }))}
                   />
                 </div>
               </TabsContent>
