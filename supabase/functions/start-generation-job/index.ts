@@ -3421,11 +3421,27 @@ async function processSingleImageJob(
     }
   }
 
-  if (sceneIndex >= prompts.length || !prompts[sceneIndex]) {
-    throw new Error(`Prompt at index ${sceneIndex} not found`);
+  // Try to get prompt from project.prompts first, fallback to project_scenes
+  let prompt = prompts[sceneIndex];
+  
+  if (!prompt || !prompt.prompt || prompt.prompt === "Erreur lors de la génération") {
+    // Fallback: try project_scenes table
+    console.log(`[processSingleImageJob] Prompt not found in project.prompts, trying project_scenes...`);
+    const { data: sceneData } = await adminClient
+      .from('project_scenes')
+      .select('prompt')
+      .eq('project_id', projectId)
+      .eq('scene_index', sceneIndex)
+      .single();
+    
+    if (sceneData?.prompt) {
+      prompt = { prompt: sceneData.prompt, text: '' };
+      console.log(`[processSingleImageJob] Found prompt in project_scenes: ${sceneData.prompt.substring(0, 50)}...`);
+    } else {
+      throw new Error(`Prompt at index ${sceneIndex} not found in project.prompts or project_scenes`);
+    }
   }
-
-  const prompt = prompts[sceneIndex];
+  
   if (!prompt.prompt || prompt.prompt === "Erreur lors de la génération") {
     throw new Error("No valid prompt for this scene");
   }
