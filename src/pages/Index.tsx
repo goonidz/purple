@@ -445,32 +445,35 @@ const Index = () => {
         
         if (scenesRes.data && scenesRes.data.length > 0) {
           // MERGE: timing from scenes JSON, images from project_scenes
-          const newPrompts: GeneratedPrompt[] = scenesRes.data.map((s: any, index: number) => ({
-            scene: `Scène ${s.scene_index + 1}`,
-            prompt: s.prompt,
-            // Get timing from project.scenes (source of truth)
-            text: scenesJson[index]?.text || promptsJson[index]?.text || '',
-            startTime: scenesJson[index]?.startTime,
-            endTime: scenesJson[index]?.endTime,
-            duration: scenesJson[index]?.endTime && scenesJson[index]?.startTime 
-              ? scenesJson[index].endTime - scenesJson[index].startTime 
-              : undefined,
-            // Images from project_scenes
-            imageUrl: s.upscaled_url || s.image_url,
-            imageWidth: s.image_width,
-            imageHeight: s.image_height,
-            // QA data from project_scenes
-            qa_checked: s.qa_checked,
-            qa_status: s.qa_status,
-            qa_explication: s.qa_explication,
-            qa_regeneration_prompt: s.qa_regeneration_prompt,
-            was_regenerated: s.was_regenerated,
-            manually_regenerated: s.was_regenerated || promptsJson[index]?.manually_regenerated,
-            regenerated_prompt: s.regenerated_prompt,
-            isUpscaled: s.is_upscaled,
-            videoUrl: s.video_url,
-            continuityGroupId: s.continuity_group_id
-          }));
+          const newPrompts: GeneratedPrompt[] = scenesRes.data.map((s: any) => {
+            const sceneIdx = s.scene_index; // Use scene_index from DB, not array index
+            return {
+              scene: `Scène ${sceneIdx + 1}`,
+              prompt: s.prompt,
+              // Get timing from project.scenes (source of truth)
+              text: scenesJson[sceneIdx]?.text || promptsJson[sceneIdx]?.text || '',
+              startTime: scenesJson[sceneIdx]?.startTime,
+              endTime: scenesJson[sceneIdx]?.endTime,
+              duration: scenesJson[sceneIdx]?.endTime && scenesJson[sceneIdx]?.startTime 
+                ? scenesJson[sceneIdx].endTime - scenesJson[sceneIdx].startTime 
+                : undefined,
+              // Images from project_scenes
+              imageUrl: s.upscaled_url || s.image_url,
+              imageWidth: s.image_width,
+              imageHeight: s.image_height,
+              // QA data from project_scenes
+              qa_checked: s.qa_checked,
+              qa_status: s.qa_status,
+              qa_explication: s.qa_explication,
+              qa_regeneration_prompt: s.qa_regeneration_prompt,
+              was_regenerated: s.was_regenerated,
+              manually_regenerated: s.was_regenerated || promptsJson[sceneIdx]?.manually_regenerated,
+              regenerated_prompt: s.regenerated_prompt,
+              isUpscaled: s.is_upscaled,
+              videoUrl: s.video_url,
+              continuityGroupId: s.continuity_group_id
+            };
+          });
           promptsWithGroups = calculateGroupsIfMissing(newPrompts);
           console.log(`[handleJobComplete] Loaded ${promptsWithGroups.length} prompts from project_scenes (merged with timing)`);
         } else {
@@ -799,33 +802,36 @@ const Index = () => {
         if (scenesRes.data && scenesRes.data.length > 0) {
           // MERGE: timing from scenes JSON, images from project_scenes, other fields from prompts JSON
           const scenesData = scenesRes.data;
-          const newPrompts: GeneratedPrompt[] = scenesData.map((s, index) => ({
-            scene: `Scène ${s.scene_index + 1}`,
-            prompt: s.prompt,
-            // Get timing from project.scenes (source of truth)
-            text: scenesJson[index]?.text || promptsJson[index]?.text || '',
-            startTime: scenesJson[index]?.startTime,
-            endTime: scenesJson[index]?.endTime,
-            duration: scenesJson[index]?.endTime && scenesJson[index]?.startTime 
-              ? scenesJson[index].endTime - scenesJson[index].startTime 
-              : undefined,
-            // Images from project_scenes
-            imageUrl: s.upscaled_url || s.image_url,
-            imageWidth: s.image_width,
-            imageHeight: s.image_height,
-            // QA data from project_scenes
-            qa_checked: s.qa_checked,
-            qa_status: s.qa_status,
-            qa_explication: s.qa_explication,
-            qa_regeneration_prompt: s.qa_regeneration_prompt,
-            was_regenerated: s.was_regenerated,
-            regenerated_prompt: s.regenerated_prompt,
-            isUpscaled: s.is_upscaled,
-            videoUrl: s.video_url,
-            continuityGroupId: s.continuity_group_id,
-            // Preserve manually_regenerated from current state or prompts JSON
-            manually_regenerated: promptsJson[index]?.manually_regenerated
-          }));
+          const newPrompts: GeneratedPrompt[] = scenesData.map((s) => {
+            const sceneIdx = s.scene_index; // Use scene_index from DB, not array index
+            return {
+              scene: `Scène ${sceneIdx + 1}`,
+              prompt: s.prompt,
+              // Get timing from project.scenes (source of truth)
+              text: scenesJson[sceneIdx]?.text || promptsJson[sceneIdx]?.text || '',
+              startTime: scenesJson[sceneIdx]?.startTime,
+              endTime: scenesJson[sceneIdx]?.endTime,
+              duration: scenesJson[sceneIdx]?.endTime && scenesJson[sceneIdx]?.startTime 
+                ? scenesJson[sceneIdx].endTime - scenesJson[sceneIdx].startTime 
+                : undefined,
+              // Images from project_scenes
+              imageUrl: s.upscaled_url || s.image_url,
+              imageWidth: s.image_width,
+              imageHeight: s.image_height,
+              // QA data from project_scenes
+              qa_checked: s.qa_checked,
+              qa_status: s.qa_status,
+              qa_explication: s.qa_explication,
+              qa_regeneration_prompt: s.qa_regeneration_prompt,
+              was_regenerated: s.was_regenerated,
+              regenerated_prompt: s.regenerated_prompt,
+              isUpscaled: s.is_upscaled,
+              videoUrl: s.video_url,
+              continuityGroupId: s.continuity_group_id,
+              // Preserve manually_regenerated from current state or prompts JSON
+              manually_regenerated: promptsJson[sceneIdx]?.manually_regenerated
+            };
+          });
 
           const newHash = JSON.stringify(newPrompts);
           if (newHash !== lastHash) {
@@ -998,32 +1004,35 @@ const Index = () => {
       
       if (projectScenesData && projectScenesData.length > 0) {
         // MERGE: timing from scenes JSON, images from project_scenes
-        const newPrompts: GeneratedPrompt[] = projectScenesData.map((s: any, index: number) => ({
-          scene: `Scène ${s.scene_index + 1}`,
-          prompt: s.prompt,
-          // Get timing from project.scenes (source of truth)
-          text: scenesJson[index]?.text || promptsJson[index]?.text || '',
-          startTime: scenesJson[index]?.startTime,
-          endTime: scenesJson[index]?.endTime,
-          duration: scenesJson[index]?.endTime && scenesJson[index]?.startTime 
-            ? scenesJson[index].endTime - scenesJson[index].startTime 
-            : undefined,
-          // Images from project_scenes
-          imageUrl: s.upscaled_url || s.image_url,
-          imageWidth: s.image_width,
-          imageHeight: s.image_height,
-          // QA data from project_scenes
-          qa_checked: s.qa_checked,
-          qa_status: s.qa_status,
-          qa_explication: s.qa_explication,
-          qa_regeneration_prompt: s.qa_regeneration_prompt,
-          was_regenerated: s.was_regenerated,
-          manually_regenerated: s.was_regenerated || promptsJson[index]?.manually_regenerated,
-          regenerated_prompt: s.regenerated_prompt,
-          isUpscaled: s.is_upscaled,
-          videoUrl: s.video_url,
-          continuityGroupId: s.continuity_group_id
-        }));
+        const newPrompts: GeneratedPrompt[] = projectScenesData.map((s: any) => {
+          const sceneIdx = s.scene_index; // Use scene_index from DB, not array index
+          return {
+            scene: `Scène ${sceneIdx + 1}`,
+            prompt: s.prompt,
+            // Get timing from project.scenes (source of truth)
+            text: scenesJson[sceneIdx]?.text || promptsJson[sceneIdx]?.text || '',
+            startTime: scenesJson[sceneIdx]?.startTime,
+            endTime: scenesJson[sceneIdx]?.endTime,
+            duration: scenesJson[sceneIdx]?.endTime && scenesJson[sceneIdx]?.startTime 
+              ? scenesJson[sceneIdx].endTime - scenesJson[sceneIdx].startTime 
+              : undefined,
+            // Images from project_scenes
+            imageUrl: s.upscaled_url || s.image_url,
+            imageWidth: s.image_width,
+            imageHeight: s.image_height,
+            // QA data from project_scenes
+            qa_checked: s.qa_checked,
+            qa_status: s.qa_status,
+            qa_explication: s.qa_explication,
+            qa_regeneration_prompt: s.qa_regeneration_prompt,
+            was_regenerated: s.was_regenerated,
+            manually_regenerated: s.was_regenerated || promptsJson[sceneIdx]?.manually_regenerated,
+            regenerated_prompt: s.regenerated_prompt,
+            isUpscaled: s.is_upscaled,
+            videoUrl: s.video_url,
+            continuityGroupId: s.continuity_group_id
+          };
+        });
         promptsWithGroups = calculateGroupsIfMissing(newPrompts);
         console.log(`[loadProjectData] Loaded ${promptsWithGroups.length} prompts from project_scenes (merged with timing)`);
       } else {
