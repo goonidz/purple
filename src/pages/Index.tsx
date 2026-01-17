@@ -983,10 +983,56 @@ const Index = () => {
       const existingScenes = (data.scenes as unknown as Scene[]) || [];
       setScenes(existingScenes);
       
-      // Filter out any null values from prompts array
-              const validPrompts = ((data.prompts as unknown as GeneratedPrompt[]) || []).filter(p => p !== null && p !== undefined);
-              const promptsWithGroups = calculateGroupsIfMissing(validPrompts);
-              setGeneratedPrompts(promptsWithGroups);
+      // Fetch from project_scenes table (source of truth for images)
+      const { data: projectScenesData } = await supabase
+        .from('project_scenes')
+        .select('*')
+        .eq('project_id', projectId)
+        .order('scene_index', { ascending: true });
+      
+      // Get timing data from project.scenes and legacy prompts
+      const scenesJson = (data.scenes as any[]) || [];
+      const promptsJson = (data.prompts as any[]) || [];
+      
+      let promptsWithGroups: GeneratedPrompt[];
+      
+      if (projectScenesData && projectScenesData.length > 0) {
+        // MERGE: timing from scenes JSON, images from project_scenes
+        const newPrompts: GeneratedPrompt[] = projectScenesData.map((s: any, index: number) => ({
+          scene: `Scène ${s.scene_index + 1}`,
+          prompt: s.prompt,
+          // Get timing from project.scenes (source of truth)
+          text: scenesJson[index]?.text || promptsJson[index]?.text || '',
+          startTime: scenesJson[index]?.startTime,
+          endTime: scenesJson[index]?.endTime,
+          duration: scenesJson[index]?.endTime && scenesJson[index]?.startTime 
+            ? scenesJson[index].endTime - scenesJson[index].startTime 
+            : undefined,
+          // Images from project_scenes
+          imageUrl: s.upscaled_url || s.image_url,
+          imageWidth: s.image_width,
+          imageHeight: s.image_height,
+          // QA data from project_scenes
+          qa_checked: s.qa_checked,
+          qa_status: s.qa_status,
+          qa_explication: s.qa_explication,
+          qa_regeneration_prompt: s.qa_regeneration_prompt,
+          was_regenerated: s.was_regenerated,
+          manually_regenerated: s.was_regenerated || promptsJson[index]?.manually_regenerated,
+          regenerated_prompt: s.regenerated_prompt,
+          isUpscaled: s.is_upscaled,
+          videoUrl: s.video_url,
+          continuityGroupId: s.continuity_group_id
+        }));
+        promptsWithGroups = calculateGroupsIfMissing(newPrompts);
+        console.log(`[loadProjectData] Loaded ${promptsWithGroups.length} prompts from project_scenes (merged with timing)`);
+      } else {
+        // FALLBACK: Use legacy JSON array
+        const validPrompts = ((data.prompts as unknown as GeneratedPrompt[]) || []).filter(p => p !== null && p !== undefined);
+        promptsWithGroups = calculateGroupsIfMissing(validPrompts);
+        console.log(`[loadProjectData] Loaded ${promptsWithGroups.length} prompts from legacy JSON`);
+      }
+      setGeneratedPrompts(promptsWithGroups);
       
       // Load regenerated scenes state from prompts
       const regeneratedIndices = promptsWithGroups
