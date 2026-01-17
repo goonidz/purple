@@ -2201,9 +2201,14 @@ const Index = () => {
     }
     
     // Start background job
+    console.log(`[generateImage] Starting single_image job for scene ${index + 1}...`);
     const result = await startJob('single_image', { sceneIndex: index });
+    console.log(`[generateImage] startJob result:`, result);
     if (!result) {
+      console.log(`[generateImage] Job failed to start, removing loading state`);
       removeGeneratingImageIndex(index);
+    } else {
+      console.log(`[generateImage] Job started successfully, jobId: ${result.jobId}`);
     }
   };
 
