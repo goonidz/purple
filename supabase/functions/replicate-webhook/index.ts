@@ -390,24 +390,37 @@ async function updateThumbnail(adminClient: any, prediction: any, imageUrl: stri
   const metadata = job.metadata || {};
   const generatedThumbnails = metadata.generatedThumbnails || [];
   const prompt = prediction.metadata?.prompt || '';
+  const thumbnailIndex = prediction.thumbnail_index;
   
-  // Add this thumbnail
-  generatedThumbnails.push({
-    index: prediction.thumbnail_index,
-    url: imageUrl,
-    prompt
-  });
+  // Check if this thumbnail already exists (prevent duplicates from race conditions)
+  const existingIndex = generatedThumbnails.findIndex((t: any) => t.index === thumbnailIndex);
+  if (existingIndex >= 0) {
+    // Update existing entry
+    generatedThumbnails[existingIndex] = {
+      index: thumbnailIndex,
+      url: imageUrl,
+      prompt
+    };
+    console.log(`Thumbnail ${thumbnailIndex + 1} already exists, updating`);
+  } else {
+    // Add new thumbnail
+    generatedThumbnails.push({
+      index: thumbnailIndex,
+      url: imageUrl,
+      prompt
+    });
+  }
 
   // Sort by index
   generatedThumbnails.sort((a: any, b: any) => a.index - b.index);
 
-  // Update job with new thumbnail
-  const newProgress = (job.progress || 0) + 1;
+  // Calculate actual progress based on unique thumbnails
+  const uniqueThumbnails = generatedThumbnails.length;
   
   await adminClient
     .from('generation_jobs')
     .update({
-      progress: newProgress,
+      progress: uniqueThumbnails,
       metadata: {
         ...metadata,
         generatedThumbnails
@@ -416,7 +429,7 @@ async function updateThumbnail(adminClient: any, prediction: any, imageUrl: stri
     })
     .eq('id', jobId);
 
-  console.log(`Updated thumbnail ${prediction.thumbnail_index + 1}, progress: ${newProgress}/3`);
+  console.log(`Updated thumbnail ${thumbnailIndex + 1}, progress: ${uniqueThumbnails}/3`);
 }
 
 async function updateUpscaledImage(adminClient: any, prediction: any, imageUrl: string) {
@@ -547,8 +560,37 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
     return;
   }
 
-  // Handle semi-auto chaining
+  // Save thumbnails to history table when thumbnail job completes
   const metadata = job.metadata || {};
+  if (job.job_type === 'thumbnails' && metadata.generatedThumbnails) {
+    const thumbnails = metadata.generatedThumbnails as Array<{ url: string; prompt: string; index: number }>;
+    if (thumbnails.length > 0) {
+      const sortedThumbnails = [...thumbnails].sort((a, b) => a.index - b.index);
+      const thumbnailUrls = sortedThumbnails.map(t => t.url);
+      const prompts = sortedThumbnails.map(t => t.prompt);
+      
+      // Only save if we have all 3 thumbnails
+      if (thumbnailUrls.length === 3) {
+        try {
+          await adminClient
+            .from('generated_thumbnails')
+            .insert({
+              project_id: job.project_id,
+              thumbnail_project_id: metadata.thumbnailProjectId || null,
+              thumbnail_urls: thumbnailUrls,
+              prompts: prompts,
+              preset_name: metadata.presetName || null,
+              user_id: job.user_id
+            });
+          console.log(`[checkJobCompletion] Saved ${thumbnailUrls.length} thumbnails to history`);
+        } catch (err) {
+          console.error('[checkJobCompletion] Error saving thumbnails to history:', err);
+        }
+      }
+    }
+  }
+
+  // Handle semi-auto chaining
   if (job.job_type === 'images' && metadata.semiAutoMode === true) {
     await chainNextJobFromWebhook(adminClient, job.project_id, job.user_id, job.job_type, metadata);
   }
