@@ -1914,7 +1914,9 @@ async function processImagesJob(
     }
     
     const totalImages = promptsToProcess.length;
-    console.log(`[processImagesJob] Creating ${totalImages} individual jobs (1 per image)`);
+    const sceneIndices = metadata.sceneIndices as number[] | undefined;
+    const isSingleRegen = sceneIndices && sceneIndices.length === 1;
+    console.log(`[processImagesJob] Creating ${totalImages} individual jobs (1 per image)${isSingleRegen ? ' [SINGLE REGEN]' : ''}`);
     
     // Mark parent job as the coordinator
     await adminClient
@@ -1926,7 +1928,7 @@ async function processImagesJob(
           ...metadata,
           isParentJob: true,
           childJobsCount: totalImages,
-          total_scenes: prompts.length // Add this for UI consistency
+          total_scenes: isSingleRegen ? totalImages : prompts.length // For single regen, don't show full count
         },
       })
       .eq('id', jobId);
