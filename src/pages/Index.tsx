@@ -2176,12 +2176,26 @@ const Index = () => {
     };
     setGeneratedPrompts(updatedPrompts);
     
-    // Persist to database
+    // Persist manually_regenerated flag to database
+    // IMPORTANT: Don't overwrite entire prompts array - just update the specific scene
     try {
-      await supabase
+      // First, get current prompts from DB to avoid overwriting existing data
+      const { data: currentProject } = await supabase
         .from('projects')
-        .update({ prompts: updatedPrompts as any })
-        .eq('id', currentProjectId);
+        .select('prompts')
+        .eq('id', currentProjectId)
+        .single();
+      
+      if (currentProject?.prompts) {
+        const dbPrompts = currentProject.prompts as any[];
+        if (dbPrompts[index]) {
+          dbPrompts[index] = { ...dbPrompts[index], manually_regenerated: true };
+          await supabase
+            .from('projects')
+            .update({ prompts: dbPrompts })
+            .eq('id', currentProjectId);
+        }
+      }
     } catch (error) {
       console.error("Error saving manually_regenerated flag:", error);
     }
@@ -2229,11 +2243,40 @@ const Index = () => {
     setRegeneratedScenes(prev => new Set([...prev, index]));
 
     // Save to database BEFORE starting job
+    // IMPORTANT: Don't overwrite entire prompts array - just update the specific scene
     try {
-      await supabase
+      // First, get current prompts from DB to avoid overwriting existing data
+      const { data: currentProject } = await supabase
         .from('projects')
-        .update({ prompts: updatedPrompts as any })
-        .eq('id', currentProjectId);
+        .select('prompts')
+        .eq('id', currentProjectId)
+        .single();
+      
+      if (currentProject?.prompts) {
+        const dbPrompts = currentProject.prompts as any[];
+        if (dbPrompts[index]) {
+          dbPrompts[index] = { 
+            ...dbPrompts[index], 
+            prompt: prompt.qa_regeneration_prompt,
+            manually_regenerated: true,
+            qa_regeneration_prompt: undefined
+          };
+          await supabase
+            .from('projects')
+            .update({ prompts: dbPrompts })
+            .eq('id', currentProjectId);
+        }
+      }
+      
+      // Also update project_scenes table
+      await supabase
+        .from('project_scenes')
+        .update({ 
+          prompt: prompt.qa_regeneration_prompt,
+          was_regenerated: true
+        })
+        .eq('project_id', currentProjectId)
+        .eq('scene_index', index);
       
       console.log('[handleRegenerateWithQAPrompt] Updated prompt in DB, new prompt:', prompt.qa_regeneration_prompt);
       
