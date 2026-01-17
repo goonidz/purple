@@ -437,33 +437,42 @@ const Index = () => {
         const existingScenes = (data.scenes as unknown as Scene[]) || [];
         setScenes(existingScenes);
         
-        // Update prompts - use project_scenes (robust) if available, fallback to legacy JSON
+        // Update prompts - merge project_scenes (images) with scenes/prompts JSON (timing)
         let promptsWithGroups: GeneratedPrompt[];
+        // Get timing data from project.scenes (source of truth for timing)
+        const scenesJson = (data.scenes as any[]) || [];
+        const promptsJson = (data.prompts as any[]) || [];
+        
         if (scenesRes.data && scenesRes.data.length > 0) {
-          // ROBUST SOURCE: project_scenes table
-          const newPrompts: GeneratedPrompt[] = scenesRes.data.map((s: any) => ({
+          // MERGE: timing from scenes JSON, images from project_scenes
+          const newPrompts: GeneratedPrompt[] = scenesRes.data.map((s: any, index: number) => ({
             scene: `Scène ${s.scene_index + 1}`,
             prompt: s.prompt,
-            text: s.text,
-            startTime: s.start_time,
-            endTime: s.end_time,
-            duration: s.duration,
+            // Get timing from project.scenes (source of truth)
+            text: scenesJson[index]?.text || promptsJson[index]?.text || '',
+            startTime: scenesJson[index]?.startTime,
+            endTime: scenesJson[index]?.endTime,
+            duration: scenesJson[index]?.endTime && scenesJson[index]?.startTime 
+              ? scenesJson[index].endTime - scenesJson[index].startTime 
+              : undefined,
+            // Images from project_scenes
             imageUrl: s.upscaled_url || s.image_url,
             imageWidth: s.image_width,
             imageHeight: s.image_height,
+            // QA data from project_scenes
             qa_checked: s.qa_checked,
             qa_status: s.qa_status,
             qa_explication: s.qa_explication,
             qa_regeneration_prompt: s.qa_regeneration_prompt,
             was_regenerated: s.was_regenerated,
-            manually_regenerated: s.was_regenerated,
+            manually_regenerated: s.was_regenerated || promptsJson[index]?.manually_regenerated,
             regenerated_prompt: s.regenerated_prompt,
             isUpscaled: s.is_upscaled,
             videoUrl: s.video_url,
             continuityGroupId: s.continuity_group_id
           }));
           promptsWithGroups = calculateGroupsIfMissing(newPrompts);
-          console.log(`[handleJobComplete] Loaded ${promptsWithGroups.length} prompts from project_scenes`);
+          console.log(`[handleJobComplete] Loaded ${promptsWithGroups.length} prompts from project_scenes (merged with timing)`);
         } else {
           // FALLBACK: legacy JSON
           const validPrompts = ((data.prompts as unknown as GeneratedPrompt[]) || []).filter(p => p !== null);
@@ -778,19 +787,33 @@ const Index = () => {
       try {
         // Fetch from legacy JSON AND new project_scenes table
         const [projectRes, scenesRes] = await Promise.all([
-          supabase.from('projects').select('prompts').eq('id', currentProjectId).single(),
+          supabase.from('projects').select('prompts, scenes').eq('id', currentProjectId).single(),
           supabase.from('project_scenes').select('*').eq('project_id', currentProjectId).order('scene_index', { ascending: true })
         ]);
 
+        // Get timing data from project.scenes (source of truth for timing)
+        const scenesJson = (projectRes.data?.scenes as any[]) || [];
+        // Get existing prompts data for fields not in project_scenes
+        const promptsJson = (projectRes.data?.prompts as any[]) || [];
+
         if (scenesRes.data && scenesRes.data.length > 0) {
-          // NEW ROBUST SOURCE: Use project_scenes table
+          // MERGE: timing from scenes JSON, images from project_scenes, other fields from prompts JSON
           const scenesData = scenesRes.data;
-          const newPrompts: GeneratedPrompt[] = scenesData.map(s => ({
+          const newPrompts: GeneratedPrompt[] = scenesData.map((s, index) => ({
             scene: `Scène ${s.scene_index + 1}`,
             prompt: s.prompt,
+            // Get timing from project.scenes (source of truth)
+            text: scenesJson[index]?.text || promptsJson[index]?.text || '',
+            startTime: scenesJson[index]?.startTime,
+            endTime: scenesJson[index]?.endTime,
+            duration: scenesJson[index]?.endTime && scenesJson[index]?.startTime 
+              ? scenesJson[index].endTime - scenesJson[index].startTime 
+              : undefined,
+            // Images from project_scenes
             imageUrl: s.upscaled_url || s.image_url,
             imageWidth: s.image_width,
             imageHeight: s.image_height,
+            // QA data from project_scenes
             qa_checked: s.qa_checked,
             qa_status: s.qa_status,
             qa_explication: s.qa_explication,
@@ -799,12 +822,14 @@ const Index = () => {
             regenerated_prompt: s.regenerated_prompt,
             isUpscaled: s.is_upscaled,
             videoUrl: s.video_url,
-            continuityGroupId: s.continuity_group_id
+            continuityGroupId: s.continuity_group_id,
+            // Preserve manually_regenerated from current state or prompts JSON
+            manually_regenerated: promptsJson[index]?.manually_regenerated
           }));
 
           const newHash = JSON.stringify(newPrompts);
           if (newHash !== lastHash) {
-            console.log('[RobustUI] Scenes updated from project_scenes table');
+            console.log('[RobustUI] Scenes updated from project_scenes table (merged with timing)');
             setGeneratedPrompts(newPrompts);
             lastHash = newHash;
           }
