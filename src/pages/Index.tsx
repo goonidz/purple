@@ -2200,9 +2200,14 @@ const Index = () => {
       console.error("Error saving manually_regenerated flag:", error);
     }
     
-    // Start background job
-    console.log(`[generateImage] Starting single_image job for scene ${index + 1}...`);
-    const result = await startJob('single_image', { sceneIndex: index });
+    // Start background job - use same flow as generateAllImages but for single scene
+    console.log(`[generateImage] Starting images job for scene ${index + 1} (same flow as batch)...`);
+    const result = await startJob('images', { 
+      sceneIndices: [index],  // Only this scene
+      skipExisting: false,    // Force regenerate even if image exists
+      semiAutoMode: true,     // Enable QA, regen, upscale chaining
+      qaPrompt: null
+    });
     console.log(`[generateImage] startJob result:`, result);
     if (!result) {
       console.log(`[generateImage] Job failed to start, removing loading state`);

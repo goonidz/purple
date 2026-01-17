@@ -1886,9 +1886,17 @@ async function processImagesJob(
     console.log(`[processImagesJob] Using SIMPLE architecture (1 job per image) for project ${projectId}`);
     
     // Get prompts that need images
+    // If sceneIndices is provided, only process those specific scenes
+    const sceneIndices = metadata.sceneIndices as number[] | undefined;
     const promptsToProcess = prompts
       .map((prompt: any, index: number) => ({ prompt, index }))
-      .filter(({ prompt }: any) => prompt && prompt.prompt && (!skipExisting || !prompt.imageUrl));
+      .filter(({ prompt, index }: any) => {
+        // If sceneIndices is specified, only include those scenes
+        if (sceneIndices && sceneIndices.length > 0) {
+          if (!sceneIndices.includes(index)) return false;
+        }
+        return prompt && prompt.prompt && (!skipExisting || !prompt.imageUrl);
+      });
     
     if (promptsToProcess.length === 0) {
       console.log("[processImagesJob] No images to generate (all have images)");
