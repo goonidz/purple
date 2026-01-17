@@ -221,9 +221,15 @@ serve(async (req) => {
         total = scenes.length;
       } else if (jobType === 'images') {
         // Count prompts that need images
-        total = metadata.skipExisting 
-          ? prompts.filter((p: any) => p && !p.imageUrl).length
-          : prompts.length;
+        // If sceneIndices is provided, only count those specific scenes
+        const sceneIndices = metadata.sceneIndices as number[] | undefined;
+        if (sceneIndices && sceneIndices.length > 0) {
+          total = sceneIndices.length;
+        } else {
+          total = metadata.skipExisting 
+            ? prompts.filter((p: any) => p && !p.imageUrl).length
+            : prompts.length;
+        }
       }
     } else if (jobType === 'transcription') {
       total = 1; // Single transcription task
