@@ -1914,7 +1914,6 @@ async function processImagesJob(
     }
     
     const totalImages = promptsToProcess.length;
-    const sceneIndices = metadata.sceneIndices as number[] | undefined;
     const isSingleRegen = sceneIndices && sceneIndices.length === 1;
     console.log(`[processImagesJob] Creating ${totalImages} individual jobs (1 per image)${isSingleRegen ? ' [SINGLE REGEN]' : ''}`);
     
