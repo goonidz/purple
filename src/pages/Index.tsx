@@ -457,25 +457,25 @@ const Index = () => {
               duration: scenesJson[sceneIdx]?.endTime && scenesJson[sceneIdx]?.startTime 
                 ? scenesJson[sceneIdx].endTime - scenesJson[sceneIdx].startTime 
                 : undefined,
-              // Images from project_scenes
-              imageUrl: s.upscaled_url || s.image_url,
-              imageWidth: s.image_width,
-              imageHeight: s.image_height,
-              // QA data from project_scenes
-              qa_checked: s.qa_checked,
-              qa_status: s.qa_status,
-              qa_explication: s.qa_explication,
-              qa_regeneration_prompt: s.qa_regeneration_prompt,
-              was_regenerated: s.was_regenerated,
+              // Images from project_scenes WITH FALLBACK to legacy JSON
+              imageUrl: s.upscaled_url || s.image_url || promptsJson[sceneIdx]?.imageUrl,
+              imageWidth: s.image_width || promptsJson[sceneIdx]?.imageWidth,
+              imageHeight: s.image_height || promptsJson[sceneIdx]?.imageHeight,
+              // QA data from project_scenes WITH FALLBACK
+              qa_checked: s.qa_checked ?? promptsJson[sceneIdx]?.qa_checked,
+              qa_status: s.qa_status || promptsJson[sceneIdx]?.qa_status,
+              qa_explication: s.qa_explication || promptsJson[sceneIdx]?.qa_explication,
+              qa_regeneration_prompt: s.qa_regeneration_prompt || promptsJson[sceneIdx]?.qa_regeneration_prompt,
+              was_regenerated: s.was_regenerated ?? promptsJson[sceneIdx]?.was_regenerated,
               manually_regenerated: s.was_regenerated || promptsJson[sceneIdx]?.manually_regenerated,
-              regenerated_prompt: s.regenerated_prompt,
-              isUpscaled: s.is_upscaled,
-              videoUrl: s.video_url,
-              continuityGroupId: s.continuity_group_id
+              regenerated_prompt: s.regenerated_prompt || promptsJson[sceneIdx]?.regenerated_prompt,
+              isUpscaled: s.is_upscaled ?? promptsJson[sceneIdx]?.isUpscaled,
+              videoUrl: s.video_url || promptsJson[sceneIdx]?.videoUrl,
+              continuityGroupId: s.continuity_group_id || promptsJson[sceneIdx]?.continuityGroupId
             };
           });
           promptsWithGroups = calculateGroupsIfMissing(newPrompts);
-          console.log(`[handleJobComplete] Loaded ${promptsWithGroups.length} prompts from project_scenes (merged with timing)`);
+          console.log(`[handleJobComplete] Loaded ${promptsWithGroups.length} prompts from project_scenes (merged with legacy fallback)`);
         } else {
           // FALLBACK: legacy JSON
           const validPrompts = ((data.prompts as unknown as GeneratedPrompt[]) || []).filter(p => p !== null);
@@ -814,28 +814,28 @@ const Index = () => {
               duration: scenesJson[sceneIdx]?.endTime && scenesJson[sceneIdx]?.startTime 
                 ? scenesJson[sceneIdx].endTime - scenesJson[sceneIdx].startTime 
                 : undefined,
-              // Images from project_scenes
-              imageUrl: s.upscaled_url || s.image_url,
-              imageWidth: s.image_width,
-              imageHeight: s.image_height,
-              // QA data from project_scenes
-              qa_checked: s.qa_checked,
-              qa_status: s.qa_status,
-              qa_explication: s.qa_explication,
-              qa_regeneration_prompt: s.qa_regeneration_prompt,
-              was_regenerated: s.was_regenerated,
-              regenerated_prompt: s.regenerated_prompt,
-              isUpscaled: s.is_upscaled,
-              videoUrl: s.video_url,
-              continuityGroupId: s.continuity_group_id,
-              // Preserve manually_regenerated from current state or prompts JSON
+              // Images from project_scenes WITH FALLBACK to legacy JSON
+              imageUrl: s.upscaled_url || s.image_url || promptsJson[sceneIdx]?.imageUrl,
+              imageWidth: s.image_width || promptsJson[sceneIdx]?.imageWidth,
+              imageHeight: s.image_height || promptsJson[sceneIdx]?.imageHeight,
+              // QA data from project_scenes WITH FALLBACK
+              qa_checked: s.qa_checked ?? promptsJson[sceneIdx]?.qa_checked,
+              qa_status: s.qa_status || promptsJson[sceneIdx]?.qa_status,
+              qa_explication: s.qa_explication || promptsJson[sceneIdx]?.qa_explication,
+              qa_regeneration_prompt: s.qa_regeneration_prompt || promptsJson[sceneIdx]?.qa_regeneration_prompt,
+              was_regenerated: s.was_regenerated ?? promptsJson[sceneIdx]?.was_regenerated,
+              regenerated_prompt: s.regenerated_prompt || promptsJson[sceneIdx]?.regenerated_prompt,
+              isUpscaled: s.is_upscaled ?? promptsJson[sceneIdx]?.isUpscaled,
+              videoUrl: s.video_url || promptsJson[sceneIdx]?.videoUrl,
+              continuityGroupId: s.continuity_group_id || promptsJson[sceneIdx]?.continuityGroupId,
+              // Preserve manually_regenerated from legacy JSON
               manually_regenerated: promptsJson[sceneIdx]?.manually_regenerated
             };
           });
 
           const newHash = JSON.stringify(newPrompts);
           if (newHash !== lastHash) {
-            console.log('[RobustUI] Scenes updated from project_scenes table (merged with timing)');
+            console.log('[RobustUI] Scenes updated from project_scenes (merged with legacy fallback)');
             setGeneratedPrompts(newPrompts);
             lastHash = newHash;
           }
@@ -1016,25 +1016,25 @@ const Index = () => {
             duration: scenesJson[sceneIdx]?.endTime && scenesJson[sceneIdx]?.startTime 
               ? scenesJson[sceneIdx].endTime - scenesJson[sceneIdx].startTime 
               : undefined,
-            // Images from project_scenes
-            imageUrl: s.upscaled_url || s.image_url,
-            imageWidth: s.image_width,
-            imageHeight: s.image_height,
-            // QA data from project_scenes
-            qa_checked: s.qa_checked,
-            qa_status: s.qa_status,
-            qa_explication: s.qa_explication,
-            qa_regeneration_prompt: s.qa_regeneration_prompt,
-            was_regenerated: s.was_regenerated,
+            // Images from project_scenes WITH FALLBACK to legacy JSON
+            imageUrl: s.upscaled_url || s.image_url || promptsJson[sceneIdx]?.imageUrl,
+            imageWidth: s.image_width || promptsJson[sceneIdx]?.imageWidth,
+            imageHeight: s.image_height || promptsJson[sceneIdx]?.imageHeight,
+            // QA data from project_scenes WITH FALLBACK
+            qa_checked: s.qa_checked ?? promptsJson[sceneIdx]?.qa_checked,
+            qa_status: s.qa_status || promptsJson[sceneIdx]?.qa_status,
+            qa_explication: s.qa_explication || promptsJson[sceneIdx]?.qa_explication,
+            qa_regeneration_prompt: s.qa_regeneration_prompt || promptsJson[sceneIdx]?.qa_regeneration_prompt,
+            was_regenerated: s.was_regenerated ?? promptsJson[sceneIdx]?.was_regenerated,
             manually_regenerated: s.was_regenerated || promptsJson[sceneIdx]?.manually_regenerated,
-            regenerated_prompt: s.regenerated_prompt,
-            isUpscaled: s.is_upscaled,
-            videoUrl: s.video_url,
-            continuityGroupId: s.continuity_group_id
+            regenerated_prompt: s.regenerated_prompt || promptsJson[sceneIdx]?.regenerated_prompt,
+            isUpscaled: s.is_upscaled ?? promptsJson[sceneIdx]?.isUpscaled,
+            videoUrl: s.video_url || promptsJson[sceneIdx]?.videoUrl,
+            continuityGroupId: s.continuity_group_id || promptsJson[sceneIdx]?.continuityGroupId
           };
         });
         promptsWithGroups = calculateGroupsIfMissing(newPrompts);
-        console.log(`[loadProjectData] Loaded ${promptsWithGroups.length} prompts from project_scenes (merged with timing)`);
+        console.log(`[loadProjectData] Loaded ${promptsWithGroups.length} prompts from project_scenes (merged with legacy fallback)`);
       } else {
         // FALLBACK: Use legacy JSON array
         const validPrompts = ((data.prompts as unknown as GeneratedPrompt[]) || []).filter(p => p !== null && p !== undefined);
