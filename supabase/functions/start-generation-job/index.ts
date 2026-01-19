@@ -3975,27 +3975,57 @@ async function processUpscaleJob(
   const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
   const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
   
-  // Get project data
-  const { data: project } = await adminClient
-    .from('projects')
-    .select('*')
-    .eq('id', projectId)
-    .single();
+  // Get project data AND project_scenes (source of truth for images)
+  const [projectRes, scenesRes] = await Promise.all([
+    adminClient.from('projects').select('*').eq('id', projectId).single(),
+    adminClient.from('project_scenes').select('*').eq('project_id', projectId).order('scene_index', { ascending: true })
+  ]);
 
+  const project = projectRes.data;
   if (!project) throw new Error("Project not found");
 
-  const prompts = (project.prompts as any[]) || [];
+  const promptsJson = (project.prompts as any[]) || [];
+  const projectScenes = scenesRes.data || [];
+  
+  // Merge data: prefer project_scenes for image data, fallback to prompts JSON
+  const mergedPrompts = promptsJson.map((prompt: any, index: number) => {
+    const sceneData = projectScenes.find((s: any) => s.scene_index === index);
+    if (sceneData) {
+      return {
+        ...prompt,
+        imageUrl: sceneData.upscaled_url || sceneData.image_url || prompt?.imageUrl,
+        imageWidth: sceneData.image_width || prompt?.imageWidth,
+        imageHeight: sceneData.image_height || prompt?.imageHeight,
+        isUpscaled: sceneData.is_upscaled ?? prompt?.isUpscaled
+      };
+    }
+    return prompt;
+  });
+  
+  // Also add any scenes from project_scenes that aren't in prompts
+  projectScenes.forEach((scene: any) => {
+    if (scene.scene_index >= mergedPrompts.length) {
+      mergedPrompts[scene.scene_index] = {
+        imageUrl: scene.upscaled_url || scene.image_url,
+        imageWidth: scene.image_width,
+        imageHeight: scene.image_height,
+        isUpscaled: scene.is_upscaled
+      };
+    }
+  });
+
+  console.log(`[processUpscaleJob] Merged ${mergedPrompts.length} prompts (${projectScenes.length} from project_scenes)`);
   
   // ========================================================================
-  // NEW QUEUE-BASED SYSTEM FOR UPSCALE (ALWAYS ENABLED)
+  // SIMPLE ARCHITECTURE FOR UPSCALE (1 job per image)
   // ========================================================================
   if (true) {
-    console.log(`[processUpscaleJob] Using NEW queue-based system for project ${projectId}`);
+    console.log(`[processUpscaleJob] Using single_upscale jobs for project ${projectId}`);
     
     // Get images that need upscaling
     // If sceneIndices is provided, only process those specific scenes
     const sceneIndices = metadata.sceneIndices as number[] | undefined;
-    const imagesToUpscale = prompts
+    const imagesToUpscale = mergedPrompts
       .map((prompt: any, index: number) => ({ prompt, index }))
       .filter(({ prompt, index }: any) => {
         // If sceneIndices is specified, only include those scenes
@@ -4033,7 +4063,7 @@ async function processUpscaleJob(
           ...metadata,
           isParentJob: true,
           childJobsCount: totalImages,
-          total_scenes: isSingleUpscale ? totalImages : prompts.length
+          total_scenes: isSingleUpscale ? totalImages : mergedPrompts.length
         },
       })
       .eq('id', jobId);
