@@ -4025,23 +4025,51 @@ async function processUpscaleJob(
     // Get images that need upscaling
     // If sceneIndices is provided, only process those specific scenes
     const sceneIndices = metadata.sceneIndices as number[] | undefined;
+    console.log(`[processUpscaleJob] sceneIndices from metadata:`, sceneIndices);
+    console.log(`[processUpscaleJob] mergedPrompts count: ${mergedPrompts.length}`);
+    
+    // Debug: log first few prompts to understand data structure
+    mergedPrompts.slice(0, 3).forEach((p: any, i: number) => {
+      console.log(`[processUpscaleJob] Prompt ${i}: imageUrl=${p?.imageUrl?.substring(0, 50) || 'NONE'}, isUpscaled=${p?.isUpscaled}, width=${p?.imageWidth}, height=${p?.imageHeight}`);
+    });
+    
     const imagesToUpscale = mergedPrompts
       .map((prompt: any, index: number) => ({ prompt, index }))
       .filter(({ prompt, index }: any) => {
         // If sceneIndices is specified, only include those scenes
         if (sceneIndices && sceneIndices.length > 0) {
-          if (!sceneIndices.includes(index)) return false;
+          if (!sceneIndices.includes(index)) {
+            return false;
+          }
         }
-        if (!prompt || !prompt.imageUrl) return false;
-        if (prompt.isUpscaled === true) return false;
+        if (!prompt || !prompt.imageUrl) {
+          if (sceneIndices?.includes(index)) {
+            console.log(`[processUpscaleJob] Scene ${index} excluded: no imageUrl`);
+          }
+          return false;
+        }
+        if (prompt.isUpscaled === true) {
+          if (sceneIndices?.includes(index)) {
+            console.log(`[processUpscaleJob] Scene ${index} excluded: already upscaled`);
+          }
+          return false;
+        }
         const imgWidth = prompt.imageWidth || 0;
         const imgHeight = prompt.imageHeight || 0;
-        if (imgWidth >= 1920 && imgHeight >= 1080) return false;
+        if (imgWidth >= 1920 && imgHeight >= 1080) {
+          if (sceneIndices?.includes(index)) {
+            console.log(`[processUpscaleJob] Scene ${index} excluded: already high-res (${imgWidth}x${imgHeight})`);
+          }
+          return false;
+        }
+        console.log(`[processUpscaleJob] Scene ${index} INCLUDED for upscale`);
         return true;
       });
     
+    console.log(`[processUpscaleJob] imagesToUpscale count: ${imagesToUpscale.length}`);
+    
     if (imagesToUpscale.length === 0) {
-      console.log("[processUpscaleJob] No images to upscale");
+      console.log("[processUpscaleJob] No images to upscale - marking job as completed");
       await adminClient
         .from('generation_jobs')
         .update({ status: 'completed', completed_at: new Date().toISOString() })
