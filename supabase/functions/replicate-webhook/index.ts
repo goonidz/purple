@@ -314,10 +314,20 @@ async function updateSceneImage(adminClient: any, prediction: any, imageUrl: str
   console.log(`[updateSceneImage] Writing to project_scenes for scene ${sceneIndex + 1}`);
 
   // 1. Update the robust normalized table
+  // IMPORTANT: Clear upscaled_url, is_upscaled, qa_status when regenerating
+  // This ensures the new image is shown instead of the old upscaled one
   const updateData: any = {
     image_url: imageUrl,
     image_width: imageWidth > 0 ? imageWidth : null,
-    image_height: imageHeight > 0 ? imageHeight : null
+    image_height: imageHeight > 0 ? imageHeight : null,
+    // Clear upscale data - new image needs to be re-upscaled
+    upscaled_url: null,
+    is_upscaled: false,
+    // Clear QA data - new image needs to be re-QA'd
+    qa_status: null,
+    qa_checked: false,
+    qa_explication: null,
+    qa_regeneration_prompt: null
   };
   
   // Add regenerated_prompt if this is a regen
