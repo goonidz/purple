@@ -176,6 +176,50 @@ serve(async (req) => {
             );
           }
           // Allow multiple single jobs for different scenes
+        } else if (jobType === 'images' && metadata.sceneIndices && Array.isArray(metadata.sceneIndices)) {
+          // Manual regeneration of specific scenes - allow multiple as long as different scenes
+          const requestedScenes = new Set(metadata.sceneIndices as number[]);
+          const conflictingJob = activeJobs.find((j: any) => {
+            const jobScenes = j.metadata?.sceneIndices;
+            if (jobScenes && Array.isArray(jobScenes)) {
+              // Check if any scene overlaps
+              return jobScenes.some((s: number) => requestedScenes.has(s));
+            }
+            // If no sceneIndices, it's a full batch - don't allow individual regens during batch
+            return true;
+          });
+          if (conflictingJob) {
+            const conflictScenes = conflictingJob.metadata?.sceneIndices;
+            return new Response(
+              JSON.stringify({ 
+                error: conflictScenes 
+                  ? "Ces scènes sont déjà en cours de génération"
+                  : "Une génération batch est en cours, veuillez attendre",
+                existingJobId: conflictingJob.id 
+              }),
+              { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+            );
+          }
+          // Allow - different scenes being generated
+        } else if (jobType === 'upscale' && metadata.sceneIndices && Array.isArray(metadata.sceneIndices)) {
+          // Manual upscale of specific scenes - allow multiple as long as different scenes
+          const requestedScenes = new Set(metadata.sceneIndices as number[]);
+          const conflictingJob = activeJobs.find((j: any) => {
+            const jobScenes = j.metadata?.sceneIndices;
+            if (jobScenes && Array.isArray(jobScenes)) {
+              return jobScenes.some((s: number) => requestedScenes.has(s));
+            }
+            return true;
+          });
+          if (conflictingJob) {
+            return new Response(
+              JSON.stringify({ 
+                error: "Ces scènes sont déjà en cours d'upscaling",
+                existingJobId: conflictingJob.id 
+              }),
+              { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+            );
+          }
         } else {
           // For other job types, block if any is running
           return new Response(
