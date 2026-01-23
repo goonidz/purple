@@ -72,6 +72,20 @@ export function JobProgressIndicator({ job, onCancel, className }: JobProgressIn
   const isActive = job.status === 'pending' || job.status === 'processing';
 
   const getJobTypeLabel = (type: JobType): string => {
+    // Check for combined manual regeneration job
+    if (type === 'images' && metadata.isManualRegenCombined) {
+      const count = metadata.combinedJobCount || 1;
+      return `Régénération manuelle (${count} image${count > 1 ? 's' : ''})`;
+    }
+    // Check for single manual regeneration
+    if (type === 'images' && metadata.sceneIndices && Array.isArray(metadata.sceneIndices)) {
+      const count = metadata.sceneIndices.length;
+      if (count === 1) {
+        return `Régénération image (scène ${metadata.sceneIndices[0] + 1})`;
+      }
+      return `Régénération manuelle (${count} images)`;
+    }
+    
     switch (type) {
       case 'transcription':
         return 'Transcription';
@@ -385,13 +399,43 @@ export function ActiveJobsBanner({ jobs, onCancel, className }: ActiveJobsBanner
 
   if (activeJobs.length === 0) return null;
 
+  // Group manual regeneration jobs (images with sceneIndices) into one combined display
+  const manualRegenJobs = activeJobs.filter(j => 
+    j.job_type === 'images' && 
+    j.metadata?.sceneIndices && 
+    Array.isArray(j.metadata.sceneIndices)
+  );
+  const otherJobs = activeJobs.filter(j => 
+    !(j.job_type === 'images' && j.metadata?.sceneIndices && Array.isArray(j.metadata.sceneIndices))
+  );
+
+  // Create a combined "virtual" job for manual regenerations
+  const combinedManualRegenJob = manualRegenJobs.length > 0 ? {
+    ...manualRegenJobs[0],
+    id: 'combined-manual-regen',
+    total: manualRegenJobs.reduce((sum, j) => sum + (j.total || 1), 0),
+    progress: manualRegenJobs.reduce((sum, j) => sum + (j.progress || 0), 0),
+    metadata: {
+      ...manualRegenJobs[0].metadata,
+      isManualRegenCombined: true,
+      combinedJobCount: manualRegenJobs.length,
+      combinedSceneIndices: manualRegenJobs.flatMap(j => j.metadata?.sceneIndices || []),
+      total_scenes: manualRegenJobs.reduce((sum, j) => sum + (j.total || 1), 0),
+    }
+  } as GenerationJob : null;
+
+  const jobsToDisplay = [
+    ...otherJobs,
+    ...(combinedManualRegenJob ? [combinedManualRegenJob] : [])
+  ];
+
   return (
     <div className={cn("space-y-2", className)}>
-      {activeJobs.map(job => (
+      {jobsToDisplay.map(job => (
         <JobProgressIndicator 
           key={job.id} 
           job={job} 
-          onCancel={onCancel}
+          onCancel={job.id === 'combined-manual-regen' ? undefined : onCancel}
         />
       ))}
     </div>

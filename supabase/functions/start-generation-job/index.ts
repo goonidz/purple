@@ -1874,27 +1874,40 @@ async function processImagesJob(
 
   if (!project) throw new Error("Project not found");
 
-  // If project has no lora_url but has preset_id, copy LoRA from preset to project
-  if ((!project.lora_url || project.lora_url === '') && project.preset_id) {
-    const { data: preset } = await adminClient
-      .from('presets')
-      .select('lora_url, lora_steps')
-      .eq('id', project.preset_id)
-      .single();
+  // If project is missing settings but has preset_id, copy from preset to project
+  if (project.preset_id) {
+    const needsLoraFromPreset = !project.lora_url || project.lora_url === '';
+    const needsStyleRefFromPreset = !project.style_reference_url || project.style_reference_url === '' || project.style_reference_url === '[]';
     
-    if (preset?.lora_url) {
-      // Update project with LoRA from preset
-      await adminClient
-        .from('projects')
-        .update({ 
-          lora_url: preset.lora_url, 
-          lora_steps: preset.lora_steps || 10 
-        })
-        .eq('id', projectId);
+    if (needsLoraFromPreset || needsStyleRefFromPreset) {
+      const { data: preset } = await adminClient
+        .from('presets')
+        .select('lora_url, lora_steps, style_reference_url')
+        .eq('id', project.preset_id)
+        .single();
       
-      project.lora_url = preset.lora_url;
-      project.lora_steps = preset.lora_steps || 10;
-      console.log(`[processImagesJob] Copied LoRA from preset to project: ${preset.lora_url}, steps: ${project.lora_steps}`);
+      const updateData: any = {};
+      
+      if (needsLoraFromPreset && preset?.lora_url) {
+        updateData.lora_url = preset.lora_url;
+        updateData.lora_steps = preset.lora_steps || 10;
+        project.lora_url = preset.lora_url;
+        project.lora_steps = preset.lora_steps || 10;
+        console.log(`[processImagesJob] Copied LoRA from preset to project: ${preset.lora_url}, steps: ${project.lora_steps}`);
+      }
+      
+      if (needsStyleRefFromPreset && preset?.style_reference_url) {
+        updateData.style_reference_url = preset.style_reference_url;
+        project.style_reference_url = preset.style_reference_url;
+        console.log(`[processImagesJob] Copied style_reference_url from preset to project`);
+      }
+      
+      if (Object.keys(updateData).length > 0) {
+        await adminClient
+          .from('projects')
+          .update(updateData)
+          .eq('id', projectId);
+      }
     }
   }
 
@@ -1904,7 +1917,7 @@ async function processImagesJob(
   const imageModel = project.image_model || 'seedream-4.5';
   const visualContinuityEnabled = project.visual_continuity_enabled || false;
   
-  console.log(`[processImagesJob] Project config: model=${imageModel}, lora_url=${project.lora_url || 'NONE'}, lora_steps=${project.lora_steps || 10}`);
+  console.log(`[processImagesJob] Project config: model=${imageModel}, lora_url=${project.lora_url || 'NONE'}, lora_steps=${project.lora_steps || 10}, style_ref=${project.style_reference_url ? 'SET' : 'NONE'}`);
   
   // IMPORTANT: For Z-Image models with 16:9, always generate at 960x544 (will be upscaled later)
   const isZImage = imageModel === 'z-image-turbo' || imageModel === 'z-image-turbo-lora';

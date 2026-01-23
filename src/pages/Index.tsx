@@ -1217,19 +1217,21 @@ const Index = () => {
               .single();
             
             if (preset) {
-              // Apply preset settings to UI
-              setImageWidth(preset.image_width);
-              setImageHeight(preset.image_height);
-              setAspectRatio(preset.aspect_ratio);
-              setImageModel(preset.image_model);
-              setLoraUrl((preset as any).lora_url || "");
-              setLoraSteps((preset as any).lora_steps || 10);
-              setPromptSystemMessage((preset as any).prompt_system_message || "");
+              // Apply preset settings to UI only if project doesn't have custom values
+              // This allows presets to set defaults while letting users override them
+              if (!projectData.image_width) setImageWidth(preset.image_width);
+              if (!projectData.image_height) setImageHeight(preset.image_height);
+              if (!projectData.aspect_ratio) setAspectRatio(preset.aspect_ratio);
+              if (!projectData.image_model) setImageModel(preset.image_model);
+              if (!projectData.lora_url) setLoraUrl((preset as any).lora_url || "");
+              if (!projectData.lora_steps) setLoraSteps((preset as any).lora_steps || 10);
+              if (!projectData.prompt_system_message) setPromptSystemMessage((preset as any).prompt_system_message || "");
+              // QA prompt always from preset (not editable per-project yet)
               setQaPrompt((preset as any).qa_prompt || "");
-              if ((preset as any).style_reference_url) {
+              if (!projectData.style_reference_url && (preset as any).style_reference_url) {
                 setStyleReferenceUrls(parseStyleReferenceUrls((preset as any).style_reference_url));
               }
-              if ((preset as any).example_prompts) {
+              if (!projectData.example_prompts && (preset as any).example_prompts) {
                 setExamplePrompts((preset as any).example_prompts);
               }
               setActivePresetName(preset.name);
