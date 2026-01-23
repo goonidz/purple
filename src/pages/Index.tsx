@@ -1873,7 +1873,8 @@ const Index = () => {
     const prompt = generatedPrompts[index];
     if (prompt) {
       setEditingPromptIndex(index);
-      setEditingPromptText(prompt.prompt);
+      // Use regenerated_prompt if it exists, otherwise use original prompt
+      setEditingPromptText(prompt.regenerated_prompt || prompt.prompt);
     }
   };
 
@@ -1883,20 +1884,41 @@ const Index = () => {
     const updatedPrompts = [...generatedPrompts];
     updatedPrompts[editingPromptIndex] = {
       ...updatedPrompts[editingPromptIndex],
-      prompt: editingPromptText
+      prompt: editingPromptText,
+      // Clear regenerated_prompt since user is now using a custom edited prompt
+      regenerated_prompt: undefined
     };
     
     setGeneratedPrompts(updatedPrompts);
     
-    // Persist to database
+    // Persist to database - BOTH legacy JSON and project_scenes
     if (currentProjectId) {
       try {
-        const { error } = await supabase
+        // Update legacy JSON (projects.prompts)
+        const { error: jsonError } = await supabase
           .from("projects")
           .update({ prompts: updatedPrompts as any })
           .eq("id", currentProjectId);
         
-        if (error) throw error;
+        if (jsonError) throw jsonError;
+        
+        // Also update project_scenes (source of truth for polling)
+        const { error: sceneError } = await supabase
+          .from("project_scenes")
+          .upsert({
+            project_id: currentProjectId,
+            scene_index: editingPromptIndex,
+            prompt: editingPromptText,
+            regenerated_prompt: null, // Clear regenerated_prompt
+            updated_at: new Date().toISOString()
+          }, {
+            onConflict: 'project_id,scene_index'
+          });
+        
+        if (sceneError) {
+          console.error("Error saving to project_scenes:", sceneError);
+        }
+        
         toast.success("Prompt modifié avec succès");
       } catch (error) {
         console.error("Error saving prompt:", error);
