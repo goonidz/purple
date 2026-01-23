@@ -605,29 +605,58 @@ async function updateParentProgressFromScenes(adminClient: any, parentJobId: str
   
   if (!parentJob) return;
 
-  const { count: progressImages } = await adminClient
-    .from('project_scenes')
-    .select('id', { count: 'exact', head: true })
-    .eq('project_id', parentJob.project_id)
-    .not('image_url', 'is', null);
+  // Check if this is a manual regeneration (has sceneIndices)
+  const sceneIndices = parentJob.metadata?.sceneIndices as number[] | undefined;
+  const isManualRegen = sceneIndices && Array.isArray(sceneIndices) && sceneIndices.length > 0;
 
-  const { count: progressQA } = await adminClient
-    .from('project_scenes')
-    .select('id', { count: 'exact', head: true })
-    .eq('project_id', parentJob.project_id)
-    .not('qa_status', 'is', null);
+  let progressImages = 0;
+  let progressQA = 0;
+  let progressUpscale = 0;
 
-  const { count: progressUpscale } = await adminClient
-    .from('project_scenes')
-    .select('id', { count: 'exact', head: true })
-    .eq('project_id', parentJob.project_id)
-    .not('upscaled_url', 'is', null);
+  if (isManualRegen) {
+    // For manual regeneration, only count progress for the specific scenes
+    const { data: scenes } = await adminClient
+      .from('project_scenes')
+      .select('scene_index, image_url, qa_status, upscaled_url')
+      .eq('project_id', parentJob.project_id)
+      .in('scene_index', sceneIndices);
+    
+    if (scenes) {
+      progressImages = scenes.filter((s: any) => s.image_url).length;
+      progressQA = scenes.filter((s: any) => s.qa_status).length;
+      progressUpscale = scenes.filter((s: any) => s.upscaled_url).length;
+    }
+    console.log(`[updateParentProgressFromScenes] Manual regen for scenes ${sceneIndices.join(',')}: images=${progressImages}, qa=${progressQA}, upscale=${progressUpscale}`);
+  } else {
+    // For full batch, count all scenes
+    const { count: imgCount } = await adminClient
+      .from('project_scenes')
+      .select('id', { count: 'exact', head: true })
+      .eq('project_id', parentJob.project_id)
+      .not('image_url', 'is', null);
+
+    const { count: qaCount } = await adminClient
+      .from('project_scenes')
+      .select('id', { count: 'exact', head: true })
+      .eq('project_id', parentJob.project_id)
+      .not('qa_status', 'is', null);
+
+    const { count: upscaleCount } = await adminClient
+      .from('project_scenes')
+      .select('id', { count: 'exact', head: true })
+      .eq('project_id', parentJob.project_id)
+      .not('upscaled_url', 'is', null);
+
+    progressImages = imgCount || 0;
+    progressQA = qaCount || 0;
+    progressUpscale = upscaleCount || 0;
+  }
 
   const newMetadata = {
     ...(parentJob.metadata || {}),
-    progress_images: progressImages || 0,
-    progress_qa: progressQA || 0,
-    progress_upscale: progressUpscale || 0,
+    progress_images: progressImages,
+    progress_qa: progressQA,
+    progress_upscale: progressUpscale,
     total_scenes: parentJob.total
   };
 
