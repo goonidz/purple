@@ -115,7 +115,7 @@ serve(async (req) => {
       });
     }
 
-    console.log(`Found prediction ${predictionId} for job ${prediction.job_id}, type: ${prediction.prediction_type}`);
+    console.log(`Found prediction ${predictionId} for job ${prediction.job_id}, type: ${prediction.prediction_type}, scene_index: ${prediction.scene_index}, project: ${prediction.project_id}`);
 
     // Handle based on status
     if (status === 'succeeded' && output) {
@@ -266,21 +266,28 @@ serve(async (req) => {
 // ROBUST ARCHITECTURE: Update project_scenes table
 // ========================================================================
 async function upsertProjectScene(adminClient: any, projectId: string, sceneIndex: number, data: any) {
-  const { error } = await adminClient
+  console.log(`[upsertProjectScene] START - Project ${projectId}, Scene ${sceneIndex + 1}, Data keys: ${Object.keys(data).join(', ')}`);
+  
+  const upsertData = {
+    project_id: projectId,
+    scene_index: sceneIndex,
+    ...data,
+    updated_at: new Date().toISOString()
+  };
+  
+  const { error, data: result } = await adminClient
     .from('project_scenes')
-    .upsert({
-      project_id: projectId,
-      scene_index: sceneIndex,
-      ...data,
-      updated_at: new Date().toISOString()
-    }, {
+    .upsert(upsertData, {
       onConflict: 'project_id,scene_index'
-    });
+    })
+    .select();
 
   if (error) {
-    console.error(`[upsertProjectScene] Error for scene ${sceneIndex}:`, error.message);
+    console.error(`[upsertProjectScene] ERROR for scene ${sceneIndex + 1}:`, error.message);
     throw error;
   }
+  
+  console.log(`[upsertProjectScene] SUCCESS - Scene ${sceneIndex + 1} updated, image_url: ${data.image_url?.substring(0, 60)}...`);
 }
 
 async function updateSceneImage(adminClient: any, prediction: any, imageUrl: string) {
