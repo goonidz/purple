@@ -1918,15 +1918,33 @@ const Index = () => {
     
     setGeneratedPrompts(updatedPrompts);
     
-    // Persist to database
+    // Persist to database - BOTH legacy JSON and project_scenes
     if (currentProjectId) {
       try {
-        const { error } = await supabase
+        // Update legacy JSON (projects.prompts)
+        const { error: jsonError } = await supabase
           .from("projects")
           .update({ prompts: updatedPrompts as any })
           .eq("id", currentProjectId);
         
-        if (error) throw error;
+        if (jsonError) throw jsonError;
+        
+        // Also update project_scenes (source of truth for polling)
+        const { error: sceneError } = await supabase
+          .from("project_scenes")
+          .upsert({
+            project_id: currentProjectId,
+            scene_index: sceneIndex,
+            prompt: newPrompt,
+            updated_at: new Date().toISOString()
+          }, {
+            onConflict: 'project_id,scene_index'
+          });
+        
+        if (sceneError) {
+          console.error("Error saving to project_scenes:", sceneError);
+        }
+        
         toast.success("Prompt sauvegardé");
       } catch (error) {
         console.error("Error saving prompt:", error);
