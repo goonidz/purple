@@ -412,6 +412,11 @@ const Index = () => {
       setAnimatingSceneIndex(null);
     }
     
+    // Also clear scene indices for images jobs with sceneIndices (manual regeneration)
+    if (job.job_type === 'images' && job.metadata?.sceneIndices && Array.isArray(job.metadata.sceneIndices)) {
+      job.metadata.sceneIndices.forEach((idx: number) => removeGeneratingImageIndex(idx));
+    }
+    
     // Reload project data to get updated data - only for jobs that modify project data
     // Skip reload for single_animation as it's handled by the Edge Function directly
     const shouldReload = !['single_animation'].includes(job.job_type);
@@ -577,6 +582,11 @@ const Index = () => {
       setIsGeneratingPrompts(false);
     } else if (job.job_type === 'images') {
       setIsGeneratingImages(false);
+      // Also clear specific scene indices if this was a manual regeneration
+      const sceneIndices = job.metadata?.sceneIndices;
+      if (sceneIndices && Array.isArray(sceneIndices)) {
+        sceneIndices.forEach((idx: number) => removeGeneratingImageIndex(idx));
+      }
     } else if (job.job_type === 'single_prompt') {
       setGeneratingPromptIndex(null);
       setRegeneratingPromptIndex(null);
