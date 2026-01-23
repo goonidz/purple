@@ -2322,8 +2322,13 @@ const Index = () => {
       
       toast.success("Prompt remplacé, régénération en cours...");
       
-      // Start background job AFTER DB update
-      const result = await startJob('single_image', { sceneIndex: index });
+      // Start background job AFTER DB update - use same flow as manual regeneration
+      const result = await startJob('images', { 
+        sceneIndices: [index],
+        skipExisting: false,
+        semiAutoMode: true,
+        qaPrompt: null
+      });
       if (!result) {
         removeGeneratingImageIndex(index);
       }
