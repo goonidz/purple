@@ -420,6 +420,7 @@ export function ActiveJobsBanner({ jobs, onCancel, className }: ActiveJobsBanner
       isManualRegenCombined: true,
       combinedJobCount: manualRegenJobs.length,
       combinedSceneIndices: manualRegenJobs.flatMap(j => j.metadata?.sceneIndices || []),
+      combinedJobIds: manualRegenJobs.map(j => j.id), // Store original job IDs for cancellation
       total_scenes: manualRegenJobs.reduce((sum, j) => sum + (j.total || 1), 0),
     }
   } as GenerationJob : null;
@@ -429,13 +430,27 @@ export function ActiveJobsBanner({ jobs, onCancel, className }: ActiveJobsBanner
     ...(combinedManualRegenJob ? [combinedManualRegenJob] : [])
   ];
 
+  // Handler for canceling combined manual regen jobs
+  const handleCancel = (jobId: string) => {
+    if (!onCancel) return;
+    
+    if (jobId === 'combined-manual-regen' && combinedManualRegenJob?.metadata?.combinedJobIds) {
+      // Cancel all underlying jobs
+      combinedManualRegenJob.metadata.combinedJobIds.forEach((id: string) => {
+        onCancel(id);
+      });
+    } else {
+      onCancel(jobId);
+    }
+  };
+
   return (
     <div className={cn("space-y-2", className)}>
       {jobsToDisplay.map(job => (
         <JobProgressIndicator 
           key={job.id} 
           job={job} 
-          onCancel={job.id === 'combined-manual-regen' ? undefined : onCancel}
+          onCancel={onCancel ? handleCancel : undefined}
         />
       ))}
     </div>
