@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import type { User } from "@supabase/supabase-js";
@@ -49,6 +49,12 @@ export default function Calendar() {
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [viewMode, setViewMode] = useState<'calendar' | 'kanban'>('calendar');
 
+  // Ref to track current month for use in callbacks (avoids stale closures)
+  const currentMonthRef = useRef(currentMonth);
+  useEffect(() => {
+    currentMonthRef.current = currentMonth;
+  }, [currentMonth]);
+
   useEffect(() => {
     document.title = "Calendrier";
   }, []);
@@ -70,7 +76,7 @@ export default function Calendar() {
       fetchEntries();
       fetchChannels();
     }
-  }, [user, currentMonth]);
+  }, [user, currentMonth, fetchEntries, fetchChannels]);
 
   // Subscribe to realtime updates for calendar entries, projects, and channels
   useEffect(() => {
@@ -158,9 +164,9 @@ export default function Calendar() {
       supabase.removeChannel(calendarChannel);
       clearInterval(pollInterval);
     };
-  }, [user]);
+  }, [user, fetchEntries, fetchChannels]);
 
-  const fetchChannels = async () => {
+  const fetchChannels = useCallback(async () => {
     if (!user) return;
     
     const { data, error } = await supabase
@@ -172,14 +178,17 @@ export default function Calendar() {
     if (!error && data) {
       setChannels(data);
     }
-  };
+  }, [user]);
 
-  const fetchEntries = async () => {
+  // Use useCallback to create a stable reference that always uses the current month from ref
+  const fetchEntries = useCallback(async () => {
     if (!user) return;
     
+    // Use ref to always get the current month value (avoids stale closures in subscriptions)
+    const month = currentMonthRef.current;
     setIsLoading(true);
-    const start = startOfMonth(currentMonth);
-    const end = endOfMonth(currentMonth);
+    const start = startOfMonth(month);
+    const end = endOfMonth(month);
 
     const { data, error } = await supabase
       .from("content_calendar")
@@ -199,7 +208,7 @@ export default function Calendar() {
       setEntries(data as ContentCalendarEntry[]);
     }
     setIsLoading(false);
-  };
+  }, [user]);
 
   const handlePrevMonth = () => setCurrentMonth(subMonths(currentMonth, 1));
   const handleNextMonth = () => setCurrentMonth(addMonths(currentMonth, 1));
