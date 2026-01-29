@@ -55,6 +55,51 @@ export default function Calendar() {
     currentMonthRef.current = currentMonth;
   }, [currentMonth]);
 
+  // Define fetch functions BEFORE useEffects that use them (to avoid "Cannot access before initialization")
+  const fetchChannels = useCallback(async () => {
+    if (!user) return;
+    
+    const { data, error } = await supabase
+      .from("channels")
+      .select("*")
+      .eq("user_id", user.id)
+      .order("name", { ascending: true });
+
+    if (!error && data) {
+      setChannels(data);
+    }
+  }, [user]);
+
+  // Use useCallback to create a stable reference that always uses the current month from ref
+  const fetchEntries = useCallback(async () => {
+    if (!user) return;
+    
+    // Use ref to always get the current month value (avoids stale closures in subscriptions)
+    const month = currentMonthRef.current;
+    setIsLoading(true);
+    const start = startOfMonth(month);
+    const end = endOfMonth(month);
+
+    const { data, error } = await supabase
+      .from("content_calendar")
+      .select(`
+        *,
+        channel:channels(id, name, color)
+      `)
+      .eq("user_id", user.id)
+      .gte("scheduled_date", format(start, "yyyy-MM-dd"))
+      .lte("scheduled_date", format(end, "yyyy-MM-dd"))
+      .order("scheduled_date", { ascending: true });
+
+    if (error) {
+      console.error("Error fetching calendar entries:", error);
+      toast.error("Erreur lors du chargement du calendrier");
+    } else {
+      setEntries(data as ContentCalendarEntry[]);
+    }
+    setIsLoading(false);
+  }, [user]);
+
   useEffect(() => {
     document.title = "Calendrier";
   }, []);
@@ -165,50 +210,6 @@ export default function Calendar() {
       clearInterval(pollInterval);
     };
   }, [user, fetchEntries, fetchChannels]);
-
-  const fetchChannels = useCallback(async () => {
-    if (!user) return;
-    
-    const { data, error } = await supabase
-      .from("channels")
-      .select("*")
-      .eq("user_id", user.id)
-      .order("name", { ascending: true });
-
-    if (!error && data) {
-      setChannels(data);
-    }
-  }, [user]);
-
-  // Use useCallback to create a stable reference that always uses the current month from ref
-  const fetchEntries = useCallback(async () => {
-    if (!user) return;
-    
-    // Use ref to always get the current month value (avoids stale closures in subscriptions)
-    const month = currentMonthRef.current;
-    setIsLoading(true);
-    const start = startOfMonth(month);
-    const end = endOfMonth(month);
-
-    const { data, error } = await supabase
-      .from("content_calendar")
-      .select(`
-        *,
-        channel:channels(id, name, color)
-      `)
-      .eq("user_id", user.id)
-      .gte("scheduled_date", format(start, "yyyy-MM-dd"))
-      .lte("scheduled_date", format(end, "yyyy-MM-dd"))
-      .order("scheduled_date", { ascending: true });
-
-    if (error) {
-      console.error("Error fetching calendar entries:", error);
-      toast.error("Erreur lors du chargement du calendrier");
-    } else {
-      setEntries(data as ContentCalendarEntry[]);
-    }
-    setIsLoading(false);
-  }, [user]);
 
   const handlePrevMonth = () => setCurrentMonth(subMonths(currentMonth, 1));
   const handleNextMonth = () => setCurrentMonth(addMonths(currentMonth, 1));
