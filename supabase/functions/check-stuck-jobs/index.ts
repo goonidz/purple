@@ -58,12 +58,71 @@ serve(async (req) => {
         .eq('job_id', job.id);
 
       if (!predictions || predictions.length === 0) {
-        // Job has no predictions - might be stuck at startup
+        // Job has no direct predictions - check if it's a PARENT job with child jobs
+        // Parent jobs (images, prompts, qa, upscale) create child jobs (single_image, single_prompt, etc.)
+        // The predictions are linked to the CHILDREN, not the parent
+        const { data: childJobs, count: childCount } = await adminClient
+          .from('generation_jobs')
+          .select('id, status', { count: 'exact' })
+          .eq('parent_job_id', job.id);
+        
+        if (childJobs && childJobs.length > 0) {
+          // This is a parent job with children - check child status instead
+          const activeChildren = childJobs.filter((c: any) => c.status === 'pending' || c.status === 'processing');
+          const completedChildren = childJobs.filter((c: any) => c.status === 'completed');
+          const failedChildren = childJobs.filter((c: any) => c.status === 'failed');
+          
+          console.log(`Job ${job.id} is a PARENT with ${childCount} children: ${activeChildren.length} active, ${completedChildren.length} completed, ${failedChildren.length} failed`);
+          
+          if (activeChildren.length > 0) {
+            // Children still working - don't mark parent as stuck
+            results.push({ 
+              jobId: job.id, 
+              action: 'skipped', 
+              reason: 'parent_with_active_children',
+              activeChildren: activeChildren.length,
+              completedChildren: completedChildren.length
+            });
+            continue;
+          }
+          
+          // All children done - update parent based on children results
+          if (completedChildren.length > 0 || failedChildren.length > 0) {
+            const allDone = activeChildren.length === 0;
+            if (allDone) {
+              const parentStatus = completedChildren.length > 0 ? 'completed' : 'failed';
+              const errorMsg = failedChildren.length > 0 ? `${failedChildren.length} child jobs failed` : null;
+              
+              console.log(`Job ${job.id}: All ${childCount} children done. Marking parent as ${parentStatus}`);
+              
+              await adminClient
+                .from('generation_jobs')
+                .update({
+                  status: parentStatus,
+                  progress: completedChildren.length,
+                  error_message: errorMsg,
+                  completed_at: new Date().toISOString()
+                })
+                .eq('id', job.id);
+              
+              results.push({ 
+                jobId: job.id, 
+                action: 'parent_completed', 
+                status: parentStatus,
+                completedChildren: completedChildren.length,
+                failedChildren: failedChildren.length
+              });
+              continue;
+            }
+          }
+        }
+        
+        // No children and no predictions - might be stuck at startup
         const jobAge = Date.now() - new Date(job.created_at).getTime();
         const STUCK_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
 
         if (jobAge > STUCK_THRESHOLD_MS) {
-          console.log(`Job ${job.id} has no predictions and is ${Math.round(jobAge / 60000)} minutes old - marking as failed`);
+          console.log(`Job ${job.id} has no predictions/children and is ${Math.round(jobAge / 60000)} minutes old - marking as failed`);
           
           await adminClient
             .from('generation_jobs')
