@@ -236,6 +236,20 @@ serve(async (req) => {
         })
         .eq('id', prediction.id);
 
+      // RETRY: For scene_image predictions, retry the job if under limit
+      if (prediction.prediction_type === 'scene_image' && prediction.job_id) {
+        const { data: failedJob } = await adminClient
+          .from('generation_jobs')
+          .select('*')
+          .eq('id', prediction.job_id)
+          .single();
+        
+        if (failedJob) {
+          const errorMsg = typeof errorDetail === 'string' ? errorDetail.substring(0, 200) : `Generation ${status}`;
+          await retryFailedImageJob(adminClient, failedJob, errorMsg);
+        }
+      }
+
       await checkJobCompletion(adminClient, prediction.job_id);
       
       // NEW: Update queue item as failed
@@ -808,12 +822,16 @@ async function launchNextPendingJob(adminClient: any, supabaseUrl: string, supab
           const errorText = await response.text();
           console.error(`[launchNextPendingJob] Failed to start image for scene ${jobToClaim.scene_index + 1}:`, errorText);
           await adminClient.from('generation_jobs').update({ status: 'failed', error_message: errorText.substring(0, 200) }).eq('id', jobToClaim.id);
+          // RETRY: Create a new job if under retry limit
+          await retryFailedImageJob(adminClient, jobToClaim, errorText.substring(0, 200));
           // Continue the chain - launch next job to fill this failed slot
           await launchNextPendingJob(adminClient, supabaseUrl, supabaseServiceKey);
         }
       } catch (error) {
         console.error(`[launchNextPendingJob] Error for scene ${jobToClaim.scene_index + 1}:`, error);
         await adminClient.from('generation_jobs').update({ status: 'failed', error_message: String(error).substring(0, 200) }).eq('id', jobToClaim.id);
+        // RETRY: Create a new job if under retry limit
+        await retryFailedImageJob(adminClient, jobToClaim, String(error).substring(0, 200));
         // Continue the chain - launch next job to fill this failed slot
         await launchNextPendingJob(adminClient, supabaseUrl, supabaseServiceKey);
       }
@@ -822,6 +840,44 @@ async function launchNextPendingJob(adminClient: any, supabaseUrl: string, supab
     if (typeof EdgeRuntime !== 'undefined') {
       EdgeRuntime.waitUntil(imagePromise);
     }
+  }
+}
+
+// RETRY MECHANISM: Automatically retry failed single_image jobs (max 3 attempts)
+const MAX_IMAGE_RETRIES = 3;
+
+async function retryFailedImageJob(adminClient: any, failedJob: any, errorMessage: string): Promise<void> {
+  const retryCount = (failedJob.metadata?.retryCount || 0) + 1;
+  
+  if (retryCount > MAX_IMAGE_RETRIES) {
+    console.log(`[retryFailedImageJob] Scene ${failedJob.scene_index + 1}: Max retries (${MAX_IMAGE_RETRIES}) reached, not retrying`);
+    return;
+  }
+  
+  console.log(`[retryFailedImageJob] Scene ${failedJob.scene_index + 1}: Creating retry ${retryCount}/${MAX_IMAGE_RETRIES} after error: ${errorMessage.substring(0, 50)}...`);
+  
+  // Create a new pending job with incremented retry count
+  const { error: insertError } = await adminClient.from('generation_jobs').insert({
+    project_id: failedJob.project_id,
+    user_id: failedJob.user_id,
+    job_type: 'single_image',
+    status: 'pending',
+    progress: 0,
+    total: 1,
+    scene_index: failedJob.scene_index,
+    parent_job_id: failedJob.parent_job_id,
+    is_regen: failedJob.is_regen || false,
+    metadata: {
+      ...failedJob.metadata,
+      retryCount,
+      lastError: errorMessage.substring(0, 100)
+    }
+  });
+  
+  if (insertError) {
+    console.error(`[retryFailedImageJob] Failed to create retry job for scene ${failedJob.scene_index + 1}:`, insertError);
+  } else {
+    console.log(`[retryFailedImageJob] Created retry job for scene ${failedJob.scene_index + 1} (attempt ${retryCount})`);
   }
 }
 
