@@ -4881,6 +4881,15 @@ async function processSingleQAJob(
       if (!response.ok) {
         const errorText = await response.text();
         console.error(`[processSingleQAJob] QA error for scene ${sceneIndex + 1}: HTTP ${response.status}`, errorText);
+        // On 429 / quota exceeded, wait for API-suggested retry delay then retry
+        const isRateLimit = response.status === 429 || errorText.includes('429') || errorText.includes('RESOURCE_EXHAUSTED');
+        const retryInMatch = errorText.match(/retry in (\d+(?:\.\d+)?)\s*s/i);
+        if (isRateLimit && attempt < maxRetries - 1 && retryInMatch) {
+          const waitSec = Math.min(parseFloat(retryInMatch[1]) * 1000, 120000);
+          console.log(`[processSingleQAJob] Scene ${sceneIndex + 1}: rate limit (429), retrying in ${Math.round(waitSec / 1000)}s`);
+          await new Promise(resolve => setTimeout(resolve, waitSec));
+          continue;
+        }
         if (attempt < maxRetries - 1) {
           await new Promise(resolve => setTimeout(resolve, 1000));
           continue;

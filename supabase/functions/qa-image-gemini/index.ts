@@ -142,9 +142,9 @@ serve(async (req) => {
       throw new Error('Gemini API key not configured for this user');
     }
 
-    // Call Gemini API to analyze image
+    // Use Gemini 2.0 Flash (higher quota than gemini-2.5-flash-lite which has 20 req/day free tier)
     const geminiResponse = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent?key=${geminiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`,
       {
         method: 'POST',
         headers: {
