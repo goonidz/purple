@@ -141,7 +141,22 @@ export function useGenerationJobs({ projectId, onJobComplete, onJobFailed, autoR
         const filteredJobs = (data || []).filter(
           (job: any) => job.job_type !== 'single_prompt' && job.job_type !== 'single_image' && job.job_type !== 'single_qa' && job.job_type !== 'single_upscale'
         );
-        setActiveJobs(filteredJobs as unknown as GenerationJob[]);
+        
+        // IMPORTANT: Merge with existing single_* jobs to avoid losing them during periodic refetch
+        // This fixes the bug where regenerating prompt spinner never stops
+        setActiveJobs(prev => {
+          const existingSingleJobs = prev.filter(
+            j => j.job_type === 'single_prompt' || j.job_type === 'single_image' || j.job_type === 'single_qa' || j.job_type === 'single_upscale'
+          );
+          // Merge: keep existing single jobs + add fetched parent jobs (avoiding duplicates)
+          const mergedJobs = [...existingSingleJobs];
+          for (const job of filteredJobs) {
+            if (!mergedJobs.find(j => j.id === job.id)) {
+              mergedJobs.push(job as unknown as GenerationJob);
+            }
+          }
+          return mergedJobs;
+        });
       } catch (error) {
         console.error('Error fetching initial active jobs:', error);
       }
@@ -350,7 +365,20 @@ export function useGenerationJobs({ projectId, onJobComplete, onJobFailed, autoR
       const filteredJobs = (data || []).filter(
         (job: any) => job.job_type !== 'single_prompt' && job.job_type !== 'single_image' && job.job_type !== 'single_qa' && job.job_type !== 'single_upscale'
       );
-      setActiveJobs(filteredJobs as unknown as GenerationJob[]);
+      
+      // IMPORTANT: Merge with existing single_* jobs to avoid losing them
+      setActiveJobs(prev => {
+        const existingSingleJobs = prev.filter(
+          j => j.job_type === 'single_prompt' || j.job_type === 'single_image' || j.job_type === 'single_qa' || j.job_type === 'single_upscale'
+        );
+        const mergedJobs = [...existingSingleJobs];
+        for (const job of filteredJobs) {
+          if (!mergedJobs.find(j => j.id === job.id)) {
+            mergedJobs.push(job as unknown as GenerationJob);
+          }
+        }
+        return mergedJobs;
+      });
       
       // Reset retry count when manually fetching jobs
       setRetryCount(0);

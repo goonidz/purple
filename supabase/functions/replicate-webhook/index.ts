@@ -90,15 +90,38 @@ serve(async (req) => {
       });
     }
 
-    // Find the pending prediction
-    const { data: prediction, error: predictionError } = await adminClient
-      .from('pending_predictions')
-      .select('*')
-      .eq('prediction_id', predictionId)
-      .single();
+    // Find the pending prediction with retry (race condition: webhook may arrive before insert completes)
+    let prediction: any = null;
+    let predictionError: any = null;
+    const MAX_LOOKUP_RETRIES = 3;
+    const LOOKUP_RETRY_DELAY_MS = 500;
+    
+    for (let attempt = 1; attempt <= MAX_LOOKUP_RETRIES; attempt++) {
+      const { data, error } = await adminClient
+        .from('pending_predictions')
+        .select('*')
+        .eq('prediction_id', predictionId)
+        .single();
+      
+      prediction = data;
+      predictionError = error;
+      
+      if (prediction) {
+        if (attempt > 1) {
+          console.log(`[webhook] Found prediction ${predictionId} on attempt ${attempt}`);
+        }
+        break;
+      }
+      
+      // Only retry for "not found" errors, not for other database errors
+      if (attempt < MAX_LOOKUP_RETRIES && error?.code === 'PGRST116') {
+        console.log(`[webhook] Prediction ${predictionId} not found (attempt ${attempt}/${MAX_LOOKUP_RETRIES}), waiting ${LOOKUP_RETRY_DELAY_MS}ms...`);
+        await new Promise(resolve => setTimeout(resolve, LOOKUP_RETRY_DELAY_MS));
+      }
+    }
 
     if (predictionError || !prediction) {
-      console.error(`Prediction ${predictionId} not found in pending_predictions:`, predictionError);
+      console.error(`Prediction ${predictionId} not found in pending_predictions after ${MAX_LOOKUP_RETRIES} attempts:`, predictionError);
       // Not an error - might be a duplicate webhook or old prediction
       return new Response(JSON.stringify({ ok: true, message: "Prediction not found" }), {
         status: 200,
@@ -301,7 +324,11 @@ async function upsertProjectScene(adminClient: any, projectId: string, sceneInde
     throw error;
   }
   
-  console.log(`[upsertProjectScene] SUCCESS - Scene ${sceneIndex + 1} updated, image_url: ${data.image_url?.substring(0, 60)}...`);
+  // Log relevant field based on what was updated
+  const logField = data.image_url ? `image_url: ${data.image_url.substring(0, 60)}...` 
+    : data.upscaled_url ? `upscaled_url: ${data.upscaled_url.substring(0, 60)}...`
+    : `qa_status: ${data.qa_status || 'updated'}`;
+  console.log(`[upsertProjectScene] SUCCESS - Scene ${sceneIndex + 1} updated, ${logField}`);
 }
 
 async function updateSceneImage(adminClient: any, prediction: any, imageUrl: string) {
@@ -809,7 +836,7 @@ async function launchNextPendingJob(adminClient: any, supabaseUrl: string, supab
         
         if (response.ok) {
           const result = await response.json();
-          await adminClient.from('pending_predictions').insert({
+          const { error: insertError } = await adminClient.from('pending_predictions').insert({
             job_id: jobToClaim.id,
             prediction_id: result.predictionId,
             prediction_type: 'scene_image',
@@ -818,6 +845,18 @@ async function launchNextPendingJob(adminClient: any, supabaseUrl: string, supab
             user_id: jobToClaim.user_id,
             status: 'pending',
           });
+          
+          if (insertError) {
+            console.error(`[launchNextPendingJob] CRITICAL: Failed to insert pending_prediction for scene ${jobToClaim.scene_index + 1}, prediction ${result.predictionId}:`, insertError);
+            // Mark the job as failed - the webhook won't be able to process it
+            await adminClient.from('generation_jobs').update({ 
+              status: 'failed', 
+              error_message: `Failed to track prediction: ${insertError.message}`.substring(0, 200) 
+            }).eq('id', jobToClaim.id);
+            await retryFailedImageJob(adminClient, jobToClaim, `Failed to track prediction: ${insertError.message}`);
+          } else {
+            console.log(`[launchNextPendingJob] SUCCESS: Inserted pending_prediction for scene ${jobToClaim.scene_index + 1}, prediction ${result.predictionId}`);
+          }
         } else {
           const errorText = await response.text();
           console.error(`[launchNextPendingJob] Failed to start image for scene ${jobToClaim.scene_index + 1}:`, errorText);
@@ -1076,7 +1115,7 @@ async function launchNextPendingUpscaleJob(adminClient: any) {
           
           if (res.ok) {
             const result = await res.json();
-            await adminClient.from('pending_predictions').insert({
+            const { error: insertError } = await adminClient.from('pending_predictions').insert({
               job_id: pending.id, 
               prediction_id: result.predictionId, 
               prediction_type: 'upscale',
@@ -1085,6 +1124,13 @@ async function launchNextPendingUpscaleJob(adminClient: any) {
               user_id: pending.user_id, 
               status: 'pending'
             });
+            
+            if (insertError) {
+              console.error(`[launchNextPendingUpscaleJob] CRITICAL: Failed to insert pending_prediction for scene ${sceneIndex + 1}, prediction ${result.predictionId}:`, insertError);
+              await adminClient.from('generation_jobs').update({ status: 'failed', error_message: `Failed to track prediction: ${insertError.message}`.substring(0, 200) }).eq('id', pending.id);
+            } else {
+              console.log(`[launchNextPendingUpscaleJob] SUCCESS: Inserted pending_prediction for scene ${sceneIndex + 1}, prediction ${result.predictionId}`);
+            }
           } else {
             const errorText = await res.text();
             console.error(`[launchNextPendingUpscaleJob] Failed to start upscale for scene ${sceneIndex + 1}:`, errorText);
