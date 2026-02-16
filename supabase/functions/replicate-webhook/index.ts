@@ -603,22 +603,8 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
     return;
   }
 
-  const { error: updateError, data: updateData } = await adminClient
-    .from('generation_jobs')
-    .update({
-      status: 'completed',
-      completed_at: new Date().toISOString()
-    })
-    .eq('id', jobId)
-    .eq('status', 'processing')
-    .select('id')
-    .single();
-
-  if (updateError || !updateData) {
-    return;
-  }
-
-  // Save thumbnails to history table when thumbnail job completes
+  // IMPORTANT: Save thumbnails to history BEFORE marking job complete
+  // This fixes the race condition where frontend queries history before data is saved
   const metadata = job.metadata || {};
   if (job.job_type === 'thumbnails' && metadata.generatedThumbnails) {
     const thumbnails = metadata.generatedThumbnails as Array<{ url: string; prompt: string; index: number }>;
@@ -646,6 +632,21 @@ async function checkJobCompletion(adminClient: any, jobId: string) {
         }
       }
     }
+  }
+
+  const { error: updateError, data: updateData } = await adminClient
+    .from('generation_jobs')
+    .update({
+      status: 'completed',
+      completed_at: new Date().toISOString()
+    })
+    .eq('id', jobId)
+    .eq('status', 'processing')
+    .select('id')
+    .single();
+
+  if (updateError || !updateData) {
+    return;
   }
 
   // Handle semi-auto chaining
