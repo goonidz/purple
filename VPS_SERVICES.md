@@ -7,7 +7,9 @@ Tous les services sont hébergés sur un VPS OVH :
 | Service | Port | Description | PM2 Name |
 |---------|------|-------------|----------|
 | **Frontend** | 80 (nginx) | Site web VideoFlow | Docker container |
-| **Video Render** | 3000 | Rendu vidéo avec FFmpeg | `video-render` |
+| **Image Worker** | - | Génération images/prompts/thumbnails (polling) | `image-worker` |
+| **Video Render** | 3000 | Rendu vidéo avec FFmpeg | `video-render-service` |
+| **Video Storage API** | 3001 | Upload vidéo depuis RunPod | `video-storage-api` |
 | **Webhook Deploy** | 9000 | Déploiement auto GitHub | `webhook-deploy` |
 
 ## Informations VPS
@@ -30,7 +32,48 @@ ssh ubuntu@51.91.158.233
 
 ---
 
-## 1. Frontend (Docker + Nginx)
+## 1. Image Worker (Génération IA)
+
+**Port** : Aucun (service de polling, pas de serveur HTTP)  
+**PM2 Name** : `image-worker`  
+**Répertoire** : `~/purple/image-worker/`
+
+Service Node.js qui poll la table `generation_jobs` et exécute les pipelines de génération d'images, prompts et thumbnails. Contrôle la concurrence globale (20 jobs max) avec distribution équitable entre projets (round-robin).
+
+### Fonctionnement
+- Poll toutes les 3 secondes pour des jobs `pending`
+- Types gérés : `single_image`, `single_prompt`, `thumbnails`
+- Pipeline image complet : Replicate → Upload → QA (Gemini) → Upscale
+- Annulation intelligente : vérifie le statut parent avant chaque étape coûteuse
+- Round-robin : distribue les slots équitablement entre projets
+
+### Configuration
+```bash
+cd ~/purple/image-worker
+cat .env
+# SUPABASE_URL=https://laqgmqyjstisipsbljha.supabase.co
+# SUPABASE_SERVICE_ROLE_KEY=sb_secret_...
+```
+
+### Commandes
+```bash
+# Logs
+pm2 logs image-worker
+
+# Redémarrer
+pm2 restart image-worker
+
+# Deployer une mise à jour (depuis la machine locale)
+scp image-worker/index.js ubuntu@51.91.158.233:~/purple/image-worker/index.js
+ssh vps-clean "pm2 restart image-worker"
+```
+
+### Documentation complète
+→ `docs/ARCHITECTURE.md` (section VPS Image Worker)
+
+---
+
+## 2. Frontend (Docker + Nginx)
 
 **Port** : 80 (public via nginx reverse proxy)
 
@@ -55,10 +98,10 @@ docker logs <container_id>
 
 ---
 
-## 2. Video Render Service
+## 3. Video Render Service
 
 **Port** : 3000  
-**PM2 Name** : `video-render`  
+**PM2 Name** : `video-render-service`  
 **Répertoire** : `~/purple/video-render-service/`
 
 Service Node.js qui rend les vidéos avec FFmpeg (effet Ken Burns, pan, etc.)
@@ -99,7 +142,29 @@ pm2 status
 
 ---
 
-## 3. Webhook Deploy Service
+## 4. Video Storage API
+
+**Port** : 3001  
+**PM2 Name** : `video-storage-api`  
+**Répertoire** : `~/purple/video-storage-api/`
+
+API Node.js qui reçoit les uploads vidéo depuis RunPod et les stocke sur le VPS. Bypass les limites de Supabase Storage (50 MB par fichier).
+
+### Commandes
+```bash
+# Logs
+pm2 logs video-storage-api
+
+# Health check
+curl http://localhost:3001/health
+```
+
+### Documentation complète
+→ `video-storage-api/DEPLOY.md`
+
+---
+
+## 5. Webhook Deploy Service
 
 **Port** : 9000  
 **PM2 Name** : `webhook-deploy`
@@ -180,12 +245,22 @@ du -sh ~/purple/transcription-service/temp/*
 pm2 logs
 
 # Logs spécifiques
-pm2 logs video-render
-pm2 logs transcription-service
+pm2 logs image-worker
+pm2 logs video-render-service
+pm2 logs video-storage-api
 pm2 logs webhook-deploy
 
 # Logs avec timestamp
 pm2 logs --timestamp
+```
+
+### Rotation des logs
+
+PM2-logrotate est installé pour gérer la taille des logs :
+
+```bash
+# Vérifier la config
+pm2 conf pm2-logrotate
 ```
 
 ---
@@ -197,8 +272,15 @@ cd ~/purple
 git pull
 
 # Redémarrer les services si nécessaire
-pm2 restart video-render
-pm2 restart transcription-service
+pm2 restart image-worker
+pm2 restart video-render-service
+```
+
+### Mise à jour de l'image-worker (depuis la machine locale)
+
+```bash
+scp image-worker/index.js ubuntu@51.91.158.233:~/purple/image-worker/index.js
+ssh vps-clean "pm2 restart image-worker"
 ```
 
 ---
@@ -238,6 +320,15 @@ htop
 # Nettoyage manuel des vidéos
 node ~/purple/video-render-service/cleanup.js
 
+# Nettoyage Docker
+sudo docker system prune -af
+sudo nerdctl system prune -af 2>/dev/null
+
+# Nettoyage containerd snapshots
+sudo rm -rf /var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/*/
+
 # Nettoyage des logs PM2
 pm2 flush
 ```
+
+**Note** : L'image-worker affiche un warning `DISK WARNING: XX% used` quand le disque dépasse 85%.

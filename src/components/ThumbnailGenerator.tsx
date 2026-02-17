@@ -98,6 +98,7 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
   const [imageModel, setImageModel] = useState<string>("seedream-4.5");
   const [textModel, setTextModel] = useState<string>("claude-sonnet-4");
   const [userIdea, setUserIdea] = useState<string>("");
+  const [isDescribingThumbnail, setIsDescribingThumbnail] = useState(false);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [avoidPreviousPrompts, setAvoidPreviousPrompts] = useState<boolean>(false);
   const [sourceVideoUrl, setSourceVideoUrl] = useState<string | null>(null);
@@ -379,6 +380,34 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
   const youtubeId = sourceVideoUrl ? extractYouTubeId(sourceVideoUrl) : null;
   const youtubeThumbs = youtubeId ? computeYouTubeThumbnailUrls(youtubeId) : null;
 
+  const describeThumbnail = async () => {
+    const thumbUrl = sourceVideoThumbnailUrl || youtubeThumbs?.maxres || youtubeThumbs?.hq;
+    if (!thumbUrl) {
+      toast.error("Aucune miniature disponible à analyser");
+      return;
+    }
+    setIsDescribingThumbnail(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Non connecté");
+      const { data, error } = await supabase.functions.invoke('qa-image-gemini', {
+        body: { imageUrl: thumbUrl, userId: user.id, mode: 'describe' },
+      });
+      if (error) throw error;
+      if (data?.description) {
+        setUserIdea(prev => prev ? `${prev}\n\n${data.description}` : data.description);
+        toast.success("Description ajoutée");
+      } else {
+        throw new Error("Pas de description reçue");
+      }
+    } catch (err: any) {
+      console.error("Describe thumbnail error:", err);
+      toast.error(err.message || "Erreur lors de l'analyse");
+    } finally {
+      setIsDescribingThumbnail(false);
+    }
+  };
+
   const SourceVideoCard = () => {
     if (standalone) return null;
     if (!sourceVideoUrl) return null;
@@ -416,11 +445,29 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
                   </a>
                 </div>
               </div>
-              <Button asChild variant="outline" size="sm">
-                <a href={sourceVideoUrl} target="_blank" rel="noopener noreferrer">
-                  Ouvrir
-                </a>
-              </Button>
+              <div className="flex items-center gap-2 shrink-0">
+                {youtubeId && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={describeThumbnail}
+                    disabled={isDescribingThumbnail}
+                    title="Analyser la composition de la miniature et l'insérer dans 'Ton idée / direction'"
+                  >
+                    {isDescribingThumbnail ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+                    ) : (
+                      <ImageIcon className="h-3.5 w-3.5 mr-1" />
+                    )}
+                    Décrire
+                  </Button>
+                )}
+                <Button asChild variant="outline" size="sm">
+                  <a href={sourceVideoUrl} target="_blank" rel="noopener noreferrer">
+                    Ouvrir
+                  </a>
+                </Button>
+              </div>
             </div>
 
             {!youtubeId && (

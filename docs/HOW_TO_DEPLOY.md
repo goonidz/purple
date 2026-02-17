@@ -1,9 +1,10 @@
 # How to deploy (VideoFlow)
 
-This repo has **four** deploy targets:
+This repo has **five** deploy targets:
 
 - **Frontend web app** (Docker + nginx on the VPS)
 - **Supabase Edge Functions** (deployed to the Supabase project)
+- **Image Worker (VPS)** (`image-worker/`, managed by PM2 — polls DB for image/prompt/thumbnail jobs)
 - **Video Render Service (VPS)** (`video-render-service/`, managed by PM2 on port 3000)
 - **Video Storage API (VPS)** (`video-storage-api/`, managed by PM2 on port 3001)
 
@@ -183,14 +184,44 @@ npx supabase functions deploy <function-name> --project-ref laqgmqyjstisipsbljha
 
 ## 4) Deploy / restart services on the VPS
 
-### 4.1 Video render service (PM2)
+### 4.1 Image Worker (PM2)
 
-The PM2 process name is `video-render`.
+The PM2 process name is `image-worker`. This service polls the `generation_jobs` table and processes `single_image`, `single_prompt`, and `thumbnails` jobs with 20 concurrent slots and fair round-robin across projects.
+
+**Deploy from local machine** (no git pull needed — `index.js` is deployed via SCP):
+
+```bash
+scp -i ~/.ssh/id_ed25519_new image-worker/index.js ubuntu@51.91.158.233:~/purple/image-worker/index.js
+ssh vps-clean "pm2 restart image-worker && pm2 logs image-worker --lines 10 --nostream"
+```
+
+**First-time setup on VPS:**
+
+```bash
+ssh vps-clean
+cd ~/purple/image-worker
+npm install
+cp .env.example .env
+nano .env  # Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY
+pm2 start index.js --name image-worker
+pm2 save
+```
+
+**Check it's working:**
+
+```bash
+ssh vps-clean "pm2 logs image-worker --lines 20 --nostream"
+# Should show: Image Worker started (MAX_CONCURRENT=20, POLL=3000ms)
+```
+
+### 4.2 Video render service (PM2)
+
+The PM2 process name is `video-render-service`.
 
 Fast path (pull latest + restart + show logs):
 
 ```bash
-ssh ubuntu@51.91.158.233 "set -e; cd ~/purple; git pull origin main; pm2 restart video-render; pm2 logs video-render --lines 20 --nostream"
+ssh ubuntu@51.91.158.233 "set -e; cd ~/purple; git pull origin main; pm2 restart video-render-service; pm2 logs video-render-service --lines 20 --nostream"
 ```
 
 Health check on the VPS:
@@ -199,7 +230,7 @@ Health check on the VPS:
 ssh ubuntu@51.91.158.233 "curl --max-time 3 -s http://localhost:3000/health"
 ```
 
-### 4.2 Frontend (Docker + nginx)
+### 4.3 Frontend (Docker + nginx)
 
 If you use the webhook-based auto-deploy, pushing to `main` triggers it automatically.
 If you need to do it manually on the VPS:
@@ -208,7 +239,7 @@ If you need to do it manually on the VPS:
 ssh ubuntu@51.91.158.233 "set -e; cd ~/purple; git pull origin main; ./deploy.sh"
 ```
 
-### 4.3 Video Storage API (PM2)
+### 4.4 Video Storage API (PM2)
 
 **Pourquoi ?** Bypass les limites de Supabase Storage (50 MB par fichier, timeouts). Les vidéos GPU rendues peuvent facilement dépasser 100-500 MB.
 
@@ -276,6 +307,13 @@ Voir `video-storage-api/DEPLOY.md` pour tous les détails.
 ---
 
 ## 5) Quick validation checklist
+
+### Image Worker
+- Logs show polling and no errors:
+
+```bash
+ssh vps-clean "pm2 logs image-worker --lines 5 --nostream"
+```
 
 ### Supabase
 - Open Supabase Dashboard → Functions → confirm `generate-script` shows a recent deploy.
@@ -373,11 +411,38 @@ git push origin main
 - Check PM2 status and logs:
 
 ```bash
-ssh ubuntu@51.91.158.233 "pm2 status; pm2 logs video-render --lines 50 --nostream"
+ssh ubuntu@51.91.158.233 "pm2 status; pm2 logs video-render-service --lines 50 --nostream"
 ```
 
 - Confirm port 3000 is listening:
 
 ```bash
 ssh ubuntu@51.91.158.233 "ss -lntp | grep ':3000' || true"
+```
+
+### Image Worker: jobs stay pending
+- Check the worker is running and not in error:
+
+```bash
+ssh vps-clean "pm2 status"
+ssh vps-clean "pm2 logs image-worker --lines 50 --nostream"
+```
+
+- Check for stuck `processing` jobs (means worker crashed mid-job):
+
+```sql
+SELECT id, status, job_type, scene_index, updated_at
+FROM generation_jobs
+WHERE status = 'processing'
+  AND job_type IN ('single_image', 'single_prompt', 'thumbnails')
+  AND updated_at < NOW() - INTERVAL '5 minutes';
+```
+
+- Reset stuck jobs if needed:
+
+```sql
+UPDATE generation_jobs SET status = 'pending'
+WHERE status = 'processing'
+  AND job_type IN ('single_image', 'single_prompt', 'thumbnails')
+  AND updated_at < NOW() - INTERVAL '5 minutes';
 ```

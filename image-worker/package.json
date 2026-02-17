@@ -1,0 +1,21 @@
+{
+  "name": "image-worker",
+  "version": "1.0.0",
+  "description": "VPS-based image generation worker for VideoFlow - replaces webhook pipeline with polling",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "pm2:start": "pm2 start index.js --name image-worker",
+    "pm2:stop": "pm2 stop image-worker",
+    "pm2:restart": "pm2 restart image-worker",
+    "pm2:logs": "pm2 logs image-worker"
+  },
+  "dependencies": {
+    "replicate": "^1.0.1",
+    "@supabase/supabase-js": "^2.38.4",
+    "dotenv": "^16.3.1"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

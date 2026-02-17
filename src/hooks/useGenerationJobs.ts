@@ -475,11 +475,11 @@ export function useGenerationJobs({ projectId, onJobComplete, onJobFailed, autoR
 
       if (error) throw error;
 
-      // Also cancel all child jobs that have this job as parent
+      // Cancel all child jobs using the parent_job_id column
       const { error: childError } = await supabase
         .from('generation_jobs')
         .update({ status: 'cancelled' })
-        .eq('metadata->>parentJobId', jobId)
+        .eq('parent_job_id', jobId)
         .in('status', ['pending', 'processing']);
 
       if (childError) {

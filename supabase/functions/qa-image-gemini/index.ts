@@ -96,9 +96,9 @@ serve(async (req) => {
 
   try {
     const body = await req.json();
-    const { imageUrl, userId, qaPrompt, sourcePrompt } = body;
+    const { imageUrl, userId, qaPrompt, sourcePrompt, mode } = body;
 
-    console.log('QA request body:', { imageUrl: imageUrl?.substring(0, 100), userId, hasCustomPrompt: !!qaPrompt, hasSourcePrompt: !!sourcePrompt });
+    console.log('QA request body:', { imageUrl: imageUrl?.substring(0, 100), userId, hasCustomPrompt: !!qaPrompt, hasSourcePrompt: !!sourcePrompt, mode });
 
     if (!imageUrl || typeof imageUrl !== 'string' || imageUrl.trim() === '') {
       throw new Error('imageUrl is required and must be a non-empty string');
@@ -108,6 +108,64 @@ serve(async (req) => {
       throw new Error('userId is required');
     }
 
+    // Get Gemini API key from Vault
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const adminClient = createClient(supabaseUrl, serviceRoleKey);
+
+    const { data: geminiKey, error: keyError } = await adminClient.rpc('get_user_api_key', {
+      key_name: 'gemini',
+      p_user_id: userId
+    });
+
+    if (keyError || !geminiKey) {
+      console.error('Error getting Gemini API key:', keyError);
+      throw new Error('Gemini API key not configured for this user');
+    }
+
+    // ---- MODE: describe (thumbnail composition analysis) ----
+    if (mode === 'describe') {
+      const describePrompt = `Décris la composition de cette miniature YouTube en 2-3 phrases concises en français.
+Concentre-toi sur : la mise en page, les éléments visuels principaux, les couleurs dominantes, la typographie/texte visible, l'expression du visage s'il y en a un, et l'effet visuel global (avant/après, split, etc.).
+Sois descriptif et utile pour quelqu'un qui voudrait recréer une miniature similaire.
+Réponds uniquement avec la description, sans introduction ni commentaire.`;
+
+      const geminiResponse = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{
+              parts: [
+                { text: describePrompt },
+                { inline_data: { mime_type: "image/jpeg", data: await fetchImageAsBase64(imageUrl) } }
+              ]
+            }],
+            generationConfig: { temperature: 0.3, maxOutputTokens: 300 }
+          })
+        }
+      );
+
+      if (!geminiResponse.ok) {
+        const errorText = await geminiResponse.text();
+        throw new Error(`Gemini API error: ${geminiResponse.status} - ${errorText}`);
+      }
+
+      const geminiResult = await geminiResponse.json();
+      const description = geminiResult.candidates?.[0]?.content?.parts?.[0]?.text;
+
+      if (!description) {
+        throw new Error('No description from Gemini');
+      }
+
+      return new Response(
+        JSON.stringify({ description: description.trim() }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
+      );
+    }
+
+    // ---- MODE: QA (default) ----
     // Use custom QA prompt if provided, otherwise use default
     let promptToUse = qaPrompt || QA_PROMPT;
     console.log('[qa-image-gemini] Custom prompt provided:', !!qaPrompt);
@@ -126,21 +184,6 @@ serve(async (req) => {
     console.log('[qa-image-gemini] ========== COMPLETE QA PROMPT ==========');
     console.log(promptToUse);
     console.log('[qa-image-gemini] ========================================')
-
-    // Get Gemini API key from Vault
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const adminClient = createClient(supabaseUrl, serviceRoleKey);
-
-    const { data: geminiKey, error: keyError } = await adminClient.rpc('get_user_api_key', {
-      key_name: 'gemini',
-      p_user_id: userId
-    });
-
-    if (keyError || !geminiKey) {
-      console.error('Error getting Gemini API key:', keyError);
-      throw new Error('Gemini API key not configured for this user');
-    }
 
     // Use Gemini 2.0 Flash (higher quota than gemini-2.5-flash-lite which has 20 req/day free tier)
     const geminiResponse = await fetch(

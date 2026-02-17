@@ -92,6 +92,20 @@ Ce document résume toute la configuration effectuée pour déployer VideoFlow s
 │  └────────────────┘  └──────────────────┘  │
 │                                             │
 │  ┌───────────────────────────────────────┐ │
+│  │  Image Worker (PM2, no port)          │ │
+│  │  - Poll generation_jobs table          │ │
+│  │  - 20 concurrent slots (round-robin)  │ │
+│  │  - Images + Prompts + Thumbnails      │ │
+│  │  - Replicate API + Gemini QA          │ │
+│  └───────────────────────────────────────┘ │
+│                                             │
+│  ┌───────────────────────────────────────┐ │
+│  │  Video Storage API (port 3001)        │ │
+│  │  - Upload vidéo depuis RunPod          │ │
+│  │  - PM2                                │ │
+│  └───────────────────────────────────────┘ │
+│                                             │
+│  ┌───────────────────────────────────────┐ │
 │  │  Webhook GitHub (port 9000)           │ │
 │  │  - Déploiement automatique             │ │
 │  │  - PM2                                │ │
@@ -174,15 +188,20 @@ Tous les services Node.js sont gérés par PM2 :
 pm2 status
 
 # Services actifs :
-# - video-render : Service de rendu vidéo (port 3000)
-# - webhook-deploy : Webhook GitHub (port 9000)
+# - image-worker        : Génération images/prompts/thumbnails (polling, 20 slots)
+# - video-render-service : Service de rendu vidéo (port 3000)
+# - video-storage-api   : Upload vidéo RunPod (port 3001)
+# - webhook-deploy      : Webhook GitHub (port 9000)
 
 # Logs
-pm2 logs video-render
+pm2 logs image-worker
+pm2 logs video-render-service
+pm2 logs video-storage-api
 pm2 logs webhook-deploy
 
 # Redémarrer
-pm2 restart video-render
+pm2 restart image-worker
+pm2 restart video-render-service
 pm2 restart webhook-deploy
 ```
 
@@ -191,8 +210,10 @@ pm2 restart webhook-deploy
 - **Port 80** : Nginx (redirect HTTP → HTTPS)
 - **Port 443** : Nginx HTTPS (frontend web + API render)
 - **Port 3000** : Service de rendu vidéo (local seulement, proxy par nginx via `/api/render`)
+- **Port 3001** : Video Storage API (upload vidéo depuis RunPod)
 - **Port 8080** : Docker container (interne uniquement, proxy par nginx)
 - **Port 9000** : Webhook GitHub (interne)
+- **Image Worker** : Pas de port (service de polling interne)
 
 ## Fichiers de configuration
 

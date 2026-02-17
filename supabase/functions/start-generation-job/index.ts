@@ -396,7 +396,13 @@ async function processJob(
     } else if (jobType === 'single_qa') {
       await processSingleQAJob(jobId, projectId, userId, metadata, authHeader, adminClient);
     } else if (jobType === 'thumbnails') {
-      await processThumbnailsJob(jobId, projectId, userId, metadata, authHeader, adminClient);
+      // VPS Worker mode: reset to pending so VPS image-worker picks it up
+      await adminClient
+        .from('generation_jobs')
+        .update({ status: 'pending' })
+        .eq('id', jobId);
+      console.log(`[thumbnails] Job ${jobId} reset to pending for VPS worker`);
+      throw new Error('WEBHOOK_MODE_ACTIVE');
     } else if (jobType === 'script_generation') {
       await processScriptGenerationJob(jobId, projectId, userId, metadata, authHeader, adminClient);
     } else if (jobType === 'audio_generation') {
@@ -885,7 +891,13 @@ async function processChainedJob(
     if (jobType === 'images') {
       await processImagesJob(jobId, projectId, userId, metadata, authHeader, adminClient);
     } else if (jobType === 'thumbnails') {
-      await processThumbnailsJob(jobId, projectId, userId, metadata, authHeader, adminClient);
+      // VPS Worker mode: reset to pending so VPS image-worker picks it up
+      await adminClient
+        .from('generation_jobs')
+        .update({ status: 'pending' })
+        .eq('id', jobId);
+      console.log(`[thumbnails] Chained job ${jobId} reset to pending for VPS worker`);
+      throw new Error('WEBHOOK_MODE_ACTIVE');
     } else if (jobType === 'qa') {
       await processQAJob(jobId, projectId, userId, metadata, authHeader, adminClient);
     } else if (jobType === 'qa_regen') {
@@ -1353,9 +1365,8 @@ async function processPromptsJob(
     const scenesToCreate = allScenesToProcess.filter(({ index }: any) => !existingSceneIndices.has(index));
     
     if (scenesToCreate.length === 0 && existingJobs && existingJobs.length > 0) {
-      console.log(`[processPromptsJob] All ${allScenesToProcess.length} scenes already have jobs, launching pending ones`);
-      // Just launch pending jobs
-      await launchPendingPromptJobs(adminClient, existingJobs.length);
+      console.log(`[processPromptsJob] All ${allScenesToProcess.length} scenes already have jobs (pending for VPS worker)`);
+      // VPS Worker mode: jobs stay pending, VPS image-worker picks them up
       throw new Error('WEBHOOK_MODE_ACTIVE');
     }
     
@@ -1412,12 +1423,8 @@ async function processPromptsJob(
       })
       .eq('id', jobId);
     
-    // Launch pending jobs (both newly created and previously stuck ones)
-    const totalJobsToLaunch = createdJobsCount + (existingJobs?.filter((j: any) => j.status === 'pending').length || 0);
-    console.log(`[processPromptsJob] Launching up to ${totalJobsToLaunch} pending prompt jobs`);
-    await launchPendingPromptJobs(adminClient, totalJobsToLaunch);
-    
-    console.log(`[processPromptsJob] Parent job ${jobId} stays in processing until all children complete`);
+    // VPS Worker mode: jobs stay pending, VPS image-worker picks them up
+    console.log(`[processPromptsJob] Created ${createdJobsCount} prompt jobs (pending for VPS worker)`);
     throw new Error('WEBHOOK_MODE_ACTIVE');
     
   } else {
@@ -2028,31 +2035,11 @@ async function processImagesJob(
       throw new Error(`Failed to create individual jobs: ${jobsError.message}`);
     }
     
-    console.log(`[processImagesJob] Created ${createdJobs.length} individual jobs`);
+    console.log(`[processImagesJob] Created ${createdJobs.length} individual jobs (pending for VPS worker)`);
     
-    // Check global concurrency limit
-    const MAX_CONCURRENT = 20;
-    const { count: processingCount } = await adminClient
-      .from('generation_jobs')
-      .select('id', { count: 'exact', head: true })
-      .eq('status', 'processing')
-      .eq('job_type', 'single_image');
-    
-    const availableSlots = Math.max(0, MAX_CONCURRENT - (processingCount || 0));
-    const jobsToStart = Math.min(availableSlots, createdJobs.length);
-    
-    console.log(`[processImagesJob] Global: ${processingCount}/${MAX_CONCURRENT} processing, starting ${jobsToStart} jobs`);
-    
-    // Start first batch of jobs
-    if (jobsToStart > 0) {
-      for (let i = 0; i < jobsToStart; i++) {
-        const job = createdJobs[i];
-        // Fire and forget - don't await
-        startSingleImageJob(job.id, adminClient, supabaseUrl, supabaseServiceKey).catch(err => {
-          console.error(`Failed to start job ${job.id}:`, err);
-        });
-      }
-    }
+    // VPS Worker mode: jobs are left as 'pending' and the VPS image-worker will
+    // pick them up, generate images, run QA, upscale, and update the DB directly.
+    // No Edge Function concurrency limit or webhook needed.
     
     console.log(`[processImagesJob] Parent job ${jobId} stays in processing until all children complete`);
     throw new Error('WEBHOOK_MODE_ACTIVE');
@@ -3423,8 +3410,8 @@ async function processSinglePromptJob(
           }).catch(err => console.error(`[processSinglePromptJob] Error chaining to images:`, err));
         }
       } else {
-        // Launch next pending prompt job
-        await launchNextPendingPromptJob(adminClient);
+        // VPS Worker mode: next prompt job will be picked up by VPS worker
+        console.log(`[processSinglePromptJob] Prompt completed, VPS worker handles next pending jobs`);
       }
     }
   }
@@ -5120,18 +5107,8 @@ async function markSingleQACompleted(
       console.log(`[markSingleQACompleted] Scene ${sceneIndex}: REJECT, creating regen job`);
       await createSingleImageRegenJob(adminClient, job.project_id, job.user_id, sceneIndex, job.parent_job_id, qaResult);
       
-      // Launch the regen job immediately (no setTimeout - it's unreliable in Edge Functions)
-      console.log(`[markSingleQACompleted] Launching regen job for scene ${sceneIndex}`);
-      await fetch(`${supabaseUrl}/functions/v1/replicate-webhook`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${supabaseServiceKey}`
-        },
-        body: JSON.stringify({
-          type: 'launch_next_image_job'
-        })
-      }).catch(err => console.error('[markSingleQACompleted] Error launching regen:', err));
+      // VPS Worker mode: regen job is left as 'pending', the VPS image-worker will pick it up
+      console.log(`[markSingleQACompleted] Regen job created as pending for VPS worker (scene ${sceneIndex})`);
     }
   }
   
