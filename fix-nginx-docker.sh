@@ -38,9 +38,8 @@ sudo cp ~/purple/nginx-videoflow.conf /etc/nginx/sites-available/videoflow 2>/de
 # Remplacer le domaine
 sudo sed -i 's/videoflow.duckdns.org/purpleai.duckdns.org/g' /etc/nginx/sites-available/videoflow 2>/dev/null || true
 
-# Remplacer tous les proxy_pass vers 8080
-sudo sed -i 's|proxy_pass http://localhost:80|proxy_pass http://localhost:8080|g' /etc/nginx/sites-available/videoflow 2>/dev/null || true
-sudo sed -i 's|proxy_pass http://localhost:80/|proxy_pass http://localhost:8080/|g' /etc/nginx/sites-available/videoflow 2>/dev/null || true
+# Remplacer tous les proxy_pass vers 8080 (regex pour matcher n'importe quel port)
+sudo sed -i -E 's|proxy_pass http://localhost:[0-9]+|proxy_pass http://localhost:8080|g' /etc/nginx/sites-available/videoflow 2>/dev/null || true
 
 # Activer le site
 sudo ln -sf /etc/nginx/sites-available/videoflow /etc/nginx/sites-enabled/ 2>/dev/null || true
