@@ -951,6 +951,10 @@ async function processThumbnailsPipeline(job) {
     const modelName = MODEL_MAP[model] || MODEL_MAP['seedream-4.5'];
     const generatedThumbnails = [];
 
+    // Mutex to serialize DB updates and prevent race conditions
+    // Without this, parallel completions can overwrite each other's metadata
+    let dbUpdateLock = Promise.resolve();
+
     // Combine style refs
     const allImageRefs = [];
     if (exampleUrls && Array.isArray(exampleUrls)) allImageRefs.push(...exampleUrls);
@@ -985,16 +989,21 @@ async function processThumbnailsPipeline(job) {
         log(`  Thumbnail ${i + 1}/3: uploaded -> ${publicUrl.substring(0, 80)}...`);
 
         const thumb = { index: i, url: publicUrl, prompt };
-        generatedThumbnails.push(thumb);
 
-        // Update progress immediately so the frontend can display this thumbnail
-        await supabase
-          .from('generation_jobs')
-          .update({
-            progress: generatedThumbnails.length,
-            metadata: { ...metadata, generatedPrompts: creativePrompts, generatedThumbnails: [...generatedThumbnails] },
-          })
-          .eq('id', jobId);
+        // Serialize push + DB update to prevent race conditions:
+        // Without this, two thumbnails finishing at the same time can cause
+        // the later DB write to overwrite the earlier one, losing a thumbnail.
+        dbUpdateLock = dbUpdateLock.then(async () => {
+          generatedThumbnails.push(thumb);
+          await supabase
+            .from('generation_jobs')
+            .update({
+              progress: generatedThumbnails.length,
+              metadata: { ...metadata, generatedPrompts: creativePrompts, generatedThumbnails: [...generatedThumbnails] },
+            })
+            .eq('id', jobId);
+        });
+        await dbUpdateLock;
 
         return thumb;
       } catch (thumbError) {
