@@ -99,6 +99,7 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
   const [textModel, setTextModel] = useState<string>("claude-sonnet-4");
   const [userIdea, setUserIdea] = useState<string>("");
   const [isDescribingThumbnail, setIsDescribingThumbnail] = useState(false);
+  const [isUploadingThumbnail, setIsUploadingThumbnail] = useState(false);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [avoidPreviousPrompts, setAvoidPreviousPrompts] = useState<boolean>(false);
   const [sourceVideoUrl, setSourceVideoUrl] = useState<string | null>(null);
@@ -728,6 +729,53 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
       toast.error("Erreur lors de l'upload");
     } finally {
       setIsUploading(false);
+    }
+  };
+
+  const handleThumbnailUpload = async (files: FileList) => {
+    if (files.length === 0) return;
+    setIsUploadingThumbnail(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Non connecté");
+
+      const uploadedUrls: string[] = [];
+      const effectiveProjectId = standalone ? (thumbnailProjectId || 'standalone') : projectId;
+
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const compressedFile = await compressImage(file);
+        const timestamp = Date.now();
+        const fileName = `${effectiveProjectId}/uploaded_thumb_${timestamp}_${i}.jpg`;
+
+        const { error: uploadError } = await supabase.storage
+          .from("generated-images")
+          .upload(fileName, compressedFile, { contentType: 'image/jpeg' });
+        if (uploadError) throw uploadError;
+
+        const { data: { publicUrl } } = supabase.storage
+          .from("generated-images")
+          .getPublicUrl(fileName);
+
+        uploadedUrls.push(publicUrl);
+      }
+
+      await supabase.from('generated_thumbnails').insert({
+        project_id: standalone ? null : projectId,
+        thumbnail_project_id: thumbnailProjectId || null,
+        user_id: user.id,
+        thumbnail_urls: uploadedUrls,
+        prompts: uploadedUrls.map(() => "Importée manuellement"),
+        preset_name: null,
+      });
+
+      toast.success(`${uploadedUrls.length} miniature(s) importée(s) !`);
+      await loadThumbnailHistory();
+    } catch (error: any) {
+      console.error("Error uploading thumbnails:", error);
+      toast.error("Erreur lors de l'import");
+    } finally {
+      setIsUploadingThumbnail(false);
     }
   };
 
@@ -1428,6 +1476,29 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
         </TabsContent>
 
         <TabsContent value="history" className="space-y-4">
+          <div className="flex justify-end">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={isUploadingThumbnail}
+              onClick={() => document.getElementById('thumbnail-upload-input')?.click()}
+            >
+              {isUploadingThumbnail ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              ) : (
+                <Upload className="h-4 w-4 mr-2" />
+              )}
+              Importer des miniatures
+            </Button>
+            <input
+              id="thumbnail-upload-input"
+              type="file"
+              accept="image/*"
+              multiple
+              className="hidden"
+              onChange={(e) => e.target.files && handleThumbnailUpload(e.target.files)}
+            />
+          </div>
           {thumbnailHistory.length === 0 ? (
             <Card className="p-8 text-center">
               <p className="text-muted-foreground">Aucune génération précédente</p>
