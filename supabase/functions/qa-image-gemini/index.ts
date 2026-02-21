@@ -125,9 +125,27 @@ serve(async (req) => {
 
     // ---- MODE: describe (thumbnail composition analysis) ----
     if (mode === 'describe') {
-      const describePrompt = `Décris la composition de cette miniature YouTube en 2-3 phrases concises en français.
-Concentre-toi sur : la mise en page, les éléments visuels principaux, les couleurs dominantes, la typographie/texte visible, l'expression du visage s'il y en a un, et l'effet visuel global (avant/après, split, etc.).
-Sois descriptif et utile pour quelqu'un qui voudrait recréer une miniature similaire.
+      const describePrompt = `Décris la composition de cette miniature YouTube de manière complète et détaillée en français, comme un brief créatif pour recréer une miniature similaire.
+
+RÈGLES IMPORTANTES :
+1. PERSONNAGE : Ne décris JAMAIS l'apparence physique de la personne (couleur de peau, cheveux, vêtements, genre, âge, etc.). Remplace TOUTE description de la personne ou du personnage par "mon personnage". Exemples :
+   - "Un homme en costume bleu avec un air choqué" → "Mon personnage avec une expression choquée"
+   - "Une femme blonde qui sourit" → "Mon personnage qui sourit"
+   - Si plusieurs personnes, utilise "mon personnage" pour le sujet principal et décris les autres de manière générique.
+
+2. TEXTE : Si du texte est visible sur la miniature, reproduis-le TOUJOURS EN MAJUSCULES entre guillemets. Exemples :
+   - Texte visible "make money online" → écris "MAKE MONEY ONLINE"
+   - Texte visible "Before / After" → écris "BEFORE / AFTER"
+
+3. DESCRIPTION COMPLÈTE : Inclus tous ces éléments :
+   - La mise en page et la composition (disposition des éléments, symétrie, etc.)
+   - L'expression faciale / émotion de mon personnage (choqué, souriant, sérieux, excité, etc.)
+   - La pose et le langage corporel (bras croisés, doigt pointé, main sur la tête, etc.)
+   - Les couleurs dominantes et l'ambiance visuelle
+   - Les éléments graphiques (flèches, cercles, emojis, icônes, effets avant/après, split screen, etc.)
+   - Les objets ou éléments en arrière-plan
+   - Le style global de la miniature (minimaliste, chargé, professionnel, clickbait, etc.)
+
 Réponds uniquement avec la description, sans introduction ni commentaire.`;
 
       const geminiResponse = await fetch(

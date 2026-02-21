@@ -411,6 +411,24 @@ async function updateSceneImage(projectId, sceneIndex, publicUrl, metadata) {
   if (error) {
     logError(`Failed to update project_scenes for scene ${sceneIndex + 1}:`, error.message);
   }
+
+  // Sync imageUrl back to projects.prompts JSON to prevent desync
+  try {
+    const { data: project } = await supabase
+      .from('projects')
+      .select('prompts')
+      .eq('id', projectId)
+      .single();
+    
+    if (project?.prompts && Array.isArray(project.prompts) && sceneIndex < project.prompts.length) {
+      const prompts = [...project.prompts];
+      if (!prompts[sceneIndex]) prompts[sceneIndex] = {};
+      prompts[sceneIndex] = { ...prompts[sceneIndex], imageUrl: publicUrl, upscaledUrl: null };
+      await supabase.from('projects').update({ prompts }).eq('id', projectId);
+    }
+  } catch (e) {
+    logError(`Failed to sync imageUrl to projects.prompts for scene ${sceneIndex + 1}:`, e.message);
+  }
 }
 
 // ============================================================================
@@ -466,6 +484,24 @@ async function updateSceneUpscale(projectId, sceneIndex, upscaledUrl) {
 
   if (error) {
     logError(`Failed to update upscale for scene ${sceneIndex + 1}:`, error.message);
+  }
+
+  // Sync upscaledUrl back to projects.prompts JSON
+  try {
+    const { data: project } = await supabase
+      .from('projects')
+      .select('prompts')
+      .eq('id', projectId)
+      .single();
+    
+    if (project?.prompts && Array.isArray(project.prompts) && sceneIndex < project.prompts.length) {
+      const prompts = [...project.prompts];
+      if (!prompts[sceneIndex]) prompts[sceneIndex] = {};
+      prompts[sceneIndex] = { ...prompts[sceneIndex], upscaledUrl };
+      await supabase.from('projects').update({ prompts }).eq('id', projectId);
+    }
+  } catch (e) {
+    logError(`Failed to sync upscaledUrl to projects.prompts for scene ${sceneIndex + 1}:`, e.message);
   }
 }
 
@@ -1071,37 +1107,156 @@ async function processThumbnailsPipeline(job) {
 // ============================================================================
 
 async function processPromptJob(job) {
-  const { id: jobId, project_id: projectId, user_id: userId } = job;
+  const { id: jobId, project_id: projectId, user_id: userId, parent_job_id: parentJobId } = job;
+  const MAX_RETRIES = 2;
 
   log(`Processing prompt (job ${jobId.substring(0, 8)}...)`);
 
-  try {
-    const response = await fetch(`${SUPABASE_URL}/functions/v1/start-generation-job`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ jobId, projectId, userId, jobType: 'single_prompt' }),
-    });
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      if (attempt > 0) {
+        const delay = attempt * 3000;
+        log(`  Prompt job ${jobId.substring(0, 8)}... retry ${attempt}/${MAX_RETRIES} (waiting ${delay}ms)`);
+        await new Promise(r => setTimeout(r, delay));
+        // Reset to processing for retry
+        await supabase.from('generation_jobs')
+          .update({ status: 'processing', error_message: null })
+          .eq('id', jobId);
+      }
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Edge Function error: ${response.status} - ${errorText.substring(0, 200)}`);
+      const response = await fetch(`${SUPABASE_URL}/functions/v1/start-generation-job`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ jobId, projectId, userId, jobType: 'single_prompt' }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Edge Function error: ${response.status} - ${errorText.substring(0, 200)}`);
+      }
+
+      log(`  Prompt job ${jobId.substring(0, 8)}... dispatched OK`);
+      return; // Success - exit
+
+    } catch (error) {
+      if (attempt < MAX_RETRIES) {
+        logError(`Prompt (job ${jobId.substring(0, 8)}...) attempt ${attempt + 1} failed:`, error.message);
+        continue; // Retry
+      }
+
+      // All retries exhausted
+      logError(`Prompt (job ${jobId.substring(0, 8)}...) FAILED after ${MAX_RETRIES + 1} attempts:`, error.message);
+      await supabase
+        .from('generation_jobs')
+        .update({
+          status: 'failed',
+          error_message: error.message?.substring(0, 500),
+          completed_at: new Date().toISOString(),
+        })
+        .eq('id', jobId);
+
+      // Notify parent so it doesn't stay stuck forever
+      if (parentJobId) {
+        try {
+          await notifyParentJobProgress(parentJobId);
+        } catch (e) {
+          logError(`Failed to notify parent after prompt failure:`, e.message);
+        }
+      }
     }
+  }
+}
 
-    log(`  Prompt job ${jobId.substring(0, 8)}... dispatched OK`);
+async function notifyParentJobProgress(parentJobId) {
+  const [{ count: completedCount }, { count: failedCount }] = await Promise.all([
+    supabase.from('generation_jobs').select('id', { count: 'exact', head: true })
+      .eq('parent_job_id', parentJobId).eq('status', 'completed'),
+    supabase.from('generation_jobs').select('id', { count: 'exact', head: true })
+      .eq('parent_job_id', parentJobId).eq('status', 'failed'),
+  ]);
 
-  } catch (error) {
-    logError(`Prompt (job ${jobId.substring(0, 8)}...) FAILED:`, error.message);
-    await supabase
+  const { data: parentJob } = await supabase
+    .from('generation_jobs')
+    .select('total, status')
+    .eq('id', parentJobId)
+    .single();
+
+  if (!parentJob || parentJob.status === 'completed' || parentJob.status === 'cancelled') return;
+
+  const doneCount = (completedCount || 0) + (failedCount || 0);
+
+  await supabase.from('generation_jobs')
+    .update({ progress: completedCount || 0 })
+    .eq('id', parentJobId);
+
+  log(`  Parent ${parentJobId.substring(0, 8)}... progress: ${completedCount} OK + ${failedCount} failed = ${doneCount}/${parentJob.total}`);
+
+  if (doneCount >= parentJob.total) {
+    log(`  Parent ${parentJobId.substring(0, 8)}... all children done. Marking completed.`);
+    await supabase.from('generation_jobs')
+      .update({ status: 'completed', completed_at: new Date().toISOString() })
+      .eq('id', parentJobId);
+  }
+}
+
+// ============================================================================
+// STUCK PARENT CLEANUP (safety net for parents stuck in processing)
+// ============================================================================
+
+let lastStuckParentCheck = 0;
+const STUCK_PARENT_CHECK_INTERVAL_MS = 60 * 1000; // Check every minute
+
+async function cleanupStuckParents() {
+  if (Date.now() - lastStuckParentCheck < STUCK_PARENT_CHECK_INTERVAL_MS) return;
+  lastStuckParentCheck = Date.now();
+
+  try {
+    // Find parent jobs (prompts/images) stuck in processing for > 5 minutes
+    const FIVE_MINUTES_AGO = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    const { data: stuckParents } = await supabase
       .from('generation_jobs')
-      .update({
-        status: 'failed',
-        error_message: error.message?.substring(0, 500),
-        completed_at: new Date().toISOString(),
-      })
-      .eq('id', jobId);
+      .select('id, job_type, total, project_id')
+      .in('job_type', ['prompts', 'images'])
+      .eq('status', 'processing')
+      .lt('updated_at', FIVE_MINUTES_AGO)
+      .limit(10);
+
+    if (!stuckParents || stuckParents.length === 0) return;
+
+    for (const parent of stuckParents) {
+      const [{ count: completedCount }, { count: failedCount }, { count: pendingCount }, { count: processingCount }] = await Promise.all([
+        supabase.from('generation_jobs').select('id', { count: 'exact', head: true })
+          .eq('parent_job_id', parent.id).eq('status', 'completed'),
+        supabase.from('generation_jobs').select('id', { count: 'exact', head: true })
+          .eq('parent_job_id', parent.id).eq('status', 'failed'),
+        supabase.from('generation_jobs').select('id', { count: 'exact', head: true })
+          .eq('parent_job_id', parent.id).eq('status', 'pending'),
+        supabase.from('generation_jobs').select('id', { count: 'exact', head: true })
+          .eq('parent_job_id', parent.id).eq('status', 'processing'),
+      ]);
+
+      const done = (completedCount || 0) + (failedCount || 0);
+      const active = (pendingCount || 0) + (processingCount || 0);
+
+      // If no active children and all are done, mark parent as completed
+      if (active === 0 && done > 0) {
+        log(`[CLEANUP] Stuck parent ${parent.id.substring(0, 8)}... (${parent.job_type}): ${completedCount} OK + ${failedCount} failed, 0 active. Marking completed.`);
+        await supabase.from('generation_jobs')
+          .update({ status: 'completed', progress: completedCount || 0, completed_at: new Date().toISOString() })
+          .eq('id', parent.id);
+      } else if (active === 0 && done === 0) {
+        // Parent has no children at all - likely orphaned, mark as failed
+        log(`[CLEANUP] Stuck parent ${parent.id.substring(0, 8)}... (${parent.job_type}): no children at all. Marking failed.`);
+        await supabase.from('generation_jobs')
+          .update({ status: 'failed', error_message: 'No child jobs found', completed_at: new Date().toISOString() })
+          .eq('id', parent.id);
+      }
+    }
+  } catch (e) {
+    logError('Stuck parent cleanup error:', e.message);
   }
 }
 
@@ -1138,6 +1293,7 @@ async function mainLoop() {
   while (true) {
     try {
       await checkDiskUsage();
+      await cleanupStuckParents();
       const availableSlots = MAX_CONCURRENT - activeJobs;
 
       if (availableSlots > 0) {

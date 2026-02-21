@@ -535,6 +535,50 @@ async function processJob(
           completed_at: new Date().toISOString()
         })
         .eq('id', jobId);
+      
+      // For child jobs (single_prompt, single_image), notify the parent so it can detect completion
+      if (currentJobType === 'single_prompt' || currentJobType === 'single_image') {
+        try {
+          const { data: failedJob } = await adminClient
+            .from('generation_jobs')
+            .select('parent_job_id')
+            .eq('id', jobId)
+            .single();
+          
+          if (failedJob?.parent_job_id) {
+            const [{ count: completedCount }, { count: failedCount }] = await Promise.all([
+              adminClient.from('generation_jobs').select('id', { count: 'exact', head: true })
+                .eq('parent_job_id', failedJob.parent_job_id).eq('status', 'completed'),
+              adminClient.from('generation_jobs').select('id', { count: 'exact', head: true })
+                .eq('parent_job_id', failedJob.parent_job_id).eq('status', 'failed'),
+            ]);
+            
+            const { data: parentJob } = await adminClient
+              .from('generation_jobs')
+              .select('total')
+              .eq('id', failedJob.parent_job_id)
+              .single();
+            
+            if (parentJob) {
+              const doneCount = (completedCount || 0) + (failedCount || 0);
+              console.log(`[${currentJobType}] Failed job parent update: ${completedCount} completed + ${failedCount} failed = ${doneCount}/${parentJob.total}`);
+              
+              await adminClient.from('generation_jobs')
+                .update({ progress: completedCount || 0 })
+                .eq('id', failedJob.parent_job_id);
+              
+              if (doneCount >= parentJob.total) {
+                console.log(`[${currentJobType}] All children done (${failedCount} failed). Marking parent as completed.`);
+                await adminClient.from('generation_jobs')
+                  .update({ status: 'completed', completed_at: new Date().toISOString() })
+                  .eq('id', failedJob.parent_job_id);
+              }
+            }
+          }
+        } catch (parentErr) {
+          console.error(`Failed to update parent after child failure:`, parentErr);
+        }
+      }
     }
   }
 }
@@ -1354,10 +1398,21 @@ async function processPromptsJob(
     // Check for existing pending/processing jobs for this project
     const { data: existingJobs } = await adminClient
       .from('generation_jobs')
-      .select('id, scene_index, status')
+      .select('id, scene_index, status, parent_job_id')
       .eq('project_id', projectId)
       .eq('job_type', 'single_prompt')
       .in('status', ['pending', 'processing']);
+    
+    // Reassign orphaned jobs (from old parents) to this new parent
+    const orphanedJobs = (existingJobs || []).filter((j: any) => j.parent_job_id !== jobId);
+    if (orphanedJobs.length > 0) {
+      const orphanIds = orphanedJobs.map((j: any) => j.id);
+      await adminClient
+        .from('generation_jobs')
+        .update({ parent_job_id: jobId })
+        .in('id', orphanIds);
+      console.log(`[processPromptsJob] Reassigned ${orphanedJobs.length} orphaned jobs to this parent`);
+    }
     
     const existingSceneIndices = new Set((existingJobs || []).map((j: any) => j.scene_index));
     
@@ -1919,6 +1974,40 @@ async function processImagesJob(
   }
 
   const prompts = (project.prompts as any[]) || [];
+  
+  // Enrich prompts with project_scenes data (source of truth for prompt text and image URLs)
+  // This fixes desync where image-worker updates project_scenes but not projects.prompts JSON
+  const { data: dbScenes } = await adminClient
+    .from('project_scenes')
+    .select('scene_index, prompt, image_url, upscaled_url')
+    .eq('project_id', projectId);
+  
+  if (dbScenes && dbScenes.length > 0) {
+    const sceneMap = new Map(dbScenes.map((s: any) => [s.scene_index, s]));
+    let enrichedCount = 0;
+    
+    for (const [idx, scene] of sceneMap as any) {
+      if (idx >= prompts.length) continue;
+      if (!prompts[idx]) prompts[idx] = {};
+      
+      if (!prompts[idx].prompt && scene.prompt) {
+        prompts[idx].prompt = scene.prompt;
+        enrichedCount++;
+      }
+      if (scene.image_url && !prompts[idx].imageUrl) {
+        prompts[idx].imageUrl = scene.image_url;
+      }
+      if (scene.upscaled_url && !prompts[idx].upscaledUrl) {
+        prompts[idx].upscaledUrl = scene.upscaled_url;
+      }
+    }
+    
+    if (enrichedCount > 0) {
+      console.log(`[processImagesJob] Enriched ${enrichedCount} prompts from project_scenes`);
+      await adminClient.from('projects').update({ prompts }).eq('id', projectId);
+    }
+  }
+  
   let imageWidth = project.image_width || 1920;
   let imageHeight = project.image_height || 1080;
   const imageModel = project.image_model || 'seedream-4.5';
@@ -3349,13 +3438,21 @@ async function processSinglePromptJob(
   if (job?.parent_job_id) {
     console.log(`[processSinglePromptJob] Scene ${sceneIndex + 1}: Updating parent job ${job.parent_job_id}`);
     
-    // Count completed sibling jobs
-    const { count: completedCount } = await adminClient
-      .from('generation_jobs')
-      .select('id', { count: 'exact', head: true })
-      .eq('parent_job_id', job.parent_job_id)
-      .eq('job_type', 'single_prompt')
-      .eq('status', 'completed');
+    // Count completed AND failed sibling jobs (both mean "done processing")
+    const [{ count: completedCount }, { count: failedCount }] = await Promise.all([
+      adminClient
+        .from('generation_jobs')
+        .select('id', { count: 'exact', head: true })
+        .eq('parent_job_id', job.parent_job_id)
+        .eq('job_type', 'single_prompt')
+        .eq('status', 'completed'),
+      adminClient
+        .from('generation_jobs')
+        .select('id', { count: 'exact', head: true })
+        .eq('parent_job_id', job.parent_job_id)
+        .eq('job_type', 'single_prompt')
+        .eq('status', 'failed'),
+    ]);
     
     // Get parent job total
     const { data: parentJob } = await adminClient
@@ -3365,19 +3462,21 @@ async function processSinglePromptJob(
       .single();
     
     if (parentJob) {
-      const newProgress = completedCount || 0; // This job is already marked completed, so it's included in the count
+      const successCount = completedCount || 0;
+      const failCount = failedCount || 0;
+      const doneCount = successCount + failCount;
       
-      // Update parent progress
+      // Update parent progress (show successful completions)
       await adminClient
         .from('generation_jobs')
-        .update({ progress: newProgress })
+        .update({ progress: successCount })
         .eq('id', job.parent_job_id);
       
-      console.log(`[processSinglePromptJob] Parent progress: ${newProgress}/${parentJob.total}`);
+      console.log(`[processSinglePromptJob] Parent progress: ${successCount} completed, ${failCount} failed, ${doneCount}/${parentJob.total} done`);
       
-      // Check if all prompts are done
-      if (newProgress >= parentJob.total) {
-        console.log(`[processSinglePromptJob] All ${parentJob.total} prompts complete! Marking parent as completed.`);
+      // Check if all prompts are done (completed + failed = total)
+      if (doneCount >= parentJob.total) {
+        console.log(`[processSinglePromptJob] All ${parentJob.total} prompts done (${successCount} OK, ${failCount} failed). Marking parent as completed.`);
         
         // Mark parent as completed
         await adminClient

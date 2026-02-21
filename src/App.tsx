@@ -14,6 +14,7 @@ import Profile from "./pages/Profile";
 import Calendar from "./pages/Calendar";
 import CreateFromScratch from "./pages/CreateFromScratch";
 import StandaloneThumbnails from "./pages/StandaloneThumbnails";
+import Feed from "./pages/Feed";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -36,6 +37,7 @@ const App = () => (
           <Route path="/test-scenes" element={<TestScenes />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/auth" element={<Auth />} />
+          <Route path="/feed" element={<Feed />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
