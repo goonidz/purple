@@ -1186,6 +1186,7 @@ async function generateWithGemini(geminiKey, prompt, imageUrls, modelName) {
     body: JSON.stringify({
       contents: [{ parts }],
       generationConfig: {
+        responseModalities: ['TEXT', 'IMAGE'],
         imageConfig: {
           aspectRatio: '16:9',
           imageSize: '1K',
