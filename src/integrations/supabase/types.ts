@@ -166,6 +166,7 @@ export type Database = {
           script_preset_id: string | null
           thumbnail_preset_enabled: boolean | null
           thumbnail_preset_id: string | null
+          thumbnail_v2_preset_id: string | null
           tts_preset_id: string | null
           updated_at: string
           user_id: string
@@ -180,6 +181,7 @@ export type Database = {
           script_preset_id?: string | null
           thumbnail_preset_enabled?: boolean | null
           thumbnail_preset_id?: string | null
+          thumbnail_v2_preset_id?: string | null
           tts_preset_id?: string | null
           updated_at?: string
           user_id: string
@@ -194,6 +196,7 @@ export type Database = {
           script_preset_id?: string | null
           thumbnail_preset_enabled?: boolean | null
           thumbnail_preset_id?: string | null
+          thumbnail_v2_preset_id?: string | null
           tts_preset_id?: string | null
           updated_at?: string
           user_id?: string
@@ -216,6 +219,13 @@ export type Database = {
           {
             foreignKeyName: "channels_thumbnail_preset_id_fkey"
             columns: ["thumbnail_preset_id"]
+            isOneToOne: false
+            referencedRelation: "thumbnail_presets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "channels_thumbnail_v2_preset_id_fkey"
+            columns: ["thumbnail_v2_preset_id"]
             isOneToOne: false
             referencedRelation: "thumbnail_presets"
             referencedColumns: ["id"]
@@ -792,6 +802,7 @@ export type Database = {
       }
       thumbnail_presets: {
         Row: {
+          channel_handle: string | null
           character_ref_url: string | null
           created_at: string
           custom_prompt: string | null
@@ -803,6 +814,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          channel_handle?: string | null
           character_ref_url?: string | null
           created_at?: string
           custom_prompt?: string | null
@@ -814,6 +826,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          channel_handle?: string | null
           character_ref_url?: string | null
           created_at?: string
           custom_prompt?: string | null

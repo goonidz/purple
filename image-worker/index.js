@@ -1110,7 +1110,7 @@ const THUMBNAIL_V2_PROMPT_TEMPLATE = `You are a professional YouTube thumbnail d
 
 You create thumbnails based on example images provided by the user.
 
-Image 1 will always contain the face that must be used in the thumbnail.
+Image 1 will always contain the character that must be used in the thumbnail.
 The following images are examples that you must study and draw inspiration from (composition, layout, typography, color palette, lighting, emotional tone, visual hierarchy, background style, and overall aesthetic).
 
 Your Process
@@ -1124,23 +1124,30 @@ Contrast, lighting, and depth
 Emotional expression and intensity
 Visual hierarchy and focal points
 
-Step 2 — Understand the Topic
+Step 2 — Identify Patterns & Success Principles
+Identify what ALL example thumbnails have in common (recurring colors, layout patterns, text style, character placement, background treatment, emotional tone). These shared elements are the channel's visual identity — you MUST reuse them.
+Then analyze WHY these thumbnails are effective: what makes them clickable, what psychological triggers they use (curiosity gap, shock, urgency, contrast, simplicity), how they stand out in a YouTube feed. Apply these same principles to your design.
+
+Step 3 — Understand the Topic
 Fully understand the subject of the user's video before designing the thumbnail.
 
-Step 3 — Concept Creation
+Step 4 — Concept Creation
 Create the most compelling thumbnail concept:
 Aligned with the video topic
 Matching the style and structure of the example images
-Using the user's face from Image 1
+Using the user's character from Image 1
 Optimized for curiosity, clarity, and click-through rate
 
-If text is included:
-It must follow the exact typography style of the examples
-It does NOT need to repeat the video title
-It should complement the title, create tension, spark curiosity, or amplify emotion
-The thumbnail text should enhance clicks, not simply describe the video.
+If the example thumbnails contain text overlays, you MUST include text in your thumbnail too. Match the examples precisely:
+Same approximate number of words (if examples have 1-2 words, use 1-2 words; if 3-5 words, use 3-5 words)
+Same text size and weight relative to the image
+Same color scheme and effects (outlines, shadows, gradients, glow)
+Same placement and positioning on the thumbnail
+Do NOT copy the exact words — write NEW text adapted to this video's topic
+The text should complement the video title, create tension, spark curiosity, or amplify emotion
+If the example thumbnails have NO text, do NOT add text.
 
-Step 4 — Generate the Final Image
+Step 5 — Generate the Final Image
 Produce the final thumbnail image.
 
 Video Title:
@@ -1168,57 +1175,191 @@ async function fetchImageAsBase64(url) {
 }
 
 // Generate a single thumbnail using Gemini image generation
-async function generateWithGemini(geminiKey, prompt, imageUrls, modelName) {
-  // Build parts: text prompt first, then all images as inline_data
+async function callGeminiImageApi(geminiKey, prompt, imageUrls, modelName) {
   const parts = [{ text: prompt }];
   for (const url of imageUrls) {
     const base64 = await fetchImageAsBase64(url);
     parts.push({ inline_data: { mime_type: 'image/jpeg', data: base64 } });
   }
 
-  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`;
-  const response = await fetch(apiUrl, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-goog-api-key': geminiKey,
-    },
-    body: JSON.stringify({
-      contents: [{ parts }],
-      generationConfig: {
-        responseModalities: ['TEXT', 'IMAGE'],
-        imageConfig: {
-          aspectRatio: '16:9',
-          imageSize: '1K',
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': geminiKey },
+      body: JSON.stringify({
+        contents: [{ parts }],
+        generationConfig: {
+          responseModalities: ['TEXT', 'IMAGE'],
+          imageConfig: { aspectRatio: '16:9', imageSize: '1K' },
         },
-      },
-    }),
-  });
+        safetySettings: [
+          { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
+          { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
+          { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
+          { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
+          { category: 'HARM_CATEGORY_CIVIC_INTEGRITY', threshold: 'BLOCK_NONE' },
+        ],
+      }),
+    }
+  );
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`Gemini image API error (${response.status}): ${errorText.substring(0, 300)}`);
+    throw new Error(`Gemini API error (${response.status}): ${errorText.substring(0, 300)}`);
   }
 
   const data = await response.json();
+  const blockReason = data.promptFeedback?.blockReason;
+  if (blockReason) {
+    const err = new Error(`Gemini blocked: ${blockReason}`);
+    err.blockReason = blockReason;
+    throw err;
+  }
+
   const candidate = data.candidates?.[0];
   if (!candidate?.content?.parts) {
-    const finishReason = candidate?.finishReason || 'unknown';
-    const blockReason = data.promptFeedback?.blockReason || '';
-    const safetyRatings = JSON.stringify(candidate?.safetyRatings || data.promptFeedback?.safetyRatings || []);
-    // Log full response for debugging
-    const responseSnippet = JSON.stringify(data).substring(0, 500);
-    throw new Error(`Gemini no parts. finish=${finishReason}, block=${blockReason}, response=${responseSnippet}`);
+    throw new Error(`Gemini no content parts. finishReason=${candidate?.finishReason || 'unknown'}`);
   }
 
-  // Find the image part in the response
-  const imagePart = candidate.content.parts.find(p => p.inline_data?.data);
+  const imagePart = candidate.content.parts.find(p => p.inline_data?.data || p.inlineData?.data);
   if (!imagePart) {
     const textParts = candidate.content.parts.filter(p => p.text).map(p => p.text).join(' ');
-    throw new Error(`Gemini returned no image. Text response: ${textParts.substring(0, 200)}`);
+    throw new Error(`Gemini returned no image. Text: ${textParts.substring(0, 200)}`);
   }
 
-  return Buffer.from(imagePart.inline_data.data, 'base64');
+  return Buffer.from(imagePart.inline_data?.data || imagePart.inlineData?.data, 'base64');
+}
+
+// Analyze example images via Gemini Flash (text-only, never blocked) and return a style description
+async function analyzeStyleFromExamples(geminiKey, exampleUrls) {
+  const parts = [{ text: `Analyze these YouTube thumbnail images in detail. Describe their visual style precisely: composition, framing, color grading, dominant tones, text placement and typography style (font weight, size, color, effects like outlines/shadows/gradients), contrast, lighting, depth, emotional expression, visual hierarchy, focal points, background style, and overall aesthetic. Be extremely specific and detailed.` }];
+  for (const url of exampleUrls) {
+    const base64 = await fetchImageAsBase64(url);
+    parts.push({ inline_data: { mime_type: 'image/jpeg', data: base64 } });
+  }
+
+  const response = await fetch(
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': geminiKey },
+      body: JSON.stringify({
+        contents: [{ parts }],
+        generationConfig: { responseModalities: ['TEXT'] },
+      }),
+    }
+  );
+
+  if (!response.ok) return null;
+  const data = await response.json();
+  return data.candidates?.[0]?.content?.parts?.find(p => p.text)?.text || null;
+}
+
+// Generate a detailed image-generation prompt for SeedDream using Gemini Flash
+// Uses the same full analysis prompt as Gemini Pro, but outputs a text prompt instead of an image
+async function generateSeedreamPrompt(geminiKey, fullV2Prompt, exampleUrls, characterRefUrl, videoTitle, userDirectives, variationIndex, totalVariations) {
+  const parts = [];
+
+  let variationInstruction = '';
+  if (totalVariations > 1) {
+    variationInstruction = `\n\nIMPORTANT — This is variation ${variationIndex + 1} of ${totalVariations} for A/B testing. Each variation MUST be significantly different:
+- Use completely different text/words on the thumbnail
+- Try a different composition or layout
+- Vary the color mood or background
+- Change the character's expression or pose
+Do NOT repeat the same text or concept as other variations.`;
+  }
+
+  parts.push({ text: `You are a YouTube thumbnail designer. You will follow the EXACT same analysis process described below, but instead of generating an image, you will output a DETAILED image-generation prompt for an AI image model (SeedDream) that only understands direct visual descriptions.
+
+HERE IS YOUR ANALYSIS PROCESS (follow every step):
+---
+${fullV2Prompt}
+---
+${variationInstruction}
+${userDirectives ? `\nAdditional directives from the user: ${userDirectives}` : ''}
+
+FINAL OUTPUT INSTRUCTIONS:
+After completing ALL the analysis steps above (style analysis, pattern identification, success principles, topic understanding, concept creation), write ONE detailed image-generation prompt that describes the EXACT thumbnail to create.
+
+CRITICAL: The image model will also receive the example thumbnails as style reference images. Your prompt MUST explicitly tell it to closely follow and replicate the style of these reference images. Start your prompt with something like "YouTube thumbnail closely matching the visual style of the provided reference images." Then describe every detail.
+
+Your prompt must be a direct visual description — NOT instructions or reasoning. Describe:
+- The exact scene, composition and framing (matching the examples' layout patterns)
+- The character's appearance, pose, expression, clothing (matching the reference in Image 1)
+- Background: colors, elements, lighting, effects (matching the examples' color palette and treatment)
+- Text overlays: the exact words to display, their size, color, font style, effects (outlines, shadows, glow), placement (matching the examples' typography)
+- Color grading, contrast, mood, atmosphere (matching the examples' visual tone)
+- Every visual detail needed to reproduce the thumbnail you designed
+
+Explicitly reference that the result must look like it belongs to the SAME YouTube channel as the reference images. Same visual identity, same energy, same production quality.
+
+Be EXHAUSTIVE and SPECIFIC. The more detail you give, the better the result. Output ONLY the image prompt, no preamble or explanation.` });
+
+  if (characterRefUrl) {
+    const base64 = await fetchImageAsBase64(characterRefUrl);
+    parts.push({ inline_data: { mime_type: 'image/jpeg', data: base64 } });
+  }
+  for (const url of exampleUrls) {
+    const base64 = await fetchImageAsBase64(url);
+    parts.push({ inline_data: { mime_type: 'image/jpeg', data: base64 } });
+  }
+
+  const response = await fetch(
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': geminiKey },
+      body: JSON.stringify({
+        contents: [{ parts }],
+        generationConfig: { responseModalities: ['TEXT'] },
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`Gemini Flash prompt generation failed (${response.status}): ${errText.substring(0, 200)}`);
+  }
+  const data = await response.json();
+  const text = data.candidates?.[0]?.content?.parts?.find(p => p.text)?.text;
+  if (!text) throw new Error('Gemini Flash returned no text for SeedDream prompt');
+  return text.trim();
+}
+
+const GEMINI_RELAY_URL = 'http://46.250.231.57:3456/gemini-image';
+const GEMINI_RELAY_SECRET = 'thumbv2-sg-relay-2026';
+
+async function callGeminiViaRelay(geminiKey, prompt, imageUrls, modelName) {
+  const response = await fetch(GEMINI_RELAY_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${GEMINI_RELAY_SECRET}`,
+    },
+    body: JSON.stringify({
+      geminiKey,
+      prompt,
+      imageUrls,
+      modelName: modelName || 'gemini-3-pro-image-preview',
+      aspectRatio: '16:9',
+      imageSize: '1K',
+    }),
+  });
+
+  const data = await response.json();
+  if (!response.ok || data.error) {
+    const err = new Error(data.error || `Relay error (${response.status})`);
+    if (data.blockReason) err.blockReason = data.blockReason;
+    throw err;
+  }
+  if (!data.imageBase64) throw new Error('Relay returned no image data');
+  return Buffer.from(data.imageBase64, 'base64');
+}
+
+async function generateWithGemini(geminiKey, prompt, imageUrls, modelName, exampleUrls) {
+  return await callGeminiViaRelay(geminiKey, prompt, imageUrls, modelName);
 }
 
 async function processThumbnailsV2Pipeline(job) {
@@ -1239,15 +1380,12 @@ async function processThumbnailsV2Pipeline(job) {
       prompt += `\n\nAdditional user input:\n${userDirectives}`;
     }
 
-    // Face reference MUST be first, then example thumbnails
-    // Gemini has limits on input images — cap at 5 total (1 face + 4 examples)
+    // Character reference first, then example thumbnails
     const allImageRefs = [];
     if (characterRefUrl) allImageRefs.push(characterRefUrl);
     if (exampleUrls && Array.isArray(exampleUrls)) {
-      const maxExamples = isGemini ? 4 : exampleUrls.length;
-      allImageRefs.push(...exampleUrls.slice(0, maxExamples));
+      allImageRefs.push(...exampleUrls);
     }
-    log(`  Image refs: ${allImageRefs.length} (face: ${characterRefUrl ? 'yes' : 'no'}, examples: ${allImageRefs.length - (characterRefUrl ? 1 : 0)})`);
 
     // Get the right API key
     let replicateClient = null;
@@ -1258,6 +1396,7 @@ async function processThumbnailsV2Pipeline(job) {
       const replicateKey = await getUserApiKey(userId, 'replicate');
       replicateClient = new Replicate({ auth: replicateKey });
     }
+    log(`  Image refs: ${allImageRefs.length} (character: ${characterRefUrl ? 'yes' : 'no'}, examples: ${exampleUrls?.length || 0})`);
 
     const generatedThumbnails = [];
     let dbUpdateLock = Promise.resolve();
@@ -1267,6 +1406,16 @@ async function processThumbnailsV2Pipeline(job) {
       .update({ metadata: { ...metadata, generatedPrompts: [prompt] } })
       .eq('id', jobId);
 
+    // For SeedDream, get a Gemini key to generate proper prompts via Flash
+    let geminiKeyForPrompts = geminiKey;
+    if (!isGemini && !geminiKeyForPrompts) {
+      try {
+        geminiKeyForPrompts = await getUserApiKey(userId, 'gemini');
+      } catch (e) {
+        log('  Warning: no Gemini key available for SeedDream prompt generation, using raw prompt');
+      }
+    }
+
     const thumbPromises = Array.from({ length: count }, (_, i) => (async () => {
       try {
         log(`  Thumbnail V2 ${i + 1}/${count}: generating with ${model}...`);
@@ -1274,14 +1423,28 @@ async function processThumbnailsV2Pipeline(job) {
         const timestamp = Date.now();
         const effectiveProjectId = standalone ? (thumbnailProjectId || 'standalone') : projectId;
         let publicUrl;
+        let usedPrompt = prompt;
 
         if (isGemini) {
-          const imageBuffer = await generateWithGemini(geminiKey, prompt, allImageRefs, model);
+          const variationPrompt = count > 1
+            ? prompt + `\n\nIMPORTANT — This is variation ${i + 1} of ${count} for A/B testing. Each variation MUST be significantly different:\n- Use completely different text/words on the thumbnail\n- Try a different composition or layout\n- Vary the color mood or background\n- Change the character's expression or pose\nDo NOT repeat the same text or concept as other variations.`
+            : prompt;
+          const imageBuffer = await generateWithGemini(geminiKey, variationPrompt, allImageRefs, model, exampleUrls);
           const filename = `thumb_v2_${i + 1}_${timestamp}.png`;
           publicUrl = await uploadBufferToStorage(imageBuffer, effectiveProjectId, filename, 'image/png');
+          usedPrompt = variationPrompt;
         } else {
+          // SeedDream: use Gemini Flash with the SAME full analysis prompt to generate a detailed visual description
+          if (geminiKeyForPrompts) {
+            log(`  Thumbnail V2 ${i + 1}: generating SeedDream prompt via Gemini Flash (full analysis)...`);
+            usedPrompt = await generateSeedreamPrompt(
+              geminiKeyForPrompts, prompt, exampleUrls || [], characterRefUrl, videoTitle, userDirectives, i, count
+            );
+            log(`  Thumbnail V2 ${i + 1}: SeedDream prompt: ${usedPrompt.substring(0, 150)}...`);
+          }
+
           const thumbInput = buildReplicateInput({
-            prompt,
+            prompt: usedPrompt,
             model,
             width: 1920,
             height: 1080,
@@ -1298,7 +1461,7 @@ async function processThumbnailsV2Pipeline(job) {
         }
 
         log(`  Thumbnail V2 ${i + 1}/${count}: uploaded -> ${publicUrl.substring(0, 80)}...`);
-        const thumb = { index: i, url: publicUrl, prompt };
+        const thumb = { index: i, url: publicUrl, prompt: usedPrompt };
 
         dbUpdateLock = dbUpdateLock.then(async () => {
           generatedThumbnails.push(thumb);

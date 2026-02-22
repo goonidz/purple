@@ -20,6 +20,7 @@ interface Channel {
   project_preset_id: string | null;
   thumbnail_preset_id: string | null;
   thumbnail_preset_enabled: boolean | null;
+  thumbnail_v2_preset_id: string | null;
 }
 
 interface ScriptPreset {
@@ -89,10 +90,12 @@ export default function ChannelManager({
   const [ttsPresets, setTtsPresets] = useState<TtsPreset[]>([]);
   const [projectPresets, setProjectPresets] = useState<ProjectPreset[]>([]);
   const [thumbnailPresets, setThumbnailPresets] = useState<ThumbnailPreset[]>([]);
+  const [thumbnailV2Presets, setThumbnailV2Presets] = useState<ThumbnailPreset[]>([]);
   const [selectedScriptPresetId, setSelectedScriptPresetId] = useState<string>("");
   const [selectedTtsPresetId, setSelectedTtsPresetId] = useState<string>("");
   const [selectedProjectPresetId, setSelectedProjectPresetId] = useState<string>("");
   const [selectedThumbnailPresetId, setSelectedThumbnailPresetId] = useState<string>("");
+  const [selectedThumbnailV2PresetId, setSelectedThumbnailV2PresetId] = useState<string>("");
   const [thumbnailPresetEnabled, setThumbnailPresetEnabled] = useState<boolean>(true);
   const [isLoadingPresets, setIsLoadingPresets] = useState(false);
   const [isSavingPresets, setIsSavingPresets] = useState(false);
@@ -221,23 +224,25 @@ export default function ChannelManager({
   const loadPresets = async () => {
     setIsLoadingPresets(true);
     try {
-      // Load all preset types
-      const [scriptData, ttsData, projectData, thumbnailData] = await Promise.all([
+      const [scriptData, ttsData, projectData, thumbnailData, thumbnailV2Data] = await Promise.all([
         supabase.from("script_presets").select("id, name").order("name"),
         supabase.from("tts_presets").select("id, name").order("name"),
         supabase.from("presets").select("id, name").order("name"),
-        supabase.from("thumbnail_presets").select("id, name").order("name"),
+        supabase.from("thumbnail_presets").select("id, name").is("channel_handle", null).order("name"),
+        supabase.from("thumbnail_presets").select("id, name").not("channel_handle", "is", null).order("name"),
       ]);
 
       if (scriptData.error) throw scriptData.error;
       if (ttsData.error) throw ttsData.error;
       if (projectData.error) throw projectData.error;
       if (thumbnailData.error) throw thumbnailData.error;
+      if (thumbnailV2Data.error) throw thumbnailV2Data.error;
 
       setScriptPresets(scriptData.data || []);
       setTtsPresets(ttsData.data || []);
       setProjectPresets(projectData.data || []);
       setThumbnailPresets(thumbnailData.data || []);
+      setThumbnailV2Presets(thumbnailV2Data.data || []);
     } catch (error) {
       console.error("Error loading presets:", error);
       toast.error("Erreur lors du chargement des presets");
@@ -252,6 +257,7 @@ export default function ChannelManager({
     setSelectedTtsPresetId(channel.tts_preset_id || "none");
     setSelectedProjectPresetId(channel.project_preset_id || "none");
     setSelectedThumbnailPresetId(channel.thumbnail_preset_id || "none");
+    setSelectedThumbnailV2PresetId(channel.thumbnail_v2_preset_id || "none");
     setThumbnailPresetEnabled(channel.thumbnail_preset_enabled ?? true);
   };
 
@@ -267,8 +273,9 @@ export default function ChannelManager({
           tts_preset_id: selectedTtsPresetId === "none" ? null : selectedTtsPresetId,
           project_preset_id: selectedProjectPresetId === "none" ? null : selectedProjectPresetId,
           thumbnail_preset_id: selectedThumbnailPresetId === "none" ? null : selectedThumbnailPresetId,
+          thumbnail_v2_preset_id: selectedThumbnailV2PresetId === "none" ? null : selectedThumbnailV2PresetId,
           thumbnail_preset_enabled: thumbnailPresetEnabled,
-        })
+        } as any)
         .eq("id", configuringChannelId);
 
       if (error) throw error;
@@ -445,6 +452,7 @@ export default function ChannelManager({
       ttsPresets={ttsPresets}
       projectPresets={projectPresets}
       thumbnailPresets={thumbnailPresets}
+      thumbnailV2Presets={thumbnailV2Presets}
       selectedScriptPresetId={selectedScriptPresetId}
       setSelectedScriptPresetId={setSelectedScriptPresetId}
       selectedTtsPresetId={selectedTtsPresetId}
@@ -453,6 +461,8 @@ export default function ChannelManager({
       setSelectedProjectPresetId={setSelectedProjectPresetId}
       selectedThumbnailPresetId={selectedThumbnailPresetId}
       setSelectedThumbnailPresetId={setSelectedThumbnailPresetId}
+      selectedThumbnailV2PresetId={selectedThumbnailV2PresetId}
+      setSelectedThumbnailV2PresetId={setSelectedThumbnailV2PresetId}
       thumbnailPresetEnabled={thumbnailPresetEnabled}
       setThumbnailPresetEnabled={setThumbnailPresetEnabled}
       isLoadingPresets={isLoadingPresets}
@@ -471,6 +481,7 @@ function PresetConfigDialog({
   ttsPresets,
   projectPresets,
   thumbnailPresets,
+  thumbnailV2Presets,
   selectedScriptPresetId,
   setSelectedScriptPresetId,
   selectedTtsPresetId,
@@ -479,6 +490,8 @@ function PresetConfigDialog({
   setSelectedProjectPresetId,
   selectedThumbnailPresetId,
   setSelectedThumbnailPresetId,
+  selectedThumbnailV2PresetId,
+  setSelectedThumbnailV2PresetId,
   thumbnailPresetEnabled,
   setThumbnailPresetEnabled,
   isLoadingPresets,
@@ -492,6 +505,7 @@ function PresetConfigDialog({
   ttsPresets: TtsPreset[];
   projectPresets: ProjectPreset[];
   thumbnailPresets: ThumbnailPreset[];
+  thumbnailV2Presets: ThumbnailPreset[];
   selectedScriptPresetId: string;
   setSelectedScriptPresetId: (id: string) => void;
   selectedTtsPresetId: string;
@@ -500,6 +514,8 @@ function PresetConfigDialog({
   setSelectedProjectPresetId: (id: string) => void;
   selectedThumbnailPresetId: string;
   setSelectedThumbnailPresetId: (id: string) => void;
+  selectedThumbnailV2PresetId: string;
+  setSelectedThumbnailV2PresetId: (id: string) => void;
   thumbnailPresetEnabled: boolean;
   setThumbnailPresetEnabled: (enabled: boolean) => void;
   isLoadingPresets: boolean;
@@ -619,6 +635,30 @@ function PresetConfigDialog({
               </Select>
               <p className="text-xs text-muted-foreground">
                 Définit les images d'exemple et le style pour la génération de miniatures
+              </p>
+            </div>
+
+            {/* Thumbnail V2 Preset */}
+            <div className="space-y-2">
+              <Label htmlFor="thumbnail-v2-preset">Preset miniatures V2</Label>
+              <Select
+                value={selectedThumbnailV2PresetId || "none"}
+                onValueChange={setSelectedThumbnailV2PresetId}
+              >
+                <SelectTrigger id="thumbnail-v2-preset">
+                  <SelectValue placeholder="Sélectionner un preset miniatures V2 (optionnel)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Aucun</SelectItem>
+                  {thumbnailV2Presets.map((preset) => (
+                    <SelectItem key={preset.id} value={preset.id}>
+                      {preset.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Chaîne YouTube source, visage et modèle pour la génération V2
               </p>
             </div>
           </div>
