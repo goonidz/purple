@@ -1301,7 +1301,19 @@ async function processThumbnailsV2Pipeline(job) {
 
         return thumb;
       } catch (thumbError) {
-        logError(`  Thumbnail V2 ${i + 1} failed:`, thumbError.message);
+        const errMsg = thumbError.message || String(thumbError);
+        logError(`  Thumbnail V2 ${i + 1} failed:`, errMsg);
+        // Save error detail to job metadata so we can debug without SSH
+        dbUpdateLock = dbUpdateLock.then(async () => {
+          const errorList = metadata._thumbErrors || [];
+          errorList.push({ index: i, error: errMsg.substring(0, 500) });
+          await supabase
+            .from('generation_jobs')
+            .update({ metadata: { ...metadata, _thumbErrors: errorList } })
+            .eq('id', jobId);
+          metadata._thumbErrors = errorList;
+        });
+        await dbUpdateLock;
         return null;
       }
     })());
@@ -1330,7 +1342,7 @@ async function processThumbnailsV2Pipeline(job) {
     }
 
     if (generatedThumbnails.length === 0) {
-      throw new Error(`All ${count} thumbnail V2 generations failed`);
+      throw new Error(`All ${count} thumbnail V2 generations failed. Last errors in job metadata.`);
     }
 
     await supabase
