@@ -1854,7 +1854,7 @@ async function processAudioTTSPipeline(job) {
     const meta = job.metadata || {};
     const text = meta.text;
     const voice = meta.voice || 'Puck';
-    const styleInstruction = meta.styleInstruction || 'Lis pour une vidéo youtube sur des docus finances: ';
+    const styleInstruction = meta.styleInstruction || 'energetic YouTube narrator. Natural and conversational, confident and slightly playful. Medium-fast pace. Strong emphasis on key words. Vary pitch and intonation to avoid monotone. Short pauses after punchlines and before important numbers. Sound curious, occasionally skeptical. Smile in the voice. Avoid robotic cadence.';
     const projectId = job.project_id;
 
     if (!text || text.trim().length < 10) {

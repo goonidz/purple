@@ -38,7 +38,7 @@ interface AudioTTSGeneratorProps {
 export function AudioTTSGenerator({ initialText }: AudioTTSGeneratorProps) {
   const [text, setText] = useState(initialText || "");
   const [voice, setVoice] = useState("Puck");
-  const [styleInstruction, setStyleInstruction] = useState("Read naturally for a YouTube documentary video: ");
+  const [styleInstruction, setStyleInstruction] = useState("energetic YouTube narrator. Natural and conversational, confident and slightly playful. Medium-fast pace. Strong emphasis on key words. Vary pitch and intonation to avoid monotone. Short pauses after punchlines and before important numbers. Sound curious, occasionally skeptical. Smile in the voice. Avoid robotic cadence.");
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedAudioUrl, setGeneratedAudioUrl] = useState<string | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
