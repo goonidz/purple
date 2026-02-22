@@ -1179,7 +1179,7 @@ async function processThumbnailsV2Pipeline(job) {
   const { id: jobId, project_id: projectId, user_id: userId, metadata } = job;
   const {
     videoTitle, exampleUrls, characterRefUrl, imageModel,
-    thumbnailProjectId, standalone, numThumbnails,
+    thumbnailProjectId, standalone, numThumbnails, userDirectives,
   } = metadata || {};
 
   const count = numThumbnails || 3;
@@ -1188,7 +1188,10 @@ async function processThumbnailsV2Pipeline(job) {
   log(`Processing thumbnails V2 (job ${jobId.substring(0, 8)}...) - ${count} thumbnails, model: ${model}`);
 
   try {
-    const prompt = THUMBNAIL_V2_PROMPT_TEMPLATE.replace('{videoTitle}', videoTitle || 'Untitled');
+    let prompt = THUMBNAIL_V2_PROMPT_TEMPLATE.replace('{videoTitle}', videoTitle || 'Untitled');
+    if (userDirectives) {
+      prompt += `\n\nAdditional directives from the user:\n${userDirectives}`;
+    }
 
     // Face reference MUST be first, then example thumbnails
     const allImageRefs = [];

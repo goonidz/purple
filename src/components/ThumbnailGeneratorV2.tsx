@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Upload, X, Loader2, Image as ImageIcon, Download, Search, Youtube } from "lucide-react";
@@ -28,6 +29,7 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
   const [isUploading, setIsUploading] = useState(false);
   const [isDraggingCharacter, setIsDraggingCharacter] = useState(false);
 
+  const [userDirectives, setUserDirectives] = useState("");
   const [imageModel, setImageModel] = useState("gemini-3-pro-image-preview");
   const [numThumbnails, setNumThumbnails] = useState(3);
 
@@ -218,6 +220,7 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
         videoTitle,
         exampleUrls: selectedUrls,
         characterRefUrl: characterRefUrl || undefined,
+        userDirectives: userDirectives.trim() || undefined,
         imageModel,
         numThumbnails,
       });
@@ -377,6 +380,18 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
             </Button>
           </div>
         )}
+      </div>
+
+      {/* User directives */}
+      <div className="space-y-2">
+        <Label>Directives supplémentaires (optionnel)</Label>
+        <Textarea
+          value={userDirectives}
+          onChange={(e) => setUserDirectives(e.target.value)}
+          rows={3}
+          className="text-sm"
+          placeholder="Ex: Ajoute du texte rouge en gros, utilise un fond sombre, expression choquée..."
+        />
       </div>
 
       {/* Model & count selection */}
