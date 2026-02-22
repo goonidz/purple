@@ -79,6 +79,10 @@ if [ -f setup-ssl-auto.sh ] && [ ! -f /etc/letsencrypt/live/purpleai.duckdns.org
     ./setup-ssl-auto.sh || echo -e "${YELLOW}⚠️  Configuration SSL échouée, exécutez manuellement: ./setup-ssl-auto.sh${NC}"
 fi
 
+# Restart image-worker if running (picks up updated index.js from git pull)
+echo "🔄 Restarting image-worker..."
+pm2 restart image-worker 2>/dev/null && echo -e "${GREEN}✅ image-worker restarted${NC}" || echo -e "${YELLOW}⚠️  image-worker not found in PM2 (skipped)${NC}"
+
 echo -e "${GREEN}✅ Deployment complete!${NC}"
 echo ""
 echo "Your application should be available at: http://$(hostname -I | awk '{print $1}')"
