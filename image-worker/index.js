@@ -1971,7 +1971,8 @@ async function processAudioTTSPipeline(job) {
     }
     let finalAudioUrl = concatResult.audioUrl;
     if (finalAudioUrl && finalAudioUrl.includes('localhost')) {
-      finalAudioUrl = finalAudioUrl.replace(/http:\/\/localhost:\d+/, 'https://purpleai.duckdns.org');
+      finalAudioUrl = finalAudioUrl
+        .replace(/http:\/\/localhost:\d+/, 'https://purpleai.duckdns.org/api/render');
     }
 
     log(`[TTS ${jobId}] Merge complete: ${finalAudioUrl} (${concatResult.totalDuration?.toFixed(1)}s)`);
