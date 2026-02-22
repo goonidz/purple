@@ -110,8 +110,13 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
       toast.success("Miniatures V2 générées !");
       setIsGenerating(false);
 
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
+      // Use the final job metadata first (most reliable, already has all thumbnails)
+      if (job.metadata?.generatedThumbnails) {
+        const thumbnails = job.metadata.generatedThumbnails as Array<{ url: string; prompt: string; index: number }>;
+        const sorted = [...thumbnails].sort((a, b) => a.index - b.index);
+        setGeneratedThumbnails(sorted.map(t => t.url));
+      } else {
+        // Fallback: read from DB
         const { data: latestThumbnails } = await supabase
           .from("generated_thumbnails")
           .select("*")
