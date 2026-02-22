@@ -10,8 +10,14 @@ import crypto from 'crypto';
 import { exec } from 'child_process';
 
 const PORT = process.env.WEBHOOK_PORT || 9000;
-const SECRET = process.env.WEBHOOK_SECRET || 'your-secret-key-change-this';
+const DEFAULT_SECRET = 'your-secret-key-change-this';
+const SECRET = process.env.WEBHOOK_SECRET || DEFAULT_SECRET;
 const REPO_PATH = process.env.REPO_PATH || '/home/ubuntu/purple';
+
+if (process.env.NODE_ENV === 'production' && (!process.env.WEBHOOK_SECRET || SECRET === DEFAULT_SECRET)) {
+  console.error('[webhook-server] In production WEBHOOK_SECRET must be set and different from the default. Refusing to start.');
+  process.exit(1);
+}
 
 // Colors for console output
 const colors = {
@@ -82,17 +88,20 @@ const server = http.createServer((req, res) => {
     
     req.on('end', () => {
       const signature = req.headers['x-hub-signature-256'];
-      
-      // Verify signature if secret is set
-      if (SECRET !== 'your-secret-key-change-this') {
-        if (!verifySignature(body, signature)) {
-          log('Invalid signature', 'red');
-          res.writeHead(401, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: 'Invalid signature' }));
-          return;
-        }
+
+      if (SECRET === DEFAULT_SECRET) {
+        log('Rejected: webhook secret is still the default (set WEBHOOK_SECRET)', 'red');
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Webhook secret not configured' }));
+        return;
       }
-      
+      if (!verifySignature(body, signature)) {
+        log('Invalid signature', 'red');
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Invalid signature' }));
+        return;
+      }
+
       try {
         const payload = JSON.parse(body);
         
@@ -168,5 +177,5 @@ const server = http.createServer((req, res) => {
 server.listen(PORT, () => {
   log(`Webhook server listening on port ${PORT}`, 'green');
   log(`Repository path: ${REPO_PATH}`, 'blue');
-  log(`Secret configured: ${SECRET !== 'your-secret-key-change-this' ? 'Yes' : 'No (using default)'}`, 'yellow');
+  log(`Secret configured: ${SECRET !== DEFAULT_SECRET ? 'Yes' : 'No (using default - webhooks will be rejected)'}`, 'yellow');
 });

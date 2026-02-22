@@ -57,6 +57,16 @@ const upload = multer({
   }
 });
 
+// Ensure resolved path stays inside VIDEOS_DIR (prevents path traversal)
+function resolveSafePath(filename) {
+  const base = path.resolve(VIDEOS_DIR);
+  const resolved = path.resolve(base, filename);
+  if (resolved !== base && !resolved.startsWith(base + path.sep)) {
+    return null;
+  }
+  return resolved;
+}
+
 // Middleware to check API token
 const authenticate = (req, res, next) => {
   const token = req.headers['authorization']?.replace('Bearer ', '');
@@ -105,10 +115,8 @@ app.post('/api/upload-video', authenticate, upload.single('video'), (req, res) =
 // Download video with custom filename (no auth required for downloads)
 app.get('/api/download-video/:filename', (req, res) => {
   const filename = req.params.filename;
-  const filePath = path.join(VIDEOS_DIR, filename);
-
-  // Security: prevent path traversal
-  if (!filePath.startsWith(VIDEOS_DIR)) {
+  const filePath = resolveSafePath(filename);
+  if (!filePath) {
     return res.status(400).json({ error: 'Invalid filename' });
   }
 
@@ -131,10 +139,8 @@ app.get('/api/download-video/:filename', (req, res) => {
 // Delete video endpoint (optional, for cleanup)
 app.delete('/api/delete-video/:filename', authenticate, (req, res) => {
   const filename = req.params.filename;
-  const filePath = path.join(VIDEOS_DIR, filename);
-
-  // Security: prevent path traversal
-  if (!filePath.startsWith(VIDEOS_DIR)) {
+  const filePath = resolveSafePath(filename);
+  if (!filePath) {
     return res.status(400).json({ error: 'Invalid filename' });
   }
 
@@ -159,6 +165,6 @@ app.listen(PORT, () => {
   console.log(`[Storage API] Server running on port ${PORT}`);
   console.log(`[Storage API] Videos directory: ${VIDEOS_DIR}`);
   console.log(`[Storage API] Public URL base: ${PUBLIC_URL_BASE}`);
-  console.log(`[Storage API] API Token: ${API_TOKEN}`);
+  console.log(`[Storage API] API Token: ${process.env.VIDEO_UPLOAD_TOKEN ? '[SET]' : '[GENERATED - set VIDEO_UPLOAD_TOKEN for production]'}`);
   console.log(`[Storage API] Use this token in RunPod handler for authentication`);
 });

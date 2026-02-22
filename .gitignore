@@ -16,6 +16,10 @@ dist-ssr
 .env
 .env.local
 .env.*.local
+.env.production
+
+# Project context (may contain tokens - keep local only)
+.cursorrules
 
 # Supabase temp files
 supabase/.temp/

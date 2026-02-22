@@ -56,6 +56,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { VideoPreview } from "@/components/VideoPreview";
 import { PresetManager } from "@/components/PresetManager";
 import { ThumbnailGenerator } from "@/components/ThumbnailGenerator";
+import { ThumbnailGeneratorV2 } from "@/components/ThumbnailGeneratorV2";
 import { DurationRangesEditor } from "@/components/DurationRangesEditor";
 import { SHORT_FORM_DURATION_RANGES } from "@/lib/durationRanges";
 import { YouTubeMetadataTab } from "@/components/YouTubeMetadataTab";
@@ -3517,6 +3518,10 @@ const Index = () => {
                   <ImageIcon className="h-3 w-3 sm:h-4 sm:w-4" />
                   <span className="hidden md:inline">Miniatures</span>
                 </TabsTrigger>
+                <TabsTrigger value="thumbnails-v2" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm px-2 sm:px-3">
+                  <ImageIcon className="h-3 w-3 sm:h-4 sm:w-4" />
+                  <span className="hidden md:inline">Miniature V2</span>
+                </TabsTrigger>
                 <TabsTrigger value="youtube" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm px-2 sm:px-3">
                   <Sparkles className="h-3 w-3 sm:h-4 sm:w-4" />
                   <span className="hidden md:inline">YouTube</span>
@@ -4736,6 +4741,16 @@ const Index = () => {
               <TabsContent value="thumbnails" className="m-0">
                 <div className="max-w-5xl mx-auto">
                   <ThumbnailGenerator
+                    projectId={currentProjectId || ""}
+                    videoScript={generatedPrompts.filter(p => p).map(p => p.text).join(" ")}
+                    videoTitle={projectName}
+                  />
+                </div>
+              </TabsContent>
+
+              <TabsContent value="thumbnails-v2" className="m-0">
+                <div className="max-w-5xl mx-auto">
+                  <ThumbnailGeneratorV2
                     projectId={currentProjectId || ""}
                     videoScript={generatedPrompts.filter(p => p).map(p => p.text).join(" ")}
                     videoTitle={projectName}

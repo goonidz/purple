@@ -13,7 +13,7 @@ const corsHeaders = {
 
 interface JobRequest {
   projectId: string;
-  jobType: 'transcription' | 'prompts' | 'images' | 'thumbnails' | 'test_images' | 'single_prompt' | 'single_image' | 'script_generation' | 'audio_generation' | 'upscale';
+  jobType: 'transcription' | 'prompts' | 'images' | 'thumbnails' | 'thumbnails_v2' | 'test_images' | 'single_prompt' | 'single_image' | 'script_generation' | 'audio_generation' | 'upscale';
   metadata?: Record<string, any>;
 }
 
@@ -234,7 +234,7 @@ serve(async (req) => {
     }
 
     // Check if this is a standalone thumbnail generation (no real project)
-    const isStandalone = metadata.standalone === true && jobType === 'thumbnails';
+    const isStandalone = metadata.standalone === true && (jobType === 'thumbnails' || jobType === 'thumbnails_v2');
     
     let project: any = null;
     
@@ -284,6 +284,8 @@ serve(async (req) => {
       total = 1; // Single item
     } else if (jobType === 'thumbnails') {
       total = 3; // Always generate 3 thumbnails
+    } else if (jobType === 'thumbnails_v2') {
+      total = metadata.numThumbnails || 3;
     } else if (jobType === 'script_generation') {
       total = 1; // Single script generation
     } else if (jobType === 'audio_generation') {
@@ -402,6 +404,13 @@ async function processJob(
         .update({ status: 'pending' })
         .eq('id', jobId);
       console.log(`[thumbnails] Job ${jobId} reset to pending for VPS worker`);
+      throw new Error('WEBHOOK_MODE_ACTIVE');
+    } else if (jobType === 'thumbnails_v2') {
+      await adminClient
+        .from('generation_jobs')
+        .update({ status: 'pending' })
+        .eq('id', jobId);
+      console.log(`[thumbnails_v2] Job ${jobId} reset to pending for VPS worker`);
       throw new Error('WEBHOOK_MODE_ACTIVE');
     } else if (jobType === 'script_generation') {
       await processScriptGenerationJob(jobId, projectId, userId, metadata, authHeader, adminClient);

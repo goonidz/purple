@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
-export type JobType = 'transcription' | 'prompts' | 'images' | 'thumbnails' | 'test_images' | 'single_prompt' | 'single_image' | 'upscale' | 'single_animation' | 'qa' | 'qa_regen';
+export type JobType = 'transcription' | 'prompts' | 'images' | 'thumbnails' | 'thumbnails_v2' | 'test_images' | 'single_prompt' | 'single_image' | 'upscale' | 'single_animation' | 'qa' | 'qa_regen';
 export type JobStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled';
 
 export interface GenerationJob {
@@ -526,6 +526,8 @@ function getJobStartMessage(jobType: JobType): string {
       return "Génération des images démarrée en arrière-plan. Vous pouvez quitter cette page.";
     case 'thumbnails':
       return "Génération des miniatures démarrée en arrière-plan";
+    case 'thumbnails_v2':
+      return "Génération des miniatures V2 démarrée en arrière-plan";
     case 'test_images':
       return "Test des 2 premières scènes démarré en arrière-plan. Vous pouvez quitter cette page.";
     case 'single_prompt':

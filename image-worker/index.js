@@ -1103,6 +1103,145 @@ async function processThumbnailsPipeline(job) {
 }
 
 // ============================================================================
+// THUMBNAIL V2 PIPELINE: Direct prompt to image model (no Claude/Gemini analysis)
+// ============================================================================
+
+const THUMBNAIL_V2_PROMPT_TEMPLATE = `I've sent you example thumbnails and a face/character. I want you to copy the style to generate a similar thumbnail on another subject, with the face I sent you.
+I want the same colors, the same style, the same kind of text style, a similar composition etc... to have a HIGH CTR.
+Video title: {videoTitle}
+If original style has text on the image, make it HIGH CTR.
+Face to use is img1.`;
+
+async function processThumbnailsV2Pipeline(job) {
+  const { id: jobId, project_id: projectId, user_id: userId, metadata } = job;
+  const {
+    videoTitle, exampleUrls, characterRefUrl, imageModel,
+    thumbnailProjectId, standalone, numThumbnails,
+  } = metadata || {};
+
+  const count = numThumbnails || 3;
+  log(`Processing thumbnails V2 (job ${jobId.substring(0, 8)}...) - ${count} thumbnails, direct prompt`);
+
+  try {
+    const replicateKey = await getUserApiKey(userId, 'replicate');
+    const replicateClient = new Replicate({ auth: replicateKey });
+
+    const prompt = THUMBNAIL_V2_PROMPT_TEMPLATE.replace('{videoTitle}', videoTitle || 'Untitled');
+
+    // Face reference MUST be first image, then example thumbnails
+    const allImageRefs = [];
+    if (characterRefUrl) allImageRefs.push(characterRefUrl);
+    if (exampleUrls && Array.isArray(exampleUrls)) allImageRefs.push(...exampleUrls);
+
+    const model = imageModel || 'seedream-4.5';
+    const generatedThumbnails = [];
+    let dbUpdateLock = Promise.resolve();
+
+    await supabase
+      .from('generation_jobs')
+      .update({ metadata: { ...metadata, generatedPrompts: [prompt] } })
+      .eq('id', jobId);
+
+    const thumbPromises = Array.from({ length: count }, (_, i) => (async () => {
+      try {
+        log(`  Thumbnail V2 ${i + 1}/${count}: generating with ${model}...`);
+
+        const thumbInput = buildReplicateInput({
+          prompt,
+          model,
+          width: 1920,
+          height: 1080,
+          styleRefs: allImageRefs,
+        });
+
+        const result = await runReplicatePrediction(replicateClient, thumbInput.modelName, thumbInput.input);
+        const imageOutput = Array.isArray(result.output) ? result.output[0] : result.output;
+
+        if (!imageOutput) {
+          logError(`  Thumbnail V2 ${i + 1}: no output`);
+          return null;
+        }
+
+        const timestamp = Date.now();
+        const effectiveProjectId = standalone ? (thumbnailProjectId || 'standalone') : projectId;
+        const filename = `thumb_v2_${i + 1}_${timestamp}.jpg`;
+        const publicUrl = await uploadImageToStorage(imageOutput, effectiveProjectId, filename);
+        log(`  Thumbnail V2 ${i + 1}/${count}: uploaded -> ${publicUrl.substring(0, 80)}...`);
+
+        const thumb = { index: i, url: publicUrl, prompt };
+
+        dbUpdateLock = dbUpdateLock.then(async () => {
+          generatedThumbnails.push(thumb);
+          await supabase
+            .from('generation_jobs')
+            .update({
+              progress: generatedThumbnails.length,
+              metadata: { ...metadata, generatedPrompts: [prompt], generatedThumbnails: [...generatedThumbnails] },
+            })
+            .eq('id', jobId);
+        });
+        await dbUpdateLock;
+
+        return thumb;
+      } catch (thumbError) {
+        logError(`  Thumbnail V2 ${i + 1} failed:`, thumbError.message);
+        return null;
+      }
+    })());
+
+    await Promise.all(thumbPromises);
+
+    if (generatedThumbnails.length > 0) {
+      generatedThumbnails.sort((a, b) => a.index - b.index);
+      const thumbnailUrls = generatedThumbnails.map(t => t.url);
+      const thumbnailPrompts = generatedThumbnails.map(t => t.prompt);
+
+      const { error: saveError } = await supabase
+        .from('generated_thumbnails')
+        .insert({
+          project_id: standalone ? null : projectId,
+          thumbnail_project_id: thumbnailProjectId || null,
+          thumbnail_urls: thumbnailUrls,
+          prompts: thumbnailPrompts,
+          preset_name: null,
+          user_id: userId,
+        });
+
+      if (saveError) {
+        logError('  Failed to save to generated_thumbnails:', saveError.message);
+      }
+    }
+
+    if (generatedThumbnails.length === 0) {
+      throw new Error(`All ${count} thumbnail V2 generations failed`);
+    }
+
+    await supabase
+      .from('generation_jobs')
+      .update({
+        status: 'completed',
+        progress: generatedThumbnails.length,
+        completed_at: new Date().toISOString(),
+        metadata: { ...metadata, generatedPrompts: [prompt], generatedThumbnails },
+      })
+      .eq('id', jobId);
+
+    log(`  Thumbnails V2 complete: ${generatedThumbnails.length}/${count} generated`);
+
+  } catch (error) {
+    logError(`Thumbnails V2 (job ${jobId.substring(0, 8)}...) FAILED:`, error.message);
+    await supabase
+      .from('generation_jobs')
+      .update({
+        status: 'failed',
+        error_message: error.message?.substring(0, 500),
+        completed_at: new Date().toISOString(),
+      })
+      .eq('id', jobId);
+  }
+}
+
+// ============================================================================
 // PROMPT PIPELINE: Dispatch single_prompt job to Edge Function
 // ============================================================================
 
@@ -1302,7 +1441,7 @@ async function mainLoop() {
           .from('generation_jobs')
           .select('*')
           .eq('status', 'pending')
-          .in('job_type', ['single_image', 'thumbnails', 'single_prompt'])
+          .in('job_type', ['single_image', 'thumbnails', 'thumbnails_v2', 'single_prompt'])
           .order('created_at', { ascending: true })
           .limit(100);
 
@@ -1380,6 +1519,8 @@ async function mainLoop() {
               pipeline = processImagePipeline(job);
             } else if (job.job_type === 'thumbnails') {
               pipeline = processThumbnailsPipeline(job);
+            } else if (job.job_type === 'thumbnails_v2') {
+              pipeline = processThumbnailsV2Pipeline(job);
             } else if (job.job_type === 'single_prompt') {
               pipeline = processPromptJob(job);
             }
