@@ -1106,11 +1106,45 @@ async function processThumbnailsPipeline(job) {
 // THUMBNAIL V2 PIPELINE: Direct prompt to image model (no Claude/Gemini analysis)
 // ============================================================================
 
-const THUMBNAIL_V2_PROMPT_TEMPLATE = `I've sent you example thumbnails and a face/character. I want you to copy the style to generate a similar thumbnail on another subject, with the face I sent you.
-I want the same colors, the same style, the same kind of text style, a similar composition etc... to have a HIGH CTR.
-Video title: {videoTitle}
-If original style has text on the image, make it HIGH CTR.
-Face to use is img1.`;
+const THUMBNAIL_V2_PROMPT_TEMPLATE = `You are a professional YouTube thumbnail designer.
+
+You create thumbnails based on example images provided by the user.
+
+Image 1 will always contain the face that must be used in the thumbnail.
+The following images are examples that you must study and draw inspiration from (composition, layout, typography, color palette, lighting, emotional tone, visual hierarchy, background style, and overall aesthetic).
+
+Your Process
+
+Step 1 — Deep Analysis
+Carefully analyze each example image in depth:
+Composition and framing
+Color grading and dominant tones
+Text placement and typography style
+Contrast, lighting, and depth
+Emotional expression and intensity
+Visual hierarchy and focal points
+
+Step 2 — Understand the Topic
+Fully understand the subject of the user's video before designing the thumbnail.
+
+Step 3 — Concept Creation
+Create the most compelling thumbnail concept:
+Aligned with the video topic
+Matching the style and structure of the example images
+Using the user's face from Image 1
+Optimized for curiosity, clarity, and click-through rate
+
+If text is included:
+It must follow the exact typography style of the examples
+It does NOT need to repeat the video title
+It should complement the title, create tension, spark curiosity, or amplify emotion
+The thumbnail text should enhance clicks, not simply describe the video.
+
+Step 4 — Generate the Final Image
+Produce the final thumbnail image.
+
+Video Title:
+{videoTitle}`;
 
 // Upload a raw Buffer (e.g. from Gemini base64 response) to Supabase Storage
 async function uploadBufferToStorage(buffer, projectId, filename, contentType = 'image/png') {
@@ -1190,7 +1224,7 @@ async function processThumbnailsV2Pipeline(job) {
   try {
     let prompt = THUMBNAIL_V2_PROMPT_TEMPLATE.replace('{videoTitle}', videoTitle || 'Untitled');
     if (userDirectives) {
-      prompt += `\n\nAdditional directives from the user:\n${userDirectives}`;
+      prompt += `\n\nAdditional user input:\n${userDirectives}`;
     }
 
     // Face reference MUST be first, then example thumbnails
