@@ -1200,7 +1200,10 @@ async function generateWithGemini(geminiKey, prompt, imageUrls, modelName) {
   const data = await response.json();
   const candidate = data.candidates?.[0];
   if (!candidate?.content?.parts) {
-    throw new Error('Gemini returned no content parts');
+    const finishReason = candidate?.finishReason || 'unknown';
+    const blockReason = data.promptFeedback?.blockReason || '';
+    const safetyRatings = JSON.stringify(candidate?.safetyRatings || data.promptFeedback?.safetyRatings || []);
+    throw new Error(`Gemini returned no content parts. finishReason=${finishReason}, blockReason=${blockReason}, safety=${safetyRatings}`);
   }
 
   // Find the image part in the response
