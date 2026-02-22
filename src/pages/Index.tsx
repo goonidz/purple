@@ -57,7 +57,6 @@ import { VideoPreview } from "@/components/VideoPreview";
 import { PresetManager } from "@/components/PresetManager";
 import { ThumbnailGenerator } from "@/components/ThumbnailGenerator";
 import { ThumbnailGeneratorV2 } from "@/components/ThumbnailGeneratorV2";
-import { AudioTTSGenerator } from "@/components/AudioTTSGenerator";
 import { DurationRangesEditor } from "@/components/DurationRangesEditor";
 import { SHORT_FORM_DURATION_RANGES } from "@/lib/durationRanges";
 import { YouTubeMetadataTab } from "@/components/YouTubeMetadataTab";
@@ -4706,12 +4705,6 @@ const Index = () => {
               </TabsContent>
 
             <TabsContent value="audio" className="space-y-6 m-0">
-              <AudioTTSGenerator
-                projectId={currentProjectId || ""}
-                projectSummary={projectSummary}
-                onAudioGenerated={(url) => setAudioUrl(url)}
-              />
-
               <Card className="p-6">
                 <div className="flex items-center justify-between gap-4 flex-wrap">
                   <h2 className="text-lg font-semibold">Audio du projet</h2>

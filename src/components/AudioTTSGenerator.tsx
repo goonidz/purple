@@ -1,130 +1,215 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
-import { Loader2, Play, Download, Volume2 } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { Loader2, Play, Download, Volume2, Square } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { useGenerationJobs, GenerationJob } from "@/hooks/useGenerationJobs";
+
+const VOICES = [
+  { id: "Puck", label: "Puck (masculin)" },
+  { id: "Charon", label: "Charon (masculin grave)" },
+  { id: "Kore", label: "Kore (féminin)" },
+  { id: "Fenrir", label: "Fenrir (masculin profond)" },
+  { id: "Aoede", label: "Aoede (féminin doux)" },
+  { id: "Leda", label: "Leda (féminin naturel)" },
+  { id: "Orus", label: "Orus (masculin)" },
+  { id: "Zephyr", label: "Zephyr (neutre)" },
+];
 
 interface AudioTTSGeneratorProps {
-  projectId: string;
-  projectSummary: string | null;
-  onAudioGenerated?: (audioUrl: string) => void;
+  initialText?: string;
 }
 
-export function AudioTTSGenerator({ projectId, projectSummary, onAudioGenerated }: AudioTTSGeneratorProps) {
-  const [text, setText] = useState(projectSummary || "");
+export function AudioTTSGenerator({ initialText }: AudioTTSGeneratorProps) {
+  const [text, setText] = useState(initialText || "");
+  const [voice, setVoice] = useState("Puck");
+  const [styleInstruction, setStyleInstruction] = useState("Read naturally for a YouTube documentary video: ");
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedAudioUrl, setGeneratedAudioUrl] = useState<string | null>(null);
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [progress, setProgress] = useState(0);
+  const [total, setTotal] = useState(0);
+  const [jobStatus, setJobStatus] = useState<string | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
-    if (projectSummary && !text) {
-      setText(projectSummary);
-    }
-  }, [projectSummary]);
+    if (initialText && !text) setText(initialText);
+  }, [initialText]);
 
-  const handleJobComplete = useCallback((job: GenerationJob) => {
-    if (job.job_type !== "audio_generation") return;
-    const audioUrl = job.metadata?.audioUrl;
-    if (audioUrl) {
-      setGeneratedAudioUrl(audioUrl);
-      onAudioGenerated?.(audioUrl);
-      toast.success("Audio généré avec succès !");
-    }
-    setIsGenerating(false);
-  }, [onAudioGenerated]);
-
-  const handleJobFailed = useCallback((job: GenerationJob) => {
-    if (job.job_type !== "audio_generation") return;
-    toast.error(`Erreur: ${job.error_message || "Échec de la génération audio"}`);
-    setIsGenerating(false);
+  useEffect(() => {
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
   }, []);
 
-  const { activeJobs, startJob, cancelJob } = useGenerationJobs({
-    projectId,
-    onJobComplete: handleJobComplete,
-    onJobFailed: handleJobFailed,
-  });
+  const pollJob = useCallback((jId: string) => {
+    if (pollRef.current) clearInterval(pollRef.current);
 
-  const ttsJob = activeJobs.find(
-    (j) => j.job_type === "audio_generation" && (j.status === "pending" || j.status === "processing")
-  );
+    pollRef.current = setInterval(async () => {
+      const { data, error } = await supabase
+        .from("generation_jobs")
+        .select("*")
+        .eq("id", jId)
+        .single();
+
+      if (error || !data) return;
+
+      setProgress(data.progress || 0);
+      setTotal(data.total || 0);
+      setJobStatus(data.status);
+
+      if (data.status === "completed") {
+        clearInterval(pollRef.current!);
+        pollRef.current = null;
+        const audioUrl = (data.metadata as any)?.audioUrl;
+        if (audioUrl) {
+          setGeneratedAudioUrl(audioUrl);
+          toast.success("Audio generated successfully!");
+        }
+        setIsGenerating(false);
+      } else if (data.status === "failed") {
+        clearInterval(pollRef.current!);
+        pollRef.current = null;
+        toast.error(`Error: ${data.error_message || "Audio generation failed"}`);
+        setIsGenerating(false);
+      } else if (data.status === "cancelled") {
+        clearInterval(pollRef.current!);
+        pollRef.current = null;
+        setIsGenerating(false);
+      }
+    }, 3000);
+  }, []);
 
   const handleGenerate = async () => {
     if (!text.trim()) {
-      toast.error("Veuillez entrer du texte à convertir en audio");
+      toast.error("Please enter text to convert to audio");
       return;
     }
-    if (!projectId) {
-      toast.error("Aucun projet sélectionné");
+
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      toast.error("You must be logged in");
       return;
     }
 
     setIsGenerating(true);
     setGeneratedAudioUrl(null);
+    setProgress(0);
+    setTotal(0);
+    setJobStatus("pending");
 
     try {
-      await startJob("audio_generation" as any, {
-        text: text.trim(),
-        voice: "Puck",
-        styleInstruction: "Lis pour une vidéo youtube sur des docus finances: ",
-        provider: "gemini_tts",
-      });
+      const { data, error } = await supabase
+        .from("generation_jobs")
+        .insert({
+          job_type: "audio_generation" as any,
+          status: "pending" as any,
+          user_id: session.user.id,
+          project_id: null,
+          progress: 0,
+          total: 1,
+          metadata: {
+            text: text.trim(),
+            voice,
+            styleInstruction,
+            provider: "gemini_tts",
+            standalone: true,
+          },
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      setJobId(data.id);
+      toast.success("TTS generation started. The VPS worker will process it.");
+      pollJob(data.id);
     } catch (err: any) {
-      toast.error(`Erreur: ${err.message}`);
+      toast.error(`Error: ${err.message}`);
       setIsGenerating(false);
     }
   };
 
   const handleCancel = async () => {
-    if (ttsJob) {
-      await cancelJob(ttsJob.id);
-      setIsGenerating(false);
-    }
+    if (!jobId) return;
+    await supabase
+      .from("generation_jobs")
+      .update({ status: "cancelled" as any })
+      .eq("id", jobId);
+    if (pollRef.current) clearInterval(pollRef.current);
+    pollRef.current = null;
+    setIsGenerating(false);
+    setJobStatus(null);
+    toast.info("Generation cancelled");
   };
 
   const wordCount = text.trim().split(/\s+/).filter(Boolean).length;
   const estimatedChunks = Math.max(1, Math.ceil(wordCount / 250));
   const estimatedMinutes = Math.ceil((estimatedChunks * 6.5) / 60);
-
-  const progress = ttsJob?.progress || 0;
-  const total = ttsJob?.total || ttsJob?.metadata?.totalChunks || estimatedChunks;
   const progressPercent = total > 0 ? Math.round((progress / total) * 100) : 0;
 
   return (
-    <Card className="p-6 space-y-4">
+    <Card className="p-6 space-y-5">
       <div className="flex items-center gap-2">
-        <Volume2 className="h-5 w-5" />
-        <h3 className="text-lg font-semibold">Génération Audio (Gemini TTS)</h3>
+        <Volume2 className="h-5 w-5 text-primary" />
+        <h3 className="text-lg font-semibold">Gemini TTS Audio Generator</h3>
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="tts-text">Texte à convertir</Label>
+        <Label htmlFor="tts-text">Text to convert</Label>
         <Textarea
           id="tts-text"
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder="Collez ou écrivez le texte du script ici..."
+          placeholder="Paste or type your script here..."
           className="min-h-[200px] text-sm"
           disabled={isGenerating}
         />
         <p className="text-xs text-muted-foreground">
-          {wordCount} mots &middot; ~{estimatedChunks} chunk{estimatedChunks > 1 ? "s" : ""} &middot; ~{estimatedMinutes} min estimée{estimatedMinutes > 1 ? "s" : ""}
+          {wordCount} words &middot; ~{estimatedChunks} chunk{estimatedChunks > 1 ? "s" : ""} &middot; ~{estimatedMinutes} min estimated
         </p>
       </div>
 
-      {ttsJob && (ttsJob.status === "pending" || ttsJob.status === "processing") && (
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label>Voice</Label>
+          <Select value={voice} onValueChange={setVoice} disabled={isGenerating}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {VOICES.map((v) => (
+                <SelectItem key={v.id} value={v.id}>{v.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-2">
+          <Label>Style instruction</Label>
+          <Input
+            value={styleInstruction}
+            onChange={(e) => setStyleInstruction(e.target.value)}
+            placeholder="Read naturally..."
+            disabled={isGenerating}
+          />
+        </div>
+      </div>
+
+      {isGenerating && (
         <div className="space-y-2 p-3 bg-muted/30 rounded-lg">
           <div className="flex items-center justify-between text-sm">
             <div className="flex items-center gap-2">
               <Loader2 className="h-4 w-4 animate-spin" />
               <span>
-                {ttsJob.status === "pending"
-                  ? "En attente de traitement..."
-                  : `Chunk ${progress}/${total} en cours...`}
+                {jobStatus === "pending"
+                  ? "Waiting for worker..."
+                  : `Chunk ${progress}/${total} processing...`}
               </span>
             </div>
             <span className="text-muted-foreground">{progressPercent}%</span>
@@ -136,24 +221,25 @@ export function AudioTTSGenerator({ projectId, projectSummary, onAudioGenerated 
       <div className="flex gap-2">
         <Button
           onClick={handleGenerate}
-          disabled={isGenerating || !text.trim() || !projectId}
+          disabled={isGenerating || !text.trim()}
           className="flex-1"
         >
           {isGenerating ? (
             <>
               <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              Génération en cours...
+              Generating...
             </>
           ) : (
             <>
               <Play className="h-4 w-4 mr-2" />
-              Générer l'audio
+              Generate Audio
             </>
           )}
         </Button>
-        {isGenerating && ttsJob && (
+        {isGenerating && (
           <Button variant="outline" onClick={handleCancel}>
-            Annuler
+            <Square className="h-4 w-4 mr-2" />
+            Cancel
           </Button>
         )}
       </div>
@@ -161,11 +247,11 @@ export function AudioTTSGenerator({ projectId, projectSummary, onAudioGenerated 
       {generatedAudioUrl && (
         <div className="space-y-3 p-4 bg-muted/30 rounded-lg">
           <div className="flex items-center justify-between">
-            <span className="text-sm font-medium">Audio généré</span>
+            <span className="text-sm font-medium">Generated audio</span>
             <Button asChild variant="outline" size="sm">
               <a href={generatedAudioUrl} download target="_blank" rel="noopener noreferrer">
                 <Download className="h-4 w-4 mr-2" />
-                Télécharger
+                Download
               </a>
             </Button>
           </div>
