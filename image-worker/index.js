@@ -991,10 +991,11 @@ async function processThumbnailsPipeline(job) {
     // Without this, parallel completions can overwrite each other's metadata
     let dbUpdateLock = Promise.resolve();
 
-    // Combine style refs
-    const allImageRefs = [];
-    if (exampleUrls && Array.isArray(exampleUrls)) allImageRefs.push(...exampleUrls);
-    if (characterRefUrl) allImageRefs.push(characterRefUrl);
+    // Combine style refs + resolve YouTube thumbnail URLs
+    const rawRefs = [];
+    if (exampleUrls && Array.isArray(exampleUrls)) rawRefs.push(...exampleUrls);
+    if (characterRefUrl) rawRefs.push(characterRefUrl);
+    const allImageRefs = await resolveImageUrls(rawRefs);
 
     // Generate all 3 thumbnails in parallel, update DB as each finishes
     const thumbPromises = creativePrompts.map(async (prompt, i) => {
@@ -1166,26 +1167,32 @@ async function uploadBufferToStorage(buffer, projectId, filename, contentType = 
   return publicUrl;
 }
 
-// Fetch an image URL and return its base64-encoded content
-// For YouTube thumbnails, tries fallback resolutions if maxresdefault is 404
-async function fetchImageAsBase64(url) {
-  const ytMatch = url.match(/img\.youtube\.com\/vi\/([^/]+)\/(maxresdefault|sddefault|hqdefault|mqdefault)/);
-  if (ytMatch) {
-    const videoId = ytMatch[1];
-    const fallbacks = ['maxresdefault', 'sddefault', 'hqdefault', 'mqdefault', 'default'];
-    for (const res of fallbacks) {
-      const tryUrl = `https://img.youtube.com/vi/${videoId}/${res}.jpg`;
-      const resp = await fetch(tryUrl);
-      if (resp.ok) {
-        const buf = Buffer.from(await resp.arrayBuffer());
-        return buf.toString('base64');
-      }
+// Resolve a YouTube thumbnail URL to the best available resolution
+async function resolveYouTubeThumbnailUrl(url) {
+  const ytMatch = url.match(/img\.youtube\.com\/vi\/([^/]+)\/(maxresdefault|sddefault|hqdefault|mqdefault|default)/);
+  if (!ytMatch) return url;
+  const videoId = ytMatch[1];
+  const fallbacks = ['maxresdefault', 'sddefault', 'hqdefault', 'mqdefault', 'default'];
+  for (const res of fallbacks) {
+    const tryUrl = `https://img.youtube.com/vi/${videoId}/${res}.jpg`;
+    const resp = await fetch(tryUrl, { method: 'HEAD' });
+    if (resp.ok && parseInt(resp.headers.get('content-length') || '0') > 1000) {
+      return tryUrl;
     }
-    throw new Error(`Failed to fetch YouTube thumbnail for ${videoId}: all resolutions returned errors`);
   }
+  return url;
+}
 
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Failed to fetch image ${url}: ${res.status}`);
+// Resolve all URLs in an array, fixing YouTube thumbnails
+async function resolveImageUrls(urls) {
+  return Promise.all(urls.map(u => resolveYouTubeThumbnailUrl(u)));
+}
+
+// Fetch an image URL and return its base64-encoded content
+async function fetchImageAsBase64(url) {
+  const resolved = await resolveYouTubeThumbnailUrl(url);
+  const res = await fetch(resolved);
+  if (!res.ok) throw new Error(`Failed to fetch image ${resolved}: ${res.status}`);
   const buf = Buffer.from(await res.arrayBuffer());
   return buf.toString('base64');
 }
@@ -1397,11 +1404,13 @@ async function processThumbnailsV2Pipeline(job) {
     }
 
     // Character reference first, then example thumbnails
-    const allImageRefs = [];
-    if (characterRefUrl) allImageRefs.push(characterRefUrl);
+    // Resolve YouTube thumbnail URLs to working resolutions before passing to external APIs
+    const rawImageRefs = [];
+    if (characterRefUrl) rawImageRefs.push(characterRefUrl);
     if (exampleUrls && Array.isArray(exampleUrls)) {
-      allImageRefs.push(...exampleUrls);
+      rawImageRefs.push(...exampleUrls);
     }
+    const allImageRefs = await resolveImageUrls(rawImageRefs);
 
     // Get the right API key
     let replicateClient = null;
