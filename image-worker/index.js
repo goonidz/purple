@@ -1167,7 +1167,23 @@ async function uploadBufferToStorage(buffer, projectId, filename, contentType = 
 }
 
 // Fetch an image URL and return its base64-encoded content
+// For YouTube thumbnails, tries fallback resolutions if maxresdefault is 404
 async function fetchImageAsBase64(url) {
+  const ytMatch = url.match(/img\.youtube\.com\/vi\/([^/]+)\/(maxresdefault|sddefault|hqdefault|mqdefault)/);
+  if (ytMatch) {
+    const videoId = ytMatch[1];
+    const fallbacks = ['maxresdefault', 'sddefault', 'hqdefault', 'mqdefault', 'default'];
+    for (const res of fallbacks) {
+      const tryUrl = `https://img.youtube.com/vi/${videoId}/${res}.jpg`;
+      const resp = await fetch(tryUrl);
+      if (resp.ok) {
+        const buf = Buffer.from(await resp.arrayBuffer());
+        return buf.toString('base64');
+      }
+    }
+    throw new Error(`Failed to fetch YouTube thumbnail for ${videoId}: all resolutions returned errors`);
+  }
+
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Failed to fetch image ${url}: ${res.status}`);
   const buf = Buffer.from(await res.arrayBuffer());
@@ -1429,7 +1445,17 @@ async function processThumbnailsV2Pipeline(job) {
           const variationPrompt = count > 1
             ? prompt + `\n\nIMPORTANT — This is variation ${i + 1} of ${count} for A/B testing. Each variation MUST be significantly different:\n- Use completely different text/words on the thumbnail\n- Try a different composition or layout\n- Vary the color mood or background\n- Change the character's expression or pose\nDo NOT repeat the same text or concept as other variations.`
             : prompt;
-          const imageBuffer = await generateWithGemini(geminiKey, variationPrompt, allImageRefs, model, exampleUrls);
+          let imageBuffer;
+          for (let attempt = 1; attempt <= 3; attempt++) {
+            try {
+              imageBuffer = await generateWithGemini(geminiKey, variationPrompt, allImageRefs, model, exampleUrls);
+              break;
+            } catch (retryErr) {
+              if (attempt === 3) throw retryErr;
+              log(`  Thumbnail V2 ${i + 1}: attempt ${attempt} failed (${retryErr.message?.substring(0, 80)}), retrying in ${attempt * 5}s...`);
+              await sleep(attempt * 5000);
+            }
+          }
           const filename = `thumb_v2_${i + 1}_${timestamp}.png`;
           publicUrl = await uploadBufferToStorage(imageBuffer, effectiveProjectId, filename, 'image/png');
           usedPrompt = variationPrompt;
