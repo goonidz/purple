@@ -1879,11 +1879,22 @@ async function processAudioTTSPipeline(job) {
     const chunkQueue = chunks.map((_, i) => i);
 
     async function processOneChunk(index) {
-      log(`[TTS ${jobId}] Generating chunk ${index + 1}/${chunks.length} (${chunks[index].split(/\s+/).length} words)...`);
+      const CHUNK_MAX_RETRIES = 3;
+      let pcmBuffer;
 
-      await acquireTTSRateToken();
+      for (let attempt = 1; attempt <= CHUNK_MAX_RETRIES; attempt++) {
+        try {
+          log(`[TTS ${jobId}] Generating chunk ${index + 1}/${chunks.length} (${chunks[index].split(/\s+/).length} words)${attempt > 1 ? ` [retry ${attempt}]` : ''}...`);
+          await acquireTTSRateToken();
+          pcmBuffer = await generateTTSChunk(geminiKey, chunks[index], voice, styleInstruction);
+          break;
+        } catch (genErr) {
+          logError(`[TTS ${jobId}] Chunk ${index + 1} attempt ${attempt}/${CHUNK_MAX_RETRIES} failed:`, genErr.message);
+          if (attempt === CHUNK_MAX_RETRIES) throw genErr;
+          await sleep(3000 * attempt);
+        }
+      }
 
-      const pcmBuffer = await generateTTSChunk(geminiKey, chunks[index], voice, styleInstruction);
       const wavBuffer = createWavBuffer(pcmBuffer);
 
       log(`[TTS ${jobId}] Chunk ${index + 1} generated: ${wavBuffer.length} bytes WAV`);
@@ -1958,7 +1969,10 @@ async function processAudioTTSPipeline(job) {
         await sleep(5000 * attempt);
       }
     }
-    const finalAudioUrl = concatResult.audioUrl;
+    let finalAudioUrl = concatResult.audioUrl;
+    if (finalAudioUrl && finalAudioUrl.includes('localhost')) {
+      finalAudioUrl = finalAudioUrl.replace(/http:\/\/localhost:\d+/, 'https://purpleai.duckdns.org');
+    }
 
     log(`[TTS ${jobId}] Merge complete: ${finalAudioUrl} (${concatResult.totalDuration?.toFixed(1)}s)`);
 
