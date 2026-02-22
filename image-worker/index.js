@@ -1176,14 +1176,20 @@ async function generateWithGemini(geminiKey, prompt, imageUrls, modelName) {
     parts.push({ inline_data: { mime_type: 'image/jpeg', data: base64 } });
   }
 
-  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${geminiKey}`;
+  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`;
   const response = await fetch(apiUrl, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'x-goog-api-key': geminiKey,
+    },
     body: JSON.stringify({
       contents: [{ parts }],
       generationConfig: {
-        responseModalities: ['TEXT', 'IMAGE'],
+        imageConfig: {
+          aspectRatio: '16:9',
+          imageSize: '1K',
+        },
       },
     }),
   });
