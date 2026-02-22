@@ -1184,10 +1184,6 @@ async function generateWithGemini(geminiKey, prompt, imageUrls, modelName) {
       contents: [{ parts }],
       generationConfig: {
         responseModalities: ['TEXT', 'IMAGE'],
-        imageConfig: {
-          aspectRatio: '16:9',
-          imageSize: '1K',
-        },
       },
     }),
   });
