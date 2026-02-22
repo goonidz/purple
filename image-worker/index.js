@@ -1897,8 +1897,13 @@ async function processAudioTTSPipeline(job) {
         throw new Error(`Failed to upload chunk ${index}: ${uploadError.message}`);
       }
 
-      const { data: urlData } = supabase.storage.from('audio-files').getPublicUrl(storagePath);
-      chunkUrls[index] = urlData.publicUrl;
+      const { data: urlData, error: urlError } = await supabase.storage
+        .from('audio-files')
+        .createSignedUrl(storagePath, 3600);
+      if (urlError || !urlData?.signedUrl) {
+        throw new Error(`Failed to get signed URL for chunk ${index}: ${urlError?.message || 'no URL'}`);
+      }
+      chunkUrls[index] = urlData.signedUrl;
 
       completedCount++;
       await supabase
@@ -1921,22 +1926,38 @@ async function processAudioTTSPipeline(job) {
 
     log(`[TTS ${jobId}] All ${chunks.length} chunks generated. Merging via concat-audio...`);
 
-    const concatResponse = await fetch('http://localhost:3000/concat-audio', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        audioUrls: chunkUrls,
-        userId: job.user_id,
-        projectId: projectId
-      })
-    });
+    const CONCAT_MAX_RETRIES = 3;
+    let concatResult;
+    for (let attempt = 1; attempt <= CONCAT_MAX_RETRIES; attempt++) {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 120000);
 
-    if (!concatResponse.ok) {
-      const errText = await concatResponse.text();
-      throw new Error(`concat-audio failed: ${errText.substring(0, 300)}`);
+        const concatResponse = await fetch('http://localhost:3000/concat-audio', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            audioUrls: chunkUrls,
+            userId: job.user_id,
+            projectId: projectId
+          }),
+          signal: controller.signal
+        });
+        clearTimeout(timeout);
+
+        if (!concatResponse.ok) {
+          const errText = await concatResponse.text();
+          throw new Error(`concat-audio HTTP ${concatResponse.status}: ${errText.substring(0, 300)}`);
+        }
+
+        concatResult = await concatResponse.json();
+        break;
+      } catch (concatErr) {
+        logError(`[TTS ${jobId}] concat-audio attempt ${attempt}/${CONCAT_MAX_RETRIES} failed:`, concatErr.message);
+        if (attempt === CONCAT_MAX_RETRIES) throw concatErr;
+        await sleep(5000 * attempt);
+      }
     }
-
-    const concatResult = await concatResponse.json();
     const finalAudioUrl = concatResult.audioUrl;
 
     log(`[TTS ${jobId}] Merge complete: ${finalAudioUrl} (${concatResult.totalDuration?.toFixed(1)}s)`);
