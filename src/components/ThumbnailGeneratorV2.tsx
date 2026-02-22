@@ -56,6 +56,11 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isDuplicateDialogOpen, setIsDuplicateDialogOpen] = useState(false);
   const [editName, setEditName] = useState("");
+  const [editChannelHandle, setEditChannelHandle] = useState("");
+  const [editCharacterRefUrl, setEditCharacterRefUrl] = useState("");
+  const [editUserDirectives, setEditUserDirectives] = useState("");
+  const [editImageModel, setEditImageModel] = useState("gemini-3-pro-image-preview");
+  const [isUploadingEdit, setIsUploadingEdit] = useState(false);
   const [duplicateName, setDuplicateName] = useState("");
 
   // History state
@@ -319,10 +324,36 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
     const preset = presets.find(p => p.id === selectedPresetId);
     if (!preset) return;
     setEditName(preset.name);
+    setEditChannelHandle(preset.channel_handle || "");
+    setEditCharacterRefUrl(preset.character_ref_url || "");
+    setEditUserDirectives(preset.custom_prompt || "");
+    setEditImageModel(preset.image_model || "gemini-3-pro-image-preview");
     setIsEditDialogOpen(true);
   };
 
-  const renamePreset = async () => {
+  const handleEditCharacterUpload = async (file: File) => {
+    setIsUploadingEdit(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("User not authenticated");
+      const compressedFile = await compressImage(file);
+      const fileName = `${user.id}/thumbnails-v2/character/${Date.now()}_${compressedFile.name}`;
+      const { error: uploadError } = await supabase.storage
+        .from("style-references")
+        .upload(fileName, compressedFile);
+      if (uploadError) throw uploadError;
+      const { data: { publicUrl } } = supabase.storage
+        .from("style-references")
+        .getPublicUrl(fileName);
+      setEditCharacterRefUrl(publicUrl);
+    } catch (error: any) {
+      toast.error("Erreur lors de l'upload");
+    } finally {
+      setIsUploadingEdit(false);
+    }
+  };
+
+  const saveEditPreset = async () => {
     if (!selectedPresetId || !editName.trim()) return;
 
     try {
@@ -330,10 +361,10 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
         .from("thumbnail_presets")
         .update({
           name: editName.trim(),
-          channel_handle: channelHandle.trim(),
-          character_ref_url: characterRefUrl || null,
-          custom_prompt: userDirectives.trim() || null,
-          image_model: imageModel,
+          channel_handle: editChannelHandle.trim() || null,
+          character_ref_url: editCharacterRefUrl || null,
+          custom_prompt: editUserDirectives.trim() || null,
+          image_model: editImageModel,
         } as any)
         .eq("id", selectedPresetId);
 
@@ -341,9 +372,14 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
 
       toast.success("Preset modifié !");
       setIsEditDialogOpen(false);
+      // Also update the form with the edited values
+      setChannelHandle(editChannelHandle);
+      setCharacterRefUrl(editCharacterRefUrl);
+      setUserDirectives(editUserDirectives);
+      setImageModel(editImageModel);
       await loadPresets();
     } catch (error: any) {
-      console.error("Error renaming V2 preset:", error);
+      console.error("Error editing V2 preset:", error);
       toast.error("Erreur lors de la modification");
     }
   };
@@ -875,7 +911,7 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
 
       {/* Edit preset dialog */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent>
+        <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Modifier le preset</DialogTitle>
           </DialogHeader>
@@ -885,15 +921,88 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
               <Input
                 value={editName}
                 onChange={(e) => setEditName(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && renamePreset()}
               />
             </div>
-            <p className="text-sm text-muted-foreground">
-              Les valeurs actuelles du formulaire (chaîne, visage, directives, modèle) seront aussi sauvegardées.
-            </p>
-            <div className="flex justify-end gap-2">
+
+            <div className="space-y-2">
+              <Label>Chaîne YouTube</Label>
+              <Input
+                value={editChannelHandle}
+                onChange={(e) => setEditChannelHandle(e.target.value)}
+                placeholder="@NomDeLaChaine"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Personnage / Visage de référence</Label>
+              {editCharacterRefUrl ? (
+                <div className="relative group inline-block">
+                  <img
+                    src={editCharacterRefUrl}
+                    alt="Character"
+                    className="w-24 h-24 object-cover rounded-lg border"
+                  />
+                  <Button
+                    variant="destructive"
+                    size="icon"
+                    className="absolute top-1 right-1 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                    onClick={() => setEditCharacterRefUrl("")}
+                  >
+                    <X className="w-3 h-3" />
+                  </Button>
+                </div>
+              ) : (
+                <div
+                  className="border-2 border-dashed rounded-lg p-3 text-center cursor-pointer hover:border-primary/50 transition-colors"
+                  onClick={() => document.getElementById('edit-character-upload')?.click()}
+                >
+                  <input
+                    id="edit-character-upload"
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => e.target.files?.[0] && handleEditCharacterUpload(e.target.files[0])}
+                  />
+                  {isUploadingEdit ? (
+                    <Loader2 className="w-5 h-5 mx-auto animate-spin text-muted-foreground" />
+                  ) : (
+                    <>
+                      <Upload className="w-5 h-5 mx-auto mb-1 text-muted-foreground" />
+                      <p className="text-xs text-muted-foreground">Ajouter un visage</p>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label>Directives supplémentaires</Label>
+              <Textarea
+                value={editUserDirectives}
+                onChange={(e) => setEditUserDirectives(e.target.value)}
+                rows={3}
+                className="text-sm"
+                placeholder="Ex: Ajoute du texte rouge en gros..."
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Modèle d'image</Label>
+              <Select value={editImageModel} onValueChange={setEditImageModel}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="gemini-3-pro-image-preview">Gemini 3 Pro Image</SelectItem>
+                  <SelectItem value="seedream-4.5">SeedDream 4.5</SelectItem>
+                  <SelectItem value="seedream-4">SeedDream 4.0</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
               <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>Annuler</Button>
-              <Button onClick={renamePreset} disabled={!editName.trim()}>Enregistrer</Button>
+              <Button onClick={saveEditPreset} disabled={!editName.trim()}>Enregistrer</Button>
             </div>
           </div>
         </DialogContent>
