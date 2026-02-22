@@ -77,7 +77,7 @@ serve(async (req) => {
     // Step 2: Get uploads playlist and fetch recent video IDs
     const uploadsPlaylistId = 'UU' + channelId.substring(2);
 
-    const playlistUrl = `https://www.googleapis.com/youtube/v3/playlistItems?part=contentDetails&playlistId=${uploadsPlaylistId}&maxResults=15&key=${YOUTUBE_API_KEY}`;
+    const playlistUrl = `https://www.googleapis.com/youtube/v3/playlistItems?part=contentDetails&playlistId=${uploadsPlaylistId}&maxResults=10&key=${YOUTUBE_API_KEY}`;
     const playlistResponse = await fetch(playlistUrl);
     const playlistData = await playlistResponse.json();
 

@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
-import { Upload, X, Loader2, Image as ImageIcon, Download, Search, Youtube } from "lucide-react";
+import { Upload, X, Loader2, Image as ImageIcon, Download, Youtube } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useGenerationJobs, GenerationJob } from "@/hooks/useGenerationJobs";
@@ -20,10 +20,6 @@ interface ThumbnailGeneratorV2Props {
 
 export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: ThumbnailGeneratorV2Props) => {
   const [channelHandle, setChannelHandle] = useState("");
-  const [channelTitle, setChannelTitle] = useState("");
-  const [channelThumbnailUrls, setChannelThumbnailUrls] = useState<string[]>([]);
-  const [selectedThumbnails, setSelectedThumbnails] = useState<Set<number>>(new Set());
-  const [isLoadingChannel, setIsLoadingChannel] = useState(false);
 
   const [characterRefUrl, setCharacterRefUrl] = useState("");
   const [isUploading, setIsUploading] = useState(false);
@@ -87,54 +83,6 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
     }
   }, [activeJobs, hasActiveJob, isGenerating, getJobByType]);
 
-  const loadChannelThumbnails = async () => {
-    if (!channelHandle.trim()) {
-      toast.error("Entre le @ d'une chaîne YouTube");
-      return;
-    }
-
-    setIsLoadingChannel(true);
-    try {
-      const { data, error } = await supabase.functions.invoke('fetch-channel-thumbnails', {
-        body: { channelHandle: channelHandle.trim() }
-      });
-
-      if (error) throw error;
-      if (data.error) throw new Error(data.error);
-
-      setChannelThumbnailUrls(data.thumbnailUrls || []);
-      setChannelTitle(data.channelTitle || channelHandle);
-      // Select all by default
-      setSelectedThumbnails(new Set((data.thumbnailUrls || []).map((_: string, i: number) => i)));
-      toast.success(`${data.thumbnailUrls?.length || 0} miniatures chargées depuis "${data.channelTitle}"`);
-    } catch (error: any) {
-      console.error("Error loading channel thumbnails:", error);
-      toast.error(error?.message || "Erreur lors du chargement de la chaîne");
-    } finally {
-      setIsLoadingChannel(false);
-    }
-  };
-
-  const toggleThumbnailSelection = (index: number) => {
-    setSelectedThumbnails(prev => {
-      const next = new Set(prev);
-      if (next.has(index)) {
-        next.delete(index);
-      } else {
-        next.add(index);
-      }
-      return next;
-    });
-  };
-
-  const selectAll = () => {
-    setSelectedThumbnails(new Set(channelThumbnailUrls.map((_, i) => i)));
-  };
-
-  const deselectAll = () => {
-    setSelectedThumbnails(new Set());
-  };
-
   const compressImage = (file: File, maxWidth = 1920, maxHeight = 1080, quality = 0.85): Promise<File> => {
     return new Promise((resolve, reject) => {
       const img = new Image();
@@ -197,10 +145,8 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
   };
 
   const generateThumbnails = async () => {
-    const selectedUrls = channelThumbnailUrls.filter((_, i) => selectedThumbnails.has(i));
-
-    if (selectedUrls.length === 0) {
-      toast.error("Sélectionne au moins une miniature de référence");
+    if (!channelHandle.trim()) {
+      toast.error("Entre le @ d'une chaîne YouTube");
       return;
     }
 
@@ -213,12 +159,26 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
     setGeneratedThumbnails([]);
 
     try {
-      toast.info("Lancement de la génération V2 en arrière-plan...");
+      // Fetch channel thumbnails on the fly
+      toast.info("Chargement des miniatures de la chaîne...");
+      const { data, error } = await supabase.functions.invoke('fetch-channel-thumbnails', {
+        body: { channelHandle: channelHandle.trim() }
+      });
+
+      if (error) throw error;
+      if (data.error) throw new Error(data.error);
+
+      const thumbnailUrls: string[] = data.thumbnailUrls || [];
+      if (thumbnailUrls.length === 0) {
+        throw new Error("Aucune miniature trouvée sur cette chaîne");
+      }
+
+      toast.info(`${thumbnailUrls.length} miniatures chargées, lancement de la génération...`);
 
       await startJob('thumbnails_v2', {
         videoScript,
         videoTitle,
-        exampleUrls: selectedUrls,
+        exampleUrls: thumbnailUrls,
         characterRefUrl: characterRefUrl || undefined,
         userDirectives: userDirectives.trim() || undefined,
         imageModel,
@@ -258,74 +218,20 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
           Miniature V2 — Style chaîne YouTube
         </h3>
         <p className="text-sm text-muted-foreground mt-1">
-          Charge les miniatures d'une chaîne YouTube, ajoute ton visage, et génère des miniatures dans le même style.
+          Entre le @ d'une chaîne YouTube, ajoute ton visage, et génère des miniatures dans le même style.
         </p>
       </div>
 
       {/* Channel handle input */}
-      <div className="space-y-3">
+      <div className="space-y-2">
         <Label>Chaîne YouTube</Label>
-        <div className="flex gap-2">
-          <Input
-            value={channelHandle}
-            onChange={(e) => setChannelHandle(e.target.value)}
-            placeholder="@NomDeLaChaine"
-            className="flex-1"
-            onKeyDown={(e) => e.key === 'Enter' && loadChannelThumbnails()}
-          />
-          <Button
-            onClick={loadChannelThumbnails}
-            disabled={isLoadingChannel || !channelHandle.trim()}
-          >
-            {isLoadingChannel ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <Search className="w-4 h-4" />
-            )}
-            <span className="ml-2 hidden sm:inline">Charger</span>
-          </Button>
-        </div>
+        <Input
+          value={channelHandle}
+          onChange={(e) => setChannelHandle(e.target.value)}
+          placeholder="@NomDeLaChaine"
+          onKeyDown={(e) => e.key === 'Enter' && !isGenerating && generateThumbnails()}
+        />
       </div>
-
-      {/* Channel thumbnails grid */}
-      {channelThumbnailUrls.length > 0 && (
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <Label>
-              Miniatures de "{channelTitle}" ({selectedThumbnails.size}/{channelThumbnailUrls.length} sélectionnées)
-            </Label>
-            <div className="flex gap-2">
-              <Button variant="ghost" size="sm" onClick={selectAll}>Tout</Button>
-              <Button variant="ghost" size="sm" onClick={deselectAll}>Aucune</Button>
-            </div>
-          </div>
-          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3">
-            {channelThumbnailUrls.map((url, index) => (
-              <div
-                key={url}
-                className={`relative cursor-pointer rounded-lg overflow-hidden border-2 transition-all ${
-                  selectedThumbnails.has(index)
-                    ? 'border-primary ring-2 ring-primary/30'
-                    : 'border-transparent opacity-50 hover:opacity-75'
-                }`}
-                onClick={() => toggleThumbnailSelection(index)}
-              >
-                <img
-                  src={url}
-                  alt={`Thumbnail ${index + 1}`}
-                  className="w-full aspect-video object-cover"
-                  loading="lazy"
-                />
-                {selectedThumbnails.has(index) && (
-                  <div className="absolute top-1 right-1 w-5 h-5 bg-primary rounded-full flex items-center justify-center">
-                    <span className="text-primary-foreground text-xs font-bold">&#10003;</span>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* Character reference */}
       <div className="space-y-2">
@@ -434,7 +340,7 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
       {/* Generate button */}
       <Button
         onClick={generateThumbnails}
-        disabled={isGenerating || selectedThumbnails.size === 0}
+        disabled={isGenerating || !channelHandle.trim()}
         className="w-full"
         size="lg"
       >
