@@ -1726,13 +1726,243 @@ async function checkDiskUsage() {
 }
 
 // ============================================================================
+// TTS: TEXT CHUNKING (split by sentences, ~200-300 words per chunk)
+// ============================================================================
+
+function chunkTextBySentences(text, targetWordCount = 250) {
+  const sentences = text.match(/[^.!?]*[.!?]+[\s]*/g) || [text];
+  const chunks = [];
+  let current = '';
+  let currentWords = 0;
+
+  for (const sentence of sentences) {
+    const sentenceWords = sentence.trim().split(/\s+/).length;
+    if (currentWords + sentenceWords > targetWordCount && currentWords > 0) {
+      chunks.push(current.trim());
+      current = sentence;
+      currentWords = sentenceWords;
+    } else {
+      current += sentence;
+      currentWords += sentenceWords;
+    }
+  }
+  if (current.trim()) {
+    chunks.push(current.trim());
+  }
+  return chunks;
+}
+
+// ============================================================================
+// TTS: WAV HEADER (PCM 24kHz 16-bit mono -> WAV)
+// ============================================================================
+
+function createWavBuffer(pcmBuffer) {
+  const sampleRate = 24000;
+  const numChannels = 1;
+  const bitsPerSample = 16;
+  const byteRate = sampleRate * numChannels * (bitsPerSample / 8);
+  const blockAlign = numChannels * (bitsPerSample / 8);
+  const dataSize = pcmBuffer.length;
+  const header = Buffer.alloc(44);
+
+  header.write('RIFF', 0);
+  header.writeUInt32LE(36 + dataSize, 4);
+  header.write('WAVE', 8);
+  header.write('fmt ', 12);
+  header.writeUInt32LE(16, 16);
+  header.writeUInt16LE(1, 20);          // PCM format
+  header.writeUInt16LE(numChannels, 22);
+  header.writeUInt32LE(sampleRate, 24);
+  header.writeUInt32LE(byteRate, 28);
+  header.writeUInt16LE(blockAlign, 32);
+  header.writeUInt16LE(bitsPerSample, 34);
+  header.write('data', 36);
+  header.writeUInt32LE(dataSize, 40);
+
+  return Buffer.concat([header, pcmBuffer]);
+}
+
+// ============================================================================
+// TTS: GEMINI TTS CHUNK GENERATION + RATE LIMITER
+// ============================================================================
+
+const TTS_MIN_INTERVAL_MS = 6500;
+let lastTTSRequestTime = 0;
+
+async function waitForTTSRateLimit() {
+  const elapsed = Date.now() - lastTTSRequestTime;
+  if (elapsed < TTS_MIN_INTERVAL_MS) {
+    await sleep(TTS_MIN_INTERVAL_MS - elapsed);
+  }
+  lastTTSRequestTime = Date.now();
+}
+
+async function generateTTSChunk(geminiKey, text, voice = 'Puck', styleInstruction = '') {
+  const fullText = styleInstruction ? `${styleInstruction}\n${text}` : text;
+
+  const response = await fetch(
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro-preview-tts:generateContent',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': geminiKey },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: fullText }] }],
+        generationConfig: {
+          responseModalities: ['AUDIO'],
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: { voiceName: voice }
+            }
+          }
+        }
+      })
+    }
+  );
+
+  if (!response.ok) {
+    const errBody = await response.text();
+    throw new Error(`Gemini TTS API error ${response.status}: ${errBody.substring(0, 300)}`);
+  }
+
+  const json = await response.json();
+  const audioData = json.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+  if (!audioData) {
+    throw new Error('Gemini TTS returned no audio data');
+  }
+
+  return Buffer.from(audioData, 'base64');
+}
+
+// ============================================================================
+// TTS: FULL PIPELINE
+// ============================================================================
+
+async function processAudioTTSPipeline(job) {
+  const startTime = Date.now();
+  const jobId = job.id;
+
+  try {
+    const meta = job.metadata || {};
+    const text = meta.text;
+    const voice = meta.voice || 'Puck';
+    const styleInstruction = meta.styleInstruction || 'Lis pour une vidéo youtube sur des docus finances: ';
+    const projectId = job.project_id;
+
+    if (!text || text.trim().length < 10) {
+      throw new Error('No text provided for TTS generation');
+    }
+
+    log(`[TTS ${jobId}] Starting audio generation (voice=${voice}, text=${text.length} chars)`);
+
+    const geminiKey = await getUserApiKey(job.user_id, 'gemini');
+
+    const chunks = chunkTextBySentences(text);
+    log(`[TTS ${jobId}] Split into ${chunks.length} chunks`);
+
+    await supabase
+      .from('generation_jobs')
+      .update({ total: chunks.length, progress: 0, metadata: { ...meta, totalChunks: chunks.length } })
+      .eq('id', jobId);
+
+    const chunkUrls = [];
+
+    for (let i = 0; i < chunks.length; i++) {
+      log(`[TTS ${jobId}] Generating chunk ${i + 1}/${chunks.length} (${chunks[i].split(/\s+/).length} words)...`);
+
+      await waitForTTSRateLimit();
+
+      const pcmBuffer = await generateTTSChunk(geminiKey, chunks[i], voice, styleInstruction);
+      const wavBuffer = createWavBuffer(pcmBuffer);
+
+      log(`[TTS ${jobId}] Chunk ${i + 1} generated: ${wavBuffer.length} bytes WAV`);
+
+      const storagePath = `tts/${jobId}/chunk_${String(i).padStart(3, '0')}.wav`;
+      const { error: uploadError } = await supabase.storage
+        .from('audio-files')
+        .upload(storagePath, wavBuffer, { contentType: 'audio/wav', upsert: true });
+
+      if (uploadError) {
+        throw new Error(`Failed to upload chunk ${i}: ${uploadError.message}`);
+      }
+
+      const { data: urlData } = supabase.storage.from('audio-files').getPublicUrl(storagePath);
+      chunkUrls.push(urlData.publicUrl);
+
+      await supabase
+        .from('generation_jobs')
+        .update({ progress: i + 1, metadata: { ...meta, totalChunks: chunks.length, completedChunks: i + 1 } })
+        .eq('id', jobId);
+    }
+
+    log(`[TTS ${jobId}] All ${chunks.length} chunks generated. Merging via concat-audio...`);
+
+    const concatResponse = await fetch('http://localhost:3000/concat-audio', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        audioUrls: chunkUrls,
+        userId: job.user_id,
+        projectId: projectId
+      })
+    });
+
+    if (!concatResponse.ok) {
+      const errText = await concatResponse.text();
+      throw new Error(`concat-audio failed: ${errText.substring(0, 300)}`);
+    }
+
+    const concatResult = await concatResponse.json();
+    const finalAudioUrl = concatResult.audioUrl;
+
+    log(`[TTS ${jobId}] Merge complete: ${finalAudioUrl} (${concatResult.totalDuration?.toFixed(1)}s)`);
+
+    if (projectId) {
+      await supabase
+        .from('projects')
+        .update({ audio_url: finalAudioUrl })
+        .eq('id', projectId);
+    }
+
+    await supabase
+      .from('generation_jobs')
+      .update({
+        status: 'completed',
+        progress: chunks.length,
+        completed_at: new Date().toISOString(),
+        metadata: {
+          ...meta,
+          totalChunks: chunks.length,
+          completedChunks: chunks.length,
+          audioUrl: finalAudioUrl,
+          totalDuration: concatResult.totalDuration,
+          durationMs: Date.now() - startTime
+        }
+      })
+      .eq('id', jobId);
+
+    log(`[TTS ${jobId}] Done in ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
+
+  } catch (err) {
+    logError(`[TTS ${jobId}] Pipeline failed:`, err.message);
+    await supabase
+      .from('generation_jobs')
+      .update({
+        status: 'failed',
+        error_message: err.message,
+        completed_at: new Date().toISOString()
+      })
+      .eq('id', jobId);
+  }
+}
+
+// ============================================================================
 // MAIN LOOP
 // ============================================================================
 
 async function mainLoop() {
   log(`Image Worker started (MAX_CONCURRENT=${MAX_CONCURRENT}, POLL=${POLL_INTERVAL_MS}ms)`);
   log(`Supabase: ${SUPABASE_URL}`);
-  log(`Job types: single_image, thumbnails, single_prompt`);
+  log(`Job types: single_image, thumbnails, single_prompt, audio_generation`);
 
   while (true) {
     try {
@@ -1746,7 +1976,7 @@ async function mainLoop() {
           .from('generation_jobs')
           .select('*')
           .eq('status', 'pending')
-          .in('job_type', ['single_image', 'thumbnails', 'thumbnails_v2', 'single_prompt'])
+          .in('job_type', ['single_image', 'thumbnails', 'thumbnails_v2', 'single_prompt', 'audio_generation'])
           .order('created_at', { ascending: true })
           .limit(100);
 
@@ -1828,6 +2058,8 @@ async function mainLoop() {
               pipeline = processThumbnailsV2Pipeline(job);
             } else if (job.job_type === 'single_prompt') {
               pipeline = processPromptJob(job);
+            } else if (job.job_type === 'audio_generation') {
+              pipeline = processAudioTTSPipeline(job);
             }
 
             pipeline.finally(() => { activeJobs--; });
