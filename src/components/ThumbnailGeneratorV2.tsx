@@ -28,7 +28,7 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
   const [isUploading, setIsUploading] = useState(false);
   const [isDraggingCharacter, setIsDraggingCharacter] = useState(false);
 
-  const [imageModel, setImageModel] = useState("seedream-4.5");
+  const [imageModel, setImageModel] = useState("gemini-3-pro-image-preview");
   const [numThumbnails, setNumThumbnails] = useState(3);
 
   const [isGenerating, setIsGenerating] = useState(false);
@@ -388,10 +388,16 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value="gemini-3-pro-image-preview">Gemini 3 Pro Image (Recommandé)</SelectItem>
               <SelectItem value="seedream-4.5">SeedDream 4.5</SelectItem>
               <SelectItem value="seedream-4">SeedDream 4.0</SelectItem>
             </SelectContent>
           </Select>
+          {imageModel === 'gemini-3-pro-image-preview' && (
+            <p className="text-xs text-muted-foreground">
+              Utilise ta clé Google Gemini (configurée dans ton Profil).
+            </p>
+          )}
         </div>
         <div className="space-y-2">
           <Label>Nombre de miniatures</Label>

@@ -1112,6 +1112,69 @@ Video title: {videoTitle}
 If original style has text on the image, make it HIGH CTR.
 Face to use is img1.`;
 
+// Upload a raw Buffer (e.g. from Gemini base64 response) to Supabase Storage
+async function uploadBufferToStorage(buffer, projectId, filename, contentType = 'image/png') {
+  const storagePath = `${projectId}/${filename}`;
+  const { error: uploadError } = await supabase.storage
+    .from('generated-images')
+    .upload(storagePath, buffer, { contentType, upsert: true });
+  if (uploadError) throw new Error(`Storage upload failed: ${uploadError.message}`);
+  const { data: { publicUrl } } = supabase.storage
+    .from('generated-images')
+    .getPublicUrl(storagePath);
+  return publicUrl;
+}
+
+// Fetch an image URL and return its base64-encoded content
+async function fetchImageAsBase64(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Failed to fetch image ${url}: ${res.status}`);
+  const buf = Buffer.from(await res.arrayBuffer());
+  return buf.toString('base64');
+}
+
+// Generate a single thumbnail using Gemini image generation
+async function generateWithGemini(geminiKey, prompt, imageUrls, modelName) {
+  // Build parts: text prompt first, then all images as inline_data
+  const parts = [{ text: prompt }];
+  for (const url of imageUrls) {
+    const base64 = await fetchImageAsBase64(url);
+    parts.push({ inline_data: { mime_type: 'image/jpeg', data: base64 } });
+  }
+
+  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${geminiKey}`;
+  const response = await fetch(apiUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ parts }],
+      generationConfig: {
+        responseModalities: ['TEXT', 'IMAGE'],
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Gemini image API error (${response.status}): ${errorText.substring(0, 300)}`);
+  }
+
+  const data = await response.json();
+  const candidate = data.candidates?.[0];
+  if (!candidate?.content?.parts) {
+    throw new Error('Gemini returned no content parts');
+  }
+
+  // Find the image part in the response
+  const imagePart = candidate.content.parts.find(p => p.inline_data?.data);
+  if (!imagePart) {
+    const textParts = candidate.content.parts.filter(p => p.text).map(p => p.text).join(' ');
+    throw new Error(`Gemini returned no image. Text response: ${textParts.substring(0, 200)}`);
+  }
+
+  return Buffer.from(imagePart.inline_data.data, 'base64');
+}
+
 async function processThumbnailsV2Pipeline(job) {
   const { id: jobId, project_id: projectId, user_id: userId, metadata } = job;
   const {
@@ -1120,20 +1183,28 @@ async function processThumbnailsV2Pipeline(job) {
   } = metadata || {};
 
   const count = numThumbnails || 3;
-  log(`Processing thumbnails V2 (job ${jobId.substring(0, 8)}...) - ${count} thumbnails, direct prompt`);
+  const model = imageModel || 'seedream-4.5';
+  const isGemini = model.startsWith('gemini-');
+  log(`Processing thumbnails V2 (job ${jobId.substring(0, 8)}...) - ${count} thumbnails, model: ${model}`);
 
   try {
-    const replicateKey = await getUserApiKey(userId, 'replicate');
-    const replicateClient = new Replicate({ auth: replicateKey });
-
     const prompt = THUMBNAIL_V2_PROMPT_TEMPLATE.replace('{videoTitle}', videoTitle || 'Untitled');
 
-    // Face reference MUST be first image, then example thumbnails
+    // Face reference MUST be first, then example thumbnails
     const allImageRefs = [];
     if (characterRefUrl) allImageRefs.push(characterRefUrl);
     if (exampleUrls && Array.isArray(exampleUrls)) allImageRefs.push(...exampleUrls);
 
-    const model = imageModel || 'seedream-4.5';
+    // Get the right API key
+    let replicateClient = null;
+    let geminiKey = null;
+    if (isGemini) {
+      geminiKey = await getUserApiKey(userId, 'gemini');
+    } else {
+      const replicateKey = await getUserApiKey(userId, 'replicate');
+      replicateClient = new Replicate({ auth: replicateKey });
+    }
+
     const generatedThumbnails = [];
     let dbUpdateLock = Promise.resolve();
 
@@ -1146,28 +1217,33 @@ async function processThumbnailsV2Pipeline(job) {
       try {
         log(`  Thumbnail V2 ${i + 1}/${count}: generating with ${model}...`);
 
-        const thumbInput = buildReplicateInput({
-          prompt,
-          model,
-          width: 1920,
-          height: 1080,
-          styleRefs: allImageRefs,
-        });
-
-        const result = await runReplicatePrediction(replicateClient, thumbInput.modelName, thumbInput.input);
-        const imageOutput = Array.isArray(result.output) ? result.output[0] : result.output;
-
-        if (!imageOutput) {
-          logError(`  Thumbnail V2 ${i + 1}: no output`);
-          return null;
-        }
-
         const timestamp = Date.now();
         const effectiveProjectId = standalone ? (thumbnailProjectId || 'standalone') : projectId;
-        const filename = `thumb_v2_${i + 1}_${timestamp}.jpg`;
-        const publicUrl = await uploadImageToStorage(imageOutput, effectiveProjectId, filename);
-        log(`  Thumbnail V2 ${i + 1}/${count}: uploaded -> ${publicUrl.substring(0, 80)}...`);
+        let publicUrl;
 
+        if (isGemini) {
+          const imageBuffer = await generateWithGemini(geminiKey, prompt, allImageRefs, model);
+          const filename = `thumb_v2_${i + 1}_${timestamp}.png`;
+          publicUrl = await uploadBufferToStorage(imageBuffer, effectiveProjectId, filename, 'image/png');
+        } else {
+          const thumbInput = buildReplicateInput({
+            prompt,
+            model,
+            width: 1920,
+            height: 1080,
+            styleRefs: allImageRefs,
+          });
+          const result = await runReplicatePrediction(replicateClient, thumbInput.modelName, thumbInput.input);
+          const imageOutput = Array.isArray(result.output) ? result.output[0] : result.output;
+          if (!imageOutput) {
+            logError(`  Thumbnail V2 ${i + 1}: no output`);
+            return null;
+          }
+          const filename = `thumb_v2_${i + 1}_${timestamp}.jpg`;
+          publicUrl = await uploadImageToStorage(imageOutput, effectiveProjectId, filename);
+        }
+
+        log(`  Thumbnail V2 ${i + 1}/${count}: uploaded -> ${publicUrl.substring(0, 80)}...`);
         const thumb = { index: i, url: publicUrl, prompt };
 
         dbUpdateLock = dbUpdateLock.then(async () => {
