@@ -1205,7 +1205,9 @@ async function generateWithGemini(geminiKey, prompt, imageUrls, modelName) {
     const finishReason = candidate?.finishReason || 'unknown';
     const blockReason = data.promptFeedback?.blockReason || '';
     const safetyRatings = JSON.stringify(candidate?.safetyRatings || data.promptFeedback?.safetyRatings || []);
-    throw new Error(`Gemini returned no content parts. finishReason=${finishReason}, blockReason=${blockReason}, safety=${safetyRatings}`);
+    // Log full response for debugging
+    const responseSnippet = JSON.stringify(data).substring(0, 500);
+    throw new Error(`Gemini no parts. finish=${finishReason}, block=${blockReason}, response=${responseSnippet}`);
   }
 
   // Find the image part in the response
@@ -1237,9 +1239,14 @@ async function processThumbnailsV2Pipeline(job) {
     }
 
     // Face reference MUST be first, then example thumbnails
+    // Gemini has limits on input images — cap at 5 total (1 face + 4 examples)
     const allImageRefs = [];
     if (characterRefUrl) allImageRefs.push(characterRefUrl);
-    if (exampleUrls && Array.isArray(exampleUrls)) allImageRefs.push(...exampleUrls);
+    if (exampleUrls && Array.isArray(exampleUrls)) {
+      const maxExamples = isGemini ? 4 : exampleUrls.length;
+      allImageRefs.push(...exampleUrls.slice(0, maxExamples));
+    }
+    log(`  Image refs: ${allImageRefs.length} (face: ${characterRefUrl ? 'yes' : 'no'}, examples: ${allImageRefs.length - (characterRefUrl ? 1 : 0)})`);
 
     // Get the right API key
     let replicateClient = null;
