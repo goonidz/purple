@@ -72,7 +72,12 @@ export function AudioTTSGenerator({ initialText }: AudioTTSGeneratorProps) {
       .order("created_at", { ascending: false })
       .limit(20);
 
-    if (data) setHistory(data as unknown as HistoryJob[]);
+    if (data) {
+      const geminiJobs = (data as unknown as HistoryJob[]).filter(
+        (j) => j.metadata?.provider === "gemini_tts"
+      );
+      setHistory(geminiJobs);
+    }
   };
 
   const pollJob = useCallback((jId: string) => {
