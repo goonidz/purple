@@ -1783,18 +1783,27 @@ function createWavBuffer(pcmBuffer) {
 }
 
 // ============================================================================
-// TTS: GEMINI TTS CHUNK GENERATION + RATE LIMITER
+// TTS: GEMINI TTS CHUNK GENERATION + SLIDING WINDOW RATE LIMITER (10 req/min)
 // ============================================================================
 
-const TTS_MIN_INTERVAL_MS = 6500;
-let lastTTSRequestTime = 0;
+const TTS_MAX_RPM = 10;
+const TTS_WINDOW_MS = 60000;
+const ttsRequestTimestamps = [];
 
-async function waitForTTSRateLimit() {
-  const elapsed = Date.now() - lastTTSRequestTime;
-  if (elapsed < TTS_MIN_INTERVAL_MS) {
-    await sleep(TTS_MIN_INTERVAL_MS - elapsed);
+async function acquireTTSRateToken() {
+  while (true) {
+    const now = Date.now();
+    while (ttsRequestTimestamps.length > 0 && ttsRequestTimestamps[0] <= now - TTS_WINDOW_MS) {
+      ttsRequestTimestamps.shift();
+    }
+    if (ttsRequestTimestamps.length < TTS_MAX_RPM) {
+      ttsRequestTimestamps.push(now);
+      return;
+    }
+    const waitMs = ttsRequestTimestamps[0] + TTS_WINDOW_MS - now + 200;
+    log(`[TTS Rate Limit] 10 req/min reached, waiting ${(waitMs / 1000).toFixed(1)}s...`);
+    await sleep(waitMs);
   }
-  lastTTSRequestTime = Date.now();
 }
 
 async function generateTTSChunk(geminiKey, text, voice = 'Puck', styleInstruction = '') {
@@ -1864,35 +1873,51 @@ async function processAudioTTSPipeline(job) {
       .update({ total: chunks.length, progress: 0, metadata: { ...meta, totalChunks: chunks.length } })
       .eq('id', jobId);
 
-    const chunkUrls = [];
+    const TTS_CONCURRENCY = 5;
+    const chunkUrls = new Array(chunks.length);
+    let completedCount = 0;
+    const chunkQueue = chunks.map((_, i) => i);
 
-    for (let i = 0; i < chunks.length; i++) {
-      log(`[TTS ${jobId}] Generating chunk ${i + 1}/${chunks.length} (${chunks[i].split(/\s+/).length} words)...`);
+    async function processOneChunk(index) {
+      log(`[TTS ${jobId}] Generating chunk ${index + 1}/${chunks.length} (${chunks[index].split(/\s+/).length} words)...`);
 
-      await waitForTTSRateLimit();
+      await acquireTTSRateToken();
 
-      const pcmBuffer = await generateTTSChunk(geminiKey, chunks[i], voice, styleInstruction);
+      const pcmBuffer = await generateTTSChunk(geminiKey, chunks[index], voice, styleInstruction);
       const wavBuffer = createWavBuffer(pcmBuffer);
 
-      log(`[TTS ${jobId}] Chunk ${i + 1} generated: ${wavBuffer.length} bytes WAV`);
+      log(`[TTS ${jobId}] Chunk ${index + 1} generated: ${wavBuffer.length} bytes WAV`);
 
-      const storagePath = `tts/${jobId}/chunk_${String(i).padStart(3, '0')}.wav`;
+      const storagePath = `tts/${jobId}/chunk_${String(index).padStart(3, '0')}.wav`;
       const { error: uploadError } = await supabase.storage
         .from('audio-files')
         .upload(storagePath, wavBuffer, { contentType: 'audio/wav', upsert: true });
 
       if (uploadError) {
-        throw new Error(`Failed to upload chunk ${i}: ${uploadError.message}`);
+        throw new Error(`Failed to upload chunk ${index}: ${uploadError.message}`);
       }
 
       const { data: urlData } = supabase.storage.from('audio-files').getPublicUrl(storagePath);
-      chunkUrls.push(urlData.publicUrl);
+      chunkUrls[index] = urlData.publicUrl;
 
+      completedCount++;
       await supabase
         .from('generation_jobs')
-        .update({ progress: i + 1, metadata: { ...meta, totalChunks: chunks.length, completedChunks: i + 1 } })
+        .update({ progress: completedCount, metadata: { ...meta, totalChunks: chunks.length, completedChunks: completedCount } })
         .eq('id', jobId);
     }
+
+    const workers = [];
+    for (let w = 0; w < Math.min(TTS_CONCURRENCY, chunks.length); w++) {
+      workers.push((async () => {
+        while (chunkQueue.length > 0) {
+          const idx = chunkQueue.shift();
+          if (idx === undefined) break;
+          await processOneChunk(idx);
+        }
+      })());
+    }
+    await Promise.all(workers);
 
     log(`[TTS ${jobId}] All ${chunks.length} chunks generated. Merging via concat-audio...`);
 
