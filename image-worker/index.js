@@ -2052,6 +2052,178 @@ async function processAudioTTSPipeline(job) {
 }
 
 // ============================================================================
+// GENAIPRO TTS PIPELINE (ElevenLabs-compatible via GenAIPro.vn)
+// ============================================================================
+
+const GENAIPRO_BASE = 'https://genaipro.vn/api/v1';
+const GENAIPRO_POLL_INTERVAL_MS = 5000;
+const GENAIPRO_MAX_POLL_ATTEMPTS = 120; // 10 min
+
+async function processGenaiproAudioPipeline(job) {
+  const startTime = Date.now();
+  const { id: jobId, project_id: projectId, user_id: userId, metadata: meta } = job;
+
+  try {
+    const script = meta.script;
+    const voice = meta.voice || 'uju3wxzG5OhpWcoi3SMy';
+    const model = meta.model || 'eleven_multilingual_v2';
+    const speed = meta.speed ?? 1.0;
+    const stability = meta.stability ?? 0.5;
+    const similarity = meta.similarity ?? 0.75;
+    const style = meta.style ?? 0.0;
+    const useSpeakerBoost = meta.useSpeakerBoost ?? false;
+
+    if (!script || script.trim().length < 5) {
+      throw new Error('No script provided for GenAIPro TTS');
+    }
+
+    log(`[GenAIPro ${jobId}] Starting TTS (voice=${voice}, model=${model}, script=${script.length} chars)`);
+
+    const apiKey = await getUserApiKey(userId, 'genaipro');
+
+    // Step 1: Create task
+    log(`[GenAIPro ${jobId}] Creating task...`);
+    const createRes = await fetch(`${GENAIPRO_BASE}/labs/task`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        input: script,
+        voice_id: voice,
+        model_id: model,
+        speed,
+        stability,
+        similarity,
+        style,
+        use_speaker_boost: useSpeakerBoost,
+      }),
+    });
+
+    if (!createRes.ok) {
+      const errBody = await createRes.text();
+      throw new Error(`GenAIPro API error ${createRes.status}: ${errBody}`);
+    }
+
+    const { task_id } = await createRes.json();
+    if (!task_id) {
+      throw new Error('No task_id in GenAIPro response');
+    }
+
+    log(`[GenAIPro ${jobId}] Task created: ${task_id}`);
+
+    await supabase
+      .from('generation_jobs')
+      .update({ metadata: { ...meta, genaipro_task_id: task_id } })
+      .eq('id', jobId);
+
+    // Step 2: Poll until completed
+    let audioBytes = null;
+    for (let attempt = 0; attempt < GENAIPRO_MAX_POLL_ATTEMPTS; attempt++) {
+      await sleep(GENAIPRO_POLL_INTERVAL_MS);
+
+      if (attempt % 6 === 0) {
+        log(`[GenAIPro ${jobId}] Polling (${attempt + 1}/${GENAIPRO_MAX_POLL_ATTEMPTS})...`);
+      }
+
+      const pollRes = await fetch(`${GENAIPRO_BASE}/labs/task/${task_id}`, {
+        headers: { Authorization: `Bearer ${apiKey}` },
+      });
+
+      if (!pollRes.ok) {
+        logError(`[GenAIPro ${jobId}] Poll error: ${pollRes.status}`);
+        continue;
+      }
+
+      const taskData = await pollRes.json();
+
+      if (taskData.status === 'completed') {
+        const audioUrl = taskData.result;
+        if (!audioUrl) {
+          throw new Error('No result URL in completed GenAIPro task');
+        }
+
+        log(`[GenAIPro ${jobId}] Task completed, downloading audio...`);
+        const audioRes = await fetch(audioUrl);
+        if (!audioRes.ok) {
+          throw new Error(`Failed to download audio: ${audioRes.status}`);
+        }
+
+        audioBytes = Buffer.from(await audioRes.arrayBuffer());
+        break;
+      }
+
+      if (taskData.status === 'failed') {
+        throw new Error(`GenAIPro task failed: ${taskData.error || 'Unknown error'}`);
+      }
+    }
+
+    if (!audioBytes) {
+      throw new Error('GenAIPro task timed out after 10 minutes');
+    }
+
+    // Step 3: Upload to Supabase Storage
+    const timestamp = Date.now();
+    const filename = `${userId}/${projectId || 'temp'}/${timestamp}_genaipro_generated.mp3`;
+
+    const { error: uploadError } = await supabase.storage
+      .from('audio-files')
+      .upload(filename, audioBytes, { contentType: 'audio/mpeg', upsert: true });
+
+    if (uploadError) {
+      throw new Error(`Failed to upload audio: ${uploadError.message}`);
+    }
+
+    const { data: { publicUrl } } = supabase.storage
+      .from('audio-files')
+      .getPublicUrl(filename);
+
+    log(`[GenAIPro ${jobId}] Audio uploaded: ${publicUrl.substring(0, 80)}...`);
+
+    const estimatedDuration = Math.round(script.split(/\s+/).length / 2.5);
+
+    // Step 4: Update project
+    if (projectId) {
+      await supabase
+        .from('projects')
+        .update({ audio_url: publicUrl, updated_at: new Date().toISOString() })
+        .eq('id', projectId);
+    }
+
+    // Step 5: Mark job completed
+    await supabase
+      .from('generation_jobs')
+      .update({
+        status: 'completed',
+        progress: 1,
+        completed_at: new Date().toISOString(),
+        metadata: {
+          ...meta,
+          genaipro_task_id: task_id,
+          audioUrl: publicUrl,
+          duration: estimatedDuration,
+          durationMs: Date.now() - startTime,
+        },
+      })
+      .eq('id', jobId);
+
+    log(`[GenAIPro ${jobId}] Done in ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
+
+  } catch (err) {
+    logError(`[GenAIPro ${jobId}] Pipeline failed:`, err.message);
+    await supabase
+      .from('generation_jobs')
+      .update({
+        status: 'failed',
+        error_message: err.message,
+        completed_at: new Date().toISOString(),
+      })
+      .eq('id', jobId);
+  }
+}
+
+// ============================================================================
 // IDEA GENERATION PIPELINE (YouTube scraping + Anthropic)
 // ============================================================================
 
@@ -2257,7 +2429,7 @@ async function processIdeaGenerationPipeline(job) {
 async function mainLoop() {
   log(`Image Worker started (MAX_CONCURRENT=${MAX_CONCURRENT}, POLL=${POLL_INTERVAL_MS}ms)`);
   log(`Supabase: ${SUPABASE_URL}`);
-  log(`Job types: single_image, thumbnails, single_prompt, audio_generation, idea_generation`);
+  log(`Job types: single_image, thumbnails, single_prompt, audio_generation (gemini/genaipro), idea_generation`);
 
   while (true) {
     try {
@@ -2354,7 +2526,9 @@ async function mainLoop() {
             } else if (job.job_type === 'single_prompt') {
               pipeline = processPromptJob(job);
             } else if (job.job_type === 'audio_generation') {
-              pipeline = processAudioTTSPipeline(job);
+              pipeline = (job.metadata?.provider === 'genaipro')
+                ? processGenaiproAudioPipeline(job)
+                : processAudioTTSPipeline(job);
             } else if (job.job_type === 'idea_generation') {
               pipeline = processIdeaGenerationPipeline(job);
             }

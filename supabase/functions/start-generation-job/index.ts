@@ -414,12 +414,12 @@ async function processJob(
       throw new Error('WEBHOOK_MODE_ACTIVE');
     } else if (jobType === 'script_generation') {
       await processScriptGenerationJob(jobId, projectId, userId, metadata, authHeader, adminClient);
-    } else if (jobType === 'audio_generation' && metadata?.provider === 'gemini_tts') {
+    } else if (jobType === 'audio_generation' && (metadata?.provider === 'gemini_tts' || metadata?.provider === 'genaipro')) {
       await adminClient
         .from('generation_jobs')
         .update({ status: 'pending' })
         .eq('id', jobId);
-      console.log(`[audio_generation/gemini_tts] Job ${jobId} reset to pending for VPS worker`);
+      console.log(`[audio_generation/${metadata.provider}] Job ${jobId} reset to pending for VPS worker`);
       throw new Error('WEBHOOK_MODE_ACTIVE');
     } else if (jobType === 'audio_generation') {
       await processAudioGenerationJob(jobId, projectId, userId, metadata, authHeader, adminClient);
@@ -4078,9 +4078,7 @@ async function processAudioGenerationJob(
   
   // Call the appropriate TTS function based on provider
   let functionName: string;
-  if (provider === 'genaipro') {
-    functionName = 'generate-audio-genaipro';
-  } else if (provider === 'inworld') {
+  if (provider === 'inworld') {
     functionName = 'generate-audio-inworld';
   } else if (provider === 'elevenlabs') {
     functionName = 'generate-audio-tts';
