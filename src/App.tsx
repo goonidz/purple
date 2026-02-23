@@ -15,6 +15,7 @@ import Calendar from "./pages/Calendar";
 import CreateFromScratch from "./pages/CreateFromScratch";
 import StandaloneThumbnails from "./pages/StandaloneThumbnails";
 import StandaloneAudio from "./pages/StandaloneAudio";
+import StandaloneIdeas from "./pages/StandaloneIdeas";
 import Feed from "./pages/Feed";
 import NotFound from "./pages/NotFound";
 
@@ -36,6 +37,7 @@ const App = () => (
           <Route path="/create-from-scratch" element={<CreateFromScratch />} />
           <Route path="/thumbnails" element={<StandaloneThumbnails />} />
           <Route path="/audio" element={<StandaloneAudio />} />
+          <Route path="/ideas" element={<StandaloneIdeas />} />
           <Route path="/test-scenes" element={<TestScenes />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/auth" element={<Auth />} />

@@ -1096,6 +1096,7 @@ export type Database = {
         | "audio_generation"
         | "full_video"
         | "upscale"
+        | "idea_generation"
     }
     CompositeTypes: {
       [_ in never]: never

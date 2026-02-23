@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { History, Sparkles, Calendar, Mic, FileText, ImageIcon, Users, Volume2 } from "lucide-react";
+import { History, Sparkles, Calendar, Mic, FileText, ImageIcon, Users, Volume2, Lightbulb } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
@@ -79,7 +79,23 @@ const Home = () => {
         </div>
 
         {/* Secondary Action Cards */}
-        <div className="grid md:grid-cols-2 lg:grid-cols-5 gap-6 w-full max-w-6xl">
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 w-full max-w-6xl">
+          <Link to="/ideas" className="group">
+            <Card className="p-6 hover:shadow-lg transition-all duration-300 hover:scale-105 border hover:border-yellow-500/30 bg-card/30 backdrop-blur h-full">
+              <div className="flex items-center gap-4">
+                <div className="h-12 w-12 rounded-full bg-yellow-500/10 flex items-center justify-center group-hover:bg-yellow-500/20 transition-colors flex-shrink-0">
+                  <Lightbulb className="h-6 w-6 text-yellow-500" />
+                </div>
+                <div className="text-left">
+                  <h3 className="text-lg font-bold">Idea Generator</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Trouvez des idées virales avec l'IA
+                  </p>
+                </div>
+              </div>
+            </Card>
+          </Link>
+
           <Link to="/audio" className="group">
             <Card className="p-6 hover:shadow-lg transition-all duration-300 hover:scale-105 border hover:border-primary/30 bg-card/30 backdrop-blur h-full">
               <div className="flex items-center gap-4">

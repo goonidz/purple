@@ -2052,13 +2052,212 @@ async function processAudioTTSPipeline(job) {
 }
 
 // ============================================================================
+// IDEA GENERATION PIPELINE (YouTube scraping + Anthropic)
+// ============================================================================
+
+function parseYouTubeDuration(duration) {
+  const match = duration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+  if (!match) return 0;
+  return (parseInt(match[1] || '0') * 3600) + (parseInt(match[2] || '0') * 60) + parseInt(match[3] || '0');
+}
+
+async function fetchYouTubeChannelVideos(channelHandle, youtubeApiKey) {
+
+  const handle = channelHandle.replace(/^@/, '');
+  log(`[IDEAS] Resolving channel handle: @${handle}`);
+
+  const channelUrl = `https://www.googleapis.com/youtube/v3/channels?part=snippet,contentDetails,statistics&forHandle=${encodeURIComponent(handle)}&key=${youtubeApiKey}`;
+  const channelRes = await fetch(channelUrl);
+  const channelData = await channelRes.json();
+
+  if (!channelRes.ok) {
+    if (channelRes.status === 429 || channelData?.error?.errors?.[0]?.reason === 'quotaExceeded') {
+      throw new Error('YouTube API quota exceeded. Try again tomorrow.');
+    }
+    throw new Error(channelData?.error?.message || 'Failed to resolve channel');
+  }
+
+  if (!channelData.items || channelData.items.length === 0) {
+    throw new Error(`Channel "@${handle}" not found`);
+  }
+
+  const channel = channelData.items[0];
+  const channelId = channel.id;
+  const channelTitle = channel.snippet?.title || handle;
+  const subscriberCount = parseInt(channel.statistics?.subscriberCount || '0');
+
+  const uploadsPlaylistId = 'UU' + channelId.substring(2);
+  log(`[IDEAS] Channel: ${channelTitle} (${channelId}), fetching uploads...`);
+
+  const playlistUrl = `https://www.googleapis.com/youtube/v3/playlistItems?part=contentDetails&playlistId=${uploadsPlaylistId}&maxResults=20&key=${youtubeApiKey}`;
+  const playlistRes = await fetch(playlistUrl);
+  const playlistData = await playlistRes.json();
+
+  if (!playlistRes.ok) {
+    throw new Error(playlistData?.error?.message || 'Failed to fetch channel videos');
+  }
+
+  const items = playlistData.items || [];
+  if (items.length === 0) throw new Error('No videos found on this channel');
+
+  const videoIds = items.map(i => i.contentDetails?.videoId).filter(Boolean);
+
+  const statsUrl = `https://www.googleapis.com/youtube/v3/videos?part=statistics,snippet,contentDetails&id=${videoIds.join(',')}&key=${youtubeApiKey}`;
+  const statsRes = await fetch(statsUrl);
+  const statsData = await statsRes.json();
+
+  if (!statsRes.ok) {
+    throw new Error(statsData?.error?.message || 'Failed to fetch video stats');
+  }
+
+  const videos = (statsData.items || [])
+    .filter(v => {
+      const dur = parseYouTubeDuration(v.contentDetails?.duration || 'PT0S');
+      return dur >= 60;
+    })
+    .map(v => {
+      const publishedAt = new Date(v.snippet.publishedAt);
+      const daysSincePublish = Math.max(1, (Date.now() - publishedAt.getTime()) / (1000 * 60 * 60 * 24));
+      const views = parseInt(v.statistics.viewCount || '0');
+      const likes = parseInt(v.statistics.likeCount || '0');
+      const comments = parseInt(v.statistics.commentCount || '0');
+
+      return {
+        title: v.snippet.title,
+        publishedAt: v.snippet.publishedAt,
+        views,
+        likes,
+        comments,
+        durationSeconds: parseYouTubeDuration(v.contentDetails?.duration || 'PT0S'),
+        viewsPerDay: Math.round(views / daysSincePublish),
+        engagementRate: views > 0 ? ((likes + comments) / views * 100).toFixed(2) : '0',
+      };
+    });
+
+  log(`[IDEAS] Fetched ${videos.length} videos (filtered shorts) for ${channelTitle}`);
+  return { channelTitle, subscriberCount, videos };
+}
+
+async function callAnthropicForIdeas(anthropicKey, channelData) {
+  const { channelTitle, subscriberCount, videos } = channelData;
+
+  const videoSummary = videos.map((v, i) =>
+    `${i + 1}. "${v.title}" — ${v.views.toLocaleString()} views, ${v.likes.toLocaleString()} likes, ${v.comments.toLocaleString()} comments, ${v.viewsPerDay.toLocaleString()} views/day, ${v.engagementRate}% engagement, published ${v.publishedAt}`
+  ).join('\n');
+
+  const systemPrompt = `You're a world class copywriter writing the best youtube titles. Analyze those topics and how they went viral or not, and find me some similar topics that I can do to go viral.`;
+
+  const userMessage = `Here are the last ${videos.length} videos from the YouTube channel "${channelTitle}" (${subscriberCount.toLocaleString()} subscribers):
+
+${videoSummary}
+
+Based on this data, give me exactly 10 viral video ideas. For each idea, provide:
+1. A catchy title
+2. A brief explanation of why this topic could go viral (2-3 sentences)
+3. An estimated viral potential score from 1-10
+
+Format your response as a JSON array of objects with keys: "title", "reasoning", "viralScore". Return ONLY the JSON array, no other text.`;
+
+  log(`[IDEAS] Calling Anthropic claude-sonnet-4-6-20250514...`);
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'x-api-key': anthropicKey,
+      'anthropic-version': '2023-06-01',
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-6-20250514',
+      max_tokens: 4096,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: userMessage }],
+    }),
+  });
+
+  if (!response.ok) {
+    const errBody = await response.text();
+    throw new Error(`Anthropic API error (${response.status}): ${errBody}`);
+  }
+
+  const result = await response.json();
+  const textContent = result.content?.find(c => c.type === 'text')?.text;
+  if (!textContent) throw new Error('Anthropic returned no text content');
+
+  const jsonMatch = textContent.match(/\[[\s\S]*\]/);
+  if (!jsonMatch) throw new Error('Could not parse ideas JSON from Anthropic response');
+
+  const ideas = JSON.parse(jsonMatch[0]);
+  log(`[IDEAS] Got ${ideas.length} ideas from Anthropic`);
+  return ideas;
+}
+
+async function processIdeaGenerationPipeline(job) {
+  const { id: jobId, user_id: userId, metadata: meta } = job;
+  const channelHandle = meta?.channelHandle;
+
+  log(`[IDEAS ${jobId}] Starting idea generation for ${channelHandle}`);
+
+  try {
+    if (!channelHandle) throw new Error('No channel handle provided');
+
+    await supabase.from('generation_jobs')
+      .update({ progress: 0, total: 3, metadata: { ...meta, step: 'fetching_videos' } })
+      .eq('id', jobId);
+
+    const geminiKey = await getUserApiKey(userId, 'gemini');
+    const channelData = await fetchYouTubeChannelVideos(channelHandle, geminiKey);
+
+    await supabase.from('generation_jobs')
+      .update({ progress: 1, metadata: { ...meta, step: 'calling_ai', channelTitle: channelData.channelTitle, videoCount: channelData.videos.length } })
+      .eq('id', jobId);
+
+    const anthropicKey = await getUserApiKey(userId, 'anthropic');
+    const ideas = await callAnthropicForIdeas(anthropicKey, channelData);
+
+    await supabase.from('generation_jobs')
+      .update({ progress: 2, metadata: { ...meta, step: 'saving_results' } })
+      .eq('id', jobId);
+
+    await supabase.from('generation_jobs')
+      .update({
+        status: 'completed',
+        progress: 3,
+        total: 3,
+        completed_at: new Date().toISOString(),
+        metadata: {
+          ...meta,
+          step: 'done',
+          channelTitle: channelData.channelTitle,
+          subscriberCount: channelData.subscriberCount,
+          videoCount: channelData.videos.length,
+          videos: channelData.videos,
+          ideas,
+        },
+      })
+      .eq('id', jobId);
+
+    log(`[IDEAS ${jobId}] Completed successfully with ${ideas.length} ideas`);
+
+  } catch (err) {
+    logError(`[IDEAS ${jobId}] Pipeline failed:`, err.message);
+    await supabase.from('generation_jobs')
+      .update({
+        status: 'failed',
+        error_message: err.message,
+        completed_at: new Date().toISOString(),
+      })
+      .eq('id', jobId);
+  }
+}
+
+// ============================================================================
 // MAIN LOOP
 // ============================================================================
 
 async function mainLoop() {
   log(`Image Worker started (MAX_CONCURRENT=${MAX_CONCURRENT}, POLL=${POLL_INTERVAL_MS}ms)`);
   log(`Supabase: ${SUPABASE_URL}`);
-  log(`Job types: single_image, thumbnails, single_prompt, audio_generation`);
+  log(`Job types: single_image, thumbnails, single_prompt, audio_generation, idea_generation`);
 
   while (true) {
     try {
@@ -2072,7 +2271,7 @@ async function mainLoop() {
           .from('generation_jobs')
           .select('*')
           .eq('status', 'pending')
-          .in('job_type', ['single_image', 'thumbnails', 'thumbnails_v2', 'single_prompt', 'audio_generation'])
+          .in('job_type', ['single_image', 'thumbnails', 'thumbnails_v2', 'single_prompt', 'audio_generation', 'idea_generation'])
           .order('created_at', { ascending: true })
           .limit(100);
 
@@ -2156,6 +2355,8 @@ async function mainLoop() {
               pipeline = processPromptJob(job);
             } else if (job.job_type === 'audio_generation') {
               pipeline = processAudioTTSPipeline(job);
+            } else if (job.job_type === 'idea_generation') {
+              pipeline = processIdeaGenerationPipeline(job);
             }
 
             pipeline.finally(() => { activeJobs--; });
