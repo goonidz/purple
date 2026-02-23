@@ -4062,7 +4062,12 @@ async function processAudioGenerationJob(
     languageBoost,
     englishNormalization,
     emotion,
-    provider
+    provider,
+    stability,
+    similarity,
+    style,
+    useSpeakerBoost,
+    forceElevenLabsTranscription
   } = metadata;
   
   if (!script) {
@@ -4073,7 +4078,9 @@ async function processAudioGenerationJob(
   
   // Call the appropriate TTS function based on provider
   let functionName: string;
-  if (provider === 'inworld') {
+  if (provider === 'genaipro') {
+    functionName = 'generate-audio-genaipro';
+  } else if (provider === 'inworld') {
     functionName = 'generate-audio-inworld';
   } else if (provider === 'elevenlabs') {
     functionName = 'generate-audio-tts';
@@ -4100,9 +4107,14 @@ async function processAudioGenerationJob(
       languageBoost,
       englishNormalization,
       emotion,
+      stability,
+      similarity,
+      style,
+      useSpeakerBoost,
+      forceElevenLabsTranscription,
       projectId,
-      jobId, // Pass jobId for background processing mode
-      userId // Pass userId for API key retrieval since we're using service role
+      jobId,
+      userId
     }),
   });
   

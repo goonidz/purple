@@ -245,12 +245,20 @@ const CreateFromScratch = () => {
   const [useWebSearch, setUseWebSearch] = useState(false);
   
   // Audio step
-  const [ttsProvider, setTtsProvider] = useState<"minimax" | "inworld">("inworld");
+  const [ttsProvider, setTtsProvider] = useState<"minimax" | "inworld" | "genaipro">("genaipro");
   const [selectedVoice, setSelectedVoice] = useState("English_expressive_narrator");
   const [inworldVoiceId, setInworldVoiceId] = useState("Dennis");
   const [inworldSpeakingRate, setInworldSpeakingRate] = useState(0.9);
   const [forceElevenLabsTranscription, setForceElevenLabsTranscription] = useState(true);
   const [minimaxModel, setMinimaxModel] = useState("speech-2.6-hd");
+  // GenAIPro settings
+  const [genaiproVoiceId, setGenaiproVoiceId] = useState("uju3wxzG5OhpWcoi3SMy");
+  const [genaiproModel, setGenaiproModel] = useState("eleven_multilingual_v2");
+  const [genaiproSpeed, setGenaiproSpeed] = useState(1.0);
+  const [genaiproStability, setGenaiproStability] = useState(0.5);
+  const [genaiproSimilarity, setGenaiproSimilarity] = useState(0.75);
+  const [genaiproStyle, setGenaiproStyle] = useState(0.0);
+  const [genaiproSpeakerBoost, setGenaiproSpeakerBoost] = useState(false);
   const [minimaxSpeed, setMinimaxSpeed] = useState(1.0);
   const [minimaxPitch, setMinimaxPitch] = useState(0);
   const [minimaxVolume, setMinimaxVolume] = useState(1.0);
@@ -709,12 +717,12 @@ const CreateFromScratch = () => {
       const presetsData = (data || []) as TtsPreset[];
       setTtsPresets(presetsData);
 
-      // Auto-select a default preset if none selected yet (prefer Inworld).
-      // IMPORTANT: Keep Inworld as the default provider; do not auto-apply a MiniMax preset.
+      // Auto-select a default preset if none selected yet (prefer GenAIPro > Inworld).
       if (!selectedTtsPresetId && presetsData.length > 0) {
-        const defaultInworldPreset = presetsData.find(p => p.provider === "inworld");
-        if (defaultInworldPreset) {
-          applyTtsPreset(defaultInworldPreset, { silent: true });
+        const defaultPreset = presetsData.find(p => p.provider === "genaipro")
+          || presetsData.find(p => p.provider === "inworld");
+        if (defaultPreset) {
+          applyTtsPreset(defaultPreset, { silent: true });
         }
       }
     } catch (error) {
@@ -724,8 +732,8 @@ const CreateFromScratch = () => {
 
   const applyTtsPreset = (preset: TtsPreset, opts?: { silent?: boolean }) => {
     // Load provider
-    if (preset.provider === "minimax" || preset.provider === "inworld") {
-      setTtsProvider(preset.provider);
+    if (preset.provider === "minimax" || preset.provider === "inworld" || preset.provider === "genaipro") {
+      setTtsProvider(preset.provider as "minimax" | "inworld" | "genaipro");
     } else {
       toast.error("Ce preset utilise un fournisseur non supporté");
       return;
@@ -734,10 +742,21 @@ const CreateFromScratch = () => {
     // Load voice ID based on provider
     if (preset.provider === "inworld") {
       setInworldVoiceId(preset.voice_id);
-      // Keep UI default (0.9) on silent auto-select; apply saved speed only on explicit user selection.
       if (!opts?.silent) {
         setInworldSpeakingRate(typeof preset.speed === "number" && Number.isFinite(preset.speed) ? preset.speed : 0.9);
       }
+    } else if (preset.provider === "genaipro") {
+      setGenaiproVoiceId(preset.voice_id);
+      if (preset.model) setGenaiproModel(preset.model);
+      setGenaiproSpeed(typeof preset.speed === "number" ? preset.speed : 1.0);
+      setGenaiproStability(typeof preset.volume === "number" ? preset.volume : 0.5);
+      setGenaiproSimilarity(typeof (preset as any).pitch === "number" ? (preset as any).pitch / 100 : 0.75);
+      // Decode extras from emotion field if stored as JSON
+      try {
+        const extras = preset.emotion ? JSON.parse(preset.emotion) : {};
+        if (typeof extras.style === "number") setGenaiproStyle(extras.style);
+        if (typeof extras.speakerBoost === "boolean") setGenaiproSpeakerBoost(extras.speakerBoost);
+      } catch { /* not JSON, ignore */ }
     } else {
       setSelectedVoice(preset.voice_id);
       if (preset.model) setMinimaxModel(preset.model);
@@ -770,21 +789,34 @@ const CreateFromScratch = () => {
 
     setIsSavingTtsPreset(true);
     try {
+      const presetData: Record<string, any> = {
+        user_id: user!.id,
+        name: newTtsPresetName.trim(),
+        provider: ttsProvider,
+      };
+      if (ttsProvider === "genaipro") {
+        presetData.voice_id = genaiproVoiceId;
+        presetData.model = genaiproModel;
+        presetData.speed = genaiproSpeed;
+        presetData.volume = genaiproStability;
+        presetData.pitch = Math.round(genaiproSimilarity * 100);
+        presetData.emotion = JSON.stringify({ style: genaiproStyle, speakerBoost: genaiproSpeakerBoost });
+      } else if (ttsProvider === "inworld") {
+        presetData.voice_id = inworldVoiceId;
+        presetData.speed = inworldSpeakingRate;
+      } else {
+        presetData.voice_id = selectedVoice;
+        presetData.model = minimaxModel;
+        presetData.speed = minimaxSpeed;
+        presetData.pitch = minimaxPitch;
+        presetData.volume = minimaxVolume;
+        presetData.language_boost = minimaxLanguageBoost;
+        presetData.english_normalization = minimaxEnglishNormalization;
+        presetData.emotion = minimaxEmotion;
+      }
       const { error } = await supabase
         .from("tts_presets")
-        .insert([{
-          user_id: user!.id,
-          name: newTtsPresetName.trim(),
-          provider: ttsProvider,
-          voice_id: ttsProvider === "inworld" ? inworldVoiceId : selectedVoice,
-          model: ttsProvider === "minimax" ? minimaxModel : null,
-          speed: ttsProvider === "inworld" ? inworldSpeakingRate : minimaxSpeed,
-          pitch: minimaxPitch,
-          volume: minimaxVolume,
-          language_boost: minimaxLanguageBoost,
-          english_normalization: minimaxEnglishNormalization,
-          emotion: minimaxEmotion
-        }]);
+        .insert([presetData]);
 
       if (error) throw error;
 
@@ -831,27 +863,8 @@ const CreateFromScratch = () => {
     setEditingTtsPresetId(presetId);
     setEditTtsPresetName(preset.name);
     
-    // Load provider
-    if (preset.provider === "minimax" || preset.provider === "inworld") {
-      setTtsProvider(preset.provider);
-    } else {
-      toast.error("Ce preset utilise un fournisseur non supporté");
-      return;
-    }
-    
-    // Load voice ID based on provider
-    if (preset.provider === "inworld") {
-      setInworldVoiceId(preset.voice_id);
-    } else {
-      setSelectedVoice(preset.voice_id);
-      if (preset.model) setMinimaxModel(preset.model);
-      setMinimaxSpeed(preset.speed);
-      setMinimaxPitch(preset.pitch);
-      setMinimaxVolume(preset.volume);
-      setMinimaxLanguageBoost(preset.language_boost);
-      setMinimaxEnglishNormalization(preset.english_normalization);
-      setMinimaxEmotion(preset.emotion);
-    }
+    // Load provider and apply settings (reuse applyTtsPreset logic)
+    applyTtsPreset(preset);
     setEditTtsPresetDialogOpen(true);
   };
 
@@ -863,20 +876,33 @@ const CreateFromScratch = () => {
 
     setIsSavingTtsPreset(true);
     try {
+      const updateData: Record<string, any> = {
+        name: editTtsPresetName.trim(),
+        provider: ttsProvider,
+      };
+      if (ttsProvider === "genaipro") {
+        updateData.voice_id = genaiproVoiceId;
+        updateData.model = genaiproModel;
+        updateData.speed = genaiproSpeed;
+        updateData.volume = genaiproStability;
+        updateData.pitch = Math.round(genaiproSimilarity * 100);
+        updateData.emotion = JSON.stringify({ style: genaiproStyle, speakerBoost: genaiproSpeakerBoost });
+      } else if (ttsProvider === "inworld") {
+        updateData.voice_id = inworldVoiceId;
+        updateData.speed = inworldSpeakingRate;
+      } else {
+        updateData.voice_id = selectedVoice;
+        updateData.model = minimaxModel;
+        updateData.speed = minimaxSpeed;
+        updateData.pitch = minimaxPitch;
+        updateData.volume = minimaxVolume;
+        updateData.language_boost = minimaxLanguageBoost;
+        updateData.english_normalization = minimaxEnglishNormalization;
+        updateData.emotion = minimaxEmotion;
+      }
       const { error } = await supabase
         .from("tts_presets")
-        .update({
-          name: editTtsPresetName.trim(),
-          provider: ttsProvider,
-          voice_id: ttsProvider === "inworld" ? inworldVoiceId : selectedVoice,
-          model: ttsProvider === "minimax" ? minimaxModel : null,
-          speed: ttsProvider === "inworld" ? inworldSpeakingRate : minimaxSpeed,
-          pitch: minimaxPitch,
-          volume: minimaxVolume,
-          language_boost: minimaxLanguageBoost,
-          english_normalization: minimaxEnglishNormalization,
-          emotion: minimaxEmotion
-        })
+        .update(updateData)
         .eq("id", editingTtsPresetId);
 
       if (error) throw error;
@@ -1563,24 +1589,40 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
         }
       }
 
+      // Build provider-specific metadata
+      let audioMetadata: Record<string, any> = {
+        script: generatedScript,
+        provider: ttsProvider,
+      };
+      if (ttsProvider === "genaipro") {
+        audioMetadata.voice = genaiproVoiceId;
+        audioMetadata.model = genaiproModel;
+        audioMetadata.speed = genaiproSpeed;
+        audioMetadata.stability = genaiproStability;
+        audioMetadata.similarity = genaiproSimilarity;
+        audioMetadata.style = genaiproStyle;
+        audioMetadata.useSpeakerBoost = genaiproSpeakerBoost;
+      } else if (ttsProvider === "inworld") {
+        audioMetadata.voice = inworldVoiceId;
+        audioMetadata.speed = inworldSpeakingRate;
+        audioMetadata.forceElevenLabsTranscription = forceElevenLabsTranscription;
+      } else {
+        audioMetadata.voice = selectedVoice;
+        audioMetadata.model = minimaxModel;
+        audioMetadata.speed = minimaxSpeed;
+        audioMetadata.pitch = minimaxPitch;
+        audioMetadata.volume = minimaxVolume;
+        audioMetadata.languageBoost = minimaxLanguageBoost;
+        audioMetadata.englishNormalization = minimaxEnglishNormalization;
+        audioMetadata.emotion = minimaxEmotion;
+      }
+
       // Start audio generation job via backend
       const { data, error } = await supabase.functions.invoke('start-generation-job', {
         body: {
           projectId: currentProjectId,
           jobType: 'audio_generation',
-          metadata: {
-            script: generatedScript,
-            voice: ttsProvider === "inworld" ? inworldVoiceId : selectedVoice,
-            model: minimaxModel,
-            speed: ttsProvider === "inworld" ? inworldSpeakingRate : minimaxSpeed,
-            pitch: minimaxPitch,
-            volume: minimaxVolume,
-            languageBoost: minimaxLanguageBoost,
-            englishNormalization: minimaxEnglishNormalization,
-            emotion: minimaxEmotion,
-            provider: ttsProvider,
-            forceElevenLabsTranscription: ttsProvider === "inworld" ? forceElevenLabsTranscription : false,
-          }
+          metadata: audioMetadata
         }
       });
 
@@ -2538,11 +2580,12 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
 
                       <div className="space-y-4">
                         <Label>Fournisseur TTS</Label>
-                        <Select value={ttsProvider} onValueChange={(value: "minimax" | "inworld") => setTtsProvider(value)}>
+                        <Select value={ttsProvider} onValueChange={(value: "minimax" | "inworld" | "genaipro") => setTtsProvider(value)}>
                           <SelectTrigger>
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
+                            <SelectItem value="genaipro">GenAIPro.vn (ElevenLabs)</SelectItem>
                             <SelectItem value="minimax">MiniMax (API Officielle)</SelectItem>
                             <SelectItem value="inworld">Inworld AI (TTS 1 Max)</SelectItem>
                           </SelectContent>
@@ -2603,6 +2646,122 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                           <p className="text-xs text-amber-600">
                             Note : Inworld TTS supporte max 2000 caractères par requête. Les scripts longs seront automatiquement découpés et assemblés.
                           </p>
+                        </div>
+                      )}
+
+                      {ttsProvider === "genaipro" && (
+                        <div className="space-y-4 p-4 bg-muted/50 rounded-lg">
+                          <div className="space-y-2">
+                            <Label>Voice ID</Label>
+                            <Input
+                              value={genaiproVoiceId}
+                              onChange={(e) => setGenaiproVoiceId(e.target.value)}
+                              placeholder="uju3wxzG5OhpWcoi3SMy"
+                            />
+                            <p className="text-xs text-muted-foreground">
+                              Voice ID ElevenLabs.{" "}
+                              <a
+                                href="https://genaipro.vn"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-primary hover:underline"
+                              >
+                                Parcourir les voix
+                              </a>
+                            </p>
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Modèle</Label>
+                            <Select value={genaiproModel} onValueChange={setGenaiproModel}>
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="eleven_multilingual_v2">Multilingual v2</SelectItem>
+                                <SelectItem value="eleven_turbo_v2_5">Turbo v2.5</SelectItem>
+                                <SelectItem value="eleven_flash_v2_5">Flash v2.5</SelectItem>
+                                <SelectItem value="eleven_v3">v3</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Speed ({genaiproSpeed.toFixed(1)}x)</Label>
+                            <input
+                              type="range"
+                              min="0.7"
+                              max="1.2"
+                              step="0.05"
+                              value={genaiproSpeed}
+                              onChange={(e) => setGenaiproSpeed(parseFloat(e.target.value))}
+                              className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
+                            />
+                            <div className="flex justify-between text-xs text-muted-foreground">
+                              <span>0.7x</span>
+                              <span>1.2x</span>
+                            </div>
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Stability ({genaiproStability.toFixed(2)})</Label>
+                            <input
+                              type="range"
+                              min="0"
+                              max="1"
+                              step="0.05"
+                              value={genaiproStability}
+                              onChange={(e) => setGenaiproStability(parseFloat(e.target.value))}
+                              className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
+                            />
+                            <div className="flex justify-between text-xs text-muted-foreground">
+                              <span>0.0</span>
+                              <span>1.0</span>
+                            </div>
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Similarity ({genaiproSimilarity.toFixed(2)})</Label>
+                            <input
+                              type="range"
+                              min="0"
+                              max="1"
+                              step="0.05"
+                              value={genaiproSimilarity}
+                              onChange={(e) => setGenaiproSimilarity(parseFloat(e.target.value))}
+                              className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
+                            />
+                            <div className="flex justify-between text-xs text-muted-foreground">
+                              <span>0.0</span>
+                              <span>1.0</span>
+                            </div>
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Style ({genaiproStyle.toFixed(2)})</Label>
+                            <input
+                              type="range"
+                              min="0"
+                              max="1"
+                              step="0.05"
+                              value={genaiproStyle}
+                              onChange={(e) => setGenaiproStyle(parseFloat(e.target.value))}
+                              className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
+                            />
+                            <div className="flex justify-between text-xs text-muted-foreground">
+                              <span>0.0</span>
+                              <span>1.0</span>
+                            </div>
+                          </div>
+                          <div className="flex items-center justify-between p-3 bg-background/60 rounded-lg border">
+                            <div className="space-y-0.5">
+                              <Label className="text-sm">Speaker Boost</Label>
+                              <p className="text-xs text-muted-foreground">
+                                Améliore la clarté de la voix
+                              </p>
+                            </div>
+                            <input
+                              type="checkbox"
+                              checked={genaiproSpeakerBoost}
+                              onChange={(e) => setGenaiproSpeakerBoost(e.target.checked)}
+                              className="h-5 w-5 rounded border-gray-300 text-primary focus:ring-primary"
+                            />
+                          </div>
                         </div>
                       )}
 

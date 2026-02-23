@@ -24,6 +24,7 @@ const Profile = () => {
   const [apifyApiKey, setApifyApiKey] = useState("");
   const [inworldApiKey, setInworldApiKey] = useState("");
   const [geminiApiKey, setGeminiApiKey] = useState("");
+  const [genaiproApiKey, setGenaiproApiKey] = useState("");
   
   // Track original values to detect changes
   const [originalKeys, setOriginalKeys] = useState({
@@ -35,7 +36,8 @@ const Profile = () => {
     kei: "",
     apify: "",
     inworld: "",
-    gemini: ""
+    gemini: "",
+    genaipro: ""
   });
   const [showKeys, setShowKeys] = useState({
     replicate: false,
@@ -46,7 +48,8 @@ const Profile = () => {
     kei: false,
     apify: false,
     inworld: false,
-    gemini: false
+    gemini: false,
+    genaipro: false
   });
 
   // Password change state
@@ -82,7 +85,7 @@ const Profile = () => {
     setIsLoading(true);
     try {
       // Try to get API keys from Vault
-      const [replicateResult, elevenLabsResult, minimaxResult, anthropicResult, braveResult, keiResult, apifyResult, inworldResult, geminiResult] = await Promise.all([
+      const [replicateResult, elevenLabsResult, minimaxResult, anthropicResult, braveResult, keiResult, apifyResult, inworldResult, geminiResult, genaiproResult] = await Promise.all([
         supabase.rpc('get_user_api_key', { key_name: 'replicate' }),
         supabase.rpc('get_user_api_key', { key_name: 'eleven_labs' }),
         supabase.rpc('get_user_api_key', { key_name: 'minimax' }),
@@ -92,6 +95,7 @@ const Profile = () => {
         supabase.rpc('get_user_api_key', { key_name: 'apify' }),
         supabase.rpc('get_user_api_key', { key_name: 'inworld' }),
         supabase.rpc('get_user_api_key', { key_name: 'gemini' }),
+        supabase.rpc('get_user_api_key', { key_name: 'genaipro' }),
       ]);
 
       const replicateValue = replicateResult.data || "";
@@ -103,6 +107,7 @@ const Profile = () => {
       const apifyValue = apifyResult.data || "";
       const inworldValue = inworldResult.data || "";
       const geminiValue = geminiResult.data || "";
+      const genaiproValue = genaiproResult.data || "";
 
       // Set current values
       setReplicateApiKey(replicateValue);
@@ -114,6 +119,7 @@ const Profile = () => {
       setApifyApiKey(apifyValue);
       setInworldApiKey(inworldValue);
       setGeminiApiKey(geminiValue);
+      setGenaiproApiKey(genaiproValue);
       
       // Store original values to track changes
       setOriginalKeys({
@@ -125,7 +131,8 @@ const Profile = () => {
         kei: keiValue,
         apify: apifyValue,
         inworld: inworldValue,
-        gemini: geminiValue
+        gemini: geminiValue,
+        genaipro: genaiproValue
       });
       
       if (replicateResult.error && !replicateResult.error.message?.includes('not found')) {
@@ -181,6 +188,9 @@ const Profile = () => {
     if (geminiApiKey.trim() !== originalKeys.gemini) {
       changedKeys.push({ key_name: 'gemini', key_value: geminiApiKey.trim() });
     }
+    if (genaiproApiKey.trim() !== originalKeys.genaipro) {
+      changedKeys.push({ key_name: 'genaipro', key_value: genaiproApiKey.trim() });
+    }
 
     if (changedKeys.length === 0) {
       toast.info("Aucune modification détectée");
@@ -212,7 +222,8 @@ const Profile = () => {
         kei: keiApiKey.trim(),
         apify: apifyApiKey.trim(),
         inworld: inworldApiKey.trim(),
-        gemini: geminiApiKey.trim()
+        gemini: geminiApiKey.trim(),
+        genaipro: genaiproApiKey.trim()
       });
 
       toast.success("Clés API sauvegardées avec succès !");
@@ -644,11 +655,47 @@ const Profile = () => {
                       </a>
                     </p>
                   </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="genaipro-key">
+                      GenAIPro.vn API Key
+                    </Label>
+                    <div className="relative">
+                      <Input
+                        id="genaipro-key"
+                        type={showKeys.genaipro ? "text" : "password"}
+                        value={genaiproApiKey}
+                        onChange={(e) => setGenaiproApiKey(e.target.value)}
+                        placeholder="eyJ..."
+                        className="pr-10"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                        onClick={() => setShowKeys(prev => ({ ...prev, genaipro: !prev.genaipro }))}
+                      >
+                        {showKeys.genaipro ? <EyeOff className="h-4 w-4 text-muted-foreground" /> : <Eye className="h-4 w-4 text-muted-foreground" />}
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Utilisée pour la génération vocale TTS via GenAIPro (ElevenLabs proxy).{" "}
+                      <a
+                        href="https://genaipro.vn"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary hover:underline"
+                      >
+                        Obtenir une clé
+                      </a>
+                    </p>
+                  </div>
                 </div>
 
                 <Button
                   onClick={handleSave}
-                  disabled={isSaving || (!replicateApiKey.trim() && !elevenLabsApiKey.trim() && !minimaxApiKey.trim() && !anthropicApiKey.trim() && !braveApiKey.trim() && !keiApiKey.trim() && !apifyApiKey.trim() && !inworldApiKey.trim() && !geminiApiKey.trim())}
+                  disabled={isSaving || (!replicateApiKey.trim() && !elevenLabsApiKey.trim() && !minimaxApiKey.trim() && !anthropicApiKey.trim() && !braveApiKey.trim() && !keiApiKey.trim() && !apifyApiKey.trim() && !inworldApiKey.trim() && !geminiApiKey.trim() && !genaiproApiKey.trim())}
                   className="w-full"
                   size="lg"
                 >
