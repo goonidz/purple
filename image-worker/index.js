@@ -1486,7 +1486,8 @@ async function _ai33Generate(ai33Key, form) {
   const taskId = createData.task_id;
   log(`  AI33: Task created: ${taskId} (est. credits: ${createData.estimated_credits})`);
 
-  // Step 2: Poll for completion
+  // Step 2: Poll for completion — with exponential backoff on 429
+  let consecutiveErrors = 0;
   for (let attempt = 0; attempt < AI33_MAX_POLL_ATTEMPTS; attempt++) {
     await sleep(AI33_POLL_INTERVAL_MS);
 
@@ -1495,9 +1496,20 @@ async function _ai33Generate(ai33Key, form) {
     });
 
     if (!pollRes.ok) {
-      log(`  AI33: Poll error (${pollRes.status}), retrying...`);
+      consecutiveErrors++;
+      if (pollRes.status === 429) {
+        // Exponential backoff: 5s, 10s, 20s, 40s... max 60s — don't burn poll attempts
+        const backoffMs = Math.min(60000, 5000 * Math.pow(2, consecutiveErrors - 1));
+        log(`  AI33: Rate limited (429), backoff ${backoffMs / 1000}s...`);
+        await sleep(backoffMs);
+        attempt--; // don't count this as a poll attempt
+      } else {
+        log(`  AI33: Poll error (${pollRes.status}), retrying...`);
+      }
       continue;
     }
+
+    consecutiveErrors = 0;
 
     const taskData = await pollRes.json();
 
@@ -1600,6 +1612,12 @@ async function processThumbnailsV2Pipeline(job) {
           .from('generation_jobs')
           .update({ updated_at: new Date().toISOString() })
           .eq('id', jobId);
+
+        // Stagger parallel AI33 polls: each thumbnail waits i*8s before its first request
+        // to avoid all thumbnails hitting the rate limit simultaneously
+        if (isAI33 && i > 0) {
+          await sleep(i * 8000);
+        }
 
         if (isAI33) {
           // AI33 Pro (Gemini Pro Image): rebuild prompt with explicit @img references
