@@ -1649,9 +1649,7 @@ async function processThumbnailsV2Pipeline(job) {
             .replace('The following images are examples', `${hasCharacter && numExamples > 0 ? Array.from({ length: numExamples }, (_, k) => `@img${2 + k}`).join(', ') : 'The attached images'} are examples`)
             .replace('Using the user\'s character from Image 1', `Using the character from @img1`);
 
-          const variationPrompt = count > 1
-            ? ai33Prompt + `\n\nIMPORTANT — This is variation ${i + 1} of ${count} for A/B testing. Each variation MUST be significantly different:\n- Use completely different text/words on the thumbnail\n- Try a different composition or layout\n- Vary the color mood or background\n- Change the character's expression or pose\nDo NOT repeat the same text or concept as other variations.`
-            : ai33Prompt;
+          const variationPrompt = ai33Prompt;
 
           let imageBuffer;
           for (let attempt = 1; attempt <= 3; attempt++) {
@@ -1674,9 +1672,7 @@ async function processThumbnailsV2Pipeline(job) {
           publicUrl = await uploadBufferToStorage(imageBuffer, effectiveProjectId, filename, 'image/png');
           usedPrompt = variationPrompt;
         } else if (isGemini) {
-          const variationPrompt = count > 1
-            ? prompt + `\n\nIMPORTANT — This is variation ${i + 1} of ${count} for A/B testing. Each variation MUST be significantly different:\n- Use completely different text/words on the thumbnail\n- Try a different composition or layout\n- Vary the color mood or background\n- Change the character's expression or pose\nDo NOT repeat the same text or concept as other variations.`
-            : prompt;
+          const variationPrompt = prompt;
           let imageBuffer;
           for (let attempt = 1; attempt <= 3; attempt++) {
             try {
