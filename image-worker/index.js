@@ -1412,9 +1412,9 @@ async function generateWithAI33(ai33Key, prompt, imageUrls, aspectRatio = '16:9'
   }
 
   // AI33 gemini-3-pro-image-preview supports max 10 assets
-  if (assetBuffers.length > 10) {
-    log(`  AI33: Trimming assets from ${assetBuffers.length} to 10 (API max)`);
-    assetBuffers.length = 10;
+  if (assetBuffers.length > 6) {
+    log(`  AI33: Trimming assets from ${assetBuffers.length} to 6 (5 examples + character)`);
+    assetBuffers.length = 6;
   }
 
   // Prompt is already built with @img references by the caller — use as-is
@@ -1576,7 +1576,7 @@ async function processThumbnailsV2Pipeline(job) {
           // AI33 Pro (Gemini Pro Image): rebuild prompt with explicit @img references
           // allImageRefs[0] = character ref (if present), rest = example thumbnails
           // Cap to 10 to match the API asset limit enforced inside generateWithAI33
-          const AI33_MAX_ASSETS = 10;
+          const AI33_MAX_ASSETS = 6; // 1 character + 5 examples
           const effectiveRefCount = Math.min(allImageRefs.length, AI33_MAX_ASSETS);
           const hasCharacter = !!characterRefUrl;
           const numExamples = effectiveRefCount - (hasCharacter ? 1 : 0);

@@ -133,7 +133,7 @@ serve(async (req) => {
     // Step 4: Build thumbnail URLs for long-form videos only (max 10)
     const thumbnailUrls = items
       .filter((item: any) => longFormVideoIds.has(item.contentDetails?.videoId))
-      .slice(0, 10)
+      .slice(0, 5)
       .map((item: any) => {
         const videoId = item.contentDetails?.videoId;
         return videoId ? `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg` : null;
