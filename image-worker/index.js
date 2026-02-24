@@ -1569,8 +1569,11 @@ async function processThumbnailsV2Pipeline(job) {
         if (isAI33) {
           // AI33 Pro (Gemini Pro Image): rebuild prompt with explicit @img references
           // allImageRefs[0] = character ref (if present), rest = example thumbnails
+          // Cap to 10 to match the API asset limit enforced inside generateWithAI33
+          const AI33_MAX_ASSETS = 10;
+          const effectiveRefCount = Math.min(allImageRefs.length, AI33_MAX_ASSETS);
           const hasCharacter = !!characterRefUrl;
-          const numExamples = allImageRefs.length - (hasCharacter ? 1 : 0);
+          const numExamples = effectiveRefCount - (hasCharacter ? 1 : 0);
           let imageRefDescription = '';
           if (hasCharacter) {
             imageRefDescription += `@img1 is the character that MUST be used in the thumbnail.\n`;
