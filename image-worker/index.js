@@ -1417,12 +1417,8 @@ async function generateWithAI33(ai33Key, prompt, imageUrls, aspectRatio = '16:9'
     assetBuffers.length = 10;
   }
 
-  // Build prompt: prepend @img refs if we have assets
-  let finalPrompt = prompt;
-  if (assetBuffers.length > 0) {
-    const imgRefs = assetBuffers.map((_, i) => `@img${i + 1}`).join(', ');
-    finalPrompt = `Use these reference images (${imgRefs}) for style and character consistency. ${prompt}`;
-  }
+  // Prompt is already built with @img references by the caller — use as-is
+  const finalPrompt = prompt;
 
   // Build multipart form
   const form = new FormData();
@@ -1571,10 +1567,28 @@ async function processThumbnailsV2Pipeline(job) {
         let usedPrompt = prompt;
 
         if (isAI33) {
-          // AI33 Pro (Gemini Pro Image): send full V2 prompt + image refs directly
+          // AI33 Pro (Gemini Pro Image): rebuild prompt with explicit @img references
+          // allImageRefs[0] = character ref (if present), rest = example thumbnails
+          const hasCharacter = !!characterRefUrl;
+          const numExamples = allImageRefs.length - (hasCharacter ? 1 : 0);
+          let imageRefDescription = '';
+          if (hasCharacter) {
+            imageRefDescription += `@img1 is the character that MUST be used in the thumbnail.\n`;
+          }
+          if (numExamples > 0) {
+            const exampleRefs = Array.from({ length: numExamples }, (_, k) => `@img${(hasCharacter ? 2 : 1) + k}`).join(', ');
+            imageRefDescription += `${exampleRefs} are example thumbnails from the channel — study their composition, typography, color palette, and style.\n`;
+          }
+
+          // Replace generic "Image 1" / "following images" references in the template with @img syntax
+          let ai33Prompt = prompt
+            .replace('Image 1 will always contain the character that must be used in the thumbnail.', imageRefDescription.trim())
+            .replace('The following images are examples', `${hasCharacter && numExamples > 0 ? Array.from({ length: numExamples }, (_, k) => `@img${2 + k}`).join(', ') : 'The attached images'} are examples`)
+            .replace('Using the user\'s character from Image 1', `Using the character from @img1`);
+
           const variationPrompt = count > 1
-            ? prompt + `\n\nIMPORTANT — This is variation ${i + 1} of ${count} for A/B testing. Each variation MUST be significantly different:\n- Use completely different text/words on the thumbnail\n- Try a different composition or layout\n- Vary the color mood or background\n- Change the character's expression or pose\nDo NOT repeat the same text or concept as other variations.`
-            : prompt;
+            ? ai33Prompt + `\n\nIMPORTANT — This is variation ${i + 1} of ${count} for A/B testing. Each variation MUST be significantly different:\n- Use completely different text/words on the thumbnail\n- Try a different composition or layout\n- Vary the color mood or background\n- Change the character's expression or pose\nDo NOT repeat the same text or concept as other variations.`
+            : ai33Prompt;
 
           let imageBuffer;
           for (let attempt = 1; attempt <= 3; attempt++) {
