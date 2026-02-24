@@ -2613,12 +2613,26 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                             </p>
                           </div>
                           <div className="space-y-2">
-                            <Label>Talking speed ({inworldSpeakingRate.toFixed(2)}x)</Label>
+                            <div className="flex items-center justify-between">
+                              <Label>Talking speed</Label>
+                              <input
+                                type="number"
+                                min="0.5"
+                                max="1.5"
+                                step="0.01"
+                                value={inworldSpeakingRate}
+                                onChange={(e) => {
+                                  const v = parseFloat(e.target.value);
+                                  if (!isNaN(v)) setInworldSpeakingRate(Math.min(1.5, Math.max(0.5, v)));
+                                }}
+                                className="w-16 text-right text-sm bg-muted border border-border rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-primary"
+                              />
+                            </div>
                             <input
                               type="range"
                               min="0.5"
                               max="1.5"
-                              step="0.05"
+                              step="0.01"
                               value={inworldSpeakingRate}
                               onChange={(e) => setInworldSpeakingRate(parseFloat(e.target.value))}
                               className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
@@ -2684,12 +2698,26 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                             </Select>
                           </div>
                           <div className="space-y-2">
-                            <Label>Speed ({genaiproSpeed.toFixed(1)}x)</Label>
+                            <div className="flex items-center justify-between">
+                              <Label>Speed</Label>
+                              <input
+                                type="number"
+                                min="0.7"
+                                max="1.2"
+                                step="0.01"
+                                value={genaiproSpeed}
+                                onChange={(e) => {
+                                  const v = parseFloat(e.target.value);
+                                  if (!isNaN(v)) setGenaiproSpeed(Math.min(1.2, Math.max(0.7, v)));
+                                }}
+                                className="w-16 text-right text-sm bg-muted border border-border rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-primary"
+                              />
+                            </div>
                             <input
                               type="range"
                               min="0.7"
                               max="1.2"
-                              step="0.05"
+                              step="0.01"
                               value={genaiproSpeed}
                               onChange={(e) => setGenaiproSpeed(parseFloat(e.target.value))}
                               className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
@@ -2700,12 +2728,26 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                             </div>
                           </div>
                           <div className="space-y-2">
-                            <Label>Stability ({genaiproStability.toFixed(2)})</Label>
+                            <div className="flex items-center justify-between">
+                              <Label>Stability</Label>
+                              <input
+                                type="number"
+                                min="0"
+                                max="1"
+                                step="0.01"
+                                value={genaiproStability}
+                                onChange={(e) => {
+                                  const v = parseFloat(e.target.value);
+                                  if (!isNaN(v)) setGenaiproStability(Math.min(1, Math.max(0, v)));
+                                }}
+                                className="w-16 text-right text-sm bg-muted border border-border rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-primary"
+                              />
+                            </div>
                             <input
                               type="range"
                               min="0"
                               max="1"
-                              step="0.05"
+                              step="0.01"
                               value={genaiproStability}
                               onChange={(e) => setGenaiproStability(parseFloat(e.target.value))}
                               className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
@@ -2716,12 +2758,26 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                             </div>
                           </div>
                           <div className="space-y-2">
-                            <Label>Similarity ({genaiproSimilarity.toFixed(2)})</Label>
+                            <div className="flex items-center justify-between">
+                              <Label>Similarity</Label>
+                              <input
+                                type="number"
+                                min="0"
+                                max="1"
+                                step="0.01"
+                                value={genaiproSimilarity}
+                                onChange={(e) => {
+                                  const v = parseFloat(e.target.value);
+                                  if (!isNaN(v)) setGenaiproSimilarity(Math.min(1, Math.max(0, v)));
+                                }}
+                                className="w-16 text-right text-sm bg-muted border border-border rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-primary"
+                              />
+                            </div>
                             <input
                               type="range"
                               min="0"
                               max="1"
-                              step="0.05"
+                              step="0.01"
                               value={genaiproSimilarity}
                               onChange={(e) => setGenaiproSimilarity(parseFloat(e.target.value))}
                               className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
@@ -2732,12 +2788,26 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                             </div>
                           </div>
                           <div className="space-y-2">
-                            <Label>Style ({genaiproStyle.toFixed(2)})</Label>
+                            <div className="flex items-center justify-between">
+                              <Label>Style</Label>
+                              <input
+                                type="number"
+                                min="0"
+                                max="1"
+                                step="0.01"
+                                value={genaiproStyle}
+                                onChange={(e) => {
+                                  const v = parseFloat(e.target.value);
+                                  if (!isNaN(v)) setGenaiproStyle(Math.min(1, Math.max(0, v)));
+                                }}
+                                className="w-16 text-right text-sm bg-muted border border-border rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-primary"
+                              />
+                            </div>
                             <input
                               type="range"
                               min="0"
                               max="1"
-                              step="0.05"
+                              step="0.01"
                               value={genaiproStyle}
                               onChange={(e) => setGenaiproStyle(parseFloat(e.target.value))}
                               className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
@@ -2808,12 +2878,26 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
 
                           <div className="grid grid-cols-3 gap-4">
                             <div className="space-y-2">
-                              <Label>Vitesse ({minimaxSpeed.toFixed(1)}x)</Label>
+                              <div className="flex items-center justify-between">
+                                <Label>Vitesse</Label>
+                                <input
+                                  type="number"
+                                  min="0.5"
+                                  max="2.0"
+                                  step="0.01"
+                                  value={minimaxSpeed}
+                                  onChange={(e) => {
+                                    const v = parseFloat(e.target.value);
+                                    if (!isNaN(v)) setMinimaxSpeed(Math.min(2.0, Math.max(0.5, v)));
+                                  }}
+                                  className="w-16 text-right text-sm bg-muted border border-border rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-primary"
+                                />
+                              </div>
                               <input
                                 type="range"
                                 min="0.5"
                                 max="2.0"
-                                step="0.1"
+                                step="0.01"
                                 value={minimaxSpeed}
                                 onChange={(e) => setMinimaxSpeed(parseFloat(e.target.value))}
                                 className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
@@ -3319,12 +3403,26 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                 </div>
                 <div className="grid grid-cols-3 gap-4">
                   <div className="space-y-2">
-                    <Label>Vitesse ({minimaxSpeed.toFixed(1)}x)</Label>
+                    <div className="flex items-center justify-between">
+                      <Label>Vitesse</Label>
+                      <input
+                        type="number"
+                        min="0.5"
+                        max="2.0"
+                        step="0.01"
+                        value={minimaxSpeed}
+                        onChange={(e) => {
+                          const v = parseFloat(e.target.value);
+                          if (!isNaN(v)) setMinimaxSpeed(Math.min(2.0, Math.max(0.5, v)));
+                        }}
+                        className="w-16 text-right text-sm bg-muted border border-border rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-primary"
+                      />
+                    </div>
                     <input
                       type="range"
                       min="0.5"
                       max="2.0"
-                      step="0.1"
+                      step="0.01"
                       value={minimaxSpeed}
                       onChange={(e) => setMinimaxSpeed(parseFloat(e.target.value))}
                       className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
