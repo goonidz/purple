@@ -115,7 +115,7 @@ RÈGLE CRITIQUE SUR LA LONGUEUR:
             'anthropic-version': '2023-06-01',
           },
           body: JSON.stringify({
-            model: 'claude-sonnet-4-20250514', // Claude Sonnet 4 (latest)
+            model: 'claude-sonnet-4-6', // Claude Sonnet 4.6 (latest)
             max_tokens: 8192,
             system: systemPrompt,
             messages: [

@@ -1276,10 +1276,9 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
           // Call VPS directly in ASYNC mode (no timeout + safe to leave page)
           // Use HTTPS if available, fallback to HTTP for development
           const VPS_URL = import.meta.env.VITE_VPS_URL || "https://purpleai.duckdns.org/api/render";
-          // Use a stable alias for Sonnet 4.5; the VPS will resolve it to an exact Anthropic model id if needed.
-          const vpsModel = scriptModel === "claude" ? "claude-sonnet-4-5" : "claude-opus-4-5-20251101";
-          // Keep output capacity roughly equivalent by using a generous thinking budget for Sonnet 4.5.
-          const thinkingBudgetTokens = scriptModel === "claude" ? 8000 : 0;
+          // Sonnet 4.6 uses adaptive thinking + effort; Opus 4.5 stays on legacy mode.
+          const vpsModel = scriptModel === "claude" ? "claude-sonnet-4-6" : "claude-opus-4-5-20251101";
+          const effort = scriptModel === "claude" ? "high" : undefined;
 
           const response = await fetch(`${VPS_URL}/generate-script`, {
             method: "POST",
@@ -1290,7 +1289,7 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
               anthropicApiKey: apiKeyData,
               customPrompt: finalPrompt,
               model: vpsModel,
-              thinkingBudgetTokens,
+              ...(effort ? { effort } : {}),
               async: true,
               projectId: tempProject.id,
               userId: user!.id,
@@ -1398,9 +1397,9 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
           toast.info("Clé Anthropic manquante : bascule sur le mode via Replicate.");
         } else {
           const VPS_URL = import.meta.env.VITE_VPS_URL || "https://purpleai.duckdns.org/api/render";
-          // Use a stable alias for Sonnet 4.5; the VPS will resolve it to an exact Anthropic model id if needed.
-          const vpsModel = scriptModel === "claude" ? "claude-sonnet-4-5" : "claude-opus-4-5-20251101";
-          const thinkingBudgetTokens = scriptModel === "claude" ? 8000 : 0;
+          // Sonnet 4.6 uses adaptive thinking + effort; Opus 4.5 stays on legacy mode.
+          const vpsModel = scriptModel === "claude" ? "claude-sonnet-4-6" : "claude-opus-4-5-20251101";
+          const effort = scriptModel === "claude" ? "high" : undefined;
 
           const response = await fetch(`${VPS_URL}/generate-script`, {
             method: "POST",
@@ -1409,7 +1408,7 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
               anthropicApiKey: apiKeyData,
               customPrompt: finalPrompt,
               model: vpsModel,
-              thinkingBudgetTokens,
+              ...(effort ? { effort } : {}),
               async: true,
               projectId,
               userId: user!.id,
@@ -2112,13 +2111,13 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                           </div>
                         </div>
                       )}
-                      <p className="text-xs text-muted-foreground">
+                        <p className="text-xs text-muted-foreground">
                         Ce prompt sera envoyé à{" "}
                         {scriptModel === "gpt5"
                           ? "GPT-5.1"
                           : scriptModel === "claude-thinking"
                             ? "Claude Opus 4.5 (Anthropic)"
-                            : "Claude Sonnet 4.5 Thinking (Anthropic)"}{" "}
+                            : "Claude Sonnet 4.6 (Anthropic)"}{" "}
                         pour générer le script. Incluez tous les détails: sujet, durée, style, langue, etc.
                         <br />
                         <span className="font-semibold">Variables disponibles:</span> <code className="bg-primary/20 text-primary px-1 rounded font-semibold">{"{{projectName}}"}</code> sera remplacé par le nom du projet, <code className="bg-primary/20 text-primary px-1 rounded font-semibold">{"{{sourceTranscript}}"}</code> par la transcription de la vidéo source (si disponible depuis le calendrier).
@@ -2136,9 +2135,9 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                       <SelectContent className="min-w-[400px]">
                         <SelectItem value="claude">
                           <div className="flex flex-col">
-                            <span className="font-medium">Claude Sonnet 4.5 Thinking</span>
+                            <span className="font-medium">Claude Sonnet 4.6</span>
                             <span className="text-xs text-muted-foreground">Via Anthropic API directe (nécessite clé API Anthropic)</span>
-                            <span className="text-xs text-primary mt-1 whitespace-normal break-words">✨ Extended thinking activé (meilleure qualité de script)</span>
+                            <span className="text-xs text-primary mt-1 whitespace-normal break-words">✨ Adaptive thinking activé (meilleure qualité de script)</span>
                           </div>
                         </SelectItem>
                         <SelectItem value="claude-thinking">

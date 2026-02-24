@@ -108,11 +108,17 @@ async function resolveAnthropicModelId({ apiKey, requestedModel }) {
   if (/\d{8}$/.test(model)) return model;
 
   // Normalize a few legacy / UI-friendly aliases.
-  // - The frontend may send friendly aliases like "claude-sonnet-4-5"
+  // - The frontend may send friendly aliases like "claude-sonnet-4-6" or "claude-sonnet-4-5"
   // - Older builds may have sent "claude-4.5-sonnet" (invalid)
   const normalized = model
+    .replace(/^claude-4\.6-sonnet$/i, 'claude-sonnet-4-6')
     .replace(/^claude-4\.5-sonnet$/i, 'claude-sonnet-4-5')
     .replace(/^claude-4\.5-opus$/i, 'claude-opus-4-5');
+
+  // claude-sonnet-4-6 has no date suffix — return it directly.
+  if (/^claude-sonnet-4-6$/i.test(normalized)) {
+    return process.env.ANTHROPIC_SONNET_4_6_MODEL_ID || normalized;
+  }
 
   // Optional explicit overrides (lets us pin exact Anthropic model ids server-side)
   if (/claude-sonnet-4-5/i.test(normalized) && process.env.ANTHROPIC_SONNET_4_5_MODEL_ID) {
@@ -523,8 +529,9 @@ async function processGenerateScriptJob(jobId, payload) {
   const {
     anthropicApiKey,
     customPrompt,
-    model = 'claude-opus-4-5-20251101',
+    model = 'claude-sonnet-4-6',
     thinkingBudgetTokens,
+    effort,
     maxTokens,
     projectId,
     userId,
@@ -566,24 +573,30 @@ RÈGLE CRITIQUE SUR LA LONGUEUR:
       jobs.set(jobId, { ...jobs.get(jobId), progress: 10, currentStep: 'Recherche web (Anthropic)...' });
     }
 
-    // Extended thinking (if requested)
+    // Thinking mode selection:
+    // - If `effort` param is set → Sonnet 4.6 adaptive thinking (recommended)
+    // - If `thinkingBudgetTokens` is set → legacy manual mode (Sonnet 4.5 / backward compat)
+    // - Otherwise → no thinking
+    const useAdaptiveThinking = effort && typeof effort === 'string';
     const parsedThinkingBudget = Number(thinkingBudgetTokens);
-    const enableThinking = Number.isFinite(parsedThinkingBudget) && parsedThinkingBudget > 0;
+    const useLegacyThinking = !useAdaptiveThinking && Number.isFinite(parsedThinkingBudget) && parsedThinkingBudget > 0;
 
-    // We treat maxTokens as the desired output budget (excluding thinking) and add thinking budget on top,
-    // since Anthropic subtracts thinking tokens from max_tokens.
+    // In adaptive mode, max_tokens is purely the output budget (Anthropic manages thinking internally).
+    // In legacy mode, we must add thinking budget on top since Anthropic subtracts it from max_tokens.
     const desiredOutputMaxTokens = Number.isFinite(Number(maxTokens)) && Number(maxTokens) > 0 ? Number(maxTokens) : 16000;
-    const totalMaxTokens = enableThinking ? desiredOutputMaxTokens + parsedThinkingBudget : desiredOutputMaxTokens;
+    const totalMaxTokens = useLegacyThinking ? desiredOutputMaxTokens + parsedThinkingBudget : desiredOutputMaxTokens;
 
     jobs.set(jobId, {
       ...jobs.get(jobId),
       progress: 15,
-      currentStep: enableThinking ? 'Claude réfléchit (thinking)...' : 'Génération en cours...',
+      currentStep: (useAdaptiveThinking || useLegacyThinking) ? 'Claude réfléchit (thinking)...' : 'Génération en cours...',
       model: resolvedModel,
     });
 
-    if (enableThinking) {
-      console.log(`[generate-script] [${jobId}] Extended thinking enabled (budget_tokens=${parsedThinkingBudget}, max_tokens=${totalMaxTokens})`);
+    if (useAdaptiveThinking) {
+      console.log(`[generate-script] [${jobId}] Adaptive thinking enabled (effort=${effort}, max_tokens=${totalMaxTokens})`);
+    } else if (useLegacyThinking) {
+      console.log(`[generate-script] [${jobId}] Legacy extended thinking enabled (budget_tokens=${parsedThinkingBudget}, max_tokens=${totalMaxTokens})`);
     } else {
       console.log(`[generate-script] [${jobId}] Extended thinking disabled (max_tokens=${totalMaxTokens})`);
     }
@@ -595,7 +608,10 @@ RÈGLE CRITIQUE SUR LA LONGUEUR:
       messages: [{ role: 'user', content: customPrompt }],
     };
 
-    if (enableThinking) {
+    if (useAdaptiveThinking) {
+      requestBody.thinking = { type: 'adaptive' };
+      requestBody.output_config = { effort };
+    } else if (useLegacyThinking) {
       requestBody.thinking = { type: 'enabled', budget_tokens: parsedThinkingBudget };
     }
     if (webSearchTool) {
@@ -607,7 +623,9 @@ RÈGLE CRITIQUE SUR LA LONGUEUR:
         'Content-Type': 'application/json',
         'x-api-key': anthropicApiKey,
         'anthropic-version': '2023-06-01',
-        ...(enableThinking ? { 'anthropic-beta': 'interleaved-thinking-2025-05-14' } : {}),
+        // interleaved-thinking beta header only needed for legacy manual mode on Sonnet 4.6;
+        // adaptive thinking enables interleaved automatically, no header required.
+        ...(useLegacyThinking ? { 'anthropic-beta': 'interleaved-thinking-2025-05-14' } : {}),
       },
       timeout: 600000,
     });
@@ -2454,8 +2472,9 @@ app.post('/generate-script', async (req, res) => {
   const {
     anthropicApiKey,
     customPrompt,
-    model = 'claude-opus-4-5-20251101',
+    model = 'claude-sonnet-4-6',
     thinkingBudgetTokens,
+    effort,
     maxTokens,
     async: asyncMode,
     projectId,
@@ -2548,17 +2567,23 @@ RÈGLE CRITIQUE SUR LA LONGUEUR:
   try {
     const startTime = Date.now();
 
-    // Extended thinking (if requested)
+    // Thinking mode selection:
+    // - If `effort` param is set → Sonnet 4.6 adaptive thinking (recommended)
+    // - If `thinkingBudgetTokens` is set → legacy manual mode (Sonnet 4.5 / backward compat)
+    // - Otherwise → no thinking
+    const useAdaptiveThinking = effort && typeof effort === 'string';
     const parsedThinkingBudget = Number(thinkingBudgetTokens);
-    const enableThinking = Number.isFinite(parsedThinkingBudget) && parsedThinkingBudget > 0;
+    const useLegacyThinking = !useAdaptiveThinking && Number.isFinite(parsedThinkingBudget) && parsedThinkingBudget > 0;
 
-    // We treat maxTokens as the desired output budget (excluding thinking) and add thinking budget on top,
-    // since Anthropic subtracts thinking tokens from max_tokens.
+    // In adaptive mode, max_tokens is purely the output budget (Anthropic manages thinking internally).
+    // In legacy mode, we must add thinking budget on top since Anthropic subtracts it from max_tokens.
     const desiredOutputMaxTokens = Number.isFinite(Number(maxTokens)) && Number(maxTokens) > 0 ? Number(maxTokens) : 16000;
-    const totalMaxTokens = enableThinking ? desiredOutputMaxTokens + parsedThinkingBudget : desiredOutputMaxTokens;
+    const totalMaxTokens = useLegacyThinking ? desiredOutputMaxTokens + parsedThinkingBudget : desiredOutputMaxTokens;
 
-    if (enableThinking) {
-      console.log(`[generate-script] Extended thinking enabled (budget_tokens=${parsedThinkingBudget}, max_tokens=${totalMaxTokens})`);
+    if (useAdaptiveThinking) {
+      console.log(`[generate-script] Adaptive thinking enabled (effort=${effort}, max_tokens=${totalMaxTokens})`);
+    } else if (useLegacyThinking) {
+      console.log(`[generate-script] Legacy extended thinking enabled (budget_tokens=${parsedThinkingBudget}, max_tokens=${totalMaxTokens})`);
     } else {
       console.log(`[generate-script] Extended thinking disabled (max_tokens=${totalMaxTokens})`);
     }
@@ -2580,11 +2605,11 @@ RÈGLE CRITIQUE SUR LA LONGUEUR:
       ]
     };
 
-    if (enableThinking) {
-      requestBody.thinking = {
-        type: 'enabled',
-        budget_tokens: parsedThinkingBudget
-      };
+    if (useAdaptiveThinking) {
+      requestBody.thinking = { type: 'adaptive' };
+      requestBody.output_config = { effort };
+    } else if (useLegacyThinking) {
+      requestBody.thinking = { type: 'enabled', budget_tokens: parsedThinkingBudget };
     }
     if (webSearchTool) {
       requestBody.tools = [webSearchTool];
@@ -2595,7 +2620,9 @@ RÈGLE CRITIQUE SUR LA LONGUEUR:
         'Content-Type': 'application/json',
         'x-api-key': anthropicApiKey,
         'anthropic-version': '2023-06-01',
-        ...(enableThinking ? { 'anthropic-beta': 'interleaved-thinking-2025-05-14' } : {})
+        // interleaved-thinking beta header only needed for legacy manual mode on Sonnet 4.6;
+        // adaptive thinking enables interleaved automatically, no header required.
+        ...(useLegacyThinking ? { 'anthropic-beta': 'interleaved-thinking-2025-05-14' } : {}),
       },
       timeout: 600000 // 10 minutes timeout
     });
