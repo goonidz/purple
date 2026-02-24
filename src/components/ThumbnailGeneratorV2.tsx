@@ -13,6 +13,53 @@ import { toast } from "sonner";
 import { useGenerationJobs, GenerationJob } from "@/hooks/useGenerationJobs";
 import { JobProgressIndicator } from "@/components/JobProgressIndicator";
 
+const DEFAULT_THUMBNAIL_PROMPT = `You are a professional YouTube thumbnail designer.
+
+You create thumbnails based on example images provided by the user.
+
+Image 1 will always contain the character that must be used in the thumbnail.
+The following images are examples that you must study and draw inspiration from (composition, layout, typography, color palette, lighting, emotional tone, visual hierarchy, background style, and overall aesthetic).
+
+Your Process
+
+Step 1 — Deep Analysis
+Carefully analyze each example image in depth:
+Composition and framing
+Color grading and dominant tones
+Text placement and typography style
+Contrast, lighting, and depth
+Emotional expression and intensity
+Visual hierarchy and focal points
+
+Step 2 — Identify Patterns & Success Principles
+Identify what ALL example thumbnails have in common (recurring colors, layout patterns, text style, character placement, background treatment, emotional tone). These shared elements are the channel's visual identity — you MUST reuse them.
+Then analyze WHY these thumbnails are effective: what makes them clickable, what psychological triggers they use (curiosity gap, shock, urgency, contrast, simplicity), how they stand out in a YouTube feed. Apply these same principles to your design.
+
+Step 3 — Understand the Topic
+Fully understand the subject of the user's video before designing the thumbnail.
+
+Step 4 — Concept Creation
+Create the most compelling thumbnail concept:
+Aligned with the video topic
+Matching the style and structure of the example images
+Using the user's character from Image 1
+Optimized for curiosity, clarity, and click-through rate
+
+If the example thumbnails contain text overlays, you MUST include text in your thumbnail too. Match the examples precisely:
+Same approximate number of words (if examples have 1-2 words, use 1-2 words; if 3-5 words, use 3-5 words)
+Same text size and weight relative to the image
+Same color scheme and effects (outlines, shadows, gradients, glow)
+Same placement and positioning on the thumbnail
+Do NOT copy the exact words — write NEW text adapted to this video's topic
+The text should complement the video title, create tension, spark curiosity, or amplify emotion
+If the example thumbnails have NO text, do NOT add text.
+
+Step 5 — Generate the Final Image
+Produce the final thumbnail image.
+
+Video Title:
+{videoTitle}`;
+
 interface ThumbnailGeneratorV2Props {
   projectId: string;
   videoScript: string;
@@ -42,7 +89,7 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
   const [isUploading, setIsUploading] = useState(false);
   const [isDraggingCharacter, setIsDraggingCharacter] = useState(false);
   const [userDirectives, setUserDirectives] = useState("");
-  const [systemPrompt, setSystemPrompt] = useState("");
+  const [systemPrompt, setSystemPrompt] = useState(DEFAULT_THUMBNAIL_PROMPT);
   const [imageModel, setImageModel] = useState("ai33-gemini-image");
   const [numThumbnails, setNumThumbnails] = useState(3);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -61,7 +108,7 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
   const [editChannelHandle, setEditChannelHandle] = useState("");
   const [editCharacterRefUrl, setEditCharacterRefUrl] = useState("");
   const [editUserDirectives, setEditUserDirectives] = useState("");
-  const [editSystemPrompt, setEditSystemPrompt] = useState("");
+  const [editSystemPrompt, setEditSystemPrompt] = useState(DEFAULT_THUMBNAIL_PROMPT);
   const [editImageModel, setEditImageModel] = useState("ai33-gemini-image");
   const [isUploadingEdit, setIsUploadingEdit] = useState(false);
   const [duplicateName, setDuplicateName] = useState("");
@@ -245,7 +292,7 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
     setChannelHandle(preset.channel_handle || "");
     setCharacterRefUrl(preset.character_ref_url || "");
     setUserDirectives(preset.custom_prompt || "");
-    setSystemPrompt(preset.system_prompt || "");
+    setSystemPrompt(preset.system_prompt || DEFAULT_THUMBNAIL_PROMPT);
     setImageModel(preset.image_model || "ai33-gemini-image");
   };
 
@@ -333,7 +380,7 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
     setEditChannelHandle(preset.channel_handle || "");
     setEditCharacterRefUrl(preset.character_ref_url || "");
     setEditUserDirectives(preset.custom_prompt || "");
-    setEditSystemPrompt(preset.system_prompt || "");
+    setEditSystemPrompt(preset.system_prompt || DEFAULT_THUMBNAIL_PROMPT);
     setEditImageModel(preset.image_model || "ai33-gemini-image");
     setIsEditDialogOpen(true);
   };
@@ -762,16 +809,26 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
 
           {/* Custom system prompt */}
           <div className="space-y-2">
-            <Label>Prompt personnalisé (optionnel)</Label>
+            <div className="flex items-center justify-between">
+              <Label>Prompt système</Label>
+              {systemPrompt !== DEFAULT_THUMBNAIL_PROMPT && (
+                <button
+                  type="button"
+                  onClick={() => setSystemPrompt(DEFAULT_THUMBNAIL_PROMPT)}
+                  className="text-xs text-muted-foreground hover:text-foreground underline"
+                >
+                  Réinitialiser
+                </button>
+              )}
+            </div>
             <Textarea
               value={systemPrompt}
               onChange={(e) => setSystemPrompt(e.target.value)}
-              rows={6}
+              rows={10}
               className="text-sm font-mono"
-              placeholder="Laisse vide pour utiliser le prompt par défaut. Si renseigné, remplace entièrement le prompt système. Utilise {videoTitle} pour insérer le titre de la vidéo."
             />
-            {systemPrompt.trim() && (
-              <p className="text-xs text-amber-500">⚠️ Le prompt par défaut est remplacé par ton prompt personnalisé.</p>
+            {systemPrompt !== DEFAULT_THUMBNAIL_PROMPT && (
+              <p className="text-xs text-amber-500">⚠️ Prompt modifié — sauvegarde le preset pour le conserver.</p>
             )}
           </div>
 
@@ -1024,17 +1081,24 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
             </div>
 
             <div className="space-y-2">
-              <Label>Prompt personnalisé (optionnel)</Label>
+              <div className="flex items-center justify-between">
+                <Label>Prompt système</Label>
+                {editSystemPrompt !== DEFAULT_THUMBNAIL_PROMPT && (
+                  <button
+                    type="button"
+                    onClick={() => setEditSystemPrompt(DEFAULT_THUMBNAIL_PROMPT)}
+                    className="text-xs text-muted-foreground hover:text-foreground underline"
+                  >
+                    Réinitialiser
+                  </button>
+                )}
+              </div>
               <Textarea
                 value={editSystemPrompt}
                 onChange={(e) => setEditSystemPrompt(e.target.value)}
-                rows={6}
+                rows={10}
                 className="text-sm font-mono"
-                placeholder="Laisse vide pour utiliser le prompt par défaut. Si renseigné, remplace entièrement le prompt système. Utilise {videoTitle} pour insérer le titre de la vidéo."
               />
-              {editSystemPrompt.trim() && (
-                <p className="text-xs text-amber-500">⚠️ Le prompt par défaut est remplacé par ton prompt personnalisé.</p>
-              )}
             </div>
 
             <div className="space-y-2">
