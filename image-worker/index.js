@@ -946,8 +946,15 @@ async function processThumbnailsPipeline(job) {
 
   try {
     // ---- STEP 1: Get API keys ----
-    const replicateKey = await getUserApiKey(userId, 'replicate');
-    const replicateClient = new Replicate({ auth: replicateKey });
+    const isAI33Thumb = (imageModel || 'seedream-4.5') === 'ai33-gemini-image';
+    let replicateClient = null;
+    let ai33ThumbKey = null;
+    if (isAI33Thumb) {
+      ai33ThumbKey = await getUserApiKey(userId, 'ai33');
+    } else {
+      const replicateKey = await getUserApiKey(userId, 'replicate');
+      replicateClient = new Replicate({ auth: replicateKey });
+    }
 
     // ---- STEP 2: Generate 3 prompts via Edge Function ----
     log('  Thumbnails: generating 3 prompts...');
@@ -982,13 +989,11 @@ async function processThumbnailsPipeline(job) {
       .update({ metadata: { ...metadata, generatedPrompts: creativePrompts } })
       .eq('id', jobId);
 
-    // ---- STEP 3: Generate 3 images via Replicate (polling) ----
+    // ---- STEP 3: Generate 3 images ----
     const model = imageModel || 'seedream-4.5';
-    const modelName = MODEL_MAP[model] || MODEL_MAP['seedream-4.5'];
     const generatedThumbnails = [];
 
     // Mutex to serialize DB updates and prevent race conditions
-    // Without this, parallel completions can overwrite each other's metadata
     let dbUpdateLock = Promise.resolve();
 
     // Combine style refs + resolve YouTube thumbnail URLs
@@ -1002,27 +1007,51 @@ async function processThumbnailsPipeline(job) {
       try {
         log(`  Thumbnail ${i + 1}/3: generating with ${model}...`);
 
-        const thumbInput = buildReplicateInput({
-          prompt,
-          model,
-          width: 1920,
-          height: 1080,
-          styleRefs: allImageRefs,
-        });
-
-        const result = await runReplicatePrediction(replicateClient, thumbInput.modelName, thumbInput.input);
-        const imageOutput = Array.isArray(result.output) ? result.output[0] : result.output;
-
-        if (!imageOutput) {
-          logError(`  Thumbnail ${i + 1}: no output`);
-          return null;
-        }
-
-        // Upload to Storage
         const timestamp = Date.now();
         const effectiveProjectId = standalone ? (thumbnailProjectId || 'standalone') : projectId;
-        const filename = `thumb_v${i + 1}_${timestamp}.jpg`;
-        const publicUrl = await uploadImageToStorage(imageOutput, effectiveProjectId, filename);
+        let publicUrl;
+
+        if (isAI33Thumb) {
+          // Keep-alive so stale checker doesn't kill a slow AI33 job
+          await supabase.from('generation_jobs').update({ updated_at: new Date().toISOString() }).eq('id', jobId);
+          let imageBuffer;
+          for (let attempt = 1; attempt <= 3; attempt++) {
+            const keepAliveTimer = setInterval(async () => {
+              await supabase.from('generation_jobs').update({ updated_at: new Date().toISOString() }).eq('id', jobId);
+            }, 60000);
+            try {
+              imageBuffer = await generateWithAI33(ai33ThumbKey, prompt, allImageRefs, '16:9');
+              clearInterval(keepAliveTimer);
+              break;
+            } catch (retryErr) {
+              clearInterval(keepAliveTimer);
+              if (attempt === 3) throw retryErr;
+              log(`  Thumbnail ${i + 1}: AI33 attempt ${attempt} failed (${retryErr.message?.substring(0, 80)}), retrying in ${attempt * 5}s...`);
+              await sleep(attempt * 5000);
+            }
+          }
+          const filename = `thumb_v${i + 1}_${timestamp}.png`;
+          publicUrl = await uploadBufferToStorage(imageBuffer, effectiveProjectId, filename, 'image/png');
+        } else {
+          const thumbInput = buildReplicateInput({
+            prompt,
+            model,
+            width: 1920,
+            height: 1080,
+            styleRefs: allImageRefs,
+          });
+
+          const result = await runReplicatePrediction(replicateClient, thumbInput.modelName, thumbInput.input);
+          const imageOutput = Array.isArray(result.output) ? result.output[0] : result.output;
+
+          if (!imageOutput) {
+            logError(`  Thumbnail ${i + 1}: no output`);
+            return null;
+          }
+
+          const filename = `thumb_v${i + 1}_${timestamp}.jpg`;
+          publicUrl = await uploadImageToStorage(imageOutput, effectiveProjectId, filename);
+        }
         log(`  Thumbnail ${i + 1}/3: uploaded -> ${publicUrl.substring(0, 80)}...`);
 
         const thumb = { index: i, url: publicUrl, prompt };

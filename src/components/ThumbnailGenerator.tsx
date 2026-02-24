@@ -1395,6 +1395,7 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="seedream-4.5">SeedDream 4.5 (Recommandé)</SelectItem>
+                <SelectItem value="ai33-gemini-image">Gemini Pro Image via AI33 Pro</SelectItem>
                 <SelectItem value="seedream-4">SeedDream 4.0</SelectItem>
                 <SelectItem value="z-image-turbo">Z-Image Turbo (Rapide)</SelectItem>
               </SelectContent>
