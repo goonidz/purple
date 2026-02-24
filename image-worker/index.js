@@ -1421,7 +1421,7 @@ async function generateWithAI33(ai33Key, prompt, imageUrls, aspectRatio = '16:9'
   // Build multipart form
   const form = new FormData();
   form.append('prompt', finalPrompt);
-  form.append('model_id', 'bytedance-seedream-4.5');
+  form.append('model_id', 'gemini-3-pro-image-preview');
   form.append('generations_count', '1');
   form.append('model_parameters', JSON.stringify({ aspect_ratio: aspectRatio, resolution: '2K' }));
   for (let i = 0; i < assetBuffers.length; i++) {
@@ -1505,7 +1505,7 @@ async function processThumbnailsV2Pipeline(job) {
   const count = numThumbnails || 3;
   const model = imageModel || 'seedream-4.5';
   const isGemini = model.startsWith('gemini-');
-  const isAI33 = model === 'ai33-seedream-4.5';
+  const isAI33 = model === 'ai33-gemini-image';
   log(`Processing thumbnails V2 (job ${jobId.substring(0, 8)}...) - ${count} thumbnails, model: ${model}`);
 
   try {
@@ -1565,19 +1565,15 @@ async function processThumbnailsV2Pipeline(job) {
         let usedPrompt = prompt;
 
         if (isAI33) {
-          // AI33 Pro: use Gemini Flash for prompt generation (same as SeedDream/Replicate path), then generate via AI33 API
-          if (geminiKeyForPrompts) {
-            log(`  Thumbnail V2 ${i + 1}: generating AI33 prompt via Gemini Flash (full analysis)...`);
-            usedPrompt = await generateSeedreamPrompt(
-              geminiKeyForPrompts, prompt, exampleUrls || [], characterRefUrl, videoTitle, userDirectives, i, count
-            );
-            log(`  Thumbnail V2 ${i + 1}: AI33 prompt: ${usedPrompt.substring(0, 150)}...`);
-          }
+          // AI33 Pro (Gemini Pro Image): send full V2 prompt + image refs directly
+          const variationPrompt = count > 1
+            ? prompt + `\n\nIMPORTANT — This is variation ${i + 1} of ${count} for A/B testing. Each variation MUST be significantly different:\n- Use completely different text/words on the thumbnail\n- Try a different composition or layout\n- Vary the color mood or background\n- Change the character's expression or pose\nDo NOT repeat the same text or concept as other variations.`
+            : prompt;
 
           let imageBuffer;
           for (let attempt = 1; attempt <= 3; attempt++) {
             try {
-              imageBuffer = await generateWithAI33(ai33Key, usedPrompt, allImageRefs, '16:9');
+              imageBuffer = await generateWithAI33(ai33Key, variationPrompt, allImageRefs, '16:9');
               break;
             } catch (retryErr) {
               if (attempt === 3) throw retryErr;
@@ -1587,6 +1583,7 @@ async function processThumbnailsV2Pipeline(job) {
           }
           const filename = `thumb_v2_${i + 1}_${timestamp}.png`;
           publicUrl = await uploadBufferToStorage(imageBuffer, effectiveProjectId, filename, 'image/png');
+          usedPrompt = variationPrompt;
         } else if (isGemini) {
           const variationPrompt = count > 1
             ? prompt + `\n\nIMPORTANT — This is variation ${i + 1} of ${count} for A/B testing. Each variation MUST be significantly different:\n- Use completely different text/words on the thumbnail\n- Try a different composition or layout\n- Vary the color mood or background\n- Change the character's expression or pose\nDo NOT repeat the same text or concept as other variations.`

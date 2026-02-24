@@ -727,7 +727,7 @@ const Profile = () => {
                       </Button>
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      Utilisée pour la génération d'images via AI33 Pro (SeedDream 4.5).{" "}
+                      Utilisée pour la génération d'images via AI33 Pro (Gemini Pro Image).{" "}
                       <a
                         href="https://ai33.pro"
                         target="_blank"
