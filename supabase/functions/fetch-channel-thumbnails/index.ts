@@ -43,9 +43,21 @@ serve(async (req) => {
       });
     }
 
-    const YOUTUBE_API_KEY = Deno.env.get("YOUTUBE_API_KEY");
-    if (!YOUTUBE_API_KEY) {
-      throw new Error("YOUTUBE_API_KEY is not configured");
+    const supabaseAdmin = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+    );
+
+    const { data: YOUTUBE_API_KEY, error: keyError } = await supabaseAdmin.rpc('get_user_api_key_for_service', {
+      target_user_id: user.id,
+      key_name: 'youtube'
+    });
+
+    if (keyError || !YOUTUBE_API_KEY) {
+      return new Response(
+        JSON.stringify({ error: "Clé API YouTube non configurée. Ajoutez-la dans votre profil." }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
     // Normalize handle: strip leading @ if present

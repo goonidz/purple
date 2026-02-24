@@ -26,6 +26,7 @@ const Profile = () => {
   const [geminiApiKey, setGeminiApiKey] = useState("");
   const [genaiproApiKey, setGenaiproApiKey] = useState("");
   const [ai33ApiKey, setAi33ApiKey] = useState("");
+  const [youtubeApiKey, setYoutubeApiKey] = useState("");
   
   // Track original values to detect changes
   const [originalKeys, setOriginalKeys] = useState({
@@ -39,7 +40,8 @@ const Profile = () => {
     inworld: "",
     gemini: "",
     genaipro: "",
-    ai33: ""
+    ai33: "",
+    youtube: ""
   });
   const [showKeys, setShowKeys] = useState({
     replicate: false,
@@ -52,7 +54,8 @@ const Profile = () => {
     inworld: false,
     gemini: false,
     genaipro: false,
-    ai33: false
+    ai33: false,
+    youtube: false
   });
 
   // Password change state
@@ -88,7 +91,7 @@ const Profile = () => {
     setIsLoading(true);
     try {
       // Try to get API keys from Vault
-      const [replicateResult, elevenLabsResult, minimaxResult, anthropicResult, braveResult, keiResult, apifyResult, inworldResult, geminiResult, genaiproResult, ai33Result] = await Promise.all([
+      const [replicateResult, elevenLabsResult, minimaxResult, anthropicResult, braveResult, keiResult, apifyResult, inworldResult, geminiResult, genaiproResult, ai33Result, youtubeResult] = await Promise.all([
         supabase.rpc('get_user_api_key', { key_name: 'replicate' }),
         supabase.rpc('get_user_api_key', { key_name: 'eleven_labs' }),
         supabase.rpc('get_user_api_key', { key_name: 'minimax' }),
@@ -100,6 +103,7 @@ const Profile = () => {
         supabase.rpc('get_user_api_key', { key_name: 'gemini' }),
         supabase.rpc('get_user_api_key', { key_name: 'genaipro' }),
         supabase.rpc('get_user_api_key', { key_name: 'ai33' }),
+        supabase.rpc('get_user_api_key', { key_name: 'youtube' }),
       ]);
 
       const replicateValue = replicateResult.data || "";
@@ -113,6 +117,7 @@ const Profile = () => {
       const geminiValue = geminiResult.data || "";
       const genaiproValue = genaiproResult.data || "";
       const ai33Value = ai33Result.data || "";
+      const youtubeValue = youtubeResult.data || "";
 
       // Set current values
       setReplicateApiKey(replicateValue);
@@ -126,6 +131,7 @@ const Profile = () => {
       setGeminiApiKey(geminiValue);
       setGenaiproApiKey(genaiproValue);
       setAi33ApiKey(ai33Value);
+      setYoutubeApiKey(youtubeValue);
       
       // Store original values to track changes
       setOriginalKeys({
@@ -139,7 +145,8 @@ const Profile = () => {
         inworld: inworldValue,
         gemini: geminiValue,
         genaipro: genaiproValue,
-        ai33: ai33Value
+        ai33: ai33Value,
+        youtube: youtubeValue
       });
       
       if (replicateResult.error && !replicateResult.error.message?.includes('not found')) {
@@ -201,6 +208,9 @@ const Profile = () => {
     if (ai33ApiKey.trim() !== originalKeys.ai33) {
       changedKeys.push({ key_name: 'ai33', key_value: ai33ApiKey.trim() });
     }
+    if (youtubeApiKey.trim() !== originalKeys.youtube) {
+      changedKeys.push({ key_name: 'youtube', key_value: youtubeApiKey.trim() });
+    }
 
     if (changedKeys.length === 0) {
       toast.info("Aucune modification détectée");
@@ -234,7 +244,8 @@ const Profile = () => {
         inworld: inworldApiKey.trim(),
         gemini: geminiApiKey.trim(),
         genaipro: genaiproApiKey.trim(),
-        ai33: ai33ApiKey.trim()
+        ai33: ai33ApiKey.trim(),
+        youtube: youtubeApiKey.trim()
       });
 
       toast.success("Clés API sauvegardées avec succès !");
@@ -738,11 +749,47 @@ const Profile = () => {
                       </a>
                     </p>
                   </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="youtube-key">
+                      YouTube Data API v3 Key
+                    </Label>
+                    <div className="relative">
+                      <Input
+                        id="youtube-key"
+                        type={showKeys.youtube ? "text" : "password"}
+                        value={youtubeApiKey}
+                        onChange={(e) => setYoutubeApiKey(e.target.value)}
+                        placeholder="AIza..."
+                        className="pr-10"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                        onClick={() => setShowKeys(prev => ({ ...prev, youtube: !prev.youtube }))}
+                      >
+                        {showKeys.youtube ? <EyeOff className="h-4 w-4 text-muted-foreground" /> : <Eye className="h-4 w-4 text-muted-foreground" />}
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Utilisée pour le scraping de miniatures et les competitors.{" "}
+                      <a
+                        href="https://console.cloud.google.com/apis/library/youtube.googleapis.com"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary hover:underline"
+                      >
+                        Activer YouTube Data API v3
+                      </a>
+                    </p>
+                  </div>
                 </div>
 
                 <Button
                   onClick={handleSave}
-                  disabled={isSaving || (!replicateApiKey.trim() && !elevenLabsApiKey.trim() && !minimaxApiKey.trim() && !anthropicApiKey.trim() && !braveApiKey.trim() && !keiApiKey.trim() && !apifyApiKey.trim() && !inworldApiKey.trim() && !geminiApiKey.trim() && !genaiproApiKey.trim() && !ai33ApiKey.trim())}
+                  disabled={isSaving || (!replicateApiKey.trim() && !elevenLabsApiKey.trim() && !minimaxApiKey.trim() && !anthropicApiKey.trim() && !braveApiKey.trim() && !keiApiKey.trim() && !apifyApiKey.trim() && !inworldApiKey.trim() && !geminiApiKey.trim() && !genaiproApiKey.trim() && !ai33ApiKey.trim() && !youtubeApiKey.trim())}
                   className="w-full"
                   size="lg"
                 >

@@ -47,9 +47,22 @@ serve(async (req) => {
 
     console.log("Generating tags for video:", videoTitle);
 
-    const GOOGLE_AI_API_KEY = Deno.env.get("GOOGLE_AI_API_KEY");
-    if (!GOOGLE_AI_API_KEY) {
-      throw new Error("GOOGLE_AI_API_KEY is not configured");
+    const supabaseAdmin = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+    );
+
+    const { data: GOOGLE_AI_API_KEY, error: keyError } = await supabaseAdmin.rpc('get_user_api_key_for_service', {
+      target_user_id: user.id,
+      key_name: 'gemini'
+    });
+
+    if (keyError || !GOOGLE_AI_API_KEY) {
+      console.error("Gemini API key not found for user:", user.id, keyError);
+      return new Response(
+        JSON.stringify({ error: "Clé API Gemini non configurée. Ajoutez-la dans votre profil." }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     const systemPrompt = `You are a YouTube SEO expert specializing in keyword optimization. Generate exactly 20 highly optimized SEO tags for this video.
