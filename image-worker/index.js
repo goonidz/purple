@@ -1385,6 +1385,116 @@ async function generateWithGemini(geminiKey, prompt, imageUrls, modelName, examp
   return await callGeminiViaRelay(geminiKey, prompt, imageUrls, modelName);
 }
 
+// ============================================================================
+// AI33 PRO: Image generation via ai33.pro API (SeedDream 4.5)
+// Flow: POST generate-image → poll task status → download result
+// ============================================================================
+
+const AI33_BASE = 'https://api.ai33.pro';
+const AI33_POLL_INTERVAL_MS = 4000;
+const AI33_MAX_POLL_ATTEMPTS = 60; // ~4min max
+
+async function generateWithAI33(ai33Key, prompt, imageUrls, aspectRatio = '16:9') {
+  const FormData = (await import('form-data')).default;
+
+  // Download reference images first (if any)
+  const assetBuffers = [];
+  if (imageUrls && imageUrls.length > 0) {
+    for (let i = 0; i < imageUrls.length; i++) {
+      const resolved = await resolveYouTubeThumbnailUrl(imageUrls[i]);
+      const res = await fetch(resolved);
+      if (res.ok) {
+        assetBuffers.push(Buffer.from(await res.arrayBuffer()));
+      } else {
+        log(`  AI33: Failed to fetch reference image ${i + 1}: ${res.status}`);
+      }
+    }
+  }
+
+  // Build prompt: prepend @img refs if we have assets
+  let finalPrompt = prompt;
+  if (assetBuffers.length > 0) {
+    const imgRefs = assetBuffers.map((_, i) => `@img${i + 1}`).join(', ');
+    finalPrompt = `Use these reference images (${imgRefs}) for style and character consistency. ${prompt}`;
+  }
+
+  // Build multipart form
+  const form = new FormData();
+  form.append('prompt', finalPrompt);
+  form.append('model_id', 'bytedance-seedream-4.5');
+  form.append('generations_count', '1');
+  form.append('model_parameters', JSON.stringify({ aspect_ratio: aspectRatio, resolution: '2K' }));
+  for (let i = 0; i < assetBuffers.length; i++) {
+    form.append('assets', assetBuffers[i], { filename: `ref_${i + 1}.png`, contentType: 'image/png' });
+  }
+
+  return await _ai33Generate(ai33Key, form);
+}
+
+async function _ai33Generate(ai33Key, form) {
+  // Step 1: Submit generation task
+  const createRes = await fetch(`${AI33_BASE}/v1i/task/generate-image`, {
+    method: 'POST',
+    headers: {
+      'xi-api-key': ai33Key,
+      ...form.getHeaders(),
+    },
+    body: form.getBuffer(),
+  });
+
+  if (!createRes.ok) {
+    const errBody = await createRes.text();
+    throw new Error(`AI33 generate-image error (${createRes.status}): ${errBody.substring(0, 300)}`);
+  }
+
+  const createData = await createRes.json();
+  if (!createData.success || !createData.task_id) {
+    throw new Error(`AI33 no task_id: ${JSON.stringify(createData).substring(0, 300)}`);
+  }
+
+  const taskId = createData.task_id;
+  log(`  AI33: Task created: ${taskId} (est. credits: ${createData.estimated_credits})`);
+
+  // Step 2: Poll for completion
+  for (let attempt = 0; attempt < AI33_MAX_POLL_ATTEMPTS; attempt++) {
+    await sleep(AI33_POLL_INTERVAL_MS);
+
+    const pollRes = await fetch(`${AI33_BASE}/v1/task/${taskId}`, {
+      headers: { 'xi-api-key': ai33Key, 'Content-Type': 'application/json' },
+    });
+
+    if (!pollRes.ok) {
+      log(`  AI33: Poll error (${pollRes.status}), retrying...`);
+      continue;
+    }
+
+    const taskData = await pollRes.json();
+
+    if (taskData.status === 'done') {
+      const resultImages = taskData.metadata?.result_images;
+      if (!resultImages || resultImages.length === 0) {
+        throw new Error('AI33 task done but no result_images');
+      }
+      const imageUrl = resultImages[0].imageUrl;
+      log(`  AI33: Task completed, downloading image...`);
+
+      const imgRes = await fetch(imageUrl);
+      if (!imgRes.ok) throw new Error(`AI33: Failed to download result image (${imgRes.status})`);
+      return Buffer.from(await imgRes.arrayBuffer());
+    }
+
+    if (taskData.status === 'error') {
+      throw new Error(`AI33 task failed: ${taskData.error_message || 'Unknown error'}`);
+    }
+
+    if (attempt % 5 === 0) {
+      log(`  AI33: Polling ${attempt + 1}/${AI33_MAX_POLL_ATTEMPTS} (status: ${taskData.status}, progress: ${taskData.progress || 0}%)`);
+    }
+  }
+
+  throw new Error('AI33 task timed out after polling');
+}
+
 async function processThumbnailsV2Pipeline(job) {
   const { id: jobId, project_id: projectId, user_id: userId, metadata } = job;
   const {
@@ -1395,6 +1505,7 @@ async function processThumbnailsV2Pipeline(job) {
   const count = numThumbnails || 3;
   const model = imageModel || 'seedream-4.5';
   const isGemini = model.startsWith('gemini-');
+  const isAI33 = model === 'ai33-seedream-4.5';
   log(`Processing thumbnails V2 (job ${jobId.substring(0, 8)}...) - ${count} thumbnails, model: ${model}`);
 
   try {
@@ -1415,7 +1526,10 @@ async function processThumbnailsV2Pipeline(job) {
     // Get the right API key
     let replicateClient = null;
     let geminiKey = null;
-    if (isGemini) {
+    let ai33Key = null;
+    if (isAI33) {
+      ai33Key = await getUserApiKey(userId, 'ai33');
+    } else if (isGemini) {
       geminiKey = await getUserApiKey(userId, 'gemini');
     } else {
       const replicateKey = await getUserApiKey(userId, 'replicate');
@@ -1450,7 +1564,30 @@ async function processThumbnailsV2Pipeline(job) {
         let publicUrl;
         let usedPrompt = prompt;
 
-        if (isGemini) {
+        if (isAI33) {
+          // AI33 Pro: use Gemini Flash for prompt generation (same as SeedDream/Replicate path), then generate via AI33 API
+          if (geminiKeyForPrompts) {
+            log(`  Thumbnail V2 ${i + 1}: generating AI33 prompt via Gemini Flash (full analysis)...`);
+            usedPrompt = await generateSeedreamPrompt(
+              geminiKeyForPrompts, prompt, exampleUrls || [], characterRefUrl, videoTitle, userDirectives, i, count
+            );
+            log(`  Thumbnail V2 ${i + 1}: AI33 prompt: ${usedPrompt.substring(0, 150)}...`);
+          }
+
+          let imageBuffer;
+          for (let attempt = 1; attempt <= 3; attempt++) {
+            try {
+              imageBuffer = await generateWithAI33(ai33Key, usedPrompt, allImageRefs, '16:9');
+              break;
+            } catch (retryErr) {
+              if (attempt === 3) throw retryErr;
+              log(`  Thumbnail V2 ${i + 1}: AI33 attempt ${attempt} failed (${retryErr.message?.substring(0, 80)}), retrying in ${attempt * 5}s...`);
+              await sleep(attempt * 5000);
+            }
+          }
+          const filename = `thumb_v2_${i + 1}_${timestamp}.png`;
+          publicUrl = await uploadBufferToStorage(imageBuffer, effectiveProjectId, filename, 'image/png');
+        } else if (isGemini) {
           const variationPrompt = count > 1
             ? prompt + `\n\nIMPORTANT — This is variation ${i + 1} of ${count} for A/B testing. Each variation MUST be significantly different:\n- Use completely different text/words on the thumbnail\n- Try a different composition or layout\n- Vary the color mood or background\n- Change the character's expression or pose\nDo NOT repeat the same text or concept as other variations.`
             : prompt;
@@ -1469,7 +1606,7 @@ async function processThumbnailsV2Pipeline(job) {
           publicUrl = await uploadBufferToStorage(imageBuffer, effectiveProjectId, filename, 'image/png');
           usedPrompt = variationPrompt;
         } else {
-          // SeedDream: use Gemini Flash with the SAME full analysis prompt to generate a detailed visual description
+          // SeedDream via Replicate: use Gemini Flash to generate a detailed visual description
           if (geminiKeyForPrompts) {
             log(`  Thumbnail V2 ${i + 1}: generating SeedDream prompt via Gemini Flash (full analysis)...`);
             usedPrompt = await generateSeedreamPrompt(

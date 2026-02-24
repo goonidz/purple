@@ -759,13 +759,19 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="gemini-3-pro-image-preview">Gemini 3 Pro Image (Recommandé)</SelectItem>
-                  <SelectItem value="seedream-4.5">SeedDream 4.5</SelectItem>
-                  <SelectItem value="seedream-4">SeedDream 4.0</SelectItem>
+                  <SelectItem value="ai33-seedream-4.5">SeedDream 4.5 via AI33 Pro</SelectItem>
+                  <SelectItem value="seedream-4.5">SeedDream 4.5 via Replicate</SelectItem>
+                  <SelectItem value="seedream-4">SeedDream 4.0 via Replicate</SelectItem>
                 </SelectContent>
               </Select>
               {imageModel === 'gemini-3-pro-image-preview' && (
                 <p className="text-xs text-muted-foreground">
                   Utilise ta clé Google Gemini (configurée dans ton Profil).
+                </p>
+              )}
+              {imageModel === 'ai33-seedream-4.5' && (
+                <p className="text-xs text-muted-foreground">
+                  Utilise ta clé AI33 Pro (configurée dans ton Profil). Résolution 2K.
                 </p>
               )}
             </div>
@@ -994,8 +1000,9 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="gemini-3-pro-image-preview">Gemini 3 Pro Image</SelectItem>
-                  <SelectItem value="seedream-4.5">SeedDream 4.5</SelectItem>
-                  <SelectItem value="seedream-4">SeedDream 4.0</SelectItem>
+                  <SelectItem value="ai33-seedream-4.5">SeedDream 4.5 via AI33 Pro</SelectItem>
+                  <SelectItem value="seedream-4.5">SeedDream 4.5 via Replicate</SelectItem>
+                  <SelectItem value="seedream-4">SeedDream 4.0 via Replicate</SelectItem>
                 </SelectContent>
               </Select>
             </div>

@@ -25,6 +25,7 @@ const Profile = () => {
   const [inworldApiKey, setInworldApiKey] = useState("");
   const [geminiApiKey, setGeminiApiKey] = useState("");
   const [genaiproApiKey, setGenaiproApiKey] = useState("");
+  const [ai33ApiKey, setAi33ApiKey] = useState("");
   
   // Track original values to detect changes
   const [originalKeys, setOriginalKeys] = useState({
@@ -37,7 +38,8 @@ const Profile = () => {
     apify: "",
     inworld: "",
     gemini: "",
-    genaipro: ""
+    genaipro: "",
+    ai33: ""
   });
   const [showKeys, setShowKeys] = useState({
     replicate: false,
@@ -49,7 +51,8 @@ const Profile = () => {
     apify: false,
     inworld: false,
     gemini: false,
-    genaipro: false
+    genaipro: false,
+    ai33: false
   });
 
   // Password change state
@@ -85,7 +88,7 @@ const Profile = () => {
     setIsLoading(true);
     try {
       // Try to get API keys from Vault
-      const [replicateResult, elevenLabsResult, minimaxResult, anthropicResult, braveResult, keiResult, apifyResult, inworldResult, geminiResult, genaiproResult] = await Promise.all([
+      const [replicateResult, elevenLabsResult, minimaxResult, anthropicResult, braveResult, keiResult, apifyResult, inworldResult, geminiResult, genaiproResult, ai33Result] = await Promise.all([
         supabase.rpc('get_user_api_key', { key_name: 'replicate' }),
         supabase.rpc('get_user_api_key', { key_name: 'eleven_labs' }),
         supabase.rpc('get_user_api_key', { key_name: 'minimax' }),
@@ -96,6 +99,7 @@ const Profile = () => {
         supabase.rpc('get_user_api_key', { key_name: 'inworld' }),
         supabase.rpc('get_user_api_key', { key_name: 'gemini' }),
         supabase.rpc('get_user_api_key', { key_name: 'genaipro' }),
+        supabase.rpc('get_user_api_key', { key_name: 'ai33' }),
       ]);
 
       const replicateValue = replicateResult.data || "";
@@ -108,6 +112,7 @@ const Profile = () => {
       const inworldValue = inworldResult.data || "";
       const geminiValue = geminiResult.data || "";
       const genaiproValue = genaiproResult.data || "";
+      const ai33Value = ai33Result.data || "";
 
       // Set current values
       setReplicateApiKey(replicateValue);
@@ -120,6 +125,7 @@ const Profile = () => {
       setInworldApiKey(inworldValue);
       setGeminiApiKey(geminiValue);
       setGenaiproApiKey(genaiproValue);
+      setAi33ApiKey(ai33Value);
       
       // Store original values to track changes
       setOriginalKeys({
@@ -132,7 +138,8 @@ const Profile = () => {
         apify: apifyValue,
         inworld: inworldValue,
         gemini: geminiValue,
-        genaipro: genaiproValue
+        genaipro: genaiproValue,
+        ai33: ai33Value
       });
       
       if (replicateResult.error && !replicateResult.error.message?.includes('not found')) {
@@ -191,6 +198,9 @@ const Profile = () => {
     if (genaiproApiKey.trim() !== originalKeys.genaipro) {
       changedKeys.push({ key_name: 'genaipro', key_value: genaiproApiKey.trim() });
     }
+    if (ai33ApiKey.trim() !== originalKeys.ai33) {
+      changedKeys.push({ key_name: 'ai33', key_value: ai33ApiKey.trim() });
+    }
 
     if (changedKeys.length === 0) {
       toast.info("Aucune modification détectée");
@@ -223,7 +233,8 @@ const Profile = () => {
         apify: apifyApiKey.trim(),
         inworld: inworldApiKey.trim(),
         gemini: geminiApiKey.trim(),
-        genaipro: genaiproApiKey.trim()
+        genaipro: genaiproApiKey.trim(),
+        ai33: ai33ApiKey.trim()
       });
 
       toast.success("Clés API sauvegardées avec succès !");
@@ -691,11 +702,47 @@ const Profile = () => {
                       </a>
                     </p>
                   </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="ai33-key">
+                      AI33 Pro API Key
+                    </Label>
+                    <div className="relative">
+                      <Input
+                        id="ai33-key"
+                        type={showKeys.ai33 ? "text" : "password"}
+                        value={ai33ApiKey}
+                        onChange={(e) => setAi33ApiKey(e.target.value)}
+                        placeholder="sk_..."
+                        className="pr-10"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                        onClick={() => setShowKeys(prev => ({ ...prev, ai33: !prev.ai33 }))}
+                      >
+                        {showKeys.ai33 ? <EyeOff className="h-4 w-4 text-muted-foreground" /> : <Eye className="h-4 w-4 text-muted-foreground" />}
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Utilisée pour la génération d'images via AI33 Pro (SeedDream 4.5).{" "}
+                      <a
+                        href="https://ai33.pro"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary hover:underline"
+                      >
+                        Obtenir une clé
+                      </a>
+                    </p>
+                  </div>
                 </div>
 
                 <Button
                   onClick={handleSave}
-                  disabled={isSaving || (!replicateApiKey.trim() && !elevenLabsApiKey.trim() && !minimaxApiKey.trim() && !anthropicApiKey.trim() && !braveApiKey.trim() && !keiApiKey.trim() && !apifyApiKey.trim() && !inworldApiKey.trim() && !geminiApiKey.trim() && !genaiproApiKey.trim())}
+                  disabled={isSaving || (!replicateApiKey.trim() && !elevenLabsApiKey.trim() && !minimaxApiKey.trim() && !anthropicApiKey.trim() && !braveApiKey.trim() && !keiApiKey.trim() && !apifyApiKey.trim() && !inworldApiKey.trim() && !geminiApiKey.trim() && !genaiproApiKey.trim() && !ai33ApiKey.trim())}
                   className="w-full"
                   size="lg"
                 >
