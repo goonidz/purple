@@ -3006,7 +3006,7 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                         ) : (
                           <>
                             <Mic className="mr-2 h-4 w-4" />
-                            Générer l'audio avec {ttsProvider === "inworld" ? "Inworld" : "MiniMax"}
+                            Générer l'audio avec {ttsProvider === "inworld" ? "Inworld" : ttsProvider === "genaipro" ? "ElevenLabs" : "MiniMax"}
                           </>
                         )}
                       </Button>
