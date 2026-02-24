@@ -74,10 +74,10 @@ serve(async (req) => {
     const channelId = channel.id;
     const channelTitle = channel.snippet?.title || handle;
 
-    // Step 2: Get uploads playlist and fetch recent video IDs
+    // Step 2: Get uploads playlist and fetch recent video IDs (fetch more to account for Shorts filtering)
     const uploadsPlaylistId = 'UU' + channelId.substring(2);
 
-    const playlistUrl = `https://www.googleapis.com/youtube/v3/playlistItems?part=contentDetails&playlistId=${uploadsPlaylistId}&maxResults=10&key=${YOUTUBE_API_KEY}`;
+    const playlistUrl = `https://www.googleapis.com/youtube/v3/playlistItems?part=contentDetails&playlistId=${uploadsPlaylistId}&maxResults=25&key=${YOUTUBE_API_KEY}`;
     const playlistResponse = await fetch(playlistUrl);
     const playlistData = await playlistResponse.json();
 
@@ -96,8 +96,44 @@ serve(async (req) => {
       });
     }
 
-    // Step 3: Build thumbnail URLs directly — no API needed for this
+    // Step 3: Filter out Shorts by fetching video durations
+    const videoIds = items
+      .map((item: any) => item.contentDetails?.videoId)
+      .filter(Boolean)
+      .join(',');
+
+    const videosUrl = `https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=${videoIds}&key=${YOUTUBE_API_KEY}`;
+    const videosResponse = await fetch(videosUrl);
+    const videosData = await videosResponse.json();
+
+    if (!videosResponse.ok) {
+      if (videosResponse.status === 429 || videosData?.error?.errors?.[0]?.reason === 'quotaExceeded') {
+        throw new Error('Quota YouTube API dépassée. Réessayez demain.');
+      }
+      throw new Error(videosData?.error?.message || 'Failed to fetch video details');
+    }
+
+    // Parse ISO 8601 duration (e.g. PT1M30S) to total seconds
+    const parseDuration = (iso: string): number => {
+      const match = iso.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+      if (!match) return 0;
+      const hours = parseInt(match[1] || '0', 10);
+      const minutes = parseInt(match[2] || '0', 10);
+      const seconds = parseInt(match[3] || '0', 10);
+      return hours * 3600 + minutes * 60 + seconds;
+    };
+
+    // Build a set of long-form video IDs (duration > 60s)
+    const longFormVideoIds = new Set<string>(
+      (videosData.items || [])
+        .filter((v: any) => parseDuration(v.contentDetails?.duration || '') > 60)
+        .map((v: any) => v.id)
+    );
+
+    // Step 4: Build thumbnail URLs for long-form videos only (max 10)
     const thumbnailUrls = items
+      .filter((item: any) => longFormVideoIds.has(item.contentDetails?.videoId))
+      .slice(0, 10)
       .map((item: any) => {
         const videoId = item.contentDetails?.videoId;
         return videoId ? `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg` : null;

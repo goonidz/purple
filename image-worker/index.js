@@ -1425,7 +1425,7 @@ async function generateWithAI33(ai33Key, prompt, imageUrls, aspectRatio = '16:9'
   form.append('prompt', finalPrompt);
   form.append('model_id', 'gemini-3-pro-image-preview');
   form.append('generations_count', '1');
-  form.append('model_parameters', JSON.stringify({ aspect_ratio: aspectRatio, resolution: '2K' }));
+  form.append('model_parameters', JSON.stringify({ aspect_ratio: aspectRatio, resolution: '1K' }));
   for (let i = 0; i < assetBuffers.length; i++) {
     form.append('assets', assetBuffers[i], { filename: `ref_${i + 1}.png`, contentType: 'image/png' });
   }
@@ -1566,6 +1566,12 @@ async function processThumbnailsV2Pipeline(job) {
         let publicUrl;
         let usedPrompt = prompt;
 
+        // Keep-alive: refresh updated_at so the stale detector (5min threshold) doesn't mark this job as failed
+        await supabase
+          .from('generation_jobs')
+          .update({ updated_at: new Date().toISOString() })
+          .eq('id', jobId);
+
         if (isAI33) {
           // AI33 Pro (Gemini Pro Image): rebuild prompt with explicit @img references
           // allImageRefs[0] = character ref (if present), rest = example thumbnails
@@ -1595,10 +1601,16 @@ async function processThumbnailsV2Pipeline(job) {
 
           let imageBuffer;
           for (let attempt = 1; attempt <= 3; attempt++) {
+            // Keep-alive timer: refresh updated_at every 60s so the stale checker (5min threshold) doesn't kill a slow AI33 job
+            const keepAliveTimer = setInterval(async () => {
+              await supabase.from('generation_jobs').update({ updated_at: new Date().toISOString() }).eq('id', jobId);
+            }, 60000);
             try {
               imageBuffer = await generateWithAI33(ai33Key, variationPrompt, allImageRefs, '16:9');
+              clearInterval(keepAliveTimer);
               break;
             } catch (retryErr) {
+              clearInterval(keepAliveTimer);
               if (attempt === 3) throw retryErr;
               log(`  Thumbnail V2 ${i + 1}: AI33 attempt ${attempt} failed (${retryErr.message?.substring(0, 80)}), retrying in ${attempt * 5}s...`);
               await sleep(attempt * 5000);
