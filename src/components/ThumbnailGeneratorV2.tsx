@@ -25,6 +25,7 @@ interface ThumbnailV2Preset {
   channel_handle: string | null;
   character_ref_url: string | null;
   custom_prompt: string | null;
+  system_prompt: string | null;
   image_model: string | null;
 }
 
@@ -41,6 +42,7 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
   const [isUploading, setIsUploading] = useState(false);
   const [isDraggingCharacter, setIsDraggingCharacter] = useState(false);
   const [userDirectives, setUserDirectives] = useState("");
+  const [systemPrompt, setSystemPrompt] = useState("");
   const [imageModel, setImageModel] = useState("ai33-gemini-image");
   const [numThumbnails, setNumThumbnails] = useState(3);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -59,6 +61,7 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
   const [editChannelHandle, setEditChannelHandle] = useState("");
   const [editCharacterRefUrl, setEditCharacterRefUrl] = useState("");
   const [editUserDirectives, setEditUserDirectives] = useState("");
+  const [editSystemPrompt, setEditSystemPrompt] = useState("");
   const [editImageModel, setEditImageModel] = useState("ai33-gemini-image");
   const [isUploadingEdit, setIsUploadingEdit] = useState(false);
   const [duplicateName, setDuplicateName] = useState("");
@@ -177,7 +180,7 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
 
       const { data, error } = await supabase
         .from("thumbnail_presets")
-        .select("id, name, channel_handle, character_ref_url, custom_prompt, image_model")
+        .select("id, name, channel_handle, character_ref_url, custom_prompt, system_prompt, image_model")
         .eq("user_id", user.id)
         .not("channel_handle", "is", null)
         .order("name");
@@ -242,6 +245,7 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
     setChannelHandle(preset.channel_handle || "");
     setCharacterRefUrl(preset.character_ref_url || "");
     setUserDirectives(preset.custom_prompt || "");
+    setSystemPrompt(preset.system_prompt || "");
     setImageModel(preset.image_model || "ai33-gemini-image");
   };
 
@@ -277,6 +281,7 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
           channel_handle: channelHandle.trim(),
           character_ref_url: characterRefUrl || null,
           custom_prompt: userDirectives.trim() || null,
+          system_prompt: systemPrompt.trim() || null,
           image_model: imageModel,
         } as any)
         .select("id")
@@ -306,6 +311,7 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
           channel_handle: channelHandle.trim(),
           character_ref_url: characterRefUrl || null,
           custom_prompt: userDirectives.trim() || null,
+          system_prompt: systemPrompt.trim() || null,
           image_model: imageModel,
         } as any)
         .eq("id", selectedPresetId);
@@ -327,6 +333,7 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
     setEditChannelHandle(preset.channel_handle || "");
     setEditCharacterRefUrl(preset.character_ref_url || "");
     setEditUserDirectives(preset.custom_prompt || "");
+    setEditSystemPrompt(preset.system_prompt || "");
     setEditImageModel(preset.image_model || "ai33-gemini-image");
     setIsEditDialogOpen(true);
   };
@@ -364,6 +371,7 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
           channel_handle: editChannelHandle.trim() || null,
           character_ref_url: editCharacterRefUrl || null,
           custom_prompt: editUserDirectives.trim() || null,
+          system_prompt: editSystemPrompt.trim() || null,
           image_model: editImageModel,
         } as any)
         .eq("id", selectedPresetId);
@@ -376,6 +384,7 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
       setChannelHandle(editChannelHandle);
       setCharacterRefUrl(editCharacterRefUrl);
       setUserDirectives(editUserDirectives);
+      setSystemPrompt(editSystemPrompt);
       setImageModel(editImageModel);
       await loadPresets();
     } catch (error: any) {
@@ -409,6 +418,7 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
           channel_handle: preset.channel_handle,
           character_ref_url: preset.character_ref_url,
           custom_prompt: preset.custom_prompt,
+          system_prompt: preset.system_prompt,
           image_model: preset.image_model,
         } as any)
         .select("id")
@@ -546,6 +556,7 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
         userDirectives: userDirectives.trim() || undefined,
         imageModel,
         numThumbnails,
+        systemPrompt: systemPrompt.trim() || undefined,
       });
 
       toast.success("Génération V2 démarrée !");
@@ -749,6 +760,21 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
             />
           </div>
 
+          {/* Custom system prompt */}
+          <div className="space-y-2">
+            <Label>Prompt personnalisé (optionnel)</Label>
+            <Textarea
+              value={systemPrompt}
+              onChange={(e) => setSystemPrompt(e.target.value)}
+              rows={6}
+              className="text-sm font-mono"
+              placeholder="Laisse vide pour utiliser le prompt par défaut. Si renseigné, remplace entièrement le prompt système. Utilise {videoTitle} pour insérer le titre de la vidéo."
+            />
+            {systemPrompt.trim() && (
+              <p className="text-xs text-amber-500">⚠️ Le prompt par défaut est remplacé par ton prompt personnalisé.</p>
+            )}
+          </div>
+
           {/* Model & count selection */}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
@@ -771,7 +797,7 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
               )}
               {imageModel === 'ai33-gemini-image' && (
                 <p className="text-xs text-muted-foreground">
-                  Utilise ta clé AI33 Pro (configurée dans ton Profil). Résolution 2K.
+                  Utilise ta clé AI33 Pro (configurée dans ton Profil). Résolution 1K.
                 </p>
               )}
             </div>
@@ -995,6 +1021,20 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
                 className="text-sm"
                 placeholder="Ex: Ajoute du texte rouge en gros..."
               />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Prompt personnalisé (optionnel)</Label>
+              <Textarea
+                value={editSystemPrompt}
+                onChange={(e) => setEditSystemPrompt(e.target.value)}
+                rows={6}
+                className="text-sm font-mono"
+                placeholder="Laisse vide pour utiliser le prompt par défaut. Si renseigné, remplace entièrement le prompt système. Utilise {videoTitle} pour insérer le titre de la vidéo."
+              />
+              {editSystemPrompt.trim() && (
+                <p className="text-xs text-amber-500">⚠️ Le prompt par défaut est remplacé par ton prompt personnalisé.</p>
+              )}
             </div>
 
             <div className="space-y-2">

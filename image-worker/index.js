@@ -1542,17 +1542,24 @@ async function processThumbnailsV2Pipeline(job) {
   const { id: jobId, project_id: projectId, user_id: userId, metadata } = job;
   const {
     videoTitle, exampleUrls, characterRefUrl, imageModel,
-    thumbnailProjectId, standalone, numThumbnails, userDirectives,
+    thumbnailProjectId, standalone, numThumbnails, userDirectives, systemPrompt,
   } = metadata || {};
 
   const count = numThumbnails || 3;
   const model = imageModel || 'seedream-4.5';
   const isGemini = model.startsWith('gemini-');
   const isAI33 = model === 'ai33-gemini-image';
-  log(`Processing thumbnails V2 (job ${jobId.substring(0, 8)}...) - ${count} thumbnails, model: ${model}`);
+  log(`Processing thumbnails V2 (job ${jobId.substring(0, 8)}...) - ${count} thumbnails, model: ${model}${systemPrompt ? ' [custom prompt]' : ''}`);
 
   try {
-    let prompt = THUMBNAIL_V2_PROMPT_TEMPLATE.replace('{videoTitle}', videoTitle || 'Untitled');
+    // Use custom system prompt if provided, otherwise fall back to the default template
+    let prompt;
+    if (systemPrompt && systemPrompt.trim()) {
+      prompt = systemPrompt.trim().replace('{videoTitle}', videoTitle || 'Untitled');
+      log('  Using custom system prompt from preset');
+    } else {
+      prompt = THUMBNAIL_V2_PROMPT_TEMPLATE.replace('{videoTitle}', videoTitle || 'Untitled');
+    }
     if (userDirectives) {
       prompt += `\n\nAdditional user input:\n${userDirectives}`;
     }
