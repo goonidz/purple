@@ -1411,6 +1411,12 @@ async function generateWithAI33(ai33Key, prompt, imageUrls, aspectRatio = '16:9'
     }
   }
 
+  // AI33 gemini-3-pro-image-preview supports max 10 assets
+  if (assetBuffers.length > 10) {
+    log(`  AI33: Trimming assets from ${assetBuffers.length} to 10 (API max)`);
+    assetBuffers.length = 10;
+  }
+
   // Build prompt: prepend @img refs if we have assets
   let finalPrompt = prompt;
   if (assetBuffers.length > 0) {
