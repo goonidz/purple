@@ -41,7 +41,7 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
   const [isUploading, setIsUploading] = useState(false);
   const [isDraggingCharacter, setIsDraggingCharacter] = useState(false);
   const [userDirectives, setUserDirectives] = useState("");
-  const [imageModel, setImageModel] = useState("gemini-3-pro-image-preview");
+  const [imageModel, setImageModel] = useState("ai33-gemini-image");
   const [numThumbnails, setNumThumbnails] = useState(3);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedThumbnails, setGeneratedThumbnails] = useState<string[]>([]);
@@ -59,7 +59,7 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
   const [editChannelHandle, setEditChannelHandle] = useState("");
   const [editCharacterRefUrl, setEditCharacterRefUrl] = useState("");
   const [editUserDirectives, setEditUserDirectives] = useState("");
-  const [editImageModel, setEditImageModel] = useState("gemini-3-pro-image-preview");
+  const [editImageModel, setEditImageModel] = useState("ai33-gemini-image");
   const [isUploadingEdit, setIsUploadingEdit] = useState(false);
   const [duplicateName, setDuplicateName] = useState("");
 
@@ -242,7 +242,7 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
     setChannelHandle(preset.channel_handle || "");
     setCharacterRefUrl(preset.character_ref_url || "");
     setUserDirectives(preset.custom_prompt || "");
-    setImageModel(preset.image_model || "gemini-3-pro-image-preview");
+    setImageModel(preset.image_model || "ai33-gemini-image");
   };
 
   const handlePresetSelect = (presetId: string) => {
@@ -327,7 +327,7 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
     setEditChannelHandle(preset.channel_handle || "");
     setEditCharacterRefUrl(preset.character_ref_url || "");
     setEditUserDirectives(preset.custom_prompt || "");
-    setEditImageModel(preset.image_model || "gemini-3-pro-image-preview");
+    setEditImageModel(preset.image_model || "ai33-gemini-image");
     setIsEditDialogOpen(true);
   };
 
@@ -787,6 +787,11 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
                   <SelectItem value="3">3</SelectItem>
                   <SelectItem value="4">4</SelectItem>
                   <SelectItem value="5">5</SelectItem>
+                  <SelectItem value="6">6</SelectItem>
+                  <SelectItem value="7">7</SelectItem>
+                  <SelectItem value="8">8</SelectItem>
+                  <SelectItem value="9">9</SelectItem>
+                  <SelectItem value="10">10</SelectItem>
                 </SelectContent>
               </Select>
             </div>
