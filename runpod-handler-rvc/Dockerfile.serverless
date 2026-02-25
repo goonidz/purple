@@ -1,28 +1,23 @@
 # RunPod Serverless image for RVC voice conversion
-# Base: RunPod official base with CUDA 12.1 (widely compatible)
 
-FROM runpod/base:0.6.2-cuda12.1.0
+FROM runpod/base:1.0.3-cuda1281-ubuntu2204
 
 WORKDIR /workspace
 
-# System deps
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     libsndfile1 \
     && rm -rf /var/lib/apt/lists/*
 
-# PyTorch + deps
 RUN pip install --no-cache-dir \
-    torch==2.1.0+cu121 torchaudio==2.1.0+cu121 \
-    --index-url https://download.pytorch.org/whl/cu121
+    torch torchaudio --index-url https://download.pytorch.org/whl/cu121
 
-RUN pip install --no-cache-dir "numpy<2" scipy librosa soundfile httpx
+RUN pip install --no-cache-dir \
+    "numpy<2" scipy librosa soundfile httpx
 
-# Install rvc-python (optional, handler has fallback)
 RUN pip install --no-cache-dir rvc-python || true
 
-# Copy handler
 COPY handler.py .
 
 ENV RMVPE_MODEL_PATH=/workspace/rmvpe.pt
