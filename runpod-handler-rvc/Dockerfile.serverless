@@ -1,23 +1,26 @@
-# RunPod Serverless image for RVC voice conversion
+# RunPod Serverless - RVC voice conversion
+# Python 3.10 + CUDA 11.8 (max compatibility for rvc-python + all RunPod GPUs)
 
-FROM runpod/base:1.0.3-cuda1281-ubuntu2204
+FROM pytorch/pytorch:2.1.0-cuda11.8-cudnn8-runtime
 
 WORKDIR /workspace
 
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ffmpeg \
-    libsndfile1 \
-    build-essential \
+    ffmpeg libsndfile1 build-essential \
     && rm -rf /var/lib/apt/lists/*
 
+# All Python deps in one layer - no cache issues
 RUN pip install --no-cache-dir \
-    torch torchaudio --index-url https://download.pytorch.org/whl/cu121
+    runpod Brotli aiohttp \
+    "numpy<2" scipy librosa soundfile httpx \
+    faiss-cpu praat-parselmouth pyworld \
+    rvc-python
 
-RUN pip install --no-cache-dir \
-    runpod "numpy<2" scipy librosa soundfile httpx
-
-RUN pip install --no-cache-dir rvc-python
+# Verify critical imports
+RUN python -c "import brotli; print('Brotli OK')"
+RUN python -c "import runpod; print('RunPod OK')"
+RUN python -c "import rvc_python; print('RVC OK')"
 
 COPY handler.py .
 
