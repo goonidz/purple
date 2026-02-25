@@ -3529,6 +3529,25 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                     onChange={(e) => setInworldVoiceId(e.target.value)}
                     placeholder="Ex: Dennis, Alex, Ashley..."
                   />
+                ) : ttsProvider === "edgetts_rvc" ? (
+                  <Select value={edgeTTSVoice} onValueChange={setEdgeTTSVoice}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="en-US-AndrewMultilingualNeural">Andrew (EN, Multilingual)</SelectItem>
+                      <SelectItem value="en-US-AvaMultilingualNeural">Ava (EN, Multilingual)</SelectItem>
+                      <SelectItem value="en-US-BrianMultilingualNeural">Brian (EN, Multilingual)</SelectItem>
+                      <SelectItem value="en-US-EmmaMultilingualNeural">Emma (EN, Multilingual)</SelectItem>
+                      <SelectItem value="fr-FR-DeniseNeural">Denise (FR)</SelectItem>
+                      <SelectItem value="fr-FR-HenriNeural">Henri (FR)</SelectItem>
+                      <SelectItem value="fr-FR-VivienneMultilingualNeural">Vivienne (FR, Multilingual)</SelectItem>
+                      <SelectItem value="fr-FR-RemyMultilingualNeural">Rémy (FR, Multilingual)</SelectItem>
+                      <SelectItem value="es-ES-AlvaroNeural">Álvaro (ES)</SelectItem>
+                      <SelectItem value="de-DE-ConradNeural">Conrad (DE)</SelectItem>
+                      <SelectItem value="pt-BR-AntonioNeural">Antônio (PT-BR)</SelectItem>
+                    </SelectContent>
+                  </Select>
                 ) : (
                   <Select value={selectedVoice} onValueChange={setSelectedVoice}>
                     <SelectTrigger>
@@ -3545,6 +3564,108 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                 )}
               </div>
             </div>
+            {ttsProvider === "edgetts_rvc" && (
+              <div className="space-y-4 p-4 bg-muted/50 rounded-lg">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label>Vitesse TTS</Label>
+                    <span className="text-sm text-muted-foreground">{edgeTTSSpeed.toFixed(2)}x</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0.5"
+                    max="2.0"
+                    step="0.05"
+                    value={edgeTTSSpeed}
+                    onChange={(e) => setEdgeTTSSpeed(parseFloat(e.target.value))}
+                    className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
+                  />
+                  <div className="flex justify-between text-xs text-muted-foreground">
+                    <span>0.5x (lent)</span>
+                    <span>1.0x</span>
+                    <span>2.0x (rapide)</span>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label>URL du modèle RVC (.pth)</Label>
+                  <Input
+                    value={rvcModelUrl}
+                    onChange={(e) => setRvcModelUrl(e.target.value)}
+                    placeholder="https://huggingface.co/.../model.pth"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>URL de l'index RVC (.index) — optionnel</Label>
+                  <Input
+                    value={rvcIndexUrl}
+                    onChange={(e) => setRvcIndexUrl(e.target.value)}
+                    placeholder="https://huggingface.co/.../model.index"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label>Décalage de pitch (demi-tons)</Label>
+                    <input
+                      type="number"
+                      min="-24"
+                      max="24"
+                      step="1"
+                      value={rvcPitch}
+                      onChange={(e) => {
+                        const v = parseInt(e.target.value);
+                        if (!isNaN(v)) setRvcPitch(Math.min(24, Math.max(-24, v)));
+                      }}
+                      className="w-16 text-right text-sm bg-muted border border-border rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-primary"
+                    />
+                  </div>
+                  <input
+                    type="range"
+                    min="-24"
+                    max="24"
+                    step="1"
+                    value={rvcPitch}
+                    onChange={(e) => setRvcPitch(parseInt(e.target.value))}
+                    className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
+                  />
+                  <div className="flex justify-between text-xs text-muted-foreground">
+                    <span>-24 (grave)</span>
+                    <span>0</span>
+                    <span>+24 (aigu)</span>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label>Index Rate</Label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="1"
+                      step="0.05"
+                      value={rvcIndexRate}
+                      onChange={(e) => {
+                        const v = parseFloat(e.target.value);
+                        if (!isNaN(v)) setRvcIndexRate(Math.min(1, Math.max(0, v)));
+                      }}
+                      className="w-16 text-right text-sm bg-muted border border-border rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-primary"
+                    />
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    value={rvcIndexRate}
+                    onChange={(e) => setRvcIndexRate(parseFloat(e.target.value))}
+                    className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
+                  />
+                  <div className="flex justify-between text-xs text-muted-foreground">
+                    <span>0 (désactivé)</span>
+                    <span>0.75 (recommandé)</span>
+                    <span>1.0</span>
+                  </div>
+                </div>
+              </div>
+            )}
             {ttsProvider === "minimax" && (
               <>
                 <div className="grid grid-cols-2 gap-4">
