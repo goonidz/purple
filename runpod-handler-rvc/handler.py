@@ -83,13 +83,17 @@ def _upload_to_supabase(local_path: Path, storage_path: str) -> str:
     url = f"{SUPABASE_URL}/storage/v1/object/{bucket}/{storage_path}"
     headers = {
         "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
+        "apikey": SUPABASE_SERVICE_KEY,
         "Content-Type": "audio/mpeg",
         "x-upsert": "true",
     }
     with open(local_path, "rb") as f:
         data = f.read()
-    resp = httpx.put(url, content=data, headers=headers, timeout=120)
-    resp.raise_for_status()
+    log.info(f"Uploading {len(data)} bytes to {bucket}/{storage_path}")
+    resp = httpx.post(url, content=data, headers=headers, timeout=120)
+    if resp.status_code >= 400:
+        log.error(f"Supabase upload failed ({resp.status_code}): {resp.text}")
+        resp.raise_for_status()
     return f"{SUPABASE_URL}/storage/v1/object/public/{bucket}/{storage_path}"
 
 
