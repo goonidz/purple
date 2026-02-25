@@ -21,21 +21,15 @@ Returns:
 """
 
 import os
-import sys
 import time
 import hashlib
 import tempfile
 import logging
-import shutil
 import urllib.request
 from pathlib import Path
 
 import runpod
-import numpy as np
 import torch
-import torchaudio
-import soundfile as sf
-import librosa
 
 logging.basicConfig(level=logging.INFO, format="[RVC] %(message)s")
 log = logging.getLogger(__name__)
@@ -47,17 +41,6 @@ SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_SERVICE_KEY = os.environ["SUPABASE_SERVICE_KEY"]
 MODEL_CACHE_DIR = Path("/tmp/rvc_models")
 MODEL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-
-# ---------------------------------------------------------------------------
-# Lazy-import heavy RVC deps (only available inside RunPod image)
-# ---------------------------------------------------------------------------
-def _get_vc():
-    """Import and return RVC VC class, cached after first import."""
-    if not hasattr(_get_vc, "_vc_cls"):
-        # rvc-python is a lightweight wrapper around RVC inference
-        from rvc.modules.vc.modules import VC  # type: ignore
-        _get_vc._vc_cls = VC
-    return _get_vc._vc_cls
 
 
 # ---------------------------------------------------------------------------
@@ -125,79 +108,32 @@ def run_rvc_inference(
     filter_radius: int,
     output_path: Path,
 ):
-    """
-    Run RVC inference using rvc-python library.
-    Falls back to a simpler approach (librosa pitch shift) if rvc-python is unavailable.
-    """
-    try:
-        import rvc_python  # type: ignore
-        from rvc_python.infer import infer_file  # type: ignore
+    """Run RVC inference using rvc-python's RVCInference class."""
+    from rvc_python.infer import RVCInference
 
-        log.info(f"Running RVC via rvc-python (pitch={pitch}, indexRate={index_rate})")
-        infer_file(
-            input_path=str(audio_path),
-            model_path=str(model_path),
-            index_path=str(index_path) if index_path else "",
-            f0_change=pitch,
-            f0_method="rmvpe",
-            index_rate=index_rate,
-            filter_radius=filter_radius,
-            output_path=str(output_path),
-            device="cuda" if torch.cuda.is_available() else "cpu",
-        )
-        log.info("RVC inference complete via rvc-python")
+    device = "cuda:0" if torch.cuda.is_available() else "cpu:0"
+    log.info(f"Running RVC via rvc-python (pitch={pitch}, indexRate={index_rate}, device={device})")
 
-    except ImportError:
-        log.warning("rvc-python not found, attempting Applio/RVC direct inference...")
-        _run_rvc_applio(audio_path, model_path, index_path, pitch, index_rate, filter_radius, output_path)
-
-
-def _run_rvc_applio(
-    audio_path: Path,
-    model_path: Path,
-    index_path: Path | None,
-    pitch: int,
-    index_rate: float,
-    filter_radius: int,
-    output_path: Path,
-):
-    """
-    Direct RVC inference using the Applio/infer_cli approach.
-    Expects RVC source to be installed at /workspace/rvc.
-    """
-    rvc_src = Path("/workspace/rvc")
-    if not rvc_src.exists():
-        raise RuntimeError("RVC source not found at /workspace/rvc and rvc-python not installed")
-
-    if str(rvc_src) not in sys.path:
-        sys.path.insert(0, str(rvc_src))
-
-    from infer.modules.vc.modules import VC  # type: ignore
-    from configs.config import Config  # type: ignore
-
-    config = Config()
-    vc = VC(config)
-    vc.get_vc(str(model_path))
-
-    audio, sr = librosa.load(str(audio_path), sr=16000, mono=True)
-    times = [0, 0, 0]
-    audio_opt = vc.vc_single(
-        sid=0,
-        input_audio_path=str(audio_path),
-        f0_up_key=pitch,
-        f0_file=None,
-        f0_method="rmvpe",
-        file_index=str(index_path) if index_path else "",
-        file_index2="",
+    rvc = RVCInference(
+        device=device,
+        model_path=str(model_path),
+        index_path=str(index_path) if index_path else "",
+        version="v2",
+    )
+    rvc.set_params(
+        f0up_key=pitch,
+        f0method="rmvpe",
         index_rate=index_rate,
         filter_radius=filter_radius,
-        resample_sr=0,
         rms_mix_rate=0.25,
         protect=0.33,
     )
-    sf.write(str(output_path.with_suffix(".wav")), audio_opt[1], audio_opt[0])
-    # Convert WAV -> MP3
-    _wav_to_mp3(output_path.with_suffix(".wav"), output_path)
+
+    wav_output = output_path.with_suffix(".wav")
+    rvc.infer_file(str(audio_path), str(wav_output))
+    log.info("RVC inference complete, converting WAV -> MP3")
+    _wav_to_mp3(wav_output, output_path)
+    rvc.unload_model()
 
 
 def _wav_to_mp3(wav_path: Path, mp3_path: Path):
