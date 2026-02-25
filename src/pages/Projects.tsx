@@ -1356,7 +1356,7 @@ const Projects = () => {
         ) : (
           viewMode === "list" ? (
             <div className="max-w-6xl mx-auto">
-              <div className="hidden sm:grid grid-cols-[1fr_80px_80px_120px_140px_72px] gap-4 px-5 py-2 text-xs font-medium text-muted-foreground/60 uppercase tracking-wider sticky top-0 bg-background/80 backdrop-blur-sm z-10 border-b mb-1">
+              <div className="hidden sm:grid grid-cols-[1fr_80px_80px_120px_140px_72px] gap-4 px-5 py-2 text-xs font-medium text-muted-foreground/60 uppercase tracking-wider sticky top-[65px] bg-background/95 backdrop-blur-sm z-30 border-b mb-1">
                 <span>Projet</span>
                 <span className="text-center">Scènes</span>
                 <span className="text-center">Prompts</span>
