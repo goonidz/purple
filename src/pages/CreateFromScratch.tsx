@@ -245,7 +245,7 @@ const CreateFromScratch = () => {
   const [useWebSearch, setUseWebSearch] = useState(false);
   
   // Audio step
-  const [ttsProvider, setTtsProvider] = useState<"minimax" | "inworld" | "genaipro">("genaipro");
+  const [ttsProvider, setTtsProvider] = useState<"minimax" | "inworld" | "genaipro" | "edgetts_rvc">("genaipro");
   const [selectedVoice, setSelectedVoice] = useState("English_expressive_narrator");
   const [inworldVoiceId, setInworldVoiceId] = useState("Dennis");
   const [inworldSpeakingRate, setInworldSpeakingRate] = useState(0.9);
@@ -261,6 +261,12 @@ const CreateFromScratch = () => {
   const [genaiproSpeakerBoost, setGenaiproSpeakerBoost] = useState(false);
   const [minimaxSpeed, setMinimaxSpeed] = useState(1.0);
   const [minimaxPitch, setMinimaxPitch] = useState(0);
+  // EdgeTTS + RVC settings
+  const [edgeTTSVoice, setEdgeTTSVoice] = useState("en-US-AndrewMultilingualNeural");
+  const [rvcModelUrl, setRvcModelUrl] = useState("");
+  const [rvcIndexUrl, setRvcIndexUrl] = useState("");
+  const [rvcPitch, setRvcPitch] = useState(0);
+  const [rvcIndexRate, setRvcIndexRate] = useState(0.75);
   const [minimaxVolume, setMinimaxVolume] = useState(1.0);
   const [minimaxLanguageBoost, setMinimaxLanguageBoost] = useState("auto");
   const [minimaxEnglishNormalization, setMinimaxEnglishNormalization] = useState(true);
@@ -732,8 +738,8 @@ const CreateFromScratch = () => {
 
   const applyTtsPreset = (preset: TtsPreset, opts?: { silent?: boolean }) => {
     // Load provider
-    if (preset.provider === "minimax" || preset.provider === "inworld" || preset.provider === "genaipro") {
-      setTtsProvider(preset.provider as "minimax" | "inworld" | "genaipro");
+    if (preset.provider === "minimax" || preset.provider === "inworld" || preset.provider === "genaipro" || preset.provider === "edgetts_rvc") {
+      setTtsProvider(preset.provider as "minimax" | "inworld" | "genaipro" | "edgetts_rvc");
     } else {
       toast.error("Ce preset utilise un fournisseur non supporté");
       return;
@@ -801,6 +807,9 @@ const CreateFromScratch = () => {
         presetData.volume = genaiproStability;
         presetData.pitch = Math.round(genaiproSimilarity * 100);
         presetData.emotion = JSON.stringify({ style: genaiproStyle, speakerBoost: genaiproSpeakerBoost });
+      } else if (ttsProvider === "edgetts_rvc") {
+        presetData.voice_id = edgeTTSVoice;
+        presetData.emotion = JSON.stringify({ rvcModelUrl, rvcIndexUrl, rvcPitch, rvcIndexRate });
       } else if (ttsProvider === "inworld") {
         presetData.voice_id = inworldVoiceId;
         presetData.speed = inworldSpeakingRate;
@@ -887,6 +896,9 @@ const CreateFromScratch = () => {
         updateData.volume = genaiproStability;
         updateData.pitch = Math.round(genaiproSimilarity * 100);
         updateData.emotion = JSON.stringify({ style: genaiproStyle, speakerBoost: genaiproSpeakerBoost });
+      } else if (ttsProvider === "edgetts_rvc") {
+        updateData.voice_id = edgeTTSVoice;
+        updateData.emotion = JSON.stringify({ rvcModelUrl, rvcIndexUrl, rvcPitch, rvcIndexRate });
       } else if (ttsProvider === "inworld") {
         updateData.voice_id = inworldVoiceId;
         updateData.speed = inworldSpeakingRate;
@@ -1601,6 +1613,12 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
         audioMetadata.similarity = genaiproSimilarity;
         audioMetadata.style = genaiproStyle;
         audioMetadata.useSpeakerBoost = genaiproSpeakerBoost;
+      } else if (ttsProvider === "edgetts_rvc") {
+        audioMetadata.voice = edgeTTSVoice;
+        audioMetadata.rvcModelUrl = rvcModelUrl;
+        audioMetadata.rvcIndexUrl = rvcIndexUrl;
+        audioMetadata.rvcPitch = rvcPitch;
+        audioMetadata.rvcIndexRate = rvcIndexRate;
       } else if (ttsProvider === "inworld") {
         audioMetadata.voice = inworldVoiceId;
         audioMetadata.speed = inworldSpeakingRate;
@@ -2579,12 +2597,13 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
 
                       <div className="space-y-4">
                         <Label>Fournisseur TTS</Label>
-                        <Select value={ttsProvider} onValueChange={(value: "minimax" | "inworld" | "genaipro") => setTtsProvider(value)}>
+                        <Select value={ttsProvider} onValueChange={(value: "minimax" | "inworld" | "genaipro" | "edgetts_rvc") => setTtsProvider(value)}>
                           <SelectTrigger>
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="genaipro">GenAIPro.vn (ElevenLabs)</SelectItem>
+                            <SelectItem value="edgetts_rvc">EdgeTTS + Voice Clone (RVC)</SelectItem>
                             <SelectItem value="minimax">MiniMax (API Officielle)</SelectItem>
                             <SelectItem value="inworld">Inworld AI (TTS 1 Max)</SelectItem>
                           </SelectContent>
@@ -2658,6 +2677,130 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                           </div>
                           <p className="text-xs text-amber-600">
                             Note : Inworld TTS supporte max 2000 caractères par requête. Les scripts longs seront automatiquement découpés et assemblés.
+                          </p>
+                        </div>
+                      )}
+
+                      {ttsProvider === "edgetts_rvc" && (
+                        <div className="space-y-4 p-4 bg-muted/50 rounded-lg">
+                          <div className="space-y-2">
+                            <Label>Voix EdgeTTS (Microsoft Neural)</Label>
+                            <Select value={edgeTTSVoice} onValueChange={setEdgeTTSVoice}>
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="en-US-AndrewMultilingualNeural">Andrew (EN, Multilingual)</SelectItem>
+                                <SelectItem value="en-US-AvaMultilingualNeural">Ava (EN, Multilingual)</SelectItem>
+                                <SelectItem value="en-US-BrianMultilingualNeural">Brian (EN, Multilingual)</SelectItem>
+                                <SelectItem value="en-US-EmmaMultilingualNeural">Emma (EN, Multilingual)</SelectItem>
+                                <SelectItem value="fr-FR-DeniseNeural">Denise (FR)</SelectItem>
+                                <SelectItem value="fr-FR-HenriNeural">Henri (FR)</SelectItem>
+                                <SelectItem value="fr-FR-VivienneMultilingualNeural">Vivienne (FR, Multilingual)</SelectItem>
+                                <SelectItem value="fr-FR-RemyMultilingualNeural">Rémy (FR, Multilingual)</SelectItem>
+                                <SelectItem value="es-ES-AlvaroNeural">Álvaro (ES)</SelectItem>
+                                <SelectItem value="de-DE-ConradNeural">Conrad (DE)</SelectItem>
+                                <SelectItem value="pt-BR-AntonioNeural">Antônio (PT-BR)</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <p className="text-xs text-muted-foreground">
+                              Voix de base utilisée par EdgeTTS avant conversion RVC. Choisissez une voix proche de la langue de votre script.
+                            </p>
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label>URL du modèle RVC (.pth) — HuggingFace</Label>
+                            <Input
+                              value={rvcModelUrl}
+                              onChange={(e) => setRvcModelUrl(e.target.value)}
+                              placeholder="https://huggingface.co/.../model.pth"
+                            />
+                            <p className="text-xs text-muted-foreground">
+                              Fichier <code>.pth</code> de votre voix entraînée sur HuggingFace. Ex : <code>https://huggingface.co/user/repo/resolve/main/model.pth</code>
+                            </p>
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label>URL de l'index RVC (.index) — optionnel</Label>
+                            <Input
+                              value={rvcIndexUrl}
+                              onChange={(e) => setRvcIndexUrl(e.target.value)}
+                              placeholder="https://huggingface.co/.../model.index"
+                            />
+                            <p className="text-xs text-muted-foreground">
+                              Fichier <code>.index</code> FAISS associé au modèle. Améliore la qualité de conversion.
+                            </p>
+                          </div>
+
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <Label>Décalage de pitch (demi-tons)</Label>
+                              <input
+                                type="number"
+                                min="-24"
+                                max="24"
+                                step="1"
+                                value={rvcPitch}
+                                onChange={(e) => {
+                                  const v = parseInt(e.target.value);
+                                  if (!isNaN(v)) setRvcPitch(Math.min(24, Math.max(-24, v)));
+                                }}
+                                className="w-16 text-right text-sm bg-muted border border-border rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-primary"
+                              />
+                            </div>
+                            <input
+                              type="range"
+                              min="-24"
+                              max="24"
+                              step="1"
+                              value={rvcPitch}
+                              onChange={(e) => setRvcPitch(parseInt(e.target.value))}
+                              className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
+                            />
+                            <div className="flex justify-between text-xs text-muted-foreground">
+                              <span>-24 (grave)</span>
+                              <span>0</span>
+                              <span>+24 (aigu)</span>
+                            </div>
+                            <p className="text-xs text-amber-600">
+                              Pour une conversion voix femme → homme : -12. Homme → femme : +12.
+                            </p>
+                          </div>
+
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <Label>Index Rate</Label>
+                              <input
+                                type="number"
+                                min="0"
+                                max="1"
+                                step="0.05"
+                                value={rvcIndexRate}
+                                onChange={(e) => {
+                                  const v = parseFloat(e.target.value);
+                                  if (!isNaN(v)) setRvcIndexRate(Math.min(1, Math.max(0, v)));
+                                }}
+                                className="w-16 text-right text-sm bg-muted border border-border rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-primary"
+                              />
+                            </div>
+                            <input
+                              type="range"
+                              min="0"
+                              max="1"
+                              step="0.05"
+                              value={rvcIndexRate}
+                              onChange={(e) => setRvcIndexRate(parseFloat(e.target.value))}
+                              className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
+                            />
+                            <div className="flex justify-between text-xs text-muted-foreground">
+                              <span>0 (désactivé)</span>
+                              <span>0.75 (recommandé)</span>
+                              <span>1.0</span>
+                            </div>
+                          </div>
+
+                          <p className="text-xs text-muted-foreground">
+                            Le script sera découpé en chunks de ~2000 caractères, générés en parallèle via EdgeTTS (gratuit), puis la voix sera convertie sur GPU via RunPod.
                           </p>
                         </div>
                       )}
@@ -3006,7 +3149,7 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                         ) : (
                           <>
                             <Mic className="mr-2 h-4 w-4" />
-                            Générer l'audio avec {ttsProvider === "inworld" ? "Inworld" : ttsProvider === "genaipro" ? "ElevenLabs" : "MiniMax"}
+                            Générer l'audio avec {ttsProvider === "inworld" ? "Inworld" : ttsProvider === "genaipro" ? "ElevenLabs" : ttsProvider === "edgetts_rvc" ? "EdgeTTS + RVC" : "MiniMax"}
                           </>
                         )}
                       </Button>
@@ -3289,8 +3432,8 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
             <div className="p-4 bg-muted rounded-lg text-sm">
               <p className="font-medium mb-2">Configuration actuelle :</p>
               <ul className="space-y-1 text-muted-foreground">
-                <li>Fournisseur : {ttsProvider === "minimax" ? "MiniMax" : ttsProvider === "inworld" ? "Inworld AI" : "ElevenLabs"}</li>
-                <li>Voix : {ttsProvider === "inworld" ? inworldVoiceId : selectedVoice}</li>
+                <li>Fournisseur : {ttsProvider === "minimax" ? "MiniMax" : ttsProvider === "inworld" ? "Inworld AI" : ttsProvider === "edgetts_rvc" ? "EdgeTTS + RVC" : "ElevenLabs"}</li>
+                <li>Voix : {ttsProvider === "inworld" ? inworldVoiceId : ttsProvider === "edgetts_rvc" ? edgeTTSVoice : selectedVoice}</li>
                 {ttsProvider === "minimax" && (
                   <>
                     <li>Modèle : {minimaxModel}</li>
@@ -3333,11 +3476,13 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Fournisseur</Label>
-                <Select value={ttsProvider} onValueChange={(value: "minimax" | "inworld") => setTtsProvider(value)}>
+                <Select value={ttsProvider} onValueChange={(value: "minimax" | "inworld" | "genaipro" | "edgetts_rvc") => setTtsProvider(value)}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="genaipro">GenAIPro.vn (ElevenLabs)</SelectItem>
+                    <SelectItem value="edgetts_rvc">EdgeTTS + Voice Clone (RVC)</SelectItem>
                     <SelectItem value="minimax">MiniMax (API Officielle)</SelectItem>
                     <SelectItem value="inworld">Inworld AI (TTS 1 Max)</SelectItem>
                   </SelectContent>

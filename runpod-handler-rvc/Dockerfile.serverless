@@ -1,0 +1,42 @@
+# RunPod Serverless image for RVC voice conversion
+# Base: CUDA 12.1 + PyTorch 2.3 + Python 3.11
+
+FROM runpod/pytorch:2.3.0-py3.11-cuda12.1.0-devel-ubuntu22.04
+
+WORKDIR /workspace
+
+# System deps
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg \
+    libsndfile1 \
+    git \
+    wget \
+    && rm -rf /var/lib/apt/lists/*
+
+# Python deps
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Install rvc-python (lightweight RVC inference wrapper)
+RUN pip install --no-cache-dir rvc-python==0.2.8 || true
+
+# Pre-download RMVPE pitch extraction model (avoids cold-start download)
+RUN python -c "
+import urllib.request, pathlib
+dest = pathlib.Path('/workspace/rmvpe.pt')
+if not dest.exists():
+    print('Downloading RMVPE model...')
+    urllib.request.urlretrieve(
+        'https://huggingface.co/lj1995/VoiceConversionWebUI/resolve/main/rmvpe.pt',
+        str(dest)
+    )
+    print('RMVPE downloaded')
+" || echo "RMVPE pre-download skipped"
+
+# Copy handler
+COPY handler.py .
+
+# Tell rvc-python where to find rmvpe
+ENV RMVPE_MODEL_PATH=/workspace/rmvpe.pt
+
+CMD ["python", "-u", "handler.py"]

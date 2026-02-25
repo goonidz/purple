@@ -2443,6 +2443,287 @@ async function processGenaiproAudioPipeline(job) {
 }
 
 // ============================================================================
+// EDGETTS + RVC PIPELINE
+// ============================================================================
+
+// Split text into chunks of ~targetChars characters without cutting mid-sentence
+function chunkTextByChars(text, targetChars = 2000) {
+  const sentences = text.match(/[^.!?]*[.!?]+[\s]*/g) || [text];
+  const chunks = [];
+  let current = '';
+
+  for (const sentence of sentences) {
+    if (current.length + sentence.length > targetChars && current.length > 0) {
+      chunks.push(current.trim());
+      current = sentence;
+    } else {
+      current += sentence;
+    }
+  }
+  if (current.trim()) chunks.push(current.trim());
+  return chunks;
+}
+
+// Generate one EdgeTTS chunk via Python CLI, returns Buffer
+async function generateEdgeTTSChunk(text, voice) {
+  const { execFile } = require('child_process');
+  const os = require('os');
+  const path = require('path');
+  const fs = require('fs');
+
+  const tmpFile = path.join(os.tmpdir(), `edgetts_${Date.now()}_${Math.random().toString(36).slice(2)}.mp3`);
+
+  await new Promise((resolve, reject) => {
+    // Try edge-tts from common pip install locations
+    const edgeTTSBin = process.env.EDGE_TTS_BIN || 'edge-tts';
+    execFile(edgeTTSBin, [
+      '--text', text,
+      '--voice', voice,
+      '--write-media', tmpFile,
+    ], { timeout: 120000 }, (err) => {
+      if (err) return reject(new Error(`edge-tts failed: ${err.message}`));
+      resolve();
+    });
+  });
+
+  const buffer = fs.readFileSync(tmpFile);
+  fs.unlinkSync(tmpFile);
+  return buffer;
+}
+
+async function processEdgeTTSRVCPipeline(job) {
+  const startTime = Date.now();
+  const { id: jobId, project_id: projectId, user_id: userId, metadata: meta } = job;
+
+  try {
+    const text = meta.script || meta.text;
+    const voice = meta.voice || 'en-US-AndrewMultilingualNeural';
+    const rvcModelUrl = meta.rvcModelUrl;
+    const rvcIndexUrl = meta.rvcIndexUrl || '';
+    const rvcPitch = typeof meta.rvcPitch === 'number' ? meta.rvcPitch : 0;
+    const rvcIndexRate = typeof meta.rvcIndexRate === 'number' ? meta.rvcIndexRate : 0.75;
+    const rvcFilterRadius = typeof meta.rvcFilterRadius === 'number' ? meta.rvcFilterRadius : 3;
+
+    if (!text || text.trim().length < 5) throw new Error('No text provided for EdgeTTS+RVC');
+    if (!rvcModelUrl) throw new Error('rvcModelUrl is required for EdgeTTS+RVC');
+
+    const runpodRvcEndpointId = process.env.RUNPOD_RVC_ENDPOINT_ID;
+    const runpodApiKey = process.env.RUNPOD_API_KEY;
+    if (!runpodRvcEndpointId || !runpodApiKey) throw new Error('RUNPOD_RVC_ENDPOINT_ID and RUNPOD_API_KEY must be set');
+
+    log(`[EdgeTTS+RVC ${jobId}] Starting (voice=${voice}, text=${text.length} chars)`);
+
+    // Step 1: Chunk text
+    const chunks = chunkTextByChars(text, 2000);
+    log(`[EdgeTTS+RVC ${jobId}] Split into ${chunks.length} chunks`);
+
+    await supabase
+      .from('generation_jobs')
+      .update({ total: chunks.length + 1, progress: 0, metadata: { ...meta, totalChunks: chunks.length } })
+      .eq('id', jobId);
+
+    // Step 2: Generate EdgeTTS chunks in parallel (max 3 workers)
+    const EDGETTS_CONCURRENCY = 3;
+    const chunkUrls = new Array(chunks.length);
+    let completedCount = 0;
+    const chunkQueue = chunks.map((_, i) => i);
+
+    async function processOneEdgeTTSChunk(index) {
+      const MAX_RETRIES = 3;
+      let audioBuffer;
+
+      for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        try {
+          log(`[EdgeTTS+RVC ${jobId}] Chunk ${index + 1}/${chunks.length}${attempt > 1 ? ` [retry ${attempt}]` : ''}...`);
+          audioBuffer = await generateEdgeTTSChunk(chunks[index], voice);
+          break;
+        } catch (err) {
+          logError(`[EdgeTTS+RVC ${jobId}] Chunk ${index + 1} attempt ${attempt} failed:`, err.message);
+          if (attempt === MAX_RETRIES) throw err;
+          await sleep(3000 * attempt);
+        }
+      }
+
+      const storagePath = `tts/${jobId}/chunk_${String(index).padStart(3, '0')}.mp3`;
+      const { error: uploadError } = await supabase.storage
+        .from('audio-files')
+        .upload(storagePath, audioBuffer, { contentType: 'audio/mpeg', upsert: true });
+      if (uploadError) throw new Error(`Failed to upload chunk ${index}: ${uploadError.message}`);
+
+      const { data: urlData, error: urlError } = await supabase.storage
+        .from('audio-files')
+        .createSignedUrl(storagePath, 3600);
+      if (urlError || !urlData?.signedUrl) throw new Error(`Failed to get signed URL for chunk ${index}`);
+
+      chunkUrls[index] = urlData.signedUrl;
+      completedCount++;
+      await supabase
+        .from('generation_jobs')
+        .update({ progress: completedCount, metadata: { ...meta, totalChunks: chunks.length, completedChunks: completedCount } })
+        .eq('id', jobId);
+    }
+
+    const workers = [];
+    for (let w = 0; w < Math.min(EDGETTS_CONCURRENCY, chunks.length); w++) {
+      workers.push((async () => {
+        while (chunkQueue.length > 0) {
+          const idx = chunkQueue.shift();
+          if (idx === undefined) break;
+          await processOneEdgeTTSChunk(idx);
+        }
+      })());
+    }
+    await Promise.all(workers);
+
+    log(`[EdgeTTS+RVC ${jobId}] All ${chunks.length} chunks done. Concatenating...`);
+
+    // Step 3: Concat chunks
+    const CONCAT_MAX_RETRIES = 3;
+    let concatResult;
+    for (let attempt = 1; attempt <= CONCAT_MAX_RETRIES; attempt++) {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 120000);
+        const concatResponse = await fetch('http://localhost:3000/concat-audio', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ audioUrls: chunkUrls, userId, projectId }),
+          signal: controller.signal,
+        });
+        clearTimeout(timeout);
+        if (!concatResponse.ok) {
+          const errText = await concatResponse.text();
+          throw new Error(`concat-audio HTTP ${concatResponse.status}: ${errText.substring(0, 300)}`);
+        }
+        concatResult = await concatResponse.json();
+        break;
+      } catch (concatErr) {
+        logError(`[EdgeTTS+RVC ${jobId}] concat attempt ${attempt}/${CONCAT_MAX_RETRIES} failed:`, concatErr.message);
+        if (attempt === CONCAT_MAX_RETRIES) throw concatErr;
+        await sleep(5000 * attempt);
+      }
+    }
+
+    let concatenatedUrl = concatResult.audioUrl;
+    if (concatenatedUrl && concatenatedUrl.includes('localhost')) {
+      concatenatedUrl = concatenatedUrl.replace(/http:\/\/localhost:\d+/, 'https://purpleai.duckdns.org/api/render');
+    }
+    log(`[EdgeTTS+RVC ${jobId}] Concat done: ${concatenatedUrl} (${concatResult.totalDuration?.toFixed(1)}s)`);
+
+    // Step 4: Send to RunPod RVC Serverless
+    log(`[EdgeTTS+RVC ${jobId}] Sending to RunPod RVC (endpoint: ${runpodRvcEndpointId})...`);
+    const runpodRes = await fetch(`https://api.runpod.ai/v2/${runpodRvcEndpointId}/run`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${runpodApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        input: {
+          audioUrl: concatenatedUrl,
+          rvcModelUrl,
+          rvcIndexUrl,
+          pitch: rvcPitch,
+          indexRate: rvcIndexRate,
+          filterRadius: rvcFilterRadius,
+          jobId,
+          userId,
+          projectId,
+        },
+      }),
+    });
+
+    if (!runpodRes.ok) {
+      const errText = await runpodRes.text();
+      throw new Error(`RunPod RVC submit failed (${runpodRes.status}): ${errText.substring(0, 300)}`);
+    }
+
+    const runpodData = await runpodRes.json();
+    const runpodJobId = runpodData.id;
+    log(`[EdgeTTS+RVC ${jobId}] RunPod job submitted: ${runpodJobId}`);
+
+    await supabase
+      .from('generation_jobs')
+      .update({ metadata: { ...meta, totalChunks: chunks.length, runpodJobId, step: 'rvc_processing' } })
+      .eq('id', jobId);
+
+    // Step 5: Poll RunPod for result (max 10 min)
+    const RUNPOD_POLL_INTERVAL_MS = 5000;
+    const RUNPOD_MAX_ATTEMPTS = 120;
+    let finalAudioUrl = null;
+
+    for (let attempt = 0; attempt < RUNPOD_MAX_ATTEMPTS; attempt++) {
+      await sleep(RUNPOD_POLL_INTERVAL_MS);
+
+      const statusRes = await fetch(`https://api.runpod.ai/v2/${runpodRvcEndpointId}/status/${runpodJobId}`, {
+        headers: { 'Authorization': `Bearer ${runpodApiKey}` },
+      });
+
+      if (!statusRes.ok) {
+        logError(`[EdgeTTS+RVC ${jobId}] RunPod status poll error: ${statusRes.status}`);
+        continue;
+      }
+
+      const statusData = await statusRes.json();
+      if (attempt % 6 === 0) {
+        log(`[EdgeTTS+RVC ${jobId}] RunPod status: ${statusData.status} (${attempt + 1}/${RUNPOD_MAX_ATTEMPTS})`);
+      }
+
+      if (statusData.status === 'COMPLETED') {
+        finalAudioUrl = statusData.output?.audioUrl;
+        if (!finalAudioUrl) throw new Error('RunPod RVC completed but no audioUrl in output');
+        break;
+      }
+
+      if (statusData.status === 'FAILED') {
+        throw new Error(`RunPod RVC failed: ${statusData.error || JSON.stringify(statusData.output || {})}`);
+      }
+    }
+
+    if (!finalAudioUrl) throw new Error('RunPod RVC timed out after 10 minutes');
+
+    log(`[EdgeTTS+RVC ${jobId}] RVC done: ${finalAudioUrl}`);
+
+    // Step 6: Update project
+    if (projectId) {
+      await supabase
+        .from('projects')
+        .update({ audio_url: finalAudioUrl, updated_at: new Date().toISOString() })
+        .eq('id', projectId);
+    }
+
+    await supabase
+      .from('generation_jobs')
+      .update({
+        status: 'completed',
+        progress: chunks.length + 1,
+        completed_at: new Date().toISOString(),
+        metadata: {
+          ...meta,
+          totalChunks: chunks.length,
+          audioUrl: finalAudioUrl,
+          totalDuration: concatResult.totalDuration,
+          durationMs: Date.now() - startTime,
+        },
+      })
+      .eq('id', jobId);
+
+    log(`[EdgeTTS+RVC ${jobId}] Done in ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
+
+  } catch (err) {
+    logError(`[EdgeTTS+RVC ${jobId}] Pipeline failed:`, err.message);
+    await supabase
+      .from('generation_jobs')
+      .update({
+        status: 'failed',
+        error_message: err.message,
+        completed_at: new Date().toISOString(),
+      })
+      .eq('id', jobId);
+  }
+}
+
+// ============================================================================
 // IDEA GENERATION PIPELINE (YouTube scraping + Anthropic)
 // ============================================================================
 
@@ -2648,7 +2929,7 @@ async function processIdeaGenerationPipeline(job) {
 async function mainLoop() {
   log(`Image Worker started (MAX_CONCURRENT=${MAX_CONCURRENT}, POLL=${POLL_INTERVAL_MS}ms)`);
   log(`Supabase: ${SUPABASE_URL}`);
-  log(`Job types: single_image, thumbnails, single_prompt, audio_generation (gemini/genaipro), idea_generation`);
+  log(`Job types: single_image, thumbnails, single_prompt, audio_generation (gemini/genaipro/edgetts_rvc), idea_generation`);
 
   while (true) {
     try {
@@ -2745,9 +3026,9 @@ async function mainLoop() {
             } else if (job.job_type === 'single_prompt') {
               pipeline = processPromptJob(job);
             } else if (job.job_type === 'audio_generation') {
-              pipeline = (job.metadata?.provider === 'genaipro')
-                ? processGenaiproAudioPipeline(job)
-                : processAudioTTSPipeline(job);
+              if (job.metadata?.provider === 'genaipro') pipeline = processGenaiproAudioPipeline(job);
+              else if (job.metadata?.provider === 'edgetts_rvc') pipeline = processEdgeTTSRVCPipeline(job);
+              else pipeline = processAudioTTSPipeline(job);
             } else if (job.job_type === 'idea_generation') {
               pipeline = processIdeaGenerationPipeline(job);
             }
