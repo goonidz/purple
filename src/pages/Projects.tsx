@@ -35,10 +35,10 @@ interface Project {
   name: string;
   created_at: string;
   updated_at: string;
-  scenes: any;
-  prompts: any;
-  calendar_date?: string | null; // Date prévue du calendrier si lié
-  calendar_id?: string | null; // ID de l'entrée calendrier si lié
+  scene_count: number;
+  prompt_count: number;
+  calendar_date?: string | null;
+  calendar_id?: string | null;
 }
 
 const Projects = () => {
@@ -406,7 +406,7 @@ const Projects = () => {
     try {
       let query = supabase
         .from("projects")
-        .select("id, name, created_at, updated_at, scenes, prompts", { count: "exact" })
+        .select("id, name, created_at, updated_at, scene_count, prompt_count", { count: "exact" })
         .order(sortColumn, { ascending: sortDirection === "asc" });
 
       if (size > 0) {
@@ -743,15 +743,6 @@ const Projects = () => {
     });
   };
 
-  const getSceneCount = (scenes: any) => {
-    if (!scenes) return 0;
-    return Array.isArray(scenes) ? scenes.length : 0;
-  };
-
-  const getPromptCount = (prompts: any) => {
-    if (!prompts) return 0;
-    return Array.isArray(prompts) ? prompts.length : 0;
-  };
 
   if (!user) {
     return (
@@ -1444,10 +1435,10 @@ const Projects = () => {
                       )}
 
                       <span className="hidden sm:block text-sm text-muted-foreground text-center">
-                        {getSceneCount(project.scenes)}
+                        {project.scene_count}
                       </span>
                       <span className="hidden sm:block text-sm text-muted-foreground text-center">
-                        {getPromptCount(project.prompts)}
+                        {project.prompt_count}
                       </span>
                       <span className="hidden sm:flex items-center justify-center text-sm">
                         {project.calendar_date ? (
@@ -1553,11 +1544,11 @@ const Projects = () => {
                     <div className="space-y-2 text-sm text-muted-foreground">
                       <div className="flex items-center justify-between">
                         <span>Scènes:</span>
-                        <span className="font-medium">{getSceneCount(project.scenes)}</span>
+                        <span className="font-medium">{project.scene_count}</span>
                       </div>
                       <div className="flex items-center justify-between">
                         <span>Prompts:</span>
-                        <span className="font-medium">{getPromptCount(project.prompts)}</span>
+                        <span className="font-medium">{project.prompt_count}</span>
                       </div>
                       {project.calendar_date && (
                         <div className="flex items-center gap-2 text-primary">
