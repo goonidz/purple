@@ -404,9 +404,13 @@ const Projects = () => {
 
   const loadProjects = async (page = currentPage, size = pageSize) => {
     try {
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      if (!currentUser) throw new Error("Not authenticated");
+
       let query = supabase
         .from("projects")
         .select("id, name, created_at, updated_at, scene_count, prompt_count", { count: "exact" })
+        .eq("user_id", currentUser.id)
         .order(sortColumn, { ascending: sortDirection === "asc" });
 
       if (size > 0) {
