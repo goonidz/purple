@@ -20,39 +20,32 @@ Frontend → Edge Function (render-video-gpu)
 
 ---
 
-## 🚀 Quick Start (Déploiement complet)
+## 🚀 Quick Start — Deploying to RunPod
 
-### 1. Build l'image Docker custom
+The video handler uses a **dedicated Git branch** so pushes to `main` don't trigger rebuilds.
 
+### Deploy a new version:
 ```bash
-cd runpod-handler
-./build-serverless.sh
+git push origin main:runpod-video
 ```
 
-**Ce que fait le script** :
-- Build pour `linux/amd64`
-- Push vers `ghcr.io/goonidz/videoflow-gpu-serverless:latest`
-- Tag avec timestamp (ex: `20260115-150539`)
+### RunPod endpoint config:
+| Setting | Value |
+|---------|-------|
+| **Branch** | `runpod-video` |
+| **Dockerfile Path** | `runpod-handler/Dockerfile.serverless` |
+| **Build Context** | `runpod-handler/` |
+| **Endpoint ID** | `sr4lev8xioj0pv` |
 
-### 2. Redémarre les workers RunPod
-
-Va dans **RunPod Dashboard** → **Serverless** → `sr4lev8xioj0pv` → **Workers** :
-- Termine tous les workers actifs 🗑️
-- De nouveaux workers vont pull la nouvelle image
-
-### 3. Déploie l'Edge Function (si modifiée)
-
+### Deploy Edge Function (si modifiée):
 ```bash
-cd "/Users/Tom/Documents/Cursor/VideoFlow 2"
 supabase functions deploy render-video-gpu --no-verify-jwt
 ```
 
-### 4. Teste
-
-Lance un rendu GPU depuis le frontend et observe :
-- ✅ Progress bar en temps réel
-- ✅ Current step affiché ("Téléchargement...", "Scène 5/17...")
-- ✅ Vidéo finale dans "Rendus finaux"
+### Teste:
+- Progress bar en temps réel
+- Current step affiché ("Téléchargement...", "Scène 5/17...")
+- Vidéo finale dans "Rendus finaux"
 
 ---
 
