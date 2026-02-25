@@ -22,19 +22,22 @@ Frontend → Edge Function (render-video-gpu)
 
 ## 🚀 Quick Start — Deploying to RunPod
 
-The video handler uses a **dedicated Git branch** so pushes to `main` don't trigger rebuilds.
+The video endpoint uses a **pre-built GHCR image** (not a GitHub repo build).
+Pushes to `main` do NOT trigger any rebuild.
 
 ### Deploy a new version:
 ```bash
-git push origin main:runpod-video
+# On the VPS:
+cd ~/purple/runpod-handler
+./build-serverless.sh
+# Then restart workers on RunPod dashboard
 ```
 
 ### RunPod endpoint config:
 | Setting | Value |
 |---------|-------|
-| **Branch** | `runpod-video` |
-| **Dockerfile Path** | `runpod-handler/Dockerfile.serverless` |
-| **Build Context** | `runpod-handler/` |
+| **Container Image** | `ghcr.io/goonidz/videoflow-gpu-serverless:latest` |
+| **Registry** | `ghcr.io` |
 | **Endpoint ID** | `sr4lev8xioj0pv` |
 
 ### Deploy Edge Function (si modifiée):
