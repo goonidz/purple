@@ -1,0 +1,34 @@
+name: Build RVC Serverless Image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'runpod-handler-rvc/**'
+  workflow_dispatch:
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: ./runpod-handler-rvc
+          file: ./runpod-handler-rvc/Dockerfile.serverless
+          push: true
+          tags: |
+            ghcr.io/goonidz/videoflow-rvc-serverless:latest
+            ghcr.io/goonidz/videoflow-rvc-serverless:${{ github.sha }}
