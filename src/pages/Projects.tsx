@@ -711,7 +711,7 @@ const Projects = () => {
     return Array.isArray(prompts) ? prompts.length : 0;
   };
 
-  if (isLoading || !user) {
+  if (!user) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -1291,7 +1291,7 @@ const Projects = () => {
             </Dialog>
           </div>
 
-        {projects.length > 0 && (
+        {!isLoading && projects.length > 0 && (
           <div className="flex justify-end max-w-6xl mx-auto mb-4">
             <Button
               variant="ghost"
@@ -1309,7 +1309,11 @@ const Projects = () => {
           </div>
         )}
 
-        {projects.length === 0 ? (
+        {isLoading ? (
+          <div className="flex justify-center py-12">
+            <Loader2 className="h-6 w-6 animate-spin text-primary" />
+          </div>
+        ) : projects.length === 0 ? (
           <Card className="p-12 text-center max-w-2xl mx-auto bg-card/50 backdrop-blur">
             <p className="text-muted-foreground mb-6 text-lg">Aucun projet pour le moment</p>
             <Button size="lg" onClick={() => setIsDialogOpen(true)}>
