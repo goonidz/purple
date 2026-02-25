@@ -16,7 +16,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Loader2, Plus, Trash2, Pencil, Check, X, Cloud, Calendar, LayoutGrid, LayoutList, ChevronLeft, ChevronRight } from "lucide-react";
+import { Loader2, Plus, Trash2, Pencil, Check, X, Cloud, Calendar, LayoutGrid, LayoutList, ChevronLeft, ChevronRight, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
 import AppHeader from "@/components/AppHeader";
 import { toast } from "sonner";
 import type { User } from "@supabase/supabase-js";
@@ -86,6 +86,8 @@ const Projects = () => {
   });
   const [currentPage, setCurrentPage] = useState(0);
   const [totalCount, setTotalCount] = useState(0);
+  const [sortColumn, setSortColumn] = useState<"name" | "updated_at">("updated_at");
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
 
   const toggleViewMode = () => {
     const next = viewMode === "list" ? "grid" : "list";
@@ -99,6 +101,16 @@ const Projects = () => {
     localStorage.setItem("projects_page_size", String(size));
   };
 
+  const handleSort = (column: "name" | "updated_at") => {
+    if (sortColumn === column) {
+      setSortDirection(d => d === "asc" ? "desc" : "asc");
+    } else {
+      setSortColumn(column);
+      setSortDirection(column === "name" ? "asc" : "desc");
+    }
+    setCurrentPage(0);
+  };
+
   const totalPages = pageSize === 0 ? 1 : Math.ceil(totalCount / pageSize);
 
   useEffect(() => {
@@ -109,7 +121,7 @@ const Projects = () => {
     if (user) {
       loadProjects(currentPage, pageSize);
     }
-  }, [currentPage, pageSize]);
+  }, [currentPage, pageSize, sortColumn, sortDirection]);
 
   // Job management for background transcription
   const handleTranscriptionComplete = useCallback(async (job: GenerationJob) => {
@@ -395,7 +407,7 @@ const Projects = () => {
       let query = supabase
         .from("projects")
         .select("id, name, created_at, updated_at, scenes, prompts", { count: "exact" })
-        .order("updated_at", { ascending: false });
+        .order(sortColumn, { ascending: sortDirection === "asc" });
 
       if (size > 0) {
         const from = page * size;
@@ -1371,11 +1383,31 @@ const Projects = () => {
           viewMode === "list" ? (
             <div className="max-w-6xl mx-auto">
               <div className="hidden sm:grid grid-cols-[1fr_80px_80px_120px_140px_72px] gap-4 px-5 py-2 text-xs font-medium text-muted-foreground/60 uppercase tracking-wider sticky top-[65px] bg-background/95 backdrop-blur-sm z-30 border-b mb-1">
-                <span>Projet</span>
+                <button
+                  onClick={() => handleSort("name")}
+                  className="flex items-center gap-1 hover:text-foreground transition-colors text-left"
+                >
+                  Projet
+                  {sortColumn === "name" ? (
+                    sortDirection === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
+                  ) : (
+                    <ArrowUpDown className="h-3 w-3 opacity-0 group-hover:opacity-100" />
+                  )}
+                </button>
                 <span className="text-center">Scènes</span>
                 <span className="text-center">Prompts</span>
                 <span className="text-center">Prévu le</span>
-                <span className="text-center">Modifié le</span>
+                <button
+                  onClick={() => handleSort("updated_at")}
+                  className="flex items-center justify-center gap-1 hover:text-foreground transition-colors"
+                >
+                  Modifié le
+                  {sortColumn === "updated_at" ? (
+                    sortDirection === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
+                  ) : (
+                    <ArrowUpDown className="h-3 w-3 opacity-0 group-hover:opacity-100" />
+                  )}
+                </button>
                 <span></span>
               </div>
               <div className="flex flex-col gap-1">
