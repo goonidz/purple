@@ -1,7 +1,7 @@
 # RunPod Serverless image for RVC voice conversion
-# Base: CUDA 11.8 + PyTorch 2.1 (compatible with all RunPod GPUs)
+# Base: RunPod official base with CUDA 12.1 (widely compatible)
 
-FROM pytorch/pytorch:2.1.0-cuda11.8-cudnn8-runtime
+FROM runpod/base:0.6.2-cuda12.1.0
 
 WORKDIR /workspace
 
@@ -10,16 +10,15 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     libsndfile1 \
-    git \
-    wget \
     && rm -rf /var/lib/apt/lists/*
 
-# Python deps
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# PyTorch + deps
+RUN pip install --no-cache-dir \
+    torch==2.1.0+cu121 torchaudio==2.1.0+cu121 \
+    --index-url https://download.pytorch.org/whl/cu121
 
-# Brotli for RunPod SDK aiohttp content decoding
-RUN pip install --no-cache-dir Brotli
+RUN pip install --no-cache-dir \
+    numpy<2 scipy librosa soundfile httpx
 
 # Install rvc-python (optional, handler has fallback)
 RUN pip install --no-cache-dir rvc-python || true
@@ -27,7 +26,6 @@ RUN pip install --no-cache-dir rvc-python || true
 # Copy handler
 COPY handler.py .
 
-# Tell rvc-python where to find rmvpe
 ENV RMVPE_MODEL_PATH=/workspace/rmvpe.pt
 
 CMD ["python", "-u", "handler.py"]
