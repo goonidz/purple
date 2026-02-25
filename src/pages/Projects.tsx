@@ -1323,82 +1323,98 @@ const Projects = () => {
           </Card>
         ) : (
           viewMode === "list" ? (
-            <div className="flex flex-col gap-2 max-w-6xl mx-auto">
-              {projects.map((project) => (
-                <Card
-                  key={project.id}
-                  className="group cursor-pointer hover:shadow-md transition-all duration-200 border hover:border-primary/50 bg-card/50 backdrop-blur"
-                  onClick={() => navigate(`/project?project=${project.id}`)}
-                >
-                  <div className="flex items-center gap-4 px-5 py-3">
-                    {editingProjectId === project.id ? (
-                      <div className="flex items-center gap-2 flex-1 min-w-0" onClick={(e) => e.stopPropagation()}>
-                        <Input
-                          value={editingProjectName}
-                          onChange={(e) => setEditingProjectName(sanitizeProjectName(e.target.value))}
-                          className="h-8"
-                          autoFocus
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") handleSaveProjectName(e as any);
-                            if (e.key === "Escape") handleCancelEditProject(e as any);
-                          }}
-                        />
-                        <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={handleSaveProjectName}>
-                          <Check className="h-4 w-4 text-green-500" />
-                        </Button>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={handleCancelEditProject}>
-                          <X className="h-4 w-4 text-muted-foreground" />
-                        </Button>
-                      </div>
-                    ) : (
-                      <h3 className="text-base font-semibold truncate group-hover:text-primary transition-colors flex-1 min-w-0">
-                        {project.name}
-                      </h3>
-                    )}
-
-                    <div className="hidden sm:flex items-center gap-6 text-sm text-muted-foreground shrink-0">
-                      <span>{getSceneCount(project.scenes)} scènes</span>
-                      <span>{getPromptCount(project.prompts)} prompts</span>
-                      {project.calendar_date && (
-                        <span className="flex items-center gap-1.5 text-primary">
-                          <Calendar className="h-3.5 w-3.5" />
-                          {new Date(project.calendar_date).toLocaleDateString("fr-FR", {
-                            day: "numeric",
-                            month: "short",
-                          })}
-                        </span>
+            <div className="max-w-6xl mx-auto">
+              <div className="hidden sm:grid grid-cols-[1fr_80px_80px_120px_140px_72px] gap-4 px-5 py-2 text-xs font-medium text-muted-foreground/60 uppercase tracking-wider sticky top-0 bg-background/80 backdrop-blur-sm z-10 border-b mb-1">
+                <span>Projet</span>
+                <span className="text-center">Scènes</span>
+                <span className="text-center">Prompts</span>
+                <span className="text-center">Prévu le</span>
+                <span className="text-center">Modifié le</span>
+                <span></span>
+              </div>
+              <div className="flex flex-col gap-1">
+                {projects.map((project) => (
+                  <Card
+                    key={project.id}
+                    className="group cursor-pointer hover:shadow-md transition-all duration-200 border hover:border-primary/50 bg-card/50 backdrop-blur"
+                    onClick={() => navigate(`/project?project=${project.id}`)}
+                  >
+                    <div className="grid grid-cols-1 sm:grid-cols-[1fr_80px_80px_120px_140px_72px] items-center gap-4 px-5 py-3">
+                      {editingProjectId === project.id ? (
+                        <div className="flex items-center gap-2 min-w-0" onClick={(e) => e.stopPropagation()}>
+                          <Input
+                            value={editingProjectName}
+                            onChange={(e) => setEditingProjectName(sanitizeProjectName(e.target.value))}
+                            className="h-8"
+                            autoFocus
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") handleSaveProjectName(e as any);
+                              if (e.key === "Escape") handleCancelEditProject(e as any);
+                            }}
+                          />
+                          <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={handleSaveProjectName}>
+                            <Check className="h-4 w-4 text-green-500" />
+                          </Button>
+                          <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={handleCancelEditProject}>
+                            <X className="h-4 w-4 text-muted-foreground" />
+                          </Button>
+                        </div>
+                      ) : (
+                        <h3 className="text-base font-semibold truncate group-hover:text-primary transition-colors min-w-0">
+                          {project.name}
+                        </h3>
                       )}
-                      <span className="text-xs text-muted-foreground/70">
+
+                      <span className="hidden sm:block text-sm text-muted-foreground text-center">
+                        {getSceneCount(project.scenes)}
+                      </span>
+                      <span className="hidden sm:block text-sm text-muted-foreground text-center">
+                        {getPromptCount(project.prompts)}
+                      </span>
+                      <span className="hidden sm:flex items-center justify-center text-sm">
+                        {project.calendar_date ? (
+                          <span className="flex items-center gap-1.5 text-primary">
+                            <Calendar className="h-3.5 w-3.5" />
+                            {new Date(project.calendar_date).toLocaleDateString("fr-FR", {
+                              day: "numeric",
+                              month: "short",
+                            })}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground/40">—</span>
+                        )}
+                      </span>
+                      <span className="hidden sm:block text-xs text-muted-foreground/70 text-center">
                         {formatDate(project.updated_at)}
                       </span>
-                    </div>
 
-                    <div className="flex items-center gap-1 shrink-0">
-                      {editingProjectId !== project.id && (
+                      <div className="flex items-center justify-end gap-1 shrink-0">
+                        {editingProjectId !== project.id && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={(e) => handleStartEditProject(e, project.id, project.name)}
+                            className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
+                          </Button>
+                        )}
                         <Button
                           variant="ghost"
                           size="icon"
-                          onClick={(e) => handleStartEditProject(e, project.id, project.name)}
-                          className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteProject(project.id, project.name);
+                          }}
+                          className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-destructive/10"
                         >
-                          <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
+                          <Trash2 className="h-3.5 w-3.5 text-destructive" />
                         </Button>
-                      )}
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteProject(project.id, project.name);
-                        }}
-                        className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-destructive/10"
-                      >
-                        <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                      </Button>
+                      </div>
                     </div>
-                  </div>
-                </Card>
-              ))}
+                  </Card>
+                ))}
+              </div>
             </div>
           ) : (
             <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 max-w-6xl mx-auto">
