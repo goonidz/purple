@@ -37,8 +37,7 @@ interface Project {
   updated_at: string;
   scene_count: number;
   prompt_count: number;
-  calendar_date?: string | null;
-  calendar_id?: string | null;
+  scheduled_date?: string | null;
 }
 
 const Projects = () => {
@@ -86,7 +85,7 @@ const Projects = () => {
   });
   const [currentPage, setCurrentPage] = useState(0);
   const [totalCount, setTotalCount] = useState(0);
-  const [sortColumn, setSortColumn] = useState<"name" | "updated_at">("updated_at");
+  const [sortColumn, setSortColumn] = useState<"name" | "updated_at" | "scheduled_date">("updated_at");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
 
   const toggleViewMode = () => {
@@ -101,7 +100,7 @@ const Projects = () => {
     localStorage.setItem("projects_page_size", String(size));
   };
 
-  const handleSort = (column: "name" | "updated_at") => {
+  const handleSort = (column: "name" | "updated_at" | "scheduled_date") => {
     if (sortColumn === column) {
       setSortDirection(d => d === "asc" ? "desc" : "asc");
     } else {
@@ -409,9 +408,9 @@ const Projects = () => {
 
       let query = supabase
         .from("projects")
-        .select("id, name, created_at, updated_at, scene_count, prompt_count", { count: "exact" })
+        .select("id, name, created_at, updated_at, scene_count, prompt_count, scheduled_date", { count: "exact" })
         .eq("user_id", currentUser.id)
-        .order(sortColumn, { ascending: sortDirection === "asc" });
+        .order(sortColumn, { ascending: sortDirection === "asc", nullsFirst: false });
 
       if (size > 0) {
         const from = page * size;
@@ -424,38 +423,7 @@ const Projects = () => {
       if (error) throw error;
 
       setTotalCount(count ?? 0);
-
-      // Load calendar entries linked to projects
-      const projectIds = (projectsData || []).map(p => p.id);
-      let calendarEntries: Record<string, { scheduled_date: string; id: string }> = {};
-      
-      if (projectIds.length > 0) {
-        const { data: calendarData } = await supabase
-          .from("content_calendar")
-          .select("id, project_id, scheduled_date")
-          .in("project_id", projectIds)
-          .not("scheduled_date", "is", null);
-        
-        if (calendarData) {
-          calendarData.forEach(entry => {
-            if (entry.project_id) {
-              calendarEntries[entry.project_id] = {
-                scheduled_date: entry.scheduled_date,
-                id: entry.id
-              };
-            }
-          });
-        }
-      }
-
-      // Merge calendar data with projects
-      const projectsWithCalendar = (projectsData || []).map(project => ({
-        ...project,
-        calendar_date: calendarEntries[project.id]?.scheduled_date || null,
-        calendar_id: calendarEntries[project.id]?.id || null,
-      }));
-
-      setProjects(projectsWithCalendar);
+      setProjects((projectsData || []) as Project[]);
     } catch (error: any) {
       console.error("Error loading projects:", error);
       toast.error("Erreur lors du chargement des projets");
@@ -1391,7 +1359,17 @@ const Projects = () => {
                 </button>
                 <span className="text-center">Scènes</span>
                 <span className="text-center">Prompts</span>
-                <span className="text-center">Prévu le</span>
+                <button
+                  onClick={() => handleSort("scheduled_date")}
+                  className="flex items-center justify-center gap-1 hover:text-foreground transition-colors"
+                >
+                  Prévu le
+                  {sortColumn === "scheduled_date" ? (
+                    sortDirection === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
+                  ) : (
+                    <ArrowUpDown className="h-3 w-3 opacity-0 group-hover:opacity-100" />
+                  )}
+                </button>
                 <button
                   onClick={() => handleSort("updated_at")}
                   className="flex items-center justify-center gap-1 hover:text-foreground transition-colors"
@@ -1445,10 +1423,10 @@ const Projects = () => {
                         {project.prompt_count}
                       </span>
                       <span className="hidden sm:flex items-center justify-center text-sm">
-                        {project.calendar_date ? (
+                        {project.scheduled_date ? (
                           <span className="flex items-center gap-1.5 text-primary">
                             <Calendar className="h-3.5 w-3.5" />
-                            {new Date(project.calendar_date).toLocaleDateString("fr-FR", {
+                            {new Date(project.scheduled_date).toLocaleDateString("fr-FR", {
                               day: "numeric",
                               month: "short",
                             })}
@@ -1554,11 +1532,11 @@ const Projects = () => {
                         <span>Prompts:</span>
                         <span className="font-medium">{project.prompt_count}</span>
                       </div>
-                      {project.calendar_date && (
+                      {project.scheduled_date && (
                         <div className="flex items-center gap-2 text-primary">
                           <Calendar className="h-4 w-4" />
                           <span className="text-sm font-medium">
-                            Prévu le {new Date(project.calendar_date).toLocaleDateString("fr-FR", {
+                            Prévu le {new Date(project.scheduled_date).toLocaleDateString("fr-FR", {
                               day: "numeric",
                               month: "short",
                               year: "numeric"
