@@ -1,7 +1,7 @@
 # RunPod Serverless image for RVC voice conversion
-# Base: CUDA 12.1 + PyTorch 2.3 + Python 3.11
+# Base: CUDA 11.8 + PyTorch 2.1 (compatible with all RunPod GPUs)
 
-FROM runpod/pytorch:1.0.3-cu1290-torch260-ubuntu2204
+FROM pytorch/pytorch:2.1.0-cuda11.8-cudnn8-runtime
 
 WORKDIR /workspace
 
