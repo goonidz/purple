@@ -16,7 +16,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Loader2, Plus, Trash2, Pencil, Check, X, Cloud, Calendar } from "lucide-react";
+import { Loader2, Plus, Trash2, Pencil, Check, X, Cloud, Calendar, LayoutGrid, LayoutList } from "lucide-react";
 import AppHeader from "@/components/AppHeader";
 import { toast } from "sonner";
 import type { User } from "@supabase/supabase-js";
@@ -77,6 +77,15 @@ const Projects = () => {
   const [thumbnailPresets, setThumbnailPresets] = useState<any[]>([]);
   const [selectedThumbnailPresetId, setSelectedThumbnailPresetId] = useState<string>("");
   const [isDraggingAudio, setIsDraggingAudio] = useState(false);
+  const [viewMode, setViewMode] = useState<"list" | "grid">(() => {
+    return (localStorage.getItem("projects_view_mode") as "list" | "grid") || "list";
+  });
+
+  const toggleViewMode = () => {
+    const next = viewMode === "list" ? "grid" : "list";
+    setViewMode(next);
+    localStorage.setItem("projects_view_mode", next);
+  };
 
   useEffect(() => {
     document.title = "Projets";
@@ -1282,6 +1291,24 @@ const Projects = () => {
             </Dialog>
           </div>
 
+        {projects.length > 0 && (
+          <div className="flex justify-end max-w-6xl mx-auto mb-4">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={toggleViewMode}
+              className="h-9 w-9"
+              title={viewMode === "list" ? "Vue grille" : "Vue liste"}
+            >
+              {viewMode === "list" ? (
+                <LayoutGrid className="h-5 w-5 text-muted-foreground" />
+              ) : (
+                <LayoutList className="h-5 w-5 text-muted-foreground" />
+              )}
+            </Button>
+          </div>
+        )}
+
         {projects.length === 0 ? (
           <Card className="p-12 text-center max-w-2xl mx-auto bg-card/50 backdrop-blur">
             <p className="text-muted-foreground mb-6 text-lg">Aucun projet pour le moment</p>
@@ -1291,17 +1318,17 @@ const Projects = () => {
             </Button>
           </Card>
         ) : (
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 max-w-6xl mx-auto">
-            {projects.map((project) => (
-              <Card
-                key={project.id}
-                className="group cursor-pointer hover:shadow-lg transition-all duration-300 hover:scale-105 border-2 hover:border-primary/50 bg-card/50 backdrop-blur"
-                onClick={() => navigate(`/project?project=${project.id}`)}
-              >
-                <div className="p-6">
-                  <div className="flex items-start justify-between mb-4 gap-2">
+          viewMode === "list" ? (
+            <div className="flex flex-col gap-2 max-w-6xl mx-auto">
+              {projects.map((project) => (
+                <Card
+                  key={project.id}
+                  className="group cursor-pointer hover:shadow-md transition-all duration-200 border hover:border-primary/50 bg-card/50 backdrop-blur"
+                  onClick={() => navigate(`/project?project=${project.id}`)}
+                >
+                  <div className="flex items-center gap-4 px-5 py-3">
                     {editingProjectId === project.id ? (
-                      <div className="flex items-center gap-2 flex-1" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex items-center gap-2 flex-1 min-w-0" onClick={(e) => e.stopPropagation()}>
                         <Input
                           value={editingProjectName}
                           onChange={(e) => setEditingProjectName(sanitizeProjectName(e.target.value))}
@@ -1312,71 +1339,151 @@ const Projects = () => {
                             if (e.key === "Escape") handleCancelEditProject(e as any);
                           }}
                         />
-                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleSaveProjectName}>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={handleSaveProjectName}>
                           <Check className="h-4 w-4 text-green-500" />
                         </Button>
-                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleCancelEditProject}>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={handleCancelEditProject}>
                           <X className="h-4 w-4 text-muted-foreground" />
                         </Button>
                       </div>
                     ) : (
-                      <>
-                        <h3 className="text-xl font-bold truncate group-hover:text-primary transition-colors flex-1">
-                          {project.name}
-                        </h3>
+                      <h3 className="text-base font-semibold truncate group-hover:text-primary transition-colors flex-1 min-w-0">
+                        {project.name}
+                      </h3>
+                    )}
+
+                    <div className="hidden sm:flex items-center gap-6 text-sm text-muted-foreground shrink-0">
+                      <span>{getSceneCount(project.scenes)} scènes</span>
+                      <span>{getPromptCount(project.prompts)} prompts</span>
+                      {project.calendar_date && (
+                        <span className="flex items-center gap-1.5 text-primary">
+                          <Calendar className="h-3.5 w-3.5" />
+                          {new Date(project.calendar_date).toLocaleDateString("fr-FR", {
+                            day: "numeric",
+                            month: "short",
+                          })}
+                        </span>
+                      )}
+                      <span className="text-xs text-muted-foreground/70">
+                        {formatDate(project.updated_at)}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-1 shrink-0">
+                      {editingProjectId !== project.id && (
                         <Button
                           variant="ghost"
                           size="icon"
                           onClick={(e) => handleStartEditProject(e, project.id, project.name)}
-                          className="hover:bg-muted shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                          className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity"
                         >
-                          <Pencil className="h-4 w-4 text-muted-foreground" />
+                          <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
                         </Button>
-                      </>
-                    )}
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDeleteProject(project.id, project.name);
-                      }}
-                      className="hover:bg-destructive/10 shrink-0"
-                    >
-                      <Trash2 className="h-4 w-4 text-destructive" />
-                    </Button>
-                  </div>
-                  <div className="space-y-2 text-sm text-muted-foreground">
-                    <div className="flex items-center justify-between">
-                      <span>Scènes:</span>
-                      <span className="font-medium">{getSceneCount(project.scenes)}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span>Prompts:</span>
-                      <span className="font-medium">{getPromptCount(project.prompts)}</span>
-                    </div>
-                    {project.calendar_date && (
-                      <div className="flex items-center gap-2 text-primary">
-                        <Calendar className="h-4 w-4" />
-                        <span className="text-sm font-medium">
-                          Prévu le {new Date(project.calendar_date).toLocaleDateString("fr-FR", {
-                            day: "numeric",
-                            month: "short",
-                            year: "numeric"
-                          })}
-                        </span>
-                      </div>
-                    )}
-                    <div className="pt-2 mt-2 border-t">
-                      <div className="text-xs">
-                        Modifié le {formatDate(project.updated_at)}
-                      </div>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteProject(project.id, project.name);
+                        }}
+                        className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-destructive/10"
+                      >
+                        <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                      </Button>
                     </div>
                   </div>
-                </div>
-              </Card>
-            ))}
-          </div>
+                </Card>
+              ))}
+            </div>
+          ) : (
+            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 max-w-6xl mx-auto">
+              {projects.map((project) => (
+                <Card
+                  key={project.id}
+                  className="group cursor-pointer hover:shadow-lg transition-all duration-300 hover:scale-105 border-2 hover:border-primary/50 bg-card/50 backdrop-blur"
+                  onClick={() => navigate(`/project?project=${project.id}`)}
+                >
+                  <div className="p-6">
+                    <div className="flex items-start justify-between mb-4 gap-2">
+                      {editingProjectId === project.id ? (
+                        <div className="flex items-center gap-2 flex-1" onClick={(e) => e.stopPropagation()}>
+                          <Input
+                            value={editingProjectName}
+                            onChange={(e) => setEditingProjectName(sanitizeProjectName(e.target.value))}
+                            className="h-8"
+                            autoFocus
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") handleSaveProjectName(e as any);
+                              if (e.key === "Escape") handleCancelEditProject(e as any);
+                            }}
+                          />
+                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleSaveProjectName}>
+                            <Check className="h-4 w-4 text-green-500" />
+                          </Button>
+                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleCancelEditProject}>
+                            <X className="h-4 w-4 text-muted-foreground" />
+                          </Button>
+                        </div>
+                      ) : (
+                        <>
+                          <h3 className="text-xl font-bold truncate group-hover:text-primary transition-colors flex-1">
+                            {project.name}
+                          </h3>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={(e) => handleStartEditProject(e, project.id, project.name)}
+                            className="hover:bg-muted shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            <Pencil className="h-4 w-4 text-muted-foreground" />
+                          </Button>
+                        </>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteProject(project.id, project.name);
+                        }}
+                        className="hover:bg-destructive/10 shrink-0"
+                      >
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    </div>
+                    <div className="space-y-2 text-sm text-muted-foreground">
+                      <div className="flex items-center justify-between">
+                        <span>Scènes:</span>
+                        <span className="font-medium">{getSceneCount(project.scenes)}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span>Prompts:</span>
+                        <span className="font-medium">{getPromptCount(project.prompts)}</span>
+                      </div>
+                      {project.calendar_date && (
+                        <div className="flex items-center gap-2 text-primary">
+                          <Calendar className="h-4 w-4" />
+                          <span className="text-sm font-medium">
+                            Prévu le {new Date(project.calendar_date).toLocaleDateString("fr-FR", {
+                              day: "numeric",
+                              month: "short",
+                              year: "numeric"
+                            })}
+                          </span>
+                        </div>
+                      )}
+                      <div className="pt-2 mt-2 border-t">
+                        <div className="text-xs">
+                          Modifié le {formatDate(project.updated_at)}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          )
         )}
 
         <OnboardingDialog
