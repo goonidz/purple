@@ -2465,7 +2465,7 @@ function chunkTextByChars(text, targetChars = 2000) {
 }
 
 // Generate one EdgeTTS chunk via Python CLI, returns Buffer
-async function generateEdgeTTSChunk(text, voice) {
+async function generateEdgeTTSChunk(text, voice, rate) {
   const { execFile } = require('child_process');
   const os = require('os');
   const path = require('path');
@@ -2474,13 +2474,13 @@ async function generateEdgeTTSChunk(text, voice) {
   const tmpFile = path.join(os.tmpdir(), `edgetts_${Date.now()}_${Math.random().toString(36).slice(2)}.mp3`);
 
   await new Promise((resolve, reject) => {
-    // Try edge-tts from common pip install locations
     const edgeTTSBin = process.env.EDGE_TTS_BIN || 'edge-tts';
-    execFile(edgeTTSBin, [
-      '--text', text,
-      '--voice', voice,
-      '--write-media', tmpFile,
-    ], { timeout: 120000 }, (err) => {
+    const args = ['--text', text, '--voice', voice, '--write-media', tmpFile];
+    if (rate && rate !== 1.0) {
+      const pct = Math.round((rate - 1) * 100);
+      args.push('--rate', `${pct >= 0 ? '+' : ''}${pct}%`);
+    }
+    execFile(edgeTTSBin, args, { timeout: 120000 }, (err) => {
       if (err) return reject(new Error(`edge-tts failed: ${err.message}`));
       resolve();
     });
@@ -2503,6 +2503,7 @@ async function processEdgeTTSRVCPipeline(job) {
     const rvcPitch = typeof meta.rvcPitch === 'number' ? meta.rvcPitch : 0;
     const rvcIndexRate = typeof meta.rvcIndexRate === 'number' ? meta.rvcIndexRate : 0.75;
     const rvcFilterRadius = typeof meta.rvcFilterRadius === 'number' ? meta.rvcFilterRadius : 3;
+    const ttsSpeed = typeof meta.speed === 'number' ? meta.speed : 1.0;
 
     if (!text || text.trim().length < 5) throw new Error('No text provided for EdgeTTS+RVC');
     if (!rvcModelUrl) throw new Error('rvcModelUrl is required for EdgeTTS+RVC');
@@ -2511,7 +2512,7 @@ async function processEdgeTTSRVCPipeline(job) {
     const runpodApiKey = process.env.RUNPOD_API_KEY;
     if (!runpodRvcEndpointId || !runpodApiKey) throw new Error('RUNPOD_RVC_ENDPOINT_ID and RUNPOD_API_KEY must be set');
 
-    log(`[EdgeTTS+RVC ${jobId}] Starting (voice=${voice}, text=${text.length} chars)`);
+    log(`[EdgeTTS+RVC ${jobId}] Starting (voice=${voice}, speed=${ttsSpeed}x, text=${text.length} chars)`);
 
     // Step 1: Chunk text
     const chunks = chunkTextByChars(text, 2000);
@@ -2535,7 +2536,7 @@ async function processEdgeTTSRVCPipeline(job) {
       for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
         try {
           log(`[EdgeTTS+RVC ${jobId}] Chunk ${index + 1}/${chunks.length}${attempt > 1 ? ` [retry ${attempt}]` : ''}...`);
-          audioBuffer = await generateEdgeTTSChunk(chunks[index], voice);
+          audioBuffer = await generateEdgeTTSChunk(chunks[index], voice, ttsSpeed);
           break;
         } catch (err) {
           logError(`[EdgeTTS+RVC ${jobId}] Chunk ${index + 1} attempt ${attempt} failed:`, err.message);

@@ -267,6 +267,7 @@ const CreateFromScratch = () => {
   const [rvcIndexUrl, setRvcIndexUrl] = useState("");
   const [rvcPitch, setRvcPitch] = useState(0);
   const [rvcIndexRate, setRvcIndexRate] = useState(0.75);
+  const [edgeTTSSpeed, setEdgeTTSSpeed] = useState(1.0);
   const [minimaxVolume, setMinimaxVolume] = useState(1.0);
   const [minimaxLanguageBoost, setMinimaxLanguageBoost] = useState("auto");
   const [minimaxEnglishNormalization, setMinimaxEnglishNormalization] = useState(true);
@@ -771,6 +772,7 @@ const CreateFromScratch = () => {
         if (rvcData.rvcIndexUrl) setRvcIndexUrl(rvcData.rvcIndexUrl);
         if (typeof rvcData.rvcPitch === "number") setRvcPitch(rvcData.rvcPitch);
         if (typeof rvcData.rvcIndexRate === "number") setRvcIndexRate(rvcData.rvcIndexRate);
+        if (typeof rvcData.edgeTTSSpeed === "number") setEdgeTTSSpeed(rvcData.edgeTTSSpeed);
       } catch { /* not JSON, ignore */ }
     } else {
       setSelectedVoice(preset.voice_id);
@@ -818,7 +820,7 @@ const CreateFromScratch = () => {
         presetData.emotion = JSON.stringify({ style: genaiproStyle, speakerBoost: genaiproSpeakerBoost });
       } else if (ttsProvider === "edgetts_rvc") {
         presetData.voice_id = edgeTTSVoice;
-        presetData.emotion = JSON.stringify({ rvcModelUrl, rvcIndexUrl, rvcPitch, rvcIndexRate });
+        presetData.emotion = JSON.stringify({ rvcModelUrl, rvcIndexUrl, rvcPitch, rvcIndexRate, edgeTTSSpeed });
       } else if (ttsProvider === "inworld") {
         presetData.voice_id = inworldVoiceId;
         presetData.speed = inworldSpeakingRate;
@@ -907,7 +909,7 @@ const CreateFromScratch = () => {
         updateData.emotion = JSON.stringify({ style: genaiproStyle, speakerBoost: genaiproSpeakerBoost });
       } else if (ttsProvider === "edgetts_rvc") {
         updateData.voice_id = edgeTTSVoice;
-        updateData.emotion = JSON.stringify({ rvcModelUrl, rvcIndexUrl, rvcPitch, rvcIndexRate });
+        updateData.emotion = JSON.stringify({ rvcModelUrl, rvcIndexUrl, rvcPitch, rvcIndexRate, edgeTTSSpeed });
       } else if (ttsProvider === "inworld") {
         updateData.voice_id = inworldVoiceId;
         updateData.speed = inworldSpeakingRate;
@@ -1624,6 +1626,7 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
         audioMetadata.useSpeakerBoost = genaiproSpeakerBoost;
       } else if (ttsProvider === "edgetts_rvc") {
         audioMetadata.voice = edgeTTSVoice;
+        audioMetadata.speed = edgeTTSSpeed;
         audioMetadata.rvcModelUrl = rvcModelUrl;
         audioMetadata.rvcIndexUrl = rvcIndexUrl;
         audioMetadata.rvcPitch = rvcPitch;
@@ -2715,6 +2718,27 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                             <p className="text-xs text-muted-foreground">
                               Voix de base utilisée par EdgeTTS avant conversion RVC. Choisissez une voix proche de la langue de votre script.
                             </p>
+                          </div>
+
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <Label>Vitesse TTS</Label>
+                              <span className="text-sm text-muted-foreground">{edgeTTSSpeed.toFixed(2)}x</span>
+                            </div>
+                            <input
+                              type="range"
+                              min="0.5"
+                              max="2.0"
+                              step="0.05"
+                              value={edgeTTSSpeed}
+                              onChange={(e) => setEdgeTTSSpeed(parseFloat(e.target.value))}
+                              className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
+                            />
+                            <div className="flex justify-between text-xs text-muted-foreground">
+                              <span>0.5x (lent)</span>
+                              <span>1.0x</span>
+                              <span>2.0x (rapide)</span>
+                            </div>
                           </div>
 
                           <div className="space-y-2">
