@@ -1,10 +1,6 @@
-runpod>=1.7.0
+runpod
 numpy<2
 scipy
 librosa
 soundfile
-praat-parselmouth
-pyworld
-faiss-cpu
-requests
 httpx
