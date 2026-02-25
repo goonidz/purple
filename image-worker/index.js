@@ -2478,7 +2478,7 @@ async function generateEdgeTTSChunk(text, voice, rate) {
     const args = ['--text', text, '--voice', voice, '--write-media', tmpFile];
     if (rate && rate !== 1.0) {
       const pct = Math.round((rate - 1) * 100);
-      args.push('--rate', `${pct >= 0 ? '+' : ''}${pct}%`);
+      args.push(`--rate=${pct >= 0 ? '+' : ''}${pct}%`);
     }
     execFile(edgeTTSBin, args, { timeout: 120000 }, (err) => {
       if (err) return reject(new Error(`edge-tts failed: ${err.message}`));
