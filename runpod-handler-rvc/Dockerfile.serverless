@@ -21,17 +21,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 RUN pip install --no-cache-dir rvc-python==0.2.8 || true
 
 # Pre-download RMVPE pitch extraction model (avoids cold-start download)
-RUN python -c "
-import urllib.request, pathlib
-dest = pathlib.Path('/workspace/rmvpe.pt')
-if not dest.exists():
-    print('Downloading RMVPE model...')
-    urllib.request.urlretrieve(
-        'https://huggingface.co/lj1995/VoiceConversionWebUI/resolve/main/rmvpe.pt',
-        str(dest)
-    )
-    print('RMVPE downloaded')
-" || echo "RMVPE pre-download skipped"
+RUN python -c "import urllib.request; urllib.request.urlretrieve('https://huggingface.co/lj1995/VoiceConversionWebUI/resolve/main/rmvpe.pt', '/workspace/rmvpe.pt'); print('RMVPE downloaded')" || echo "RMVPE pre-download skipped"
 
 # Copy handler
 COPY handler.py .
