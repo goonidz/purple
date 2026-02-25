@@ -85,6 +85,7 @@ const Projects = () => {
     return stored ? parseInt(stored, 10) : 10;
   });
   const [currentPage, setCurrentPage] = useState(0);
+  const [totalCount, setTotalCount] = useState(0);
 
   const toggleViewMode = () => {
     const next = viewMode === "list" ? "grid" : "list";
@@ -98,14 +99,17 @@ const Projects = () => {
     localStorage.setItem("projects_page_size", String(size));
   };
 
-  const totalPages = pageSize === 0 ? 1 : Math.ceil(projects.length / pageSize);
-  const paginatedProjects = pageSize === 0
-    ? projects
-    : projects.slice(currentPage * pageSize, (currentPage + 1) * pageSize);
+  const totalPages = pageSize === 0 ? 1 : Math.ceil(totalCount / pageSize);
 
   useEffect(() => {
     document.title = "Projets";
   }, []);
+
+  useEffect(() => {
+    if (user) {
+      loadProjects(currentPage, pageSize);
+    }
+  }, [currentPage, pageSize]);
 
   // Job management for background transcription
   const handleTranscriptionComplete = useCallback(async (job: GenerationJob) => {
@@ -386,14 +390,24 @@ const Projects = () => {
     }
   };
 
-  const loadProjects = async () => {
+  const loadProjects = async (page = currentPage, size = pageSize) => {
     try {
-      const { data: projectsData, error } = await supabase
+      let query = supabase
         .from("projects")
-        .select("id, name, created_at, updated_at, scenes, prompts")
+        .select("id, name, created_at, updated_at, scenes, prompts", { count: "exact" })
         .order("updated_at", { ascending: false });
 
+      if (size > 0) {
+        const from = page * size;
+        const to = from + size - 1;
+        query = query.range(from, to);
+      }
+
+      const { data: projectsData, error, count } = await query;
+
       if (error) throw error;
+
+      setTotalCount(count ?? 0);
 
       // Load calendar entries linked to projects
       const projectIds = (projectsData || []).map(p => p.id);
@@ -1365,7 +1379,7 @@ const Projects = () => {
                 <span></span>
               </div>
               <div className="flex flex-col gap-1">
-                {paginatedProjects.map((project) => (
+                {projects.map((project) => (
                   <Card
                     key={project.id}
                     className="group cursor-pointer hover:shadow-md transition-all duration-200 border hover:border-primary/50 bg-card/50 backdrop-blur"
@@ -1450,7 +1464,7 @@ const Projects = () => {
             </div>
           ) : (
             <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 max-w-6xl mx-auto">
-              {paginatedProjects.map((project) => (
+              {projects.map((project) => (
                 <Card
                   key={project.id}
                   className="group cursor-pointer hover:shadow-lg transition-all duration-300 hover:scale-105 border-2 hover:border-primary/50 bg-card/50 backdrop-blur"
@@ -1538,7 +1552,7 @@ const Projects = () => {
           )
         )}
 
-        {!isLoading && projects.length > 0 && totalPages > 1 && (
+        {!isLoading && totalCount > 0 && totalPages > 1 && (
           <div className="flex items-center justify-center gap-4 mt-6 max-w-6xl mx-auto">
             <Button
               variant="outline"
@@ -1552,7 +1566,7 @@ const Projects = () => {
             <span className="text-sm text-muted-foreground">
               {currentPage + 1} / {totalPages}
               <span className="ml-2 text-xs text-muted-foreground/60">
-                ({projects.length} projets)
+                ({totalCount} projets)
               </span>
             </span>
             <Button
