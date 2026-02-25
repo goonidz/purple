@@ -1,30 +1,25 @@
 # RunPod Serverless - RVC voice conversion
-# Python 3.10 + CUDA 11.8 (max compatibility for rvc-python + all RunPod GPUs)
+# Using RunPod's pip-based PyTorch image (NOT conda) to avoid brotli/brotlipy conflict
 
-FROM pytorch/pytorch:2.1.0-cuda11.8-cudnn8-runtime
+FROM runpod/pytorch:2.1.0-py3.10-cuda11.8.0-devel-ubuntu22.04
 
 WORKDIR /workspace
 
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ffmpeg libsndfile1 build-essential \
+    ffmpeg libsndfile1 \
     && rm -rf /var/lib/apt/lists/*
 
-# All Python deps in one layer - no cache issues
 RUN pip install --no-cache-dir \
-    runpod Brotli aiohttp \
+    runpod Brotli \
     "numpy<2" scipy librosa soundfile httpx \
     faiss-cpu praat-parselmouth pyworld \
     rvc-python
 
-# Force reinstall aiohttp so it picks up Brotli (conda version doesn't have it)
-RUN pip install --force-reinstall --no-cache-dir aiohttp Brotli
-
-# Verify critical imports
+# Verify brotli works (this is the pip version, no conda conflict)
 RUN python -c "import brotli; print('Brotli OK')"
 RUN python -c "import runpod; print('RunPod OK')"
 RUN python -c "import rvc_python; print('RVC OK')"
-RUN python -c "import aiohttp; print('aiohttp brotli:', hasattr(aiohttp, '_http_parser') or True)"
 
 COPY handler.py .
 
