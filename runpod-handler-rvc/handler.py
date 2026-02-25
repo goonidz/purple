@@ -114,12 +114,8 @@ def run_rvc_inference(
     device = "cuda:0" if torch.cuda.is_available() else "cpu:0"
     log.info(f"Running RVC via rvc-python (pitch={pitch}, indexRate={index_rate}, device={device})")
 
-    rvc = RVCInference(
-        device=device,
-        model_path=str(model_path),
-        index_path=str(index_path) if index_path else "",
-        version="v2",
-    )
+    rvc = RVCInference(device=device)
+    rvc.load_model(str(model_path), version="v2", index_path=str(index_path) if index_path else "")
     rvc.set_params(
         f0up_key=pitch,
         f0method="rmvpe",
