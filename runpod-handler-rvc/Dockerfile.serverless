@@ -29,5 +29,6 @@ RUN python -c "import aiohttp; print('aiohttp brotli:', hasattr(aiohttp, '_http_
 COPY handler.py .
 
 ENV RMVPE_MODEL_PATH=/workspace/rmvpe.pt
+ENV AIOHTTP_NO_EXTENSIONS=1
 
 CMD ["python", "-u", "handler.py"]
