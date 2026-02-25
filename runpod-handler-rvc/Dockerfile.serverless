@@ -18,6 +18,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Brotli for RunPod SDK aiohttp content decoding
+RUN pip install --no-cache-dir Brotli
+
 # Install rvc-python (optional, handler has fallback)
 RUN pip install --no-cache-dir rvc-python || true
 
