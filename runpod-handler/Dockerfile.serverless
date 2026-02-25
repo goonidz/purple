@@ -12,7 +12,8 @@ COPY requirements.txt /app/requirements.txt
 
 # Install Python dependencies (baked in image, pas de download à chaque run!)
 RUN python3 -m pip install --no-cache-dir --upgrade pip && \
-    python3 -m pip install --no-cache-dir -r requirements.txt
+    python3 -m pip install --no-cache-dir -r requirements.txt && \
+    python3 -c "import brotli; print('Brotli OK')"
 
 # Expose no ports (serverless uses internal routing)
 # No EXPOSE needed
