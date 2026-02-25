@@ -1,4 +1,5 @@
 runpod
+brotli
 numpy<2
 scipy
 librosa
