@@ -1490,10 +1490,18 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
 
   // Audio job polling
   const [audioJobId, setAudioJobId] = useState<string | null>(null);
+  const [audioJobProgress, setAudioJobProgress] = useState<{
+    progress: number;
+    total: number;
+    currentStep: string;
+    step: string;
+  } | null>(null);
 
   // Poll for audio job completion
   useEffect(() => {
     if (!audioJobId || !isGeneratingAudio) return;
+
+    setAudioJobProgress({ progress: 0, total: 0, currentStep: "Démarrage...", step: "pending" });
 
     const pollInterval = setInterval(async () => {
       try {
@@ -1508,12 +1516,20 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
           return;
         }
 
+        const metadata = job.metadata as any;
+
+        setAudioJobProgress({
+          progress: job.progress || 0,
+          total: job.total || 0,
+          currentStep: (job as any).current_step || metadata?.step || "En cours...",
+          step: metadata?.step || job.status,
+        });
+
         if (job.status === 'completed') {
           clearInterval(pollInterval);
           setIsGeneratingAudio(false);
+          setAudioJobProgress(null);
 
-          // Get audio URL from job metadata
-          const metadata = job.metadata as any;
           if (metadata?.audioUrl) {
             setAudioUrl(metadata.audioUrl);
             setStep("audio");
@@ -1523,13 +1539,14 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
         } else if (job.status === 'failed') {
           clearInterval(pollInterval);
           setIsGeneratingAudio(false);
+          setAudioJobProgress(null);
           setAudioJobId(null);
           toast.error(job.error_message || "Erreur lors de la génération audio");
         }
       } catch (err) {
         console.error("Audio polling error:", err);
       }
-    }, 3000);
+    }, 2000);
 
     return () => clearInterval(pollInterval);
   }, [audioJobId, isGeneratingAudio]);
@@ -3168,24 +3185,41 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                         </>
                       )}
 
-                      <Button 
-                        onClick={() => setConfirmGenerateAudioOpen(true)} 
-                        disabled={isGeneratingAudio || !generatedScript.trim()}
-                        className="w-full"
-                        size="lg"
-                      >
-                        {isGeneratingAudio ? (
-                          <>
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            Génération audio...
-                          </>
-                        ) : (
-                          <>
-                            <Mic className="mr-2 h-4 w-4" />
-                            Générer l'audio avec {ttsProvider === "inworld" ? "Inworld" : ttsProvider === "genaipro" ? "ElevenLabs" : ttsProvider === "edgetts_rvc" ? "EdgeTTS + RVC" : "MiniMax"}
-                          </>
-                        )}
-                      </Button>
+                      {isGeneratingAudio && audioJobProgress ? (
+                        <Card className="p-4 border-primary/20 bg-primary/5 space-y-3">
+                          <div className="flex items-center gap-2">
+                            <Loader2 className="h-4 w-4 text-primary animate-spin flex-shrink-0" />
+                            <span className="text-sm font-medium">Génération audio</span>
+                            {audioJobProgress.total > 0 && (
+                              <span className="text-xs text-muted-foreground ml-auto">
+                                {audioJobProgress.progress}/{audioJobProgress.total}
+                              </span>
+                            )}
+                          </div>
+                          {audioJobProgress.total > 0 && (
+                            <Progress
+                              value={Math.min(100, (audioJobProgress.progress / audioJobProgress.total) * 100)}
+                              className="h-2"
+                            />
+                          )}
+                          <p className="text-xs text-muted-foreground">
+                            {audioJobProgress.currentStep}
+                          </p>
+                          <p className="text-xs text-muted-foreground/60">
+                            Vous pouvez quitter cette page, l'audio sera sauvegardé.
+                          </p>
+                        </Card>
+                      ) : (
+                        <Button 
+                          onClick={() => setConfirmGenerateAudioOpen(true)} 
+                          disabled={isGeneratingAudio || !generatedScript.trim()}
+                          className="w-full"
+                          size="lg"
+                        >
+                          <Mic className="mr-2 h-4 w-4" />
+                          Générer l'audio avec {ttsProvider === "inworld" ? "Inworld" : ttsProvider === "genaipro" ? "ElevenLabs" : ttsProvider === "edgetts_rvc" ? "EdgeTTS + RVC" : "MiniMax"}
+                        </Button>
+                      )}
 
                       <AlertDialog open={confirmGenerateAudioOpen} onOpenChange={setConfirmGenerateAudioOpen}>
                         <AlertDialogContent>

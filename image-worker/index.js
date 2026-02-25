@@ -2520,7 +2520,7 @@ async function processEdgeTTSRVCPipeline(job) {
 
     await supabase
       .from('generation_jobs')
-      .update({ total: chunks.length + 1, progress: 0, metadata: { ...meta, totalChunks: chunks.length } })
+      .update({ total: chunks.length + 2, progress: 0, current_step: `Découpage en ${chunks.length} chunks...`, metadata: { ...meta, totalChunks: chunks.length, step: 'chunking' } })
       .eq('id', jobId);
 
     // Step 2: Generate EdgeTTS chunks in parallel (max 3 workers)
@@ -2560,7 +2560,7 @@ async function processEdgeTTSRVCPipeline(job) {
       completedCount++;
       await supabase
         .from('generation_jobs')
-        .update({ progress: completedCount, metadata: { ...meta, totalChunks: chunks.length, completedChunks: completedCount } })
+        .update({ progress: completedCount, current_step: `Génération EdgeTTS ${completedCount}/${chunks.length}...`, metadata: { ...meta, totalChunks: chunks.length, completedChunks: completedCount, step: 'edgetts' } })
         .eq('id', jobId);
     }
 
@@ -2577,6 +2577,11 @@ async function processEdgeTTSRVCPipeline(job) {
     await Promise.all(workers);
 
     log(`[EdgeTTS+RVC ${jobId}] All ${chunks.length} chunks done. Concatenating...`);
+
+    await supabase
+      .from('generation_jobs')
+      .update({ progress: chunks.length, current_step: 'Concaténation audio...', metadata: { ...meta, totalChunks: chunks.length, completedChunks: chunks.length, step: 'concat' } })
+      .eq('id', jobId);
 
     // Step 3: Concat chunks
     const CONCAT_MAX_RETRIES = 3;
@@ -2612,6 +2617,10 @@ async function processEdgeTTSRVCPipeline(job) {
     log(`[EdgeTTS+RVC ${jobId}] Concat done: ${concatenatedUrl} (${concatResult.totalDuration?.toFixed(1)}s)`);
 
     // Step 4: Send to RunPod RVC Serverless
+    await supabase
+      .from('generation_jobs')
+      .update({ progress: chunks.length + 1, current_step: 'Conversion de voix (RVC) en cours...', metadata: { ...meta, totalChunks: chunks.length, step: 'rvc_processing' } })
+      .eq('id', jobId);
     log(`[EdgeTTS+RVC ${jobId}] Sending to RunPod RVC (endpoint: ${runpodRvcEndpointId})...`);
     const runpodRes = await fetch(`https://api.runpod.ai/v2/${runpodRvcEndpointId}/run`, {
       method: 'POST',
@@ -2645,7 +2654,7 @@ async function processEdgeTTSRVCPipeline(job) {
 
     await supabase
       .from('generation_jobs')
-      .update({ metadata: { ...meta, totalChunks: chunks.length, runpodJobId, step: 'rvc_processing' } })
+      .update({ metadata: { ...meta, totalChunks: chunks.length, runpodJobId, step: 'rvc_processing' }, current_step: 'Conversion de voix (RVC) en cours...' })
       .eq('id', jobId);
 
     // Step 5: Poll RunPod for result (max 10 min)
@@ -2697,7 +2706,8 @@ async function processEdgeTTSRVCPipeline(job) {
       .from('generation_jobs')
       .update({
         status: 'completed',
-        progress: chunks.length + 1,
+        progress: chunks.length + 2,
+        current_step: 'Terminé !',
         completed_at: new Date().toISOString(),
         metadata: {
           ...meta,
