@@ -16,7 +16,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Loader2, Plus, Trash2, Pencil, Check, X, Cloud, Calendar, LayoutGrid, LayoutList } from "lucide-react";
+import { Loader2, Plus, Trash2, Pencil, Check, X, Cloud, Calendar, LayoutGrid, LayoutList, ChevronLeft, ChevronRight } from "lucide-react";
 import AppHeader from "@/components/AppHeader";
 import { toast } from "sonner";
 import type { User } from "@supabase/supabase-js";
@@ -80,12 +80,28 @@ const Projects = () => {
   const [viewMode, setViewMode] = useState<"list" | "grid">(() => {
     return (localStorage.getItem("projects_view_mode") as "list" | "grid") || "list";
   });
+  const [pageSize, setPageSize] = useState<number>(() => {
+    const stored = localStorage.getItem("projects_page_size");
+    return stored ? parseInt(stored, 10) : 10;
+  });
+  const [currentPage, setCurrentPage] = useState(0);
 
   const toggleViewMode = () => {
     const next = viewMode === "list" ? "grid" : "list";
     setViewMode(next);
     localStorage.setItem("projects_view_mode", next);
   };
+
+  const handlePageSizeChange = (size: number) => {
+    setPageSize(size);
+    setCurrentPage(0);
+    localStorage.setItem("projects_page_size", String(size));
+  };
+
+  const totalPages = pageSize === 0 ? 1 : Math.ceil(projects.length / pageSize);
+  const paginatedProjects = pageSize === 0
+    ? projects
+    : projects.slice(currentPage * pageSize, (currentPage + 1) * pageSize);
 
   useEffect(() => {
     document.title = "Projets";
@@ -1292,7 +1308,23 @@ const Projects = () => {
           </div>
 
         {!isLoading && projects.length > 0 && (
-          <div className="flex justify-end max-w-6xl mx-auto mb-4">
+          <div className="flex items-center justify-between max-w-6xl mx-auto mb-4">
+            <div className="flex items-center gap-1 text-xs text-muted-foreground">
+              <span>Afficher</span>
+              {[10, 25, 50, 0].map((size) => (
+                <button
+                  key={size}
+                  onClick={() => handlePageSizeChange(size)}
+                  className={`px-2 py-1 rounded transition-colors ${
+                    pageSize === size
+                      ? "bg-primary text-primary-foreground font-medium"
+                      : "hover:bg-muted"
+                  }`}
+                >
+                  {size === 0 ? "Tout" : size}
+                </button>
+              ))}
+            </div>
             <Button
               variant="ghost"
               size="icon"
@@ -1333,7 +1365,7 @@ const Projects = () => {
                 <span></span>
               </div>
               <div className="flex flex-col gap-1">
-                {projects.map((project) => (
+                {paginatedProjects.map((project) => (
                   <Card
                     key={project.id}
                     className="group cursor-pointer hover:shadow-md transition-all duration-200 border hover:border-primary/50 bg-card/50 backdrop-blur"
@@ -1418,7 +1450,7 @@ const Projects = () => {
             </div>
           ) : (
             <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 max-w-6xl mx-auto">
-              {projects.map((project) => (
+              {paginatedProjects.map((project) => (
                 <Card
                   key={project.id}
                   className="group cursor-pointer hover:shadow-lg transition-all duration-300 hover:scale-105 border-2 hover:border-primary/50 bg-card/50 backdrop-blur"
@@ -1504,6 +1536,35 @@ const Projects = () => {
               ))}
             </div>
           )
+        )}
+
+        {!isLoading && projects.length > 0 && totalPages > 1 && (
+          <div className="flex items-center justify-center gap-4 mt-6 max-w-6xl mx-auto">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCurrentPage(p => Math.max(0, p - 1))}
+              disabled={currentPage === 0}
+            >
+              <ChevronLeft className="h-4 w-4 mr-1" />
+              Précédent
+            </Button>
+            <span className="text-sm text-muted-foreground">
+              {currentPage + 1} / {totalPages}
+              <span className="ml-2 text-xs text-muted-foreground/60">
+                ({projects.length} projets)
+              </span>
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCurrentPage(p => Math.min(totalPages - 1, p + 1))}
+              disabled={currentPage >= totalPages - 1}
+            >
+              Suivant
+              <ChevronRight className="h-4 w-4 ml-1" />
+            </Button>
+          </div>
         )}
 
         <OnboardingDialog
