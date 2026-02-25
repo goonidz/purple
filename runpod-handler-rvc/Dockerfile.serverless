@@ -14,6 +14,7 @@ RUN pip install --no-cache-dir \
     runpod Brotli \
     "numpy<2" scipy librosa soundfile httpx \
     faiss-cpu praat-parselmouth pyworld \
+    "av<12" \
     rvc-python
 
 # Verify brotli works (this is the pip version, no conda conflict)
