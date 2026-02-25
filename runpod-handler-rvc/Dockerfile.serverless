@@ -1,29 +1,40 @@
-# RunPod Serverless - RVC voice conversion
-# Using RunPod's pip-based PyTorch image (NOT conda) to avoid brotli/brotlipy conflict
+# RunPod Serverless - RVC voice conversion via Applio (headless)
+# pip-based PyTorch image to avoid conda brotli conflict
 
 FROM runpod/pytorch:2.1.0-py3.10-cuda11.8.0-devel-ubuntu22.04
 
-WORKDIR /workspace
-
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ffmpeg libsndfile1 \
+    ffmpeg libsndfile1 git \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip install --no-cache-dir \
-    runpod Brotli \
-    "numpy<2" scipy librosa soundfile httpx \
-    faiss-cpu praat-parselmouth pyworld \
-    "av<12" \
-    rvc-python
+# Clone Applio (inference engine only, no UI needed)
+RUN git clone --depth 1 https://github.com/IAHispano/Applio.git /workspace/applio
 
-# Verify brotli works (this is the pip version, no conda conflict)
+WORKDIR /workspace/applio
+
+# Install inference-only deps compatible with PyTorch 2.1 + CUDA 11.8
+# Skip: gradio, tensorboard, matplotlib, edge-tts, pypresence, sounddevice, webrtcvad
+RUN pip install --no-cache-dir \
+    runpod Brotli httpx \
+    "numpy<2" scipy librosa soundfile soxr \
+    noisereduce pedalboard stftpitchshift \
+    "faiss-cpu<1.9" numba \
+    torchcrepe torchfcpe einops \
+    "transformers>=4.30,<5" \
+    tqdm requests wget
+
+# Download prerequisite models at build time (contentvec embedder + rmvpe predictor)
+RUN python -c "\
+import os; os.chdir('/workspace/applio'); \
+from rvc.lib.tools.prerequisites_download import prequisites_download_pipeline; \
+prequisites_download_pipeline(pretraineds_hifigan=False, models=True, exe=False)"
+
+# Verify imports
+RUN python -c "from rvc.infer.infer import VoiceConverter; print('Applio VoiceConverter OK')"
 RUN python -c "import brotli; print('Brotli OK')"
 RUN python -c "import runpod; print('RunPod OK')"
-RUN python -c "import rvc_python; print('RVC OK')"
 
-COPY handler.py .
-
-ENV RMVPE_MODEL_PATH=/workspace/rmvpe.pt
+COPY handler.py /workspace/applio/handler.py
 
 CMD ["python", "-u", "handler.py"]
