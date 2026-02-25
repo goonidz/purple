@@ -83,7 +83,9 @@ export default function Calendar() {
     const { data, error } = await supabase
       .from("content_calendar")
       .select(`
-        *,
+        id, user_id, title, scheduled_date, status,
+        project_id, youtube_url, channel_id,
+        created_at, updated_at,
         channel:channels(id, name, color)
       `)
       .eq("user_id", user.id)
