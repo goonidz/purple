@@ -115,9 +115,15 @@ def run_rvc_inference(
     log.info(f"Running RVC via rvc-python (pitch={pitch}, indexRate={index_rate}, device={device})")
 
     rvc = RVCInference(device=device)
-    rvc.load_model(str(model_path), version="v2")
-    if index_path:
-        rvc.models[rvc.current_model]["index"] = str(index_path)
+
+    model_name = "custom"
+    rvc.models[model_name] = {
+        "pth": str(model_path),
+        "index": str(index_path) if index_path else "",
+    }
+    rvc.vc.get_vc(str(model_path), "v2")
+    rvc.current_model = model_name
+
     rvc.set_params(
         f0up_key=pitch,
         f0method="rmvpe",
