@@ -763,6 +763,15 @@ const CreateFromScratch = () => {
         if (typeof extras.style === "number") setGenaiproStyle(extras.style);
         if (typeof extras.speakerBoost === "boolean") setGenaiproSpeakerBoost(extras.speakerBoost);
       } catch { /* not JSON, ignore */ }
+    } else if (preset.provider === "edgetts_rvc") {
+      setEdgeTTSVoice(preset.voice_id);
+      try {
+        const rvcData = preset.emotion ? JSON.parse(preset.emotion) : {};
+        if (rvcData.rvcModelUrl) setRvcModelUrl(rvcData.rvcModelUrl);
+        if (rvcData.rvcIndexUrl) setRvcIndexUrl(rvcData.rvcIndexUrl);
+        if (typeof rvcData.rvcPitch === "number") setRvcPitch(rvcData.rvcPitch);
+        if (typeof rvcData.rvcIndexRate === "number") setRvcIndexRate(rvcData.rvcIndexRate);
+      } catch { /* not JSON, ignore */ }
     } else {
       setSelectedVoice(preset.voice_id);
       if (preset.model) setMinimaxModel(preset.model);
