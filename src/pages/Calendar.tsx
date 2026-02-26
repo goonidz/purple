@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import type { User } from "@supabase/supabase-js";
 import { Button } from "@/components/ui/button";
-import { ChevronLeft, ChevronRight, Filter, Calendar as CalendarIcon, LayoutGrid } from "lucide-react";
+import { ChevronLeft, ChevronRight, ChevronDown, Filter, Calendar as CalendarIcon, LayoutGrid, Plus, Link2, Link2Off, Youtube, Check } from "lucide-react";
 import AppHeader from "@/components/AppHeader";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths } from "date-fns";
@@ -12,6 +12,8 @@ import { toast } from "sonner";
 import CalendarVideoModal from "@/components/CalendarVideoModal";
 import CalendarDayCell from "@/components/CalendarDayCell";
 import KanbanBoard from "@/components/KanbanBoard";
+import { cn } from "@/lib/utils";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface Channel {
   id: string;
@@ -34,6 +36,149 @@ interface ContentCalendarEntry {
   channel?: Channel | null;
   created_at: string;
   updated_at: string;
+}
+
+const defaultColors: Record<string, string> = {
+  incomplete: "bg-orange-500/20 text-orange-600 dark:text-orange-400 border-l-[3px] border-orange-500",
+  completed: "bg-green-500/20 text-green-600 dark:text-green-400 border-l-[3px] border-green-500",
+};
+
+function getEntryStyle(entry: ContentCalendarEntry): React.CSSProperties {
+  const isCompleted = entry.status === 'completed';
+  const channelColor = entry.channel?.color;
+  if (channelColor) {
+    return {
+      backgroundColor: `${channelColor}20`,
+      color: channelColor,
+      borderLeft: isCompleted ? '3px solid rgb(34 197 94)' : `3px solid ${channelColor}`,
+    };
+  }
+  return {};
+}
+
+function MobileDayCard({
+  date,
+  entries,
+  isToday,
+  onDayClick,
+  onEntryClick,
+}: {
+  date: Date;
+  entries: ContentCalendarEntry[];
+  isToday: boolean;
+  onDayClick: (date: Date) => void;
+  onEntryClick: (entry: ContentCalendarEntry) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const maxVisible = 3;
+  const hasMore = entries.length > maxVisible;
+  const visibleEntries = expanded ? entries : entries.slice(0, maxVisible);
+
+  const sortedEntries = [...visibleEntries].sort((a, b) => {
+    const aCompleted = a.status === 'completed';
+    const bCompleted = b.status === 'completed';
+    if (aCompleted !== bCompleted) return aCompleted ? -1 : 1;
+    const aColor = a.channel?.color || '#ffffff';
+    const bColor = b.channel?.color || '#ffffff';
+    return aColor.localeCompare(bColor);
+  });
+
+  return (
+    <div className={cn(
+      "bg-card rounded-lg border shadow-sm overflow-hidden",
+      isToday && "ring-2 ring-primary"
+    )}>
+      <div
+        className="flex items-center justify-between px-3 py-2 bg-muted/50 cursor-pointer"
+        onClick={() => onDayClick(date)}
+      >
+        <div className="flex items-center gap-2">
+          <span className={cn(
+            "text-sm font-semibold w-7 h-7 flex items-center justify-center rounded-full",
+            isToday && "bg-primary text-primary-foreground"
+          )}>
+            {format(date, "d")}
+          </span>
+          <span className="text-sm text-muted-foreground capitalize">
+            {format(date, "EEEE", { locale: fr })}
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          {entries.length > 0 && (
+            <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
+              {entries.length}
+            </span>
+          )}
+          <Plus className="h-4 w-4 text-muted-foreground" />
+        </div>
+      </div>
+
+      {sortedEntries.length > 0 && (
+        <div className="p-2 space-y-1.5">
+          {sortedEntries.map((entry) => {
+            const hasChannel = !!entry.channel?.name;
+            const isCompleted = entry.status === 'completed';
+            const entryStyle = getEntryStyle(entry);
+
+            return (
+              <div
+                key={entry.id}
+                className={cn(
+                  "text-sm p-2.5 rounded-md flex items-center gap-2 active:scale-[0.98] transition-transform",
+                  !hasChannel && (isCompleted ? defaultColors.completed : defaultColors.incomplete)
+                )}
+                style={hasChannel ? entryStyle : undefined}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onEntryClick(entry);
+                }}
+              >
+                {isCompleted && <Check className="h-3.5 w-3.5 flex-shrink-0 text-green-600" />}
+                {entry.youtube_url && <Youtube className="h-3.5 w-3.5 flex-shrink-0 text-red-500" />}
+                {entry.project_id ? (
+                  <Link2 className="h-3.5 w-3.5 flex-shrink-0 text-blue-500" />
+                ) : (
+                  <Link2Off className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground/50" />
+                )}
+                {hasChannel && (
+                  <div
+                    className="h-2.5 w-2.5 rounded-full flex-shrink-0"
+                    style={{ backgroundColor: entry.channel!.color }}
+                  />
+                )}
+                <span className="truncate flex-1">{entry.title}</span>
+              </div>
+            );
+          })}
+
+          {hasMore && !expanded && (
+            <button
+              className="w-full text-xs text-muted-foreground flex items-center justify-center gap-1 py-1.5 hover:text-primary transition-colors"
+              onClick={(e) => {
+                e.stopPropagation();
+                setExpanded(true);
+              }}
+            >
+              <ChevronDown className="h-3 w-3" />
+              Voir {entries.length - maxVisible} de plus
+            </button>
+          )}
+          {expanded && hasMore && (
+            <button
+              className="w-full text-xs text-muted-foreground flex items-center justify-center gap-1 py-1.5 hover:text-primary transition-colors"
+              onClick={(e) => {
+                e.stopPropagation();
+                setExpanded(false);
+              }}
+            >
+              <ChevronDown className="h-3 w-3 rotate-180" />
+              Réduire
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function Calendar() {
@@ -306,54 +451,54 @@ export default function Calendar() {
 
       <main className={`${viewMode === 'kanban' ? 'max-w-[98%] mx-auto px-4' : 'max-w-7xl mx-auto px-4 sm:px-6 lg:px-8'} py-6`}>
         {/* Calendar Controls */}
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-4">
-            <h1 className="text-2xl font-bold capitalize">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
+          <div className="flex items-center gap-3">
+            <h1 className="text-xl sm:text-2xl font-bold capitalize">
               {viewMode === 'calendar' ? format(currentMonth, "MMMM yyyy", { locale: fr }) : "Vue Kanban"}
             </h1>
             {viewMode === 'calendar' && (
               <div className="flex items-center gap-1">
-                <Button variant="outline" size="icon" onClick={handlePrevMonth}>
+                <Button variant="outline" size="icon" className="h-8 w-8 sm:h-9 sm:w-9" onClick={handlePrevMonth}>
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
-                <Button variant="outline" size="sm" onClick={handleToday}>
+                <Button variant="outline" size="sm" className="text-xs sm:text-sm" onClick={handleToday}>
                   Aujourd'hui
                 </Button>
-                <Button variant="outline" size="icon" onClick={handleNextMonth}>
+                <Button variant="outline" size="icon" className="h-8 w-8 sm:h-9 sm:w-9" onClick={handleNextMonth}>
                   <ChevronRight className="h-4 w-4" />
                 </Button>
               </div>
             )}
           </div>
           
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 sm:gap-4">
             {/* View Toggle */}
             <div className="flex items-center gap-1 bg-muted p-1 rounded-lg">
               <Button
                 variant={viewMode === 'calendar' ? 'default' : 'ghost'}
                 size="sm"
                 onClick={() => setViewMode('calendar')}
-                className="gap-2"
+                className="gap-1 sm:gap-2 text-xs sm:text-sm px-2 sm:px-3"
               >
                 <CalendarIcon className="h-4 w-4" />
-                Calendrier
+                <span className="hidden sm:inline">Calendrier</span>
               </Button>
               <Button
                 variant={viewMode === 'kanban' ? 'default' : 'ghost'}
                 size="sm"
                 onClick={() => setViewMode('kanban')}
-                className="gap-2"
+                className="gap-1 sm:gap-2 text-xs sm:text-sm px-2 sm:px-3"
               >
                 <LayoutGrid className="h-4 w-4" />
-                Kanban
+                <span className="hidden sm:inline">Kanban</span>
               </Button>
             </div>
 
             {/* Channel Filter */}
             <div className="flex items-center gap-2">
-              <Filter className="h-4 w-4 text-muted-foreground" />
+              <Filter className="h-4 w-4 text-muted-foreground hidden sm:block" />
               <Select value={selectedChannelId} onValueChange={setSelectedChannelId}>
-                <SelectTrigger className="w-[180px]">
+                <SelectTrigger className="w-[140px] sm:w-[180px] text-xs sm:text-sm">
                   <SelectValue placeholder="Filtrer par chaîne" />
                 </SelectTrigger>
                 <SelectContent>
@@ -378,42 +523,72 @@ export default function Calendar() {
 
         {/* Calendar or Kanban View */}
         {viewMode === 'calendar' ? (
-          <div className="bg-card rounded-xl border shadow-sm overflow-hidden">
-            {/* Weekday Headers */}
-            <div className="grid grid-cols-7 border-b bg-muted/50">
-              {["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"].map((day) => (
-                <div key={day} className="py-3 text-center text-sm font-medium text-muted-foreground">
-                  {day}
+          <>
+            {/* Desktop: 7-column grid */}
+            <div className="hidden md:block bg-card rounded-xl border shadow-sm overflow-hidden">
+              {/* Weekday Headers */}
+              <div className="grid grid-cols-7 border-b bg-muted/50">
+                {["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"].map((day) => (
+                  <div key={day} className="py-3 text-center text-sm font-medium text-muted-foreground">
+                    {day}
+                  </div>
+                ))}
+              </div>
+
+              {/* Calendar Days */}
+              <div className="grid grid-cols-7">
+                {/* Empty cells for days before month starts */}
+                {Array.from({ length: adjustedStartDay }).map((_, index) => (
+                  <div key={`empty-${index}`} className="min-h-[120px] border-b border-r bg-muted/20" />
+                ))}
+
+                {/* Days of the month */}
+                {daysInMonth.map((day) => (
+                  <CalendarDayCell
+                    key={day.toISOString()}
+                    date={day}
+                    entries={getEntriesForDay(day)}
+                    isToday={isSameDay(day, new Date())}
+                    onDayClick={handleDayClick}
+                    onEntryClick={handleEntryClick}
+                    onEntryDrop={handleEntryDrop}
+                  />
+                ))}
+
+                {/* Empty cells to complete the grid */}
+                {Array.from({ length: (7 - ((adjustedStartDay + daysInMonth.length) % 7)) % 7 }).map((_, index) => (
+                  <div key={`empty-end-${index}`} className="min-h-[120px] border-b border-r bg-muted/20" />
+                ))}
+              </div>
+            </div>
+
+            {/* Mobile: vertical day-by-day list */}
+            <div className="md:hidden space-y-2">
+              {daysInMonth.map((day) => {
+                const dayEntries = getEntriesForDay(day);
+                const hasEntries = dayEntries.length > 0;
+                const isToday = isSameDay(day, new Date());
+                
+                if (!hasEntries && !isToday) return null;
+
+                return (
+                  <MobileDayCard
+                    key={day.toISOString()}
+                    date={day}
+                    entries={dayEntries}
+                    isToday={isToday}
+                    onDayClick={handleDayClick}
+                    onEntryClick={handleEntryClick}
+                  />
+                );
+              })}
+              {daysInMonth.every((day) => getEntriesForDay(day).length === 0) && (
+                <div className="text-center text-muted-foreground py-12">
+                  Aucune vidéo planifiée ce mois-ci
                 </div>
-              ))}
+              )}
             </div>
-
-            {/* Calendar Days */}
-            <div className="grid grid-cols-7">
-              {/* Empty cells for days before month starts */}
-              {Array.from({ length: adjustedStartDay }).map((_, index) => (
-                <div key={`empty-${index}`} className="min-h-[120px] border-b border-r bg-muted/20" />
-              ))}
-
-              {/* Days of the month */}
-              {daysInMonth.map((day) => (
-                <CalendarDayCell
-                  key={day.toISOString()}
-                  date={day}
-                  entries={getEntriesForDay(day)}
-                  isToday={isSameDay(day, new Date())}
-                  onDayClick={handleDayClick}
-                  onEntryClick={handleEntryClick}
-                  onEntryDrop={handleEntryDrop}
-                />
-              ))}
-
-              {/* Empty cells to complete the grid */}
-              {Array.from({ length: (7 - ((adjustedStartDay + daysInMonth.length) % 7)) % 7 }).map((_, index) => (
-                <div key={`empty-end-${index}`} className="min-h-[120px] border-b border-r bg-muted/20" />
-              ))}
-            </div>
-          </div>
+          </>
         ) : (
           <KanbanBoard
             entries={getFilteredEntries()}
