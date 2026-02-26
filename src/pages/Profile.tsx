@@ -219,9 +219,16 @@ const Profile = () => {
 
     setIsSaving(true);
     try {
-      // Only store changed keys
-      const promises = changedKeys
-        .filter(k => k.key_value) // Only non-empty values
+      // Delete existing vault secrets first to avoid unique constraint violation
+      const keysWithValues = changedKeys.filter(k => k.key_value);
+      const keysToDelete = keysWithValues.filter(k => originalKeys[k.key_name as keyof typeof originalKeys]);
+      if (keysToDelete.length > 0) {
+        await Promise.all(
+          keysToDelete.map(k => supabase.rpc('delete_user_api_key', { key_name: k.key_name }))
+        );
+      }
+
+      const promises = keysWithValues
         .map(k => supabase.rpc('store_user_api_key', k));
 
       const results = await Promise.all(promises);
