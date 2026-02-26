@@ -579,7 +579,9 @@ RÈGLE CRITIQUE SUR LA LONGUEUR:
 
     if (isGlm5) {
       // ── Z.AI GLM-5 path ──
+      const trimmedZaiKey = (zaiApiKey || '').trim();
       console.log(`[generate-script] [${jobId}] Starting script generation with Z.AI GLM-5`);
+      console.log(`[generate-script] [${jobId}] Z.AI key: length=${trimmedZaiKey.length}, starts="${trimmedZaiKey.substring(0, 6)}...", ends="...${trimmedZaiKey.substring(trimmedZaiKey.length - 6)}"`);
       console.log(`[generate-script] [${jobId}] Prompt length: ${String(customPrompt || '').length} characters`);
 
       const zaiWebSearchTool = buildZaiWebSearchTool(webSearch);
@@ -615,7 +617,7 @@ RÈGLE CRITIQUE SUR LA LONGUEUR:
       const zaiResponse = await axios.post('https://api.z.ai/api/paas/v4/chat/completions', requestBody, {
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${zaiApiKey}`,
+          'Authorization': `Bearer ${trimmedZaiKey}`,
         },
         timeout: 600000,
       });
@@ -739,12 +741,13 @@ RÈGLE CRITIQUE SUR LA LONGUEUR:
   } catch (error) {
     console.error('[generate-script] Error:', error.response?.data || error.message);
     const errorMessage = error.response?.data?.error?.message || error.message;
+    const prefix = isGlm5 ? 'Z.AI API error' : 'Anthropic API error';
     jobs.set(jobId, {
       ...jobs.get(jobId),
       status: 'failed',
       progress: 100,
       currentStep: 'Erreur',
-      error: `Anthropic API error: ${errorMessage}`,
+      error: `${prefix}: ${errorMessage}`,
       failedAt: new Date().toISOString(),
     });
     scheduleJobEviction(jobId, 2 * 60 * 60 * 1000);
@@ -2631,7 +2634,9 @@ RÈGLE CRITIQUE SUR LA LONGUEUR:
 
     if (isGlm5) {
       // ── Z.AI GLM-5 sync path ──
+      const trimmedZaiKey = (zaiApiKey || '').trim();
       console.log(`[generate-script] Starting script generation with Z.AI GLM-5`);
+      console.log(`[generate-script] Z.AI key: length=${trimmedZaiKey.length}, starts="${trimmedZaiKey.substring(0, 6)}..."`);
 
       const requestBody = {
         model: 'glm-5',
@@ -2653,7 +2658,7 @@ RÈGLE CRITIQUE SUR LA LONGUEUR:
       const zaiResponse = await axios.post('https://api.z.ai/api/paas/v4/chat/completions', requestBody, {
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${zaiApiKey}`,
+          'Authorization': `Bearer ${trimmedZaiKey}`,
         },
         timeout: 600000,
       });
