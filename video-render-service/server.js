@@ -779,7 +779,21 @@ CRITICAL CONTINUITY RULES:
 - ${partIndex > 0 ? 'Continue EXACTLY where the previous text stops. Your first sentence must flow naturally from the last sentence of the previous part. Do NOT re-introduce the topic, do NOT summarize what came before.' : 'This is the opening of the script.'}
 - ${isLastPart ? 'This is the FINAL part. You may write a conclusion.' : 'Do NOT write any conclusion, cliffhanger, moral, or "next time" teaser. Do NOT wrap up your section. Simply STOP writing when you have covered the content for this segment — the script continues after you.'}
 - Do NOT repeat key phrases, slogans, thesis statements, or recurring sentences that already appear in the previous parts. Find fresh ways to express ideas.
-- This is ONE continuous script, not separate episodes. The reader must not be able to tell where one writing segment ends and another begins.`;
+- Do NOT restate the main thesis. It was already established — the reader remembers it.
+- This is ONE continuous script, not separate episodes. The reader must not be able to tell where one writing segment ends and another begins.
+
+FORBIDDEN PATTERNS (do NOT use these or similar phrases):
+- "But that is a story for the next part"
+- "But I am getting ahead of myself"
+- "Let me be clear"
+- "Here is where it gets interesting"
+- "Now here is the thing"
+- "Why does this matter?"
+- "Let me tell you about"
+- Any variation of "next time / next part / next episode" (unless this is the FINAL part)
+- Any variation of restating the main thesis or tagline of the script
+
+STRICT LANGUAGE RULE: You MUST NOT output any Chinese/CJK characters, Cyrillic, Arabic, or any non-Latin script characters — unless the client brief is written in that script. Zero tolerance.`;
 
   let contextBlock = `ORIGINAL CLIENT BRIEF:
 ---
