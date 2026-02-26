@@ -1107,6 +1107,35 @@ const CreateFromScratch = () => {
     const pollInterval = setInterval(async () => {
       try {
         const resp = await fetch(`${VPS_URL}/generate-script/status/${vpsScriptJobId}`);
+        if (resp.status === 404) {
+          // Job lost (server restarted). Check if script was saved to Supabase before the crash.
+          clearInterval(pollInterval);
+          if (projectId) {
+            const { data: projectData } = await supabase
+              .from("projects")
+              .select("summary")
+              .eq("id", projectId)
+              .single();
+            if (projectData?.summary && projectData.summary.length > 100) {
+              setGeneratedScript(projectData.summary);
+              setWordCount(projectData.summary.split(/\s+/).length);
+              setEstimatedDuration(Math.round(projectData.summary.split(/\s+/).length / 2.5));
+              setIsGeneratingScript(false);
+              setGenerationProgress(100);
+              setGenerationMessage("Script récupéré !");
+              toast.success("Script récupéré depuis la sauvegarde.");
+            } else {
+              setIsGeneratingScript(false);
+              toast.error("La génération a été interrompue (redémarrage serveur). Veuillez relancer.");
+            }
+            localStorage.removeItem(`vps_script_job_${projectId}`);
+          } else {
+            setIsGeneratingScript(false);
+            toast.error("La génération a été interrompue. Veuillez relancer.");
+          }
+          setVpsScriptJobId(null);
+          return;
+        }
         if (!resp.ok) return;
         const data = await resp.json().catch(() => null);
         if (!data?.success) return;
