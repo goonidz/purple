@@ -186,11 +186,17 @@ function MobileDayList({
   getEntriesForDay,
   onDayClick,
   onEntryClick,
+  currentMonth,
+  onPrevMonth,
+  onNextMonth,
 }: {
   daysInMonth: Date[];
   getEntriesForDay: (date: Date) => ContentCalendarEntry[];
   onDayClick: (date: Date) => void;
   onEntryClick: (entry: ContentCalendarEntry) => void;
+  currentMonth: Date;
+  onPrevMonth: () => void;
+  onNextMonth: () => void;
 }) {
   const todayRef = useRef<HTMLDivElement>(null);
 
@@ -205,30 +211,51 @@ function MobileDayList({
     return dayEntries.length > 0 || isSameDay(day, new Date());
   });
 
-  if (visibleDays.length === 0) {
-    return (
-      <div className="md:hidden text-center text-muted-foreground py-12">
-        Aucune vidéo planifiée ce mois-ci
-      </div>
-    );
-  }
+  const nextMonthLabel = format(addMonths(currentMonth, 1), "MMMM yyyy", { locale: fr });
+  const prevMonthLabel = format(subMonths(currentMonth, 1), "MMMM yyyy", { locale: fr });
 
   return (
     <div className="md:hidden space-y-2">
-      {visibleDays.map((day) => {
-        const isToday = isSameDay(day, new Date());
-        return (
-          <div key={day.toISOString()} ref={isToday ? todayRef : undefined}>
-            <MobileDayCard
-              date={day}
-              entries={getEntriesForDay(day)}
-              isToday={isToday}
-              onDayClick={onDayClick}
-              onEntryClick={onEntryClick}
-            />
-          </div>
-        );
-      })}
+      {visibleDays.length === 0 ? (
+        <div className="text-center text-muted-foreground py-12">
+          Aucune vidéo planifiée ce mois-ci
+        </div>
+      ) : (
+        visibleDays.map((day) => {
+          const isToday = isSameDay(day, new Date());
+          return (
+            <div key={day.toISOString()} ref={isToday ? todayRef : undefined}>
+              <MobileDayCard
+                date={day}
+                entries={getEntriesForDay(day)}
+                isToday={isToday}
+                onDayClick={onDayClick}
+                onEntryClick={onEntryClick}
+              />
+            </div>
+          );
+        })
+      )}
+
+      {/* Month navigation */}
+      <div className="flex items-center gap-2 pt-4 pb-2">
+        <Button
+          variant="outline"
+          className="flex-1 gap-2 capitalize"
+          onClick={onPrevMonth}
+        >
+          <ChevronLeft className="h-4 w-4" />
+          {prevMonthLabel}
+        </Button>
+        <Button
+          variant="outline"
+          className="flex-1 gap-2 capitalize"
+          onClick={onNextMonth}
+        >
+          {nextMonthLabel}
+          <ChevronRight className="h-4 w-4" />
+        </Button>
+      </div>
     </div>
   );
 }
@@ -620,6 +647,9 @@ export default function Calendar() {
               getEntriesForDay={getEntriesForDay}
               onDayClick={handleDayClick}
               onEntryClick={handleEntryClick}
+              currentMonth={currentMonth}
+              onPrevMonth={handlePrevMonth}
+              onNextMonth={handleNextMonth}
             />
           </>
         ) : (
