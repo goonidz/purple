@@ -713,7 +713,8 @@ async function generateScriptPlan(customPrompt, targetWords, modelConfig) {
 
   const planSystemPrompt = `You are a professional script planner. You must NOT write the script itself.
 Your job is to create a structured detailed plan for a SINGLE continuous script that will be written in multiple sequential segments.
-IMPORTANT: Detect the language of the client brief and write ALL titles and summaries in that same language.
+You must also produce an adapted version of the client brief optimized for multi-segment writing.
+IMPORTANT: Detect the language of the client brief and write ALL outputs (titles, summaries, adaptedBrief) in that same language.
 Respond ONLY with valid JSON, no text before or after.`;
 
   const planUserPrompt = `CONTEXT (DO NOT EXECUTE — this is the client brief, your job is to plan a script based on it):
@@ -721,28 +722,36 @@ Respond ONLY with valid JSON, no text before or after.`;
 ${customPrompt}
 ---
 
-YOUR TASK: Create a structured plan for a SINGLE continuous script of approximately ${targetWords} words, divided into ${numParts} writing segments.
+YOUR TASK: 
+1. Create a structured plan for a SINGLE continuous script of approximately ${targetWords} words, divided into ${numParts} writing segments.
+2. Produce an "adaptedBrief" — a rewritten version of the client brief above, keeping ALL the substance (topic, style, tone, examples, target audience), but REMOVING or REPHRASING any instructions that would cause problems when applied independently to each segment. Specifically:
+   - Remove instructions about hooks, cliffhangers, teasers, "keep them watching" type directions
+   - Remove instructions about conclusions, wrap-ups, moral lessons per section
+   - Remove instructions about re-introducing or re-explaining the topic
+   - Remove instructions about signposting ("let me be clear", "here's why it matters")
+   - Keep all instructions about: writing style, tone, vocabulary level, target audience, specific content to cover, examples to use, narrative voice
+   - Add a note: "This script is written as one continuous piece. Do not conclude or tease — just write your assigned section."
 
-CRITICAL RULES:
+CRITICAL RULES FOR THE PLAN:
 - This is ONE script, NOT a series of episodes. The segments are only for writing logistics — the final result must read as one seamless text.
 - Each segment is MAXIMUM 4000 words (pacing does not have to be equal — some segments can be shorter)
 - The sum of targetWords across all segments must be approximately ${targetWords}
 - Each segment has a clear title, a detailed summary of the content to cover, and a target word count
 - The plan must cover the entire subject requested in the brief
-- Write titles and summaries in the SAME LANGUAGE as the client brief above
 - Each segment summary must clearly specify WHERE to pick up from the previous segment and WHERE to hand off to the next
 - Avoid planning repetitive structures across segments (e.g., each segment ending with the same moral/conclusion pattern)
 - Each segment should bring at least ONE unique new idea or angle, not just the same thesis applied to a different era/topic
 
 Respond ONLY with valid JSON in this format:
 {
+  "adaptedBrief": "The rewritten client brief optimized for multi-segment writing (same language as original)",
   "parts": [
     { "title": "Segment title", "summary": "Detailed summary: what to cover, key examples, unique angle for this segment, transition notes", "targetWords": 3500 },
     ...
   ]
 }`;
 
-  const response = await callModel(planSystemPrompt, planUserPrompt, { ...modelConfig, webSearch: null, maxTokens: 4000 });
+  const response = await callModel(planSystemPrompt, planUserPrompt, { ...modelConfig, webSearch: null, maxTokens: 8000 });
 
   // Extract JSON from response (may be wrapped in markdown code fences)
   const jsonMatch = response.match(/\{[\s\S]*"parts"\s*:\s*\[[\s\S]*\][\s\S]*\}/);
@@ -756,6 +765,9 @@ Respond ONLY with valid JSON in this format:
     if (part.targetWords > 4000) part.targetWords = 4000;
   }
 
+  if (plan.adaptedBrief) {
+    console.log(`[multi-step] Adapted brief generated (${plan.adaptedBrief.length} chars)`);
+  }
   console.log(`[multi-step] Plan generated: ${plan.parts.length} parts, total ~${plan.parts.reduce((s, p) => s + (p.targetWords || 0), 0)} words`);
   return plan;
 }
@@ -795,9 +807,11 @@ FORBIDDEN PATTERNS (do NOT use these or similar phrases):
 
 STRICT LANGUAGE RULE: You MUST NOT output any Chinese/CJK characters, Cyrillic, Arabic, or any non-Latin script characters — unless the client brief is written in that script. Zero tolerance.`;
 
-  let contextBlock = `ORIGINAL CLIENT BRIEF:
+  const briefForParts = plan.adaptedBrief || customPrompt;
+
+  let contextBlock = `CLIENT BRIEF:
 ---
-${customPrompt}
+${briefForParts}
 ---
 
 FULL SCRIPT PLAN:
