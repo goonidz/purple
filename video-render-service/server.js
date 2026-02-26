@@ -617,12 +617,13 @@ async function callModel(sysPrompt, userPrompt, modelConfig) {
 // ============================================================================
 
 async function callOpenRouter(sysPrompt, userPrompt, config) {
-  const { apiKey, maxTokens = 16000, openRouterModel = 'zhipu/glm-5' } = config;
+  const { apiKey, maxTokens = 16000, openRouterModel = 'z-ai/glm-5' } = config;
   const trimmedKey = (apiKey || '').trim();
 
   const requestBody = {
     model: openRouterModel,
     max_tokens: maxTokens,
+    reasoning: { effort: 'high' },
     messages: [
       { role: 'system', content: sysPrompt },
       { role: 'user', content: userPrompt },
