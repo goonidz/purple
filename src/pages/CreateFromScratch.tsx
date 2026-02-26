@@ -1161,8 +1161,9 @@ const CreateFromScratch = () => {
       if (saved && !vpsScriptJobId) {
         setIsGeneratingScript(true);
         setGenerationProgress(10);
-        setGenerationMessage("Génération du script en cours...");
+        setGenerationMessage("Reprise de la génération du script...");
         setVpsScriptJobId(saved);
+        setStep("script");
       }
     } catch (_) {}
     // eslint-disable-next-line react-hooks/exhaustive-deps

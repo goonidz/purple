@@ -947,6 +947,15 @@ const Index = () => {
 
       if (error) throw error;
 
+      // If a VPS script job is still running for this project, redirect back to the generation UI
+      try {
+        const activeJob = localStorage.getItem(`vps_script_job_${projectId}`);
+        if (activeJob) {
+          navigate(`/create-from-scratch?continue=${projectId}`);
+          return;
+        }
+      } catch (_) {}
+
       // Check if this is a "from scratch" project that needs to continue the workflow
       const hasScript = data.summary && data.summary.length > 100;
       const hasAudio = !!data.audio_url;
