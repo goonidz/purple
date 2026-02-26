@@ -2229,9 +2229,18 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                   {/* Model selector */}
                   <div className="space-y-2">
                     <Label>Modèle pour le script</Label>
-                    <Select value={scriptModel} onValueChange={(v) => setScriptModel(v as "claude" | "claude-thinking" | "gpt5" | "glm5")}>
+                    <Select value={scriptModel} onValueChange={(v) => {
+                      const val = v as "claude" | "claude-thinking" | "gpt5" | "glm5";
+                      setScriptModel(val);
+                      if (val === "glm5") setUseWebSearch(true);
+                    }}>
                       <SelectTrigger>
-                        <SelectValue />
+                        <SelectValue>
+                          {scriptModel === "claude" ? "Claude Sonnet 4.6" :
+                           scriptModel === "claude-thinking" ? "Claude Opus 4.5" :
+                           scriptModel === "glm5" ? "GLM-5 (Z.AI)" :
+                           "GPT-5.1"}
+                        </SelectValue>
                       </SelectTrigger>
                       <SelectContent className="min-w-[400px]">
                         <SelectItem value="claude">
