@@ -1305,7 +1305,7 @@ const Index = () => {
           lora_url: loraUrl || null,
           lora_steps: loraSteps,
           style_reference_url: serializeStyleReferenceUrls(styleReferenceUrls),
-          audio_url: audioUrl || null,
+          ...(audioUrl ? { audio_url: audioUrl } : {}),
           prompt_system_message: promptSystemMessage || null,
           image_search_prompt_system: imageSearchPromptSystem || null,
         })
