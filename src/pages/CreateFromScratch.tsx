@@ -238,7 +238,7 @@ const CreateFromScratch = () => {
   const [generationMessage, setGenerationMessage] = useState("");
   const [wordCount, setWordCount] = useState(0);
   const [estimatedDuration, setEstimatedDuration] = useState(0);
-  const [scriptModel, setScriptModel] = useState<"claude" | "claude-thinking" | "gpt5" | "glm5">("claude");
+  const [scriptModel, setScriptModel] = useState<"claude" | "claude-thinking" | "gpt5" | "glm5" | "glm5-openrouter">("claude");
   const [useOwnText, setUseOwnText] = useState(false);
   const [customScriptText, setCustomScriptText] = useState("");
   const [vpsScriptJobId, setVpsScriptJobId] = useState<string | null>(null);
@@ -494,11 +494,17 @@ const CreateFromScratch = () => {
     return () => subscription.unsubscribe();
   }, [navigate, searchParams]);
 
-  // Default to GLM-5 if user has a Z.AI API key configured
+  // Default to GLM-5 via OpenRouter (preferred) or Z.AI direct
   useEffect(() => {
     if (!user) return;
-    supabase.rpc("get_user_api_key", { key_name: "zai" }).then(({ data }) => {
-      if (data) {
+    Promise.all([
+      supabase.rpc("get_user_api_key", { key_name: "openrouter" }),
+      supabase.rpc("get_user_api_key", { key_name: "zai" }),
+    ]).then(([openrouterResult, zaiResult]) => {
+      if (openrouterResult.data) {
+        setScriptModel("glm5-openrouter");
+        setUseWebSearch(false);
+      } else if (zaiResult.data) {
         setScriptModel("glm5");
         setUseWebSearch(true);
       }
@@ -1354,6 +1360,58 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
 
           throw new Error("Pas de job ID reçu du VPS");
         }
+      }
+
+      // GLM-5 via OpenRouter
+      if (scriptModel === "glm5-openrouter") {
+        const { data: openrouterKeyData, error: openrouterKeyError } = await supabase.rpc("get_user_api_key", {
+          key_name: "openrouter",
+        });
+
+        if (openrouterKeyError || !openrouterKeyData) {
+          clearInterval(progressInterval);
+          setIsGeneratingScript(false);
+          toast.error("Clé API OpenRouter manquante. Configurez-la dans votre profil.");
+          return;
+        }
+
+        const VPS_URL = import.meta.env.VITE_VPS_URL || "https://purpleai.duckdns.org/api/render";
+
+        const response = await fetch(`${VPS_URL}/generate-script`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            openrouterApiKey: openrouterKeyData,
+            customPrompt: finalPrompt,
+            model: "glm-5",
+            provider: "openrouter",
+            async: true,
+            projectId: tempProject.id,
+            userId: user!.id,
+          }),
+        });
+
+        clearInterval(progressInterval);
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.error || `Erreur VPS: ${response.status}`);
+        }
+
+        const result = await response.json();
+        if (result?.jobId) {
+          setVpsScriptJobId(result.jobId);
+          try {
+            localStorage.setItem(`vps_script_job_${tempProject.id}`, result.jobId);
+          } catch (_) {}
+          setStep("script");
+          toast.info("Génération du script avec GLM-5 (OpenRouter) en cours... Vous pouvez quitter cette page.");
+          return;
+        }
+
+        throw new Error("Pas de job ID reçu du VPS");
       }
 
       // GLM-5: use VPS + Z.AI API direct
@@ -2241,19 +2299,35 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                   <div className="space-y-2">
                     <Label>Modèle pour le script</Label>
                     <Select value={scriptModel} onValueChange={(v) => {
-                      const val = v as "claude" | "claude-thinking" | "gpt5" | "glm5";
+                      const val = v as "claude" | "claude-thinking" | "gpt5" | "glm5" | "glm5-openrouter";
                       setScriptModel(val);
                       if (val === "glm5") setUseWebSearch(true);
+                      if (val === "glm5-openrouter") setUseWebSearch(false);
                     }}>
                       <SelectTrigger>
                         <SelectValue>
                           {scriptModel === "claude" ? "Claude Sonnet 4.6" :
                            scriptModel === "claude-thinking" ? "Claude Opus 4.5" :
-                           scriptModel === "glm5" ? "GLM-5 (Z.AI) (recommandé)" :
+                           scriptModel === "glm5-openrouter" ? "GLM-5 (OpenRouter) (recommandé)" :
+                           scriptModel === "glm5" ? "GLM-5 (Z.AI)" :
                            "GPT-5.1"}
                         </SelectValue>
                       </SelectTrigger>
                       <SelectContent className="min-w-[400px]">
+                        <SelectItem value="glm5-openrouter">
+                          <div className="flex flex-col">
+                            <span className="font-medium">GLM-5 (OpenRouter) (recommandé)</span>
+                            <span className="text-xs text-muted-foreground">Via OpenRouter (nécessite clé API OpenRouter)</span>
+                            <span className="text-xs text-primary mt-1 whitespace-normal break-words">✨ Deep thinking + limites élevées</span>
+                          </div>
+                        </SelectItem>
+                        <SelectItem value="glm5">
+                          <div className="flex flex-col">
+                            <span className="font-medium">GLM-5 (Z.AI)</span>
+                            <span className="text-xs text-muted-foreground">Via Z.AI API directe (nécessite clé API Z.AI)</span>
+                            <span className="text-xs text-primary mt-1 whitespace-normal break-words">✨ Deep thinking + recherche web</span>
+                          </div>
+                        </SelectItem>
                         <SelectItem value="claude">
                           <div className="flex flex-col">
                             <span className="font-medium">Claude Sonnet 4.6</span>
@@ -2268,13 +2342,6 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                             <span className="text-xs text-primary mt-1 whitespace-normal break-words">✨ Modèle premium - intelligence maximale</span>
                           </div>
                         </SelectItem>
-                        <SelectItem value="glm5">
-                          <div className="flex flex-col">
-                            <span className="font-medium">GLM-5 (Z.AI) (recommandé)</span>
-                            <span className="text-xs text-muted-foreground">Via Z.AI API directe (nécessite clé API Z.AI)</span>
-                            <span className="text-xs text-primary mt-1 whitespace-normal break-words">✨ Deep thinking activé + recherche web</span>
-                          </div>
-                        </SelectItem>
                         <SelectItem value="gpt5">
                           <div className="flex flex-col">
                             <span className="font-medium">GPT-5.1</span>
@@ -2285,8 +2352,8 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                     </Select>
                   </div>
 
-                  {/* Web search toggle (Claude + GLM-5) */}
-                  {scriptModel !== "gpt5" && (
+                  {/* Web search toggle (Claude + GLM-5 Z.AI only -- not available via OpenRouter) */}
+                  {scriptModel !== "gpt5" && scriptModel !== "glm5-openrouter" && (
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
                         <Label>Recherche web {scriptModel === "glm5" ? "(Z.AI)" : "(Anthropic)"}</Label>

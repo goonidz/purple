@@ -541,7 +541,11 @@ async function saveScriptToSupabase({ projectId, script, model, generationTime, 
 // ============================================================================
 
 async function callModel(sysPrompt, userPrompt, modelConfig) {
-  const { model, apiKey, isGlm5, webSearch, effort, maxTokens = 16000 } = modelConfig;
+  const { model, apiKey, isGlm5, isOpenRouter, webSearch, effort, maxTokens = 16000 } = modelConfig;
+
+  if (isOpenRouter) {
+    return callOpenRouter(sysPrompt, userPrompt, { apiKey, maxTokens });
+  }
 
   if (isGlm5) {
     const trimmedKey = (apiKey || '').trim();
@@ -604,6 +608,39 @@ async function callModel(sysPrompt, userPrompt, modelConfig) {
       .filter((block) => block.type === 'text')
       .map((block) => block.text)
       .join('\n\n');
+  }
+  return '';
+}
+
+// ============================================================================
+// OpenRouter API helper (OpenAI-compatible)
+// ============================================================================
+
+async function callOpenRouter(sysPrompt, userPrompt, config) {
+  const { apiKey, maxTokens = 16000, openRouterModel = 'zhipu/glm-5' } = config;
+  const trimmedKey = (apiKey || '').trim();
+
+  const requestBody = {
+    model: openRouterModel,
+    max_tokens: maxTokens,
+    messages: [
+      { role: 'system', content: sysPrompt },
+      { role: 'user', content: userPrompt },
+    ],
+  };
+
+  const resp = await axios.post('https://openrouter.ai/api/v1/chat/completions', requestBody, {
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${trimmedKey}`,
+      'HTTP-Referer': 'https://purpleai.duckdns.org',
+      'X-Title': 'VideoFlow',
+    },
+    timeout: 600000,
+  });
+
+  if (resp.data.choices && resp.data.choices.length > 0) {
+    return resp.data.choices[0].message?.content || '';
   }
   return '';
 }
@@ -760,8 +797,10 @@ async function processGenerateScriptJob(jobId, payload) {
   const {
     anthropicApiKey,
     zaiApiKey,
+    openrouterApiKey,
     customPrompt,
     model = 'claude-sonnet-4-6',
+    provider,
     thinkingBudgetTokens,
     effort,
     maxTokens,
@@ -770,7 +809,8 @@ async function processGenerateScriptJob(jobId, payload) {
     webSearch,
   } = payload || {};
 
-  const isGlm5 = model === 'glm-5';
+  const isOpenRouter = provider === 'openrouter';
+  const isGlm5 = !isOpenRouter && model === 'glm-5';
 
   // Update job to processing
   jobs.set(jobId, {
@@ -806,9 +846,10 @@ RÈGLE CRITIQUE SUR LA LONGUEUR:
 
       const modelConfig = {
         model,
-        apiKey: isGlm5 ? (zaiApiKey || '').trim() : anthropicApiKey,
+        apiKey: isOpenRouter ? (openrouterApiKey || '').trim() : isGlm5 ? (zaiApiKey || '').trim() : anthropicApiKey,
         isGlm5,
-        webSearch,
+        isOpenRouter,
+        webSearch: isOpenRouter ? null : webSearch,
         effort,
         maxTokens: 16000,
       };
@@ -837,7 +878,7 @@ RÈGLE CRITIQUE SUR LA LONGUEUR:
             ...jobs.get(jobId),
             progress: partProgress,
             currentStep: `Écriture partie ${partNum}/${totalParts} : ${plan.parts[i].title}...`,
-            model: isGlm5 ? 'glm-5' : model,
+            model: isOpenRouter ? 'glm-5 (OpenRouter)' : isGlm5 ? 'glm-5' : model,
           });
 
           console.log(`[generate-script] [${jobId}] Generating part ${partNum}/${totalParts}: "${plan.parts[i].title}" (~${plan.parts[i].targetWords} words)`);
@@ -863,13 +904,30 @@ RÈGLE CRITIQUE SUR LA LONGUEUR:
         }
 
         script = generatedParts.join('\n\n');
-        resolvedModel = isGlm5 ? 'glm-5' : (await resolveAnthropicModelId({ apiKey: anthropicApiKey, requestedModel: model }));
+        resolvedModel = isOpenRouter ? 'glm-5 (OpenRouter)' : isGlm5 ? 'glm-5' : (await resolveAnthropicModelId({ apiKey: anthropicApiKey, requestedModel: model }));
       }
       // If plan failed, script is still empty → falls through to single-call below
     }
 
     // ── Single-call mode (original flow, also fallback if multi-step plan failed) ──
-    if (!script && isGlm5) {
+    if (!script && isOpenRouter) {
+      // ── OpenRouter path ──
+      const trimmedOrKey = (openrouterApiKey || '').trim();
+      console.log(`[generate-script] [${jobId}] Starting script generation with OpenRouter (GLM-5)`);
+
+      jobs.set(jobId, {
+        ...jobs.get(jobId),
+        progress: 15,
+        currentStep: 'GLM-5 réfléchit (OpenRouter)...',
+        model: 'glm-5 (OpenRouter)',
+      });
+
+      script = await callOpenRouter(systemPrompt, customPrompt, { apiKey: trimmedOrKey, maxTokens: 16000 });
+      resolvedModel = 'glm-5 (OpenRouter)';
+
+      if (!script) throw new Error('No script content returned from OpenRouter API');
+
+    } else if (!script && isGlm5) {
       // ── Z.AI GLM-5 path ──
       const trimmedZaiKey = (zaiApiKey || '').trim();
       console.log(`[generate-script] [${jobId}] Starting script generation with Z.AI GLM-5`);
@@ -1035,7 +1093,7 @@ RÈGLE CRITIQUE SUR LA LONGUEUR:
   } catch (error) {
     console.error('[generate-script] Error:', error.response?.data || error.message);
     const errorMessage = error.response?.data?.error?.message || error.message;
-    const prefix = isGlm5 ? 'Z.AI API error' : 'Anthropic API error';
+    const prefix = isOpenRouter ? 'OpenRouter API error' : isGlm5 ? 'Z.AI API error' : 'Anthropic API error';
     jobs.set(jobId, {
       ...jobs.get(jobId),
       status: 'failed',
@@ -2830,8 +2888,10 @@ app.post('/generate-script', async (req, res) => {
   const {
     anthropicApiKey,
     zaiApiKey,
+    openrouterApiKey,
     customPrompt,
     model = 'claude-sonnet-4-6',
+    provider,
     thinkingBudgetTokens,
     effort,
     maxTokens,
@@ -2841,12 +2901,15 @@ app.post('/generate-script', async (req, res) => {
     webSearch,
   } = req.body;
 
-  const isGlm5 = model === 'glm-5';
+  const isOpenRouter = provider === 'openrouter';
+  const isGlm5 = !isOpenRouter && model === 'glm-5';
   
   // DEBUG: Log received parameters
   console.log('[generate-script] Received parameters:', {
     hasAnthropicKey: !!anthropicApiKey,
     hasZaiKey: !!zaiApiKey,
+    hasOpenRouterKey: !!openrouterApiKey,
+    provider: provider || 'auto',
     promptLength: customPrompt?.length || 0,
     model,
     asyncMode,
@@ -2855,7 +2918,10 @@ app.post('/generate-script', async (req, res) => {
     webSearchEnabled: webSearch?.enabled
   });
 
-  if (!isGlm5 && !anthropicApiKey) {
+  if (isOpenRouter && !openrouterApiKey) {
+    return res.status(400).json({ error: 'OpenRouter API key required' });
+  }
+  if (!isOpenRouter && !isGlm5 && !anthropicApiKey) {
     return res.status(400).json({ error: 'Anthropic API key required' });
   }
   if (isGlm5 && !zaiApiKey) {
@@ -2882,8 +2948,10 @@ app.post('/generate-script', async (req, res) => {
     processGenerateScriptJob(jobId, {
       anthropicApiKey,
       zaiApiKey,
+      openrouterApiKey,
       customPrompt,
       model,
+      provider,
       thinkingBudgetTokens,
       effort,
       maxTokens,
@@ -2926,7 +2994,14 @@ RÈGLE CRITIQUE SUR LA LONGUEUR:
     let script = '';
     let resolvedModel = model;
 
-    if (isGlm5) {
+    if (isOpenRouter) {
+      // ── OpenRouter sync path ──
+      console.log(`[generate-script] Starting script generation with OpenRouter (GLM-5)`);
+      script = await callOpenRouter(systemPrompt, customPrompt, { apiKey: openrouterApiKey, maxTokens: 16000 });
+      resolvedModel = 'glm-5 (OpenRouter)';
+      if (!script) throw new Error('No script content returned from OpenRouter API');
+
+    } else if (isGlm5) {
       // ── Z.AI GLM-5 sync path ──
       const trimmedZaiKey = (zaiApiKey || '').trim();
       console.log(`[generate-script] Starting script generation with Z.AI GLM-5`);
@@ -3041,7 +3116,7 @@ RÈGLE CRITIQUE SUR LA LONGUEUR:
     console.error('[generate-script] Error:', error.response?.data || error.message);
     
     const errorMessage = error.response?.data?.error?.message || error.message;
-    const prefix = isGlm5 ? 'Z.AI API error' : 'Anthropic API error';
+    const prefix = isOpenRouter ? 'OpenRouter API error' : isGlm5 ? 'Z.AI API error' : 'Anthropic API error';
     res.status(500).json({ 
       error: `${prefix}: ${errorMessage}` 
     });
