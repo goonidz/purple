@@ -12,8 +12,8 @@ httpx[http2]>=0.27.0
 opencv-python-headless>=4.8.0
 numpy>=1.24.0
 
-# CuPy for GPU-accelerated zoom (CUDA 11.8 - matches RunPod A40 image)
-cupy-cuda11x>=11.0.0
+# CuPy for GPU-accelerated zoom (CUDA 12.x - matches RunPod A40 workers)
+cupy-cuda12x>=12.0.0
 
 # Supabase client
 supabase>=2.3.0
