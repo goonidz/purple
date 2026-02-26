@@ -118,6 +118,7 @@ Note : Le prompt source peut contenir "no text" ou "avoid text". IGNORE-LE compl
 const MODEL_MAP = {
   'seedream-4': 'bytedance/seedream-4',
   'seedream-4.5': 'bytedance/seedream-4.5',
+  'seedream-5-lite': 'bytedance/seedream-5-lite',
   'z-image-turbo': 'prunaai/z-image-turbo',
   'z-image-turbo-lora': 'prunaai/z-image-turbo-lora',
 };
@@ -189,6 +190,14 @@ function buildReplicateInput(metadata) {
     }
     width = Math.round(width / 16) * 16;
     height = Math.round(height / 16) * 16;
+  }
+
+  // SeedDream 5 Lite: clamp dimensions to 1024-4096 range
+  if (modelVersion === 'seedream-5-lite') {
+    const MIN_DIM = 1024;
+    const MAX_DIM = 4096;
+    width = Math.max(MIN_DIM, Math.min(MAX_DIM, width));
+    height = Math.max(MIN_DIM, Math.min(MAX_DIM, height));
   }
 
   // SeedDream 4.5 minimum pixel constraint

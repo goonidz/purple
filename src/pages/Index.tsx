@@ -1605,7 +1605,7 @@ const Index = () => {
           break;
       }
       toast.info("Dimensions ajustées pour Z-Image Turbo (upscale x2 automatique)");
-    } else if (model === 'seedream-4.0' || model === 'seedream-4.5') {
+    } else if (model === 'seedream-4.0' || model === 'seedream-4.5' || model === 'seedream-5-lite') {
       // SeedDream can handle HD, restore HD resolutions based on aspect ratio
       switch (aspectRatio) {
         case "16:9":
@@ -5549,6 +5549,7 @@ Remember: Use temporal context to understand the topic, but the query must be PR
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="seedream-4.5">SeedDream 4.5 (Recommandé)</SelectItem>
+                      <SelectItem value="seedream-5-lite">SeedDream 5.0 Lite</SelectItem>
                       <SelectItem value="seedream-4">SeedDream 4.0</SelectItem>
                       <SelectItem value="z-image-turbo">Z-Image Turbo (Rapide, max 720p)</SelectItem>
                       <SelectItem value="z-image-turbo-lora">Z-Image Turbo LoRA</SelectItem>
@@ -5564,8 +5565,8 @@ Remember: Use temporal context to understand the topic, but the query must be PR
                   </p>
                 </div>
 
-                {/* Visual continuity option for Seedream 4.5 */}
-                {imageModel === 'seedream-4.5' && (
+                {/* Visual continuity option for Seedream models with image_input support */}
+                {(imageModel === 'seedream-4.5' || imageModel === 'seedream-5-lite') && (
                   <div className="flex items-center space-x-2">
                     <Checkbox 
                       id="visual-continuity" 

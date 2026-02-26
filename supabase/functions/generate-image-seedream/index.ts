@@ -134,6 +134,8 @@ Deno.serve(async (req) => {
     let modelName: string;
     if (modelVersion === 'seedream-4') {
       modelName = 'bytedance/seedream-4';
+    } else if (modelVersion === 'seedream-5-lite') {
+      modelName = 'bytedance/seedream-5-lite';
     } else if (modelVersion === 'z-image-turbo') {
       modelName = 'prunaai/z-image-turbo';
     } else if (modelVersion === 'z-image-turbo-lora') {
@@ -166,6 +168,17 @@ Deno.serve(async (req) => {
       width = Math.round(width / 16) * 16;
       height = Math.round(height / 16) * 16;
       console.log(`${modelVersion}: dimensions rounded to multiples of 16: ${width}x${height}`);
+    }
+    
+    // SeedDream 5 Lite: clamp dimensions to 1024-4096 range
+    if (modelVersion === 'seedream-5-lite') {
+      const MIN_DIM = 1024;
+      const MAX_DIM = 4096;
+      if (width < MIN_DIM || width > MAX_DIM || height < MIN_DIM || height > MAX_DIM) {
+        width = Math.max(MIN_DIM, Math.min(MAX_DIM, width));
+        height = Math.max(MIN_DIM, Math.min(MAX_DIM, height));
+        console.log(`SeedDream 5 Lite: clamped dimensions to ${width}x${height} (range ${MIN_DIM}-${MAX_DIM})`);
+      }
     }
     
     // SeedDream 4.5 ALWAYS requires minimum 3,686,400 pixels (not just with image_input)

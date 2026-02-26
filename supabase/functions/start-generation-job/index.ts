@@ -2242,7 +2242,7 @@ async function processImagesJob(
     .eq('id', jobId);
 
   // ========== VISUAL CONTINUITY MODE ==========
-  if (visualContinuityEnabled && imageModel === 'seedream-4.5' && promptsToProcess.length > 0) {
+  if (visualContinuityEnabled && (imageModel === 'seedream-4.5' || imageModel === 'seedream-5-lite') && promptsToProcess.length > 0) {
     console.log(`[processImagesJob] Visual continuity enabled - using group-based generation`);
     
     try {
@@ -2417,7 +2417,7 @@ async function processImagesJob(
         let finalImageUrls = [...styleReferenceUrls];
         let finalPrompt = prompt.prompt;
         
-        if (visualContinuityEnabled && imageModel === 'seedream-4.5' && index > 0) {
+        if (visualContinuityEnabled && (imageModel === 'seedream-4.5' || imageModel === 'seedream-5-lite') && index > 0) {
           const previousScene = prompts[index - 1];
           
           if (previousScene?.imageUrl && previousScene?.prompt && previousScene?.text) {
@@ -3651,7 +3651,7 @@ async function processSingleImageJob(
   let finalImageUrls = [...styleReferenceUrls];
   let finalPrompt = prompt.prompt;
   
-  if (visualContinuityEnabled && imageModel === 'seedream-4.5' && sceneIndex > 0) {
+  if (visualContinuityEnabled && (imageModel === 'seedream-4.5' || imageModel === 'seedream-5-lite') && sceneIndex > 0) {
     const previousScene = prompts[sceneIndex - 1];
     
     if (previousScene?.imageUrl && previousScene?.prompt && previousScene?.text) {
