@@ -639,6 +639,18 @@ async function retryFailedImages(parent) {
 
   if (retryPhase >= MAX_IMAGE_RETRY_PHASES) return false;
 
+  // Guard: if pending/processing children already exist, a retry is already in progress
+  const { count: alreadyActive } = await supabase
+    .from('generation_jobs')
+    .select('id', { count: 'exact', head: true })
+    .eq('parent_job_id', parentJobId)
+    .in('status', ['pending', 'processing']);
+
+  if ((alreadyActive || 0) > 0) {
+    log(`[RETRY] Parent ${parentJobId.substring(0, 8)}...: ${alreadyActive} active children still exist, skipping duplicate retry`);
+    return false;
+  }
+
   // Find which scene_indices this parent owns
   const { data: childJobs } = await supabase
     .from('generation_jobs')
