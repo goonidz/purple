@@ -1099,6 +1099,13 @@ const CreateFromScratch = () => {
         const data = await resp.json().catch(() => null);
         if (!data?.success) return;
 
+        if (data.progress != null) {
+          setGenerationProgress(data.progress);
+        }
+        if (data.currentStep) {
+          setGenerationMessage(data.currentStep);
+        }
+
         if (data.status === "completed") {
           clearInterval(pollInterval);
           setIsGeneratingScript(false);
@@ -1137,8 +1144,6 @@ const CreateFromScratch = () => {
             if (projectId) localStorage.removeItem(`vps_script_job_${projectId}`);
           } catch (_) {}
           setVpsScriptJobId(null);
-        } else {
-          setGenerationProgress((prev) => Math.min(prev + 2, 85));
         }
       } catch (e) {
         // ignore polling errors
