@@ -598,7 +598,7 @@ async function updateParentProgress(parentJobId) {
 async function checkParentCompletion(parentJobId) {
   const { data: parent } = await supabase
     .from('generation_jobs')
-    .select('id, status, total, project_id, metadata')
+    .select('id, status, total, project_id, metadata, job_type, user_id')
     .eq('id', parentJobId)
     .single();
 
@@ -612,6 +612,12 @@ async function checkParentCompletion(parentJobId) {
     .in('status', ['pending', 'processing']);
 
   if ((activeChildren || 0) === 0) {
+    // For image jobs, check if any scenes are missing images and retry
+    if (parent.job_type === 'images') {
+      const retried = await retryFailedImages(parent);
+      if (retried) return; // New child jobs created, don't mark complete yet
+    }
+
     log(`Parent ${parentJobId} complete: all children done`);
     await supabase
       .from('generation_jobs')
@@ -619,6 +625,158 @@ async function checkParentCompletion(parentJobId) {
       .eq('id', parentJobId)
       .eq('status', 'processing');
   }
+}
+
+// ============================================================================
+// RETRY: Re-queue failed images (up to 2 retries, then regen prompt + retry)
+// ============================================================================
+
+const MAX_IMAGE_RETRY_PHASES = 3; // Phase 0,1 = retry image. Phase 2 = regen prompt + retry image.
+
+async function retryFailedImages(parent) {
+  const parentJobId = parent.id;
+  const retryPhase = parent.metadata?.imageRetryPhase || 0;
+
+  if (retryPhase >= MAX_IMAGE_RETRY_PHASES) return false;
+
+  // Find which scene_indices this parent owns
+  const { data: childJobs } = await supabase
+    .from('generation_jobs')
+    .select('scene_index, metadata')
+    .eq('parent_job_id', parentJobId)
+    .eq('job_type', 'single_image');
+
+  if (!childJobs || childJobs.length === 0) return false;
+
+  const allSceneIndices = [...new Set(childJobs.map(j => j.scene_index).filter(i => i !== null && i !== undefined))];
+
+  // Check project_scenes: which scenes are ACTUALLY missing an image?
+  const { data: sceneRows } = await supabase
+    .from('project_scenes')
+    .select('scene_index, image_url')
+    .eq('project_id', parent.project_id)
+    .in('scene_index', allSceneIndices);
+
+  const missingScenes = allSceneIndices.filter(idx => {
+    const row = sceneRows?.find(r => r.scene_index === idx);
+    return !row || !row.image_url;
+  });
+
+  if (missingScenes.length === 0) {
+    log(`[RETRY] Parent ${parentJobId.substring(0, 8)}...: no missing images, skipping retry`);
+    return false;
+  }
+
+  log(`[RETRY] Parent ${parentJobId.substring(0, 8)}...: ${missingScenes.length} missing images, phase ${retryPhase}/${MAX_IMAGE_RETRY_PHASES - 1}`);
+
+  // Build a lookup of the latest metadata per scene from child jobs
+  const metadataByScene = {};
+  for (const job of childJobs) {
+    if (job.scene_index !== null && job.scene_index !== undefined) {
+      metadataByScene[job.scene_index] = job.metadata;
+    }
+  }
+
+  // Phase 2: regenerate prompts first, then create image jobs with fresh prompts
+  if (retryPhase === 2) {
+    log(`[RETRY] Phase 2: regenerating prompts for ${missingScenes.length} scenes before image retry`);
+
+    // Create single_prompt jobs for each missing scene (no parent linkage, standalone)
+    const promptJobs = missingScenes.map(sceneIdx => ({
+      project_id: parent.project_id,
+      user_id: parent.user_id,
+      job_type: 'single_prompt',
+      status: 'pending',
+      progress: 0,
+      total: 1,
+      scene_index: sceneIdx,
+      metadata: { sceneIndex: sceneIdx, isRetryRegen: true },
+    }));
+
+    const { data: createdPromptJobs, error: promptErr } = await supabase
+      .from('generation_jobs')
+      .insert(promptJobs)
+      .select('id');
+
+    if (promptErr) {
+      logError(`[RETRY] Failed to create prompt regen jobs:`, promptErr.message);
+      return false;
+    }
+
+    log(`[RETRY] Created ${createdPromptJobs?.length || 0} prompt regen jobs, waiting for completion...`);
+
+    // Poll for prompt job completion (max 90s)
+    const promptJobIds = (createdPromptJobs || []).map(j => j.id);
+    const deadline = Date.now() + 90_000;
+    while (Date.now() < deadline) {
+      await new Promise(r => setTimeout(r, 5000));
+      const { count: stillActive } = await supabase
+        .from('generation_jobs')
+        .select('id', { count: 'exact', head: true })
+        .in('id', promptJobIds)
+        .in('status', ['pending', 'processing']);
+      if ((stillActive || 0) === 0) break;
+    }
+
+    log(`[RETRY] Prompt regen complete, now fetching updated prompts for image retry`);
+
+    // Fetch fresh prompts from project_scenes
+    const { data: freshScenes } = await supabase
+      .from('project_scenes')
+      .select('scene_index, prompt')
+      .eq('project_id', parent.project_id)
+      .in('scene_index', missingScenes);
+
+    // Update metadata with new prompts
+    if (freshScenes) {
+      for (const fs of freshScenes) {
+        if (metadataByScene[fs.scene_index] && fs.prompt) {
+          metadataByScene[fs.scene_index] = {
+            ...metadataByScene[fs.scene_index],
+            prompt: fs.prompt,
+          };
+        }
+      }
+    }
+  }
+
+  // Create new single_image jobs for missing scenes
+  const retryJobs = missingScenes.map(sceneIdx => ({
+    project_id: parent.project_id,
+    user_id: parent.user_id,
+    job_type: 'single_image',
+    status: 'pending',
+    progress: 0,
+    total: 1,
+    parent_job_id: parentJobId,
+    scene_index: sceneIdx,
+    metadata: {
+      ...(metadataByScene[sceneIdx] || {}),
+      retryPhase: retryPhase,
+      useWebhook: true,
+    },
+  }));
+
+  const { error: insertErr } = await supabase
+    .from('generation_jobs')
+    .insert(retryJobs);
+
+  if (insertErr) {
+    logError(`[RETRY] Failed to create retry image jobs:`, insertErr.message);
+    return false;
+  }
+
+  // Update parent metadata with incremented retry phase
+  await supabase
+    .from('generation_jobs')
+    .update({
+      metadata: { ...parent.metadata, imageRetryPhase: retryPhase + 1 },
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', parentJobId);
+
+  log(`[RETRY] Created ${retryJobs.length} retry image jobs (phase ${retryPhase} -> ${retryPhase + 1})`);
+  return true; // Signal that we created new jobs, parent stays processing
 }
 
 // ============================================================================
@@ -1942,7 +2100,7 @@ async function cleanupStuckParents() {
     const FIVE_MINUTES_AGO = new Date(Date.now() - 5 * 60 * 1000).toISOString();
     const { data: stuckParents } = await supabase
       .from('generation_jobs')
-      .select('id, job_type, total, project_id')
+      .select('id, job_type, total, project_id, metadata, user_id')
       .in('job_type', ['prompts', 'images'])
       .eq('status', 'processing')
       .lt('updated_at', FIVE_MINUTES_AGO)
@@ -1965,8 +2123,18 @@ async function cleanupStuckParents() {
       const done = (completedCount || 0) + (failedCount || 0);
       const active = (pendingCount || 0) + (processingCount || 0);
 
-      // If no active children and all are done, mark parent as completed
+      // If no active children and all are done
       if (active === 0 && done > 0) {
+        // For image jobs mid-retry, trigger retry instead of force-completing
+        if (parent.job_type === 'images') {
+          const retryPhase = parent.metadata?.imageRetryPhase || 0;
+          if (retryPhase < MAX_IMAGE_RETRY_PHASES) {
+            log(`[CLEANUP] Stuck image parent ${parent.id.substring(0, 8)}...: ${failedCount} failed, retry phase ${retryPhase}. Triggering retry.`);
+            const retried = await retryFailedImages(parent);
+            if (retried) continue;
+          }
+        }
+
         log(`[CLEANUP] Stuck parent ${parent.id.substring(0, 8)}... (${parent.job_type}): ${completedCount} OK + ${failedCount} failed, 0 active. Marking completed.`);
         await supabase.from('generation_jobs')
           .update({ status: 'completed', progress: completedCount || 0, completed_at: new Date().toISOString() })
