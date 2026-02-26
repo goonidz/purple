@@ -712,7 +712,7 @@ async function generateScriptPlan(customPrompt, targetWords, modelConfig) {
   const numParts = Math.ceil(targetWords / 4000);
 
   const planSystemPrompt = `You are a professional script planner. You must NOT write the script itself.
-Your job is to create a structured detailed plan.
+Your job is to create a structured detailed plan for a SINGLE continuous script that will be written in multiple sequential segments.
 IMPORTANT: Detect the language of the client brief and write ALL titles and summaries in that same language.
 Respond ONLY with valid JSON, no text before or after.`;
 
@@ -721,19 +721,23 @@ Respond ONLY with valid JSON, no text before or after.`;
 ${customPrompt}
 ---
 
-YOUR TASK: Create a structured plan for a script of approximately ${targetWords} words, divided into ${numParts} parts.
+YOUR TASK: Create a structured plan for a SINGLE continuous script of approximately ${targetWords} words, divided into ${numParts} writing segments.
 
-RULES:
-- Each part is MAXIMUM 4000 words (pacing does not have to be equal — some parts can be shorter)
-- The sum of targetWords across all parts must be approximately ${targetWords}
-- Each part has a clear title, a summary of the content to cover, and a target word count
+CRITICAL RULES:
+- This is ONE script, NOT a series of episodes. The segments are only for writing logistics — the final result must read as one seamless text.
+- Each segment is MAXIMUM 4000 words (pacing does not have to be equal — some segments can be shorter)
+- The sum of targetWords across all segments must be approximately ${targetWords}
+- Each segment has a clear title, a detailed summary of the content to cover, and a target word count
 - The plan must cover the entire subject requested in the brief
 - Write titles and summaries in the SAME LANGUAGE as the client brief above
+- Each segment summary must clearly specify WHERE to pick up from the previous segment and WHERE to hand off to the next
+- Avoid planning repetitive structures across segments (e.g., each segment ending with the same moral/conclusion pattern)
+- Each segment should bring at least ONE unique new idea or angle, not just the same thesis applied to a different era/topic
 
 Respond ONLY with valid JSON in this format:
 {
   "parts": [
-    { "title": "Part title", "summary": "Detailed summary of the content to cover", "targetWords": 3500 },
+    { "title": "Segment title", "summary": "Detailed summary: what to cover, key examples, unique angle for this segment, transition notes", "targetWords": 3500 },
     ...
   ]
 }`;
@@ -764,11 +768,18 @@ async function generateScriptPart(plan, partIndex, previousParts, customPrompt, 
   const part = plan.parts[partIndex];
   const totalParts = plan.parts.length;
 
-  const partSystemPrompt = `You are a professional author/scriptwriter. You write ONLY the part that is assigned to you.
+  const isLastPart = partIndex === totalParts - 1;
+  const partSystemPrompt = `You are a professional author/scriptwriter writing one segment of a single continuous script.
 You must write in a fluid, natural way, consistent in style and tone with the previous parts (if provided).
-IMPORTANT: Detect the language of the client brief and write the entire script in that same language. If the brief is in English, write in English. If in French, write in French. Match the language exactly.
+LANGUAGE: Detect the language of the client brief and write EXCLUSIVELY in that language. Not a single word, character, or expression from any other language.
 Do NOT add any comments, explanations, or part titles. Write directly the content.
-You MUST reach approximately ${part.targetWords} words for this part.`;
+You MUST reach approximately ${part.targetWords} words for this part.
+
+CRITICAL CONTINUITY RULES:
+- ${partIndex > 0 ? 'Continue EXACTLY where the previous text stops. Your first sentence must flow naturally from the last sentence of the previous part. Do NOT re-introduce the topic, do NOT summarize what came before.' : 'This is the opening of the script.'}
+- ${isLastPart ? 'This is the FINAL part. You may write a conclusion.' : 'Do NOT write any conclusion, cliffhanger, moral, or "next time" teaser. Do NOT wrap up your section. Simply STOP writing when you have covered the content for this segment — the script continues after you.'}
+- Do NOT repeat key phrases, slogans, thesis statements, or recurring sentences that already appear in the previous parts. Find fresh ways to express ideas.
+- This is ONE continuous script, not separate episodes. The reader must not be able to tell where one writing segment ends and another begins.`;
 
   let contextBlock = `ORIGINAL CLIENT BRIEF:
 ---
@@ -786,8 +797,9 @@ ${plan.parts.map((p, i) => `Part ${i + 1}: ${p.title} (~${p.targetWords} words) 
   contextBlock += `\n\nNOW WRITE Part ${partIndex + 1}/${totalParts}: "${part.title}"
 Summary of what you must cover: ${part.summary}
 Target word count: ~${part.targetWords} words.
-${partIndex > 0 ? 'Continue naturally from the previous part.' : 'This is the beginning of the script.'}
-Write ONLY the content of this part, nothing else.`;
+${partIndex > 0 ? 'Pick up EXACTLY where the previous text ended. No re-introduction.' : 'This is the beginning of the script.'}
+${isLastPart ? 'This is the last part — you may conclude the script.' : 'Do NOT conclude or wrap up. Just stop when the content for this segment is covered.'}
+Write ONLY the content, nothing else.`;
 
   return await callModel(partSystemPrompt, contextBlock, { ...modelConfig, maxTokens: 16000 });
 }
