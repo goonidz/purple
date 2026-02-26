@@ -2282,7 +2282,7 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                       <p className="text-xs text-muted-foreground">
                         {scriptModel === "glm5"
                           ? "Si activé, GLM-5 peut effectuer des recherches web pour enrichir le script avec des informations récentes."
-                          : "Si activé, Claude peut utiliser l’outil "web_search" natif d’Anthropic et ajouter des citations automatiquement (nécessite activation dans la Console Anthropic)."}
+                          : `Si activé, Claude peut utiliser l’outil \"web_search\" natif d’Anthropic et ajouter des citations automatiquement (nécessite activation dans la Console Anthropic).`}
                       </p>
                     </div>
                   )}
