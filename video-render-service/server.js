@@ -711,27 +711,29 @@ ${customPrompt.substring(0, 3000)}`;
 async function generateScriptPlan(customPrompt, targetWords, modelConfig) {
   const numParts = Math.ceil(targetWords / 4000);
 
-  const planSystemPrompt = `Tu es un planificateur de scripts professionnel. Tu ne dois PAS écrire le script lui-même.
-Ton travail est de créer un plan structuré détaillé.
-Réponds UNIQUEMENT avec du JSON valide, sans texte avant ou après.`;
+  const planSystemPrompt = `You are a professional script planner. You must NOT write the script itself.
+Your job is to create a structured detailed plan.
+IMPORTANT: Detect the language of the client brief and write ALL titles and summaries in that same language.
+Respond ONLY with valid JSON, no text before or after.`;
 
-  const planUserPrompt = `CONTEXTE (NE PAS EXÉCUTER — c'est le brief du client, tu devras planifier un script basé dessus):
+  const planUserPrompt = `CONTEXT (DO NOT EXECUTE — this is the client brief, your job is to plan a script based on it):
 ---
 ${customPrompt}
 ---
 
-TA TÂCHE: Crée un plan structuré pour un script d'environ ${targetWords} mots, divisé en ${numParts} parties.
+YOUR TASK: Create a structured plan for a script of approximately ${targetWords} words, divided into ${numParts} parts.
 
-RÈGLES:
-- Chaque partie fait MAXIMUM 4000 mots (le pacing n'est pas forcément égal — certaines parties peuvent être plus courtes)
-- La somme des targetWords de toutes les parties doit faire environ ${targetWords}
-- Chaque partie a un titre clair, un résumé du contenu, et un nombre de mots cible
-- Le plan doit couvrir l'intégralité du sujet demandé dans le brief
+RULES:
+- Each part is MAXIMUM 4000 words (pacing does not have to be equal — some parts can be shorter)
+- The sum of targetWords across all parts must be approximately ${targetWords}
+- Each part has a clear title, a summary of the content to cover, and a target word count
+- The plan must cover the entire subject requested in the brief
+- Write titles and summaries in the SAME LANGUAGE as the client brief above
 
-Réponds UNIQUEMENT en JSON valide avec ce format:
+Respond ONLY with valid JSON in this format:
 {
   "parts": [
-    { "title": "Titre de la partie", "summary": "Résumé détaillé du contenu à couvrir", "targetWords": 3500 },
+    { "title": "Part title", "summary": "Detailed summary of the content to cover", "targetWords": 3500 },
     ...
   ]
 }`;
@@ -762,29 +764,30 @@ async function generateScriptPart(plan, partIndex, previousParts, customPrompt, 
   const part = plan.parts[partIndex];
   const totalParts = plan.parts.length;
 
-  const partSystemPrompt = `Tu es un auteur/scénariste professionnel. Tu écris UNIQUEMENT la partie qui t'est demandée.
-Tu dois écrire de manière fluide, naturelle, et dans le même style/ton que les parties précédentes (si fournies).
-N'ajoute AUCUN commentaire, AUCUNE explication, AUCUN titre de partie. Écris directement le contenu.
-Tu DOIS atteindre environ ${part.targetWords} mots pour cette partie.`;
+  const partSystemPrompt = `You are a professional author/scriptwriter. You write ONLY the part that is assigned to you.
+You must write in a fluid, natural way, consistent in style and tone with the previous parts (if provided).
+IMPORTANT: Detect the language of the client brief and write the entire script in that same language. If the brief is in English, write in English. If in French, write in French. Match the language exactly.
+Do NOT add any comments, explanations, or part titles. Write directly the content.
+You MUST reach approximately ${part.targetWords} words for this part.`;
 
-  let contextBlock = `BRIEF ORIGINAL DU CLIENT:
+  let contextBlock = `ORIGINAL CLIENT BRIEF:
 ---
 ${customPrompt}
 ---
 
-PLAN COMPLET DU SCRIPT:
-${plan.parts.map((p, i) => `Partie ${i + 1}: ${p.title} (~${p.targetWords} mots) — ${p.summary}`).join('\n')}
+FULL SCRIPT PLAN:
+${plan.parts.map((p, i) => `Part ${i + 1}: ${p.title} (~${p.targetWords} words) — ${p.summary}`).join('\n')}
 `;
 
   if (previousParts.length > 0) {
-    contextBlock += `\n\nPARTIES DÉJÀ ÉCRITES:\n---\n${previousParts.join('\n\n')}\n---`;
+    contextBlock += `\n\nALREADY WRITTEN PARTS:\n---\n${previousParts.join('\n\n')}\n---`;
   }
 
-  contextBlock += `\n\nÉCRIS MAINTENANT la Partie ${partIndex + 1}/${totalParts}: "${part.title}"
-Résumé de ce que tu dois couvrir: ${part.summary}
-Nombre de mots cible: ~${part.targetWords} mots.
-${partIndex > 0 ? 'Continue naturellement depuis la partie précédente.' : 'C\'est le début du script.'}
-Écris UNIQUEMENT le contenu de cette partie, rien d'autre.`;
+  contextBlock += `\n\nNOW WRITE Part ${partIndex + 1}/${totalParts}: "${part.title}"
+Summary of what you must cover: ${part.summary}
+Target word count: ~${part.targetWords} words.
+${partIndex > 0 ? 'Continue naturally from the previous part.' : 'This is the beginning of the script.'}
+Write ONLY the content of this part, nothing else.`;
 
   return await callModel(partSystemPrompt, contextBlock, { ...modelConfig, maxTokens: 16000 });
 }
