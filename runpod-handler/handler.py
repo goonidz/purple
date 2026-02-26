@@ -420,8 +420,8 @@ def get_encoder_args() -> List[str]:
             # FFmpeg 5.x uses 'fast'/'medium'/'slow', FFmpeg 6+ uses 'p1'-'p7'
             '-preset', 'fast',
             '-tune', 'hq',
-            '-cq', '26',
-            '-b:v', '0',
+            '-rc', 'constqp',
+            '-qp', '26',
             '-maxrate', '6M',
         ]
     else:
@@ -640,8 +640,8 @@ def create_video_segment(
                 
                 cmd.extend([
                     '-preset', 'fast',
-                    '-cq', '26',
-                    '-b:v', '0',
+                    '-rc', 'constqp',
+                    '-qp', '26',
                     '-maxrate', '6M',
                     '-pix_fmt', 'yuv420p',
                     '-t', str(duration),  # Force exact duration to prevent accumulation errors
@@ -720,8 +720,8 @@ def create_video_segment(
                 
                 cmd.extend([
                     '-preset', 'fast',
-                    '-cq', '26',
-                    '-b:v', '0',
+                    '-rc', 'constqp',
+                    '-qp', '26',
                     '-maxrate', '6M',
                     '-pix_fmt', 'yuv420p',
                     '-t', str(duration),  # Force exact duration
