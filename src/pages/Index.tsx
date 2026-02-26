@@ -955,24 +955,15 @@ const Index = () => {
       const hasAudio = !!data.audio_url;
       const hasTranscript = data.transcript_json && Object.keys(data.transcript_json).length > 0;
       
-      // Check if the project has scenes (meaning it's already past the creation stage)
-      const { count: sceneCount } = await supabase
-        .from("project_scenes")
-        .select("id", { count: "exact", head: true })
-        .eq("project_id", projectId);
-      const hasScenes = (sceneCount || 0) > 0;
-
-      if (!hasScenes) {
-        if (hasScript && !hasAudio && !hasTranscript) {
-          navigate(`/create-from-scratch?continue=${projectId}`);
-          return;
-        }
-        
-        if (hasAudio && !hasTranscript) {
-          toast.info("Ce projet nécessite une transcription. Lancement automatique...");
-          navigate(`/projects?from_scratch=true&project=${projectId}&needs_transcription=true`);
-          return;
-        }
+      if (hasScript && !hasAudio && !hasTranscript) {
+        navigate(`/create-from-scratch?continue=${projectId}`);
+        return;
+      }
+      
+      if (hasAudio && !hasTranscript) {
+        toast.info("Ce projet nécessite une transcription. Lancement automatique...");
+        navigate(`/projects?from_scratch=true&project=${projectId}&needs_transcription=true`);
+        return;
       }
 
       setProjectName(data.name || "");
