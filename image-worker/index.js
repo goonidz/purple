@@ -172,6 +172,23 @@ async function getUserApiKey(userId, keyName) {
 // REPLICATE: BUILD INPUT (from generate-image-seedream/index.ts)
 // ============================================================================
 
+const SEEDREAM5_ASPECT_RATIOS = ['1:1', '4:3', '3:4', '16:9', '9:16', '3:2', '2:3', '21:9'];
+
+function getSeedream5AspectRatio(width, height) {
+  const ratio = width / height;
+  let bestMatch = '1:1';
+  let bestDiff = Infinity;
+  for (const ar of SEEDREAM5_ASPECT_RATIOS) {
+    const [w, h] = ar.split(':').map(Number);
+    const diff = Math.abs(ratio - w / h);
+    if (diff < bestDiff) {
+      bestDiff = diff;
+      bestMatch = ar;
+    }
+  }
+  return bestMatch;
+}
+
 function buildReplicateInput(metadata) {
   const modelVersion = metadata.model || 'seedream-4.5';
   let width = metadata.width || 1920;
@@ -190,14 +207,6 @@ function buildReplicateInput(metadata) {
     }
     width = Math.round(width / 16) * 16;
     height = Math.round(height / 16) * 16;
-  }
-
-  // SeedDream 5 Lite: clamp dimensions to 1024-4096 range
-  if (modelVersion === 'seedream-5-lite') {
-    const MIN_DIM = 1024;
-    const MAX_DIM = 4096;
-    width = Math.max(MIN_DIM, Math.min(MAX_DIM, width));
-    height = Math.max(MIN_DIM, Math.min(MAX_DIM, height));
   }
 
   // SeedDream 4.5 minimum pixel constraint
@@ -232,8 +241,16 @@ function buildReplicateInput(metadata) {
       input.lora_weights = weights;
       input.lora_scales = new Array(weights.length).fill(1.0);
     }
+  } else if (modelVersion === 'seedream-5-lite') {
+    // SeedDream 5 Lite uses size + aspect_ratio instead of custom width/height
+    const maxDim = Math.max(width, height);
+    input.size = maxDim > 2048 ? '3K' : '2K';
+    input.aspect_ratio = getSeedream5AspectRatio(width, height);
+    if (metadata.styleRefs && metadata.styleRefs.length > 0) {
+      input.image_input = metadata.styleRefs;
+    }
   } else {
-    // SeedDream models
+    // SeedDream 4 / 4.5
     input.size = 'custom';
     input.width = width;
     input.height = height;
@@ -2533,7 +2550,7 @@ async function processEdgeTTSRVCPipeline(job) {
       .eq('id', jobId);
 
     // Step 2: Generate EdgeTTS chunks in parallel (max 3 workers)
-    const EDGETTS_CONCURRENCY = 3;
+    const EDGETTS_CONCURRENCY = 10;
     const chunkUrls = new Array(chunks.length);
     let completedCount = 0;
     const chunkQueue = chunks.map((_, i) => i);
