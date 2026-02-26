@@ -961,9 +961,7 @@ const Index = () => {
       }
       
       if (hasAudio && !hasTranscript) {
-        toast.info("Ce projet nécessite une transcription. Lancement automatique...");
-        navigate(`/projects?from_scratch=true&project=${projectId}&needs_transcription=true`);
-        return;
+        console.log("[loadProjectData] Project has audio but no transcript - loading page anyway");
       }
 
       setProjectName(data.name || "");
@@ -1282,15 +1280,16 @@ const Index = () => {
 
   const saveProjectData = async () => {
     if (!currentProjectId) return;
+    if (!projectDataLoadedRef.current) return;
 
     try {
       // Note: prompts are NOT saved here - they are managed by the backend job queue
       const { error } = await supabase
         .from("projects")
         .update({
-          transcript_json: transcriptData as any,
-          example_prompts: examplePrompts as any,
-          scenes: scenes as any,
+          ...(transcriptData ? { transcript_json: transcriptData as any } : {}),
+          ...(examplePrompts && examplePrompts.some(p => p) ? { example_prompts: examplePrompts as any } : {}),
+          ...(scenes && scenes.length > 0 ? { scenes: scenes as any } : {}),
           duration_ranges: durationRanges as any,
           // Legacy columns for backward compatibility
           scene_duration_0to1: sceneDuration0to1,
