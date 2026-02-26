@@ -550,9 +550,21 @@ const CreateFromScratch = () => {
 
       if (error) throw error;
 
-      if (data && data.summary) {
-        setProjectId(data.id);
-        setProjectName(data.name || "");
+      setProjectId(data.id);
+      setProjectName(data.name || "");
+
+      // Check if a VPS script job is still running
+      const activeJob = localStorage.getItem(`vps_script_job_${data.id}`);
+      if (activeJob) {
+        setIsGeneratingScript(true);
+        setGenerationProgress(10);
+        setGenerationMessage("Reprise de la génération du script...");
+        setVpsScriptJobId(activeJob);
+        setStep("script");
+        return;
+      }
+
+      if (data.summary) {
         setGeneratedScript(data.summary);
         setWordCount(data.summary.split(/\s+/).length);
         setEstimatedDuration(Math.round(data.summary.split(/\s+/).length / 2.5));
