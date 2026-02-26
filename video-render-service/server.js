@@ -614,7 +614,7 @@ RÈGLE CRITIQUE SUR LA LONGUEUR:
 
       console.log(`[generate-script] [${jobId}] Calling Z.AI API...`);
 
-      const zaiResponse = await axios.post('https://api.z.ai/api/paas/v4/chat/completions', requestBody, {
+      const zaiResponse = await axios.post('https://api.z.ai/api/coding/paas/v4/chat/completions', requestBody, {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${trimmedZaiKey}`,
@@ -623,7 +623,9 @@ RÈGLE CRITIQUE SUR LA LONGUEUR:
       });
 
       if (zaiResponse.data.choices && zaiResponse.data.choices.length > 0) {
-        script = zaiResponse.data.choices[0].message?.content || '';
+        script = zaiResponse.data.choices[0].message?.content
+          || zaiResponse.data.choices[0].message?.reasoning_content
+          || '';
       }
 
       if (!script) throw new Error('No script content returned from Z.AI API');
@@ -2655,7 +2657,7 @@ RÈGLE CRITIQUE SUR LA LONGUEUR:
         console.log(`[generate-script] Z.AI Web Search enabled`);
       }
 
-      const zaiResponse = await axios.post('https://api.z.ai/api/paas/v4/chat/completions', requestBody, {
+      const zaiResponse = await axios.post('https://api.z.ai/api/coding/paas/v4/chat/completions', requestBody, {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${trimmedZaiKey}`,
@@ -2664,7 +2666,9 @@ RÈGLE CRITIQUE SUR LA LONGUEUR:
       });
 
       if (zaiResponse.data.choices && zaiResponse.data.choices.length > 0) {
-        script = zaiResponse.data.choices[0].message?.content || '';
+        script = zaiResponse.data.choices[0].message?.content
+          || zaiResponse.data.choices[0].message?.reasoning_content
+          || '';
       }
 
       if (!script) throw new Error('No script content returned from Z.AI API');
