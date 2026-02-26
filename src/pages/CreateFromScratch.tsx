@@ -544,7 +544,7 @@ const CreateFromScratch = () => {
     try {
       const { data, error } = await supabase
         .from("projects")
-        .select("id, name, summary")
+        .select("id, name, summary, audio_url, transcript_json")
         .eq("id", projectIdToLoad)
         .single();
 
@@ -552,6 +552,13 @@ const CreateFromScratch = () => {
 
       setProjectId(data.id);
       setProjectName(data.name || "");
+
+      // If the project already has audio (or transcript), it's past the create-from-scratch stage
+      if (data.audio_url || data.transcript_json) {
+        try { localStorage.removeItem(`vps_script_job_${data.id}`); } catch (_) {}
+        navigate(`/project/${data.id}`);
+        return;
+      }
 
       // If script already exists, show it directly (and clean up any stale job ID)
       if (data.summary) {
