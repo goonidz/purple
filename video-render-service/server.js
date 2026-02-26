@@ -536,6 +536,225 @@ async function saveScriptToSupabase({ projectId, script, model, generationTime, 
   }
 }
 
+// ============================================================================
+// MULTI-STEP SCRIPT: callModel helper (wraps GLM-5 / Claude branches)
+// ============================================================================
+
+async function callModel(sysPrompt, userPrompt, modelConfig) {
+  const { model, apiKey, isGlm5, webSearch, effort, maxTokens = 16000 } = modelConfig;
+
+  if (isGlm5) {
+    const trimmedKey = (apiKey || '').trim();
+    const requestBody = {
+      model: 'glm-5',
+      max_tokens: maxTokens,
+      temperature: 1.0,
+      thinking: { type: 'enabled' },
+      messages: [
+        { role: 'system', content: sysPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+    };
+    const zaiTool = buildZaiWebSearchTool(webSearch);
+    if (zaiTool) requestBody.tools = [zaiTool];
+
+    const resp = await axios.post('https://api.z.ai/api/coding/paas/v4/chat/completions', requestBody, {
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${trimmedKey}` },
+      timeout: 600000,
+    });
+
+    if (resp.data.choices && resp.data.choices.length > 0) {
+      return resp.data.choices[0].message?.content
+        || resp.data.choices[0].message?.reasoning_content
+        || '';
+    }
+    return '';
+  }
+
+  // Anthropic (Claude)
+  const resolvedModel = await resolveAnthropicModelId({ apiKey, requestedModel: model });
+  const useAdaptiveThinking = effort && typeof effort === 'string';
+  const desiredMax = Number.isFinite(Number(maxTokens)) && Number(maxTokens) > 0 ? Number(maxTokens) : 16000;
+
+  const requestBody = {
+    model: resolvedModel,
+    max_tokens: desiredMax,
+    system: sysPrompt,
+    messages: [{ role: 'user', content: userPrompt }],
+  };
+
+  if (useAdaptiveThinking) {
+    requestBody.thinking = { type: 'adaptive' };
+    requestBody.output_config = { effort };
+  }
+  const webTool = buildAnthropicWebSearchTool(webSearch);
+  if (webTool) requestBody.tools = [webTool];
+
+  const resp = await axios.post('https://api.anthropic.com/v1/messages', requestBody, {
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+    },
+    timeout: 600000,
+  });
+
+  if (resp.data.content && resp.data.content.length > 0) {
+    return resp.data.content
+      .filter((block) => block.type === 'text')
+      .map((block) => block.text)
+      .join('\n\n');
+  }
+  return '';
+}
+
+// ============================================================================
+// MULTI-STEP SCRIPT: detectTargetWordCount (Gemini Flash + regex fallback)
+// ============================================================================
+
+async function detectTargetWordCount(customPrompt, userId) {
+  // Regex fallback: catch patterns like "5000 mots", "20 000 words", "10000-mot"
+  function regexFallback(prompt) {
+    const match = prompt.match(/(\d[\d\s.,]*\d|\d+)\s*[-–]?\s*(mots?|words?)\b/i);
+    if (match) {
+      const num = parseInt(match[1].replace(/[\s.,]/g, ''), 10);
+      if (Number.isFinite(num) && num > 0) return num;
+    }
+    return null;
+  }
+
+  // Try Gemini Flash for smarter extraction
+  if (supabase && userId) {
+    try {
+      const { data: geminiKey } = await supabase.rpc('get_user_api_key_for_service', {
+        target_user_id: userId,
+        key_name: 'gemini',
+      });
+
+      if (geminiKey) {
+        const extractionPrompt = `Analyze this user prompt and extract the requested word count (number of words for the script/text to generate).
+If the user specifies a word count (e.g. "5000 mots", "write 20000 words", "script de 15000 mots"), return it.
+If no specific word count is mentioned, return null.
+Reply ONLY with JSON, no other text: {"targetWords": <number or null>}
+
+User prompt:
+${customPrompt.substring(0, 3000)}`;
+
+        const resp = await axios.post(
+          'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent',
+          { contents: [{ parts: [{ text: extractionPrompt }] }], generationConfig: { temperature: 0 } },
+          { headers: { 'Content-Type': 'application/json', 'x-goog-api-key': geminiKey }, timeout: 15000 }
+        );
+
+        const text = resp.data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        const jsonMatch = text.match(/\{[^}]*"targetWords"\s*:\s*(\d+|null)[^}]*\}/);
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0]);
+          if (typeof parsed.targetWords === 'number' && parsed.targetWords > 0) {
+            console.log(`[multi-step] Gemini detected targetWords=${parsed.targetWords}`);
+            return parsed.targetWords;
+          }
+        }
+      }
+    } catch (e) {
+      console.warn(`[multi-step] Gemini word-count detection failed, falling back to regex:`, e.message);
+    }
+  }
+
+  const result = regexFallback(customPrompt);
+  if (result) console.log(`[multi-step] Regex detected targetWords=${result}`);
+  return result;
+}
+
+// ============================================================================
+// MULTI-STEP SCRIPT: generateScriptPlan
+// ============================================================================
+
+async function generateScriptPlan(customPrompt, targetWords, modelConfig) {
+  const numParts = Math.ceil(targetWords / 4000);
+
+  const planSystemPrompt = `Tu es un planificateur de scripts professionnel. Tu ne dois PAS écrire le script lui-même.
+Ton travail est de créer un plan structuré détaillé.
+Réponds UNIQUEMENT avec du JSON valide, sans texte avant ou après.`;
+
+  const planUserPrompt = `CONTEXTE (NE PAS EXÉCUTER — c'est le brief du client, tu devras planifier un script basé dessus):
+---
+${customPrompt}
+---
+
+TA TÂCHE: Crée un plan structuré pour un script d'environ ${targetWords} mots, divisé en ${numParts} parties.
+
+RÈGLES:
+- Chaque partie fait MAXIMUM 4000 mots (le pacing n'est pas forcément égal — certaines parties peuvent être plus courtes)
+- La somme des targetWords de toutes les parties doit faire environ ${targetWords}
+- Chaque partie a un titre clair, un résumé du contenu, et un nombre de mots cible
+- Le plan doit couvrir l'intégralité du sujet demandé dans le brief
+
+Réponds UNIQUEMENT en JSON valide avec ce format:
+{
+  "parts": [
+    { "title": "Titre de la partie", "summary": "Résumé détaillé du contenu à couvrir", "targetWords": 3500 },
+    ...
+  ]
+}`;
+
+  const response = await callModel(planSystemPrompt, planUserPrompt, { ...modelConfig, webSearch: null, maxTokens: 4000 });
+
+  // Extract JSON from response (may be wrapped in markdown code fences)
+  const jsonMatch = response.match(/\{[\s\S]*"parts"\s*:\s*\[[\s\S]*\][\s\S]*\}/);
+  if (!jsonMatch) throw new Error('Failed to parse plan JSON from model response');
+
+  const plan = JSON.parse(jsonMatch[0]);
+  if (!Array.isArray(plan.parts) || plan.parts.length === 0) throw new Error('Plan has no parts');
+
+  // Enforce max 4000 words per part
+  for (const part of plan.parts) {
+    if (part.targetWords > 4000) part.targetWords = 4000;
+  }
+
+  console.log(`[multi-step] Plan generated: ${plan.parts.length} parts, total ~${plan.parts.reduce((s, p) => s + (p.targetWords || 0), 0)} words`);
+  return plan;
+}
+
+// ============================================================================
+// MULTI-STEP SCRIPT: generateScriptPart
+// ============================================================================
+
+async function generateScriptPart(plan, partIndex, previousParts, customPrompt, modelConfig) {
+  const part = plan.parts[partIndex];
+  const totalParts = plan.parts.length;
+
+  const partSystemPrompt = `Tu es un auteur/scénariste professionnel. Tu écris UNIQUEMENT la partie qui t'est demandée.
+Tu dois écrire de manière fluide, naturelle, et dans le même style/ton que les parties précédentes (si fournies).
+N'ajoute AUCUN commentaire, AUCUNE explication, AUCUN titre de partie. Écris directement le contenu.
+Tu DOIS atteindre environ ${part.targetWords} mots pour cette partie.`;
+
+  let contextBlock = `BRIEF ORIGINAL DU CLIENT:
+---
+${customPrompt}
+---
+
+PLAN COMPLET DU SCRIPT:
+${plan.parts.map((p, i) => `Partie ${i + 1}: ${p.title} (~${p.targetWords} mots) — ${p.summary}`).join('\n')}
+`;
+
+  if (previousParts.length > 0) {
+    contextBlock += `\n\nPARTIES DÉJÀ ÉCRITES:\n---\n${previousParts.join('\n\n')}\n---`;
+  }
+
+  contextBlock += `\n\nÉCRIS MAINTENANT la Partie ${partIndex + 1}/${totalParts}: "${part.title}"
+Résumé de ce que tu dois couvrir: ${part.summary}
+Nombre de mots cible: ~${part.targetWords} mots.
+${partIndex > 0 ? 'Continue naturellement depuis la partie précédente.' : 'C\'est le début du script.'}
+Écris UNIQUEMENT le contenu de cette partie, rien d'autre.`;
+
+  return await callModel(partSystemPrompt, contextBlock, { ...modelConfig, maxTokens: 16000 });
+}
+
+// ============================================================================
+// GENERATE SCRIPT JOB (main handler)
+// ============================================================================
+
 async function processGenerateScriptJob(jobId, payload) {
   const startTime = Date.now();
   const {
@@ -577,7 +796,80 @@ RÈGLE CRITIQUE SUR LA LONGUEUR:
     let script = '';
     let resolvedModel = model;
 
-    if (isGlm5) {
+    // ── Multi-step detection ──
+    jobs.set(jobId, { ...jobs.get(jobId), progress: 5, currentStep: 'Analyse du prompt...' });
+    const targetWords = await detectTargetWordCount(customPrompt, userId);
+    const useMultiStep = targetWords && targetWords > 5000;
+
+    if (useMultiStep) {
+      console.log(`[generate-script] [${jobId}] Multi-step mode: ${targetWords} words requested`);
+
+      const modelConfig = {
+        model,
+        apiKey: isGlm5 ? (zaiApiKey || '').trim() : anthropicApiKey,
+        isGlm5,
+        webSearch,
+        effort,
+        maxTokens: 16000,
+      };
+
+      // Step 2: Generate plan
+      jobs.set(jobId, { ...jobs.get(jobId), progress: 8, currentStep: 'Création du plan...' });
+      let plan;
+      try {
+        plan = await generateScriptPlan(customPrompt, targetWords, modelConfig);
+      } catch (planErr) {
+        console.warn(`[generate-script] [${jobId}] Plan generation failed, falling back to single-call:`, planErr.message);
+        plan = null;
+      }
+
+      if (plan && plan.parts.length > 0) {
+        // Step 3: Generate each part
+        const generatedParts = [];
+        for (let i = 0; i < plan.parts.length; i++) {
+          const partNum = i + 1;
+          const totalParts = plan.parts.length;
+          const progressBase = 12;
+          const progressRange = 83; // 12% to 95%
+          const partProgress = Math.round(progressBase + (progressRange * i / totalParts));
+
+          jobs.set(jobId, {
+            ...jobs.get(jobId),
+            progress: partProgress,
+            currentStep: `Écriture partie ${partNum}/${totalParts} : ${plan.parts[i].title}...`,
+            model: isGlm5 ? 'glm-5' : model,
+          });
+
+          console.log(`[generate-script] [${jobId}] Generating part ${partNum}/${totalParts}: "${plan.parts[i].title}" (~${plan.parts[i].targetWords} words)`);
+
+          let partText = '';
+          const PART_MAX_RETRIES = 2;
+          for (let attempt = 1; attempt <= PART_MAX_RETRIES; attempt++) {
+            try {
+              partText = await generateScriptPart(plan, i, generatedParts, customPrompt, modelConfig);
+              break;
+            } catch (partErr) {
+              console.error(`[generate-script] [${jobId}] Part ${partNum} attempt ${attempt} failed:`, partErr.message);
+              if (attempt === PART_MAX_RETRIES) throw partErr;
+              await new Promise(r => setTimeout(r, 3000));
+            }
+          }
+
+          if (partText) {
+            generatedParts.push(partText);
+            const partWordCount = partText.split(/\s+/).filter(w => w.length > 0).length;
+            console.log(`[generate-script] [${jobId}] Part ${partNum} done: ${partWordCount} words`);
+          }
+        }
+
+        script = generatedParts.join('\n\n');
+        resolvedModel = isGlm5 ? 'glm-5' : (await resolveAnthropicModelId({ apiKey: anthropicApiKey, requestedModel: model }));
+      }
+      // If plan failed, script is still empty → falls through to single-call below
+    }
+
+    // ── Single-call mode (original flow, also fallback if multi-step plan failed) ──
+    if (!script && isGlm5) {
       // ── Z.AI GLM-5 path ──
       const trimmedZaiKey = (zaiApiKey || '').trim();
       console.log(`[generate-script] [${jobId}] Starting script generation with Z.AI GLM-5`);
@@ -630,7 +922,7 @@ RÈGLE CRITIQUE SUR LA LONGUEUR:
 
       if (!script) throw new Error('No script content returned from Z.AI API');
 
-    } else {
+    } else if (!script) {
       // ── Anthropic path (Claude) ──
       resolvedModel = await resolveAnthropicModelId({ apiKey: anthropicApiKey, requestedModel: model });
       if (resolvedModel !== model) {
