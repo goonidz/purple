@@ -238,7 +238,7 @@ const CreateFromScratch = () => {
   const [generationMessage, setGenerationMessage] = useState("");
   const [wordCount, setWordCount] = useState(0);
   const [estimatedDuration, setEstimatedDuration] = useState(0);
-  const [scriptModel, setScriptModel] = useState<"claude" | "claude-thinking" | "gpt5">("claude");
+  const [scriptModel, setScriptModel] = useState<"claude" | "claude-thinking" | "gpt5" | "glm5">("claude");
   const [useOwnText, setUseOwnText] = useState(false);
   const [customScriptText, setCustomScriptText] = useState("");
   const [vpsScriptJobId, setVpsScriptJobId] = useState<string | null>(null);
@@ -1345,6 +1345,60 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
         }
       }
 
+      // GLM-5: use VPS + Z.AI API direct
+      if (scriptModel === "glm5") {
+        const { data: zaiKeyData, error: zaiKeyError } = await supabase.rpc("get_user_api_key", {
+          key_name: "zai",
+        });
+
+        if (zaiKeyError || !zaiKeyData) {
+          clearInterval(progressInterval);
+          setIsGeneratingScript(false);
+          toast.error("Clé API Z.AI manquante. Configurez-la dans votre profil.");
+          return;
+        }
+
+        const VPS_URL = import.meta.env.VITE_VPS_URL || "https://purpleai.duckdns.org/api/render";
+
+        const response = await fetch(`${VPS_URL}/generate-script`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            zaiApiKey: zaiKeyData,
+            customPrompt: finalPrompt,
+            model: "glm-5",
+            async: true,
+            projectId: tempProject.id,
+            userId: user!.id,
+            webSearch: {
+              enabled: useWebSearch,
+            },
+          }),
+        });
+
+        clearInterval(progressInterval);
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.error || `Erreur VPS: ${response.status}`);
+        }
+
+        const result = await response.json();
+        if (result?.jobId) {
+          setVpsScriptJobId(result.jobId);
+          try {
+            localStorage.setItem(`vps_script_job_${tempProject.id}`, result.jobId);
+          } catch (_) {}
+          setStep("script");
+          toast.info("Génération du script avec GLM-5 en cours... Vous pouvez quitter cette page.");
+          return;
+        }
+
+        throw new Error("Pas de job ID reçu du VPS");
+      }
+
       // For other models, use the standard Supabase Edge Function flow
       const { data, error } = await supabase.functions.invoke('start-generation-job', {
         body: {
@@ -2175,7 +2229,7 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                   {/* Model selector */}
                   <div className="space-y-2">
                     <Label>Modèle pour le script</Label>
-                    <Select value={scriptModel} onValueChange={(v) => setScriptModel(v as "claude" | "claude-thinking" | "gpt5")}>
+                    <Select value={scriptModel} onValueChange={(v) => setScriptModel(v as "claude" | "claude-thinking" | "gpt5" | "glm5")}>
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
@@ -2194,6 +2248,13 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                             <span className="text-xs text-primary mt-1 whitespace-normal break-words">✨ Modèle premium - intelligence maximale</span>
                           </div>
                         </SelectItem>
+                        <SelectItem value="glm5">
+                          <div className="flex flex-col">
+                            <span className="font-medium">GLM-5 (Z.AI)</span>
+                            <span className="text-xs text-muted-foreground">Via Z.AI API directe (nécessite clé API Z.AI)</span>
+                            <span className="text-xs text-primary mt-1 whitespace-normal break-words">✨ Deep thinking activé + recherche web</span>
+                          </div>
+                        </SelectItem>
                         <SelectItem value="gpt5">
                           <div className="flex flex-col">
                             <span className="font-medium">GPT-5.1</span>
@@ -2204,11 +2265,11 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                     </Select>
                   </div>
 
-                  {/* Web search toggle (Claude only) */}
+                  {/* Web search toggle (Claude + GLM-5) */}
                   {scriptModel !== "gpt5" && (
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
-                        <Label>Recherche web (Anthropic)</Label>
+                        <Label>Recherche web {scriptModel === "glm5" ? "(Z.AI)" : "(Anthropic)"}</Label>
                         <div className="flex items-center gap-2">
                           <span className="text-xs text-muted-foreground">Off/On</span>
                           <Checkbox
@@ -2219,7 +2280,9 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                         </div>
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        Si activé, Claude peut utiliser l’outil “web_search” natif d’Anthropic et ajouter des citations automatiquement (nécessite activation dans la Console Anthropic).
+                        {scriptModel === "glm5"
+                          ? "Si activé, GLM-5 peut effectuer des recherches web pour enrichir le script avec des informations récentes."
+                          : "Si activé, Claude peut utiliser l’outil "web_search" natif d’Anthropic et ajouter des citations automatiquement (nécessite activation dans la Console Anthropic)."}
                       </p>
                     </div>
                   )}

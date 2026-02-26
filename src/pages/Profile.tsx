@@ -26,6 +26,7 @@ const Profile = () => {
   const [geminiApiKey, setGeminiApiKey] = useState("");
   const [genaiproApiKey, setGenaiproApiKey] = useState("");
   const [ai33ApiKey, setAi33ApiKey] = useState("");
+  const [zaiApiKey, setZaiApiKey] = useState("");
   
   // Track original values to detect changes
   const [originalKeys, setOriginalKeys] = useState({
@@ -39,7 +40,8 @@ const Profile = () => {
     inworld: "",
     gemini: "",
     genaipro: "",
-    ai33: ""
+    ai33: "",
+    zai: ""
   });
   const [showKeys, setShowKeys] = useState({
     replicate: false,
@@ -52,7 +54,8 @@ const Profile = () => {
     inworld: false,
     gemini: false,
     genaipro: false,
-    ai33: false
+    ai33: false,
+    zai: false
   });
 
   // Password change state
@@ -88,7 +91,7 @@ const Profile = () => {
     setIsLoading(true);
     try {
       // Try to get API keys from Vault
-      const [replicateResult, elevenLabsResult, minimaxResult, anthropicResult, braveResult, keiResult, apifyResult, inworldResult, geminiResult, genaiproResult, ai33Result] = await Promise.all([
+      const [replicateResult, elevenLabsResult, minimaxResult, anthropicResult, braveResult, keiResult, apifyResult, inworldResult, geminiResult, genaiproResult, ai33Result, zaiResult] = await Promise.all([
         supabase.rpc('get_user_api_key', { key_name: 'replicate' }),
         supabase.rpc('get_user_api_key', { key_name: 'eleven_labs' }),
         supabase.rpc('get_user_api_key', { key_name: 'minimax' }),
@@ -100,6 +103,7 @@ const Profile = () => {
         supabase.rpc('get_user_api_key', { key_name: 'gemini' }),
         supabase.rpc('get_user_api_key', { key_name: 'genaipro' }),
         supabase.rpc('get_user_api_key', { key_name: 'ai33' }),
+        supabase.rpc('get_user_api_key', { key_name: 'zai' }),
       ]);
 
       const replicateValue = replicateResult.data || "";
@@ -113,6 +117,7 @@ const Profile = () => {
       const geminiValue = geminiResult.data || "";
       const genaiproValue = genaiproResult.data || "";
       const ai33Value = ai33Result.data || "";
+      const zaiValue = zaiResult.data || "";
 
       // Set current values
       setReplicateApiKey(replicateValue);
@@ -126,6 +131,7 @@ const Profile = () => {
       setGeminiApiKey(geminiValue);
       setGenaiproApiKey(genaiproValue);
       setAi33ApiKey(ai33Value);
+      setZaiApiKey(zaiValue);
       
       // Store original values to track changes
       setOriginalKeys({
@@ -139,7 +145,8 @@ const Profile = () => {
         inworld: inworldValue,
         gemini: geminiValue,
         genaipro: genaiproValue,
-        ai33: ai33Value
+        ai33: ai33Value,
+        zai: zaiValue
       });
       
       if (replicateResult.error && !replicateResult.error.message?.includes('not found')) {
@@ -201,6 +208,9 @@ const Profile = () => {
     if (ai33ApiKey.trim() !== originalKeys.ai33) {
       changedKeys.push({ key_name: 'ai33', key_value: ai33ApiKey.trim() });
     }
+    if (zaiApiKey.trim() !== originalKeys.zai) {
+      changedKeys.push({ key_name: 'zai', key_value: zaiApiKey.trim() });
+    }
 
     if (changedKeys.length === 0) {
       toast.info("Aucune modification détectée");
@@ -234,7 +244,8 @@ const Profile = () => {
         inworld: inworldApiKey.trim(),
         gemini: geminiApiKey.trim(),
         genaipro: genaiproApiKey.trim(),
-        ai33: ai33ApiKey.trim()
+        ai33: ai33ApiKey.trim(),
+        zai: zaiApiKey.trim()
       });
 
       toast.success("Clés API sauvegardées avec succès !");
@@ -478,6 +489,42 @@ const Profile = () => {
                       Utilisée pour Claude 3.5 Sonnet via API Anthropic directe (plus rapide, pas de limite Replicate).{" "}
                       <a
                         href="https://console.anthropic.com/settings/keys"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary hover:underline"
+                      >
+                        Obtenir une clé
+                      </a>
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="zai-key">
+                      Z.AI API Key (GLM-5)
+                    </Label>
+                    <div className="relative">
+                      <Input
+                        id="zai-key"
+                        type={showKeys.zai ? "text" : "password"}
+                        value={zaiApiKey}
+                        onChange={(e) => setZaiApiKey(e.target.value)}
+                        placeholder="a147..."
+                        className="pr-10"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                        onClick={() => setShowKeys(prev => ({ ...prev, zai: !prev.zai }))}
+                      >
+                        {showKeys.zai ? <EyeOff className="h-4 w-4 text-muted-foreground" /> : <Eye className="h-4 w-4 text-muted-foreground" />}
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Utilisée pour la génération de scripts avec GLM-5 (deep thinking + web search).{" "}
+                      <a
+                        href="https://z.ai/manage-apikey/apikey-list"
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-primary hover:underline"
@@ -743,7 +790,7 @@ const Profile = () => {
 
                 <Button
                   onClick={handleSave}
-                  disabled={isSaving || (!replicateApiKey.trim() && !elevenLabsApiKey.trim() && !minimaxApiKey.trim() && !anthropicApiKey.trim() && !braveApiKey.trim() && !keiApiKey.trim() && !apifyApiKey.trim() && !inworldApiKey.trim() && !geminiApiKey.trim() && !genaiproApiKey.trim() && !ai33ApiKey.trim())}
+                  disabled={isSaving || (!replicateApiKey.trim() && !elevenLabsApiKey.trim() && !minimaxApiKey.trim() && !anthropicApiKey.trim() && !zaiApiKey.trim() && !braveApiKey.trim() && !keiApiKey.trim() && !apifyApiKey.trim() && !inworldApiKey.trim() && !geminiApiKey.trim() && !genaiproApiKey.trim() && !ai33ApiKey.trim())}
                   className="w-full"
                   size="lg"
                 >

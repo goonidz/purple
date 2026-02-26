@@ -75,6 +75,18 @@ const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null;
 
+function buildZaiWebSearchTool(webSearch) {
+  if (!webSearch || webSearch.enabled !== true) return null;
+  return {
+    type: 'web_search',
+    web_search: {
+      enable: true,
+      search_engine: 'search_pro_jina',
+      search_result: true,
+    },
+  };
+}
+
 function buildAnthropicWebSearchTool(webSearch) {
   // Anthropic native web search tool (per docs)
   if (!webSearch || webSearch.enabled !== true) return null;
@@ -528,6 +540,7 @@ async function processGenerateScriptJob(jobId, payload) {
   const startTime = Date.now();
   const {
     anthropicApiKey,
+    zaiApiKey,
     customPrompt,
     model = 'claude-sonnet-4-6',
     thinkingBudgetTokens,
@@ -537,6 +550,8 @@ async function processGenerateScriptJob(jobId, payload) {
     userId,
     webSearch,
   } = payload || {};
+
+  const isGlm5 = model === 'glm-5';
 
   // Update job to processing
   jobs.set(jobId, {
@@ -551,14 +566,6 @@ async function processGenerateScriptJob(jobId, payload) {
   });
 
   try {
-    const resolvedModel = await resolveAnthropicModelId({ apiKey: anthropicApiKey, requestedModel: model });
-    if (resolvedModel !== model) {
-      console.log(`[generate-script] Model alias resolved: "${model}" -> "${resolvedModel}"`);
-    }
-
-    console.log(`[generate-script] [${jobId}] Starting script generation with model: ${resolvedModel}`);
-    console.log(`[generate-script] [${jobId}] Prompt length: ${String(customPrompt || '').length} characters`);
-
     const systemPrompt = `Tu es un assistant d'écriture professionnel. Tu génères exactement ce que l'utilisateur demande, sans commentaires ni explications supplémentaires. Réponds uniquement avec le contenu demandé.
 
 RÈGLE CRITIQUE SUR LA LONGUEUR:
@@ -567,81 +574,135 @@ RÈGLE CRITIQUE SUR LA LONGUEUR:
 - Développe chaque section en profondeur pour atteindre la longueur requise
 - Ajoute des détails, des exemples, des transitions, des descriptions riches`;
 
-    const webSearchTool = buildAnthropicWebSearchTool(webSearch);
-    if (webSearchTool) {
-      console.log(`[generate-script] [${jobId}] Anthropic Web Search enabled (max_uses=${webSearchTool.max_uses})`);
-      jobs.set(jobId, { ...jobs.get(jobId), progress: 10, currentStep: 'Recherche web (Anthropic)...' });
-    }
+    let script = '';
+    let resolvedModel = model;
 
-    // Thinking mode selection:
-    // - If `effort` param is set → Sonnet 4.6 adaptive thinking (recommended)
-    // - If `thinkingBudgetTokens` is set → legacy manual mode (Sonnet 4.5 / backward compat)
-    // - Otherwise → no thinking
-    const useAdaptiveThinking = effort && typeof effort === 'string';
-    const parsedThinkingBudget = Number(thinkingBudgetTokens);
-    const useLegacyThinking = !useAdaptiveThinking && Number.isFinite(parsedThinkingBudget) && parsedThinkingBudget > 0;
+    if (isGlm5) {
+      // ── Z.AI GLM-5 path ──
+      console.log(`[generate-script] [${jobId}] Starting script generation with Z.AI GLM-5`);
+      console.log(`[generate-script] [${jobId}] Prompt length: ${String(customPrompt || '').length} characters`);
 
-    // In adaptive mode, max_tokens is purely the output budget (Anthropic manages thinking internally).
-    // In legacy mode, we must add thinking budget on top since Anthropic subtracts it from max_tokens.
-    const desiredOutputMaxTokens = Number.isFinite(Number(maxTokens)) && Number(maxTokens) > 0 ? Number(maxTokens) : 16000;
-    const totalMaxTokens = useLegacyThinking ? desiredOutputMaxTokens + parsedThinkingBudget : desiredOutputMaxTokens;
+      const zaiWebSearchTool = buildZaiWebSearchTool(webSearch);
+      if (zaiWebSearchTool) {
+        console.log(`[generate-script] [${jobId}] Z.AI Web Search enabled`);
+        jobs.set(jobId, { ...jobs.get(jobId), progress: 10, currentStep: 'Recherche web (Z.AI)...' });
+      }
 
-    jobs.set(jobId, {
-      ...jobs.get(jobId),
-      progress: 15,
-      currentStep: (useAdaptiveThinking || useLegacyThinking) ? 'Claude réfléchit (thinking)...' : 'Génération en cours...',
-      model: resolvedModel,
-    });
+      jobs.set(jobId, {
+        ...jobs.get(jobId),
+        progress: 15,
+        currentStep: 'GLM-5 réfléchit (deep thinking)...',
+        model: 'glm-5',
+      });
 
-    if (useAdaptiveThinking) {
-      console.log(`[generate-script] [${jobId}] Adaptive thinking enabled (effort=${effort}, max_tokens=${totalMaxTokens})`);
-    } else if (useLegacyThinking) {
-      console.log(`[generate-script] [${jobId}] Legacy extended thinking enabled (budget_tokens=${parsedThinkingBudget}, max_tokens=${totalMaxTokens})`);
+      const requestBody = {
+        model: 'glm-5',
+        max_tokens: 16000,
+        temperature: 1.0,
+        thinking: { type: 'enabled' },
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: customPrompt },
+        ],
+      };
+
+      if (zaiWebSearchTool) {
+        requestBody.tools = [zaiWebSearchTool];
+      }
+
+      console.log(`[generate-script] [${jobId}] Calling Z.AI API...`);
+
+      const zaiResponse = await axios.post('https://api.z.ai/api/paas/v4/chat/completions', requestBody, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${zaiApiKey}`,
+        },
+        timeout: 600000,
+      });
+
+      if (zaiResponse.data.choices && zaiResponse.data.choices.length > 0) {
+        script = zaiResponse.data.choices[0].message?.content || '';
+      }
+
+      if (!script) throw new Error('No script content returned from Z.AI API');
+
     } else {
-      console.log(`[generate-script] [${jobId}] Extended thinking disabled (max_tokens=${totalMaxTokens})`);
-    }
+      // ── Anthropic path (Claude) ──
+      resolvedModel = await resolveAnthropicModelId({ apiKey: anthropicApiKey, requestedModel: model });
+      if (resolvedModel !== model) {
+        console.log(`[generate-script] Model alias resolved: "${model}" -> "${resolvedModel}"`);
+      }
 
-    const requestBody = {
-      model: resolvedModel,
-      max_tokens: totalMaxTokens,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: customPrompt }],
-    };
+      console.log(`[generate-script] [${jobId}] Starting script generation with model: ${resolvedModel}`);
+      console.log(`[generate-script] [${jobId}] Prompt length: ${String(customPrompt || '').length} characters`);
 
-    if (useAdaptiveThinking) {
-      requestBody.thinking = { type: 'adaptive' };
-      requestBody.output_config = { effort };
-    } else if (useLegacyThinking) {
-      requestBody.thinking = { type: 'enabled', budget_tokens: parsedThinkingBudget };
-    }
-    if (webSearchTool) {
-      requestBody.tools = [webSearchTool];
-    }
+      const webSearchTool = buildAnthropicWebSearchTool(webSearch);
+      if (webSearchTool) {
+        console.log(`[generate-script] [${jobId}] Anthropic Web Search enabled (max_uses=${webSearchTool.max_uses})`);
+        jobs.set(jobId, { ...jobs.get(jobId), progress: 10, currentStep: 'Recherche web (Anthropic)...' });
+      }
 
-    const anthropicResponse = await axios.post('https://api.anthropic.com/v1/messages', requestBody, {
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': anthropicApiKey,
-        'anthropic-version': '2023-06-01',
-        // interleaved-thinking beta header only needed for legacy manual mode on Sonnet 4.6;
-        // adaptive thinking enables interleaved automatically, no header required.
-        ...(useLegacyThinking ? { 'anthropic-beta': 'interleaved-thinking-2025-05-14' } : {}),
-      },
-      timeout: 600000,
-    });
+      const useAdaptiveThinking = effort && typeof effort === 'string';
+      const parsedThinkingBudget = Number(thinkingBudgetTokens);
+      const useLegacyThinking = !useAdaptiveThinking && Number.isFinite(parsedThinkingBudget) && parsedThinkingBudget > 0;
+
+      const desiredOutputMaxTokens = Number.isFinite(Number(maxTokens)) && Number(maxTokens) > 0 ? Number(maxTokens) : 16000;
+      const totalMaxTokens = useLegacyThinking ? desiredOutputMaxTokens + parsedThinkingBudget : desiredOutputMaxTokens;
+
+      jobs.set(jobId, {
+        ...jobs.get(jobId),
+        progress: 15,
+        currentStep: (useAdaptiveThinking || useLegacyThinking) ? 'Claude réfléchit (thinking)...' : 'Génération en cours...',
+        model: resolvedModel,
+      });
+
+      if (useAdaptiveThinking) {
+        console.log(`[generate-script] [${jobId}] Adaptive thinking enabled (effort=${effort}, max_tokens=${totalMaxTokens})`);
+      } else if (useLegacyThinking) {
+        console.log(`[generate-script] [${jobId}] Legacy extended thinking enabled (budget_tokens=${parsedThinkingBudget}, max_tokens=${totalMaxTokens})`);
+      } else {
+        console.log(`[generate-script] [${jobId}] Extended thinking disabled (max_tokens=${totalMaxTokens})`);
+      }
+
+      const requestBody = {
+        model: resolvedModel,
+        max_tokens: totalMaxTokens,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: customPrompt }],
+      };
+
+      if (useAdaptiveThinking) {
+        requestBody.thinking = { type: 'adaptive' };
+        requestBody.output_config = { effort };
+      } else if (useLegacyThinking) {
+        requestBody.thinking = { type: 'enabled', budget_tokens: parsedThinkingBudget };
+      }
+      if (webSearchTool) {
+        requestBody.tools = [webSearchTool];
+      }
+
+      const anthropicResponse = await axios.post('https://api.anthropic.com/v1/messages', requestBody, {
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': anthropicApiKey,
+          'anthropic-version': '2023-06-01',
+          ...(useLegacyThinking ? { 'anthropic-beta': 'interleaved-thinking-2025-05-14' } : {}),
+        },
+        timeout: 600000,
+      });
+
+      if (anthropicResponse.data.content && anthropicResponse.data.content.length > 0) {
+        script = anthropicResponse.data.content
+          .filter((block) => block.type === 'text')
+          .map((block) => block.text)
+          .join('\n\n');
+      }
+
+      if (!script) throw new Error('No script content returned from Anthropic API');
+    }
 
     const duration = ((Date.now() - startTime) / 1000).toFixed(2);
     console.log(`[generate-script] [${jobId}] API call completed in ${duration}s`);
-
-    let script = '';
-    if (anthropicResponse.data.content && anthropicResponse.data.content.length > 0) {
-      script = anthropicResponse.data.content
-        .filter((block) => block.type === 'text')
-        .map((block) => block.text)
-        .join('\n\n');
-    }
-
-    if (!script) throw new Error('No script content returned from Anthropic API');
 
     const wordCount = script.split(/\s+/).filter((w) => w.length > 0).length;
     const estimatedDuration = Math.round(wordCount / 2.5);
@@ -2471,6 +2532,7 @@ async function cleanupOldJobs(maxAgeHours = 1) {
 app.post('/generate-script', async (req, res) => {
   const {
     anthropicApiKey,
+    zaiApiKey,
     customPrompt,
     model = 'claude-sonnet-4-6',
     thinkingBudgetTokens,
@@ -2481,10 +2543,13 @@ app.post('/generate-script', async (req, res) => {
     userId,
     webSearch,
   } = req.body;
+
+  const isGlm5 = model === 'glm-5';
   
   // DEBUG: Log received parameters
   console.log('[generate-script] Received parameters:', {
     hasAnthropicKey: !!anthropicApiKey,
+    hasZaiKey: !!zaiApiKey,
     promptLength: customPrompt?.length || 0,
     model,
     asyncMode,
@@ -2493,8 +2558,11 @@ app.post('/generate-script', async (req, res) => {
     webSearchEnabled: webSearch?.enabled
   });
 
-  if (!anthropicApiKey) {
+  if (!isGlm5 && !anthropicApiKey) {
     return res.status(400).json({ error: 'Anthropic API key required' });
+  }
+  if (isGlm5 && !zaiApiKey) {
+    return res.status(400).json({ error: 'Z.AI API key required for GLM-5' });
   }
   
   if (!customPrompt) {
@@ -2502,7 +2570,6 @@ app.post('/generate-script', async (req, res) => {
   }
 
   // Async job mode: return immediately and do the generation in background.
-  // This allows the user to leave the page and come back later (script is saved to Supabase).
   if (asyncMode === true || projectId) {
     const jobId = `script_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
     jobs.set(jobId, {
@@ -2515,12 +2582,13 @@ app.post('/generate-script', async (req, res) => {
       userId: userId || null,
     });
 
-    // Fire and forget
     processGenerateScriptJob(jobId, {
       anthropicApiKey,
+      zaiApiKey,
       customPrompt,
       model,
       thinkingBudgetTokens,
+      effort,
       maxTokens,
       projectId,
       userId,
@@ -2547,15 +2615,7 @@ app.post('/generate-script', async (req, res) => {
       message: 'Script generation started',
     });
   }
-  
-  const resolvedModel = await resolveAnthropicModelId({ apiKey: anthropicApiKey, requestedModel: model });
-  if (resolvedModel !== model) {
-    console.log(`[generate-script] Model alias resolved: "${model}" -> "${resolvedModel}"`);
-  }
 
-  console.log(`[generate-script] Starting script generation with model: ${resolvedModel}`);
-  console.log(`[generate-script] Prompt length: ${customPrompt.length} characters`);
-  
   const systemPrompt = `Tu es un assistant d'écriture professionnel. Tu génères exactement ce que l'utilisateur demande, sans commentaires ni explications supplémentaires. Réponds uniquement avec le contenu demandé.
 
 RÈGLE CRITIQUE SUR LA LONGUEUR:
@@ -2566,82 +2626,104 @@ RÈGLE CRITIQUE SUR LA LONGUEUR:
 
   try {
     const startTime = Date.now();
+    let script = '';
+    let resolvedModel = model;
 
-    // Thinking mode selection:
-    // - If `effort` param is set → Sonnet 4.6 adaptive thinking (recommended)
-    // - If `thinkingBudgetTokens` is set → legacy manual mode (Sonnet 4.5 / backward compat)
-    // - Otherwise → no thinking
-    const useAdaptiveThinking = effort && typeof effort === 'string';
-    const parsedThinkingBudget = Number(thinkingBudgetTokens);
-    const useLegacyThinking = !useAdaptiveThinking && Number.isFinite(parsedThinkingBudget) && parsedThinkingBudget > 0;
+    if (isGlm5) {
+      // ── Z.AI GLM-5 sync path ──
+      console.log(`[generate-script] Starting script generation with Z.AI GLM-5`);
 
-    // In adaptive mode, max_tokens is purely the output budget (Anthropic manages thinking internally).
-    // In legacy mode, we must add thinking budget on top since Anthropic subtracts it from max_tokens.
-    const desiredOutputMaxTokens = Number.isFinite(Number(maxTokens)) && Number(maxTokens) > 0 ? Number(maxTokens) : 16000;
-    const totalMaxTokens = useLegacyThinking ? desiredOutputMaxTokens + parsedThinkingBudget : desiredOutputMaxTokens;
+      const requestBody = {
+        model: 'glm-5',
+        max_tokens: 16000,
+        temperature: 1.0,
+        thinking: { type: 'enabled' },
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: customPrompt },
+        ],
+      };
 
-    if (useAdaptiveThinking) {
-      console.log(`[generate-script] Adaptive thinking enabled (effort=${effort}, max_tokens=${totalMaxTokens})`);
-    } else if (useLegacyThinking) {
-      console.log(`[generate-script] Legacy extended thinking enabled (budget_tokens=${parsedThinkingBudget}, max_tokens=${totalMaxTokens})`);
+      const zaiWebSearchTool = buildZaiWebSearchTool(webSearch);
+      if (zaiWebSearchTool) {
+        requestBody.tools = [zaiWebSearchTool];
+        console.log(`[generate-script] Z.AI Web Search enabled`);
+      }
+
+      const zaiResponse = await axios.post('https://api.z.ai/api/paas/v4/chat/completions', requestBody, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${zaiApiKey}`,
+        },
+        timeout: 600000,
+      });
+
+      if (zaiResponse.data.choices && zaiResponse.data.choices.length > 0) {
+        script = zaiResponse.data.choices[0].message?.content || '';
+      }
+
+      if (!script) throw new Error('No script content returned from Z.AI API');
+
     } else {
-      console.log(`[generate-script] Extended thinking disabled (max_tokens=${totalMaxTokens})`);
+      // ── Anthropic sync path ──
+      resolvedModel = await resolveAnthropicModelId({ apiKey: anthropicApiKey, requestedModel: model });
+      if (resolvedModel !== model) {
+        console.log(`[generate-script] Model alias resolved: "${model}" -> "${resolvedModel}"`);
+      }
+
+      console.log(`[generate-script] Starting script generation with model: ${resolvedModel}`);
+
+      const useAdaptiveThinking = effort && typeof effort === 'string';
+      const parsedThinkingBudget = Number(thinkingBudgetTokens);
+      const useLegacyThinking = !useAdaptiveThinking && Number.isFinite(parsedThinkingBudget) && parsedThinkingBudget > 0;
+
+      const desiredOutputMaxTokens = Number.isFinite(Number(maxTokens)) && Number(maxTokens) > 0 ? Number(maxTokens) : 16000;
+      const totalMaxTokens = useLegacyThinking ? desiredOutputMaxTokens + parsedThinkingBudget : desiredOutputMaxTokens;
+
+      const webSearchTool = buildAnthropicWebSearchTool(webSearch);
+      if (webSearchTool) {
+        console.log(`[generate-script] Anthropic Web Search enabled (max_uses=${webSearchTool.max_uses})`);
+      }
+
+      const requestBody = {
+        model: resolvedModel,
+        max_tokens: totalMaxTokens,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: customPrompt }],
+      };
+
+      if (useAdaptiveThinking) {
+        requestBody.thinking = { type: 'adaptive' };
+        requestBody.output_config = { effort };
+      } else if (useLegacyThinking) {
+        requestBody.thinking = { type: 'enabled', budget_tokens: parsedThinkingBudget };
+      }
+      if (webSearchTool) {
+        requestBody.tools = [webSearchTool];
+      }
+
+      const anthropicResponse = await axios.post('https://api.anthropic.com/v1/messages', requestBody, {
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': anthropicApiKey,
+          'anthropic-version': '2023-06-01',
+          ...(useLegacyThinking ? { 'anthropic-beta': 'interleaved-thinking-2025-05-14' } : {}),
+        },
+        timeout: 600000,
+      });
+
+      if (anthropicResponse.data.content && anthropicResponse.data.content.length > 0) {
+        script = anthropicResponse.data.content
+          .filter(block => block.type === 'text')
+          .map(block => block.text)
+          .join('\n\n');
+      }
+
+      if (!script) throw new Error('No script content returned from Anthropic API');
     }
 
-    const webSearchTool = buildAnthropicWebSearchTool(webSearch);
-    if (webSearchTool) {
-      console.log(`[generate-script] Anthropic Web Search enabled (max_uses=${webSearchTool.max_uses})`);
-    }
-
-    const requestBody = {
-      model: resolvedModel,
-      max_tokens: totalMaxTokens,
-      system: systemPrompt,
-      messages: [
-        {
-          role: 'user',
-          content: customPrompt
-        }
-      ]
-    };
-
-    if (useAdaptiveThinking) {
-      requestBody.thinking = { type: 'adaptive' };
-      requestBody.output_config = { effort };
-    } else if (useLegacyThinking) {
-      requestBody.thinking = { type: 'enabled', budget_tokens: parsedThinkingBudget };
-    }
-    if (webSearchTool) {
-      requestBody.tools = [webSearchTool];
-    }
-    
-    const anthropicResponse = await axios.post('https://api.anthropic.com/v1/messages', requestBody, {
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': anthropicApiKey,
-        'anthropic-version': '2023-06-01',
-        // interleaved-thinking beta header only needed for legacy manual mode on Sonnet 4.6;
-        // adaptive thinking enables interleaved automatically, no header required.
-        ...(useLegacyThinking ? { 'anthropic-beta': 'interleaved-thinking-2025-05-14' } : {}),
-      },
-      timeout: 600000 // 10 minutes timeout
-    });
-    
     const duration = ((Date.now() - startTime) / 1000).toFixed(2);
     console.log(`[generate-script] API call completed in ${duration}s`);
-    
-    // Extract the script from the response
-    let script = '';
-    if (anthropicResponse.data.content && anthropicResponse.data.content.length > 0) {
-      script = anthropicResponse.data.content
-        .filter(block => block.type === 'text')
-        .map(block => block.text)
-        .join('\n\n');
-    }
-    
-    if (!script) {
-      throw new Error('No script content returned from Anthropic API');
-    }
     
     const wordCount = script.split(/\s+/).filter(w => w.length > 0).length;
     console.log(`[generate-script] Script generated: ${wordCount} words`);
@@ -2658,8 +2740,9 @@ RÈGLE CRITIQUE SUR LA LONGUEUR:
     console.error('[generate-script] Error:', error.response?.data || error.message);
     
     const errorMessage = error.response?.data?.error?.message || error.message;
+    const prefix = isGlm5 ? 'Z.AI API error' : 'Anthropic API error';
     res.status(500).json({ 
-      error: `Anthropic API error: ${errorMessage}` 
+      error: `${prefix}: ${errorMessage}` 
     });
   }
 });
