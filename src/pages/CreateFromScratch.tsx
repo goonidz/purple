@@ -553,18 +553,9 @@ const CreateFromScratch = () => {
       setProjectId(data.id);
       setProjectName(data.name || "");
 
-      // Check if a VPS script job is still running
-      const activeJob = localStorage.getItem(`vps_script_job_${data.id}`);
-      if (activeJob) {
-        setIsGeneratingScript(true);
-        setGenerationProgress(10);
-        setGenerationMessage("Reprise de la génération du script...");
-        setVpsScriptJobId(activeJob);
-        setStep("script");
-        return;
-      }
-
+      // If script already exists, show it directly (and clean up any stale job ID)
       if (data.summary) {
+        try { localStorage.removeItem(`vps_script_job_${data.id}`); } catch (_) {}
         setGeneratedScript(data.summary);
         setWordCount(data.summary.split(/\s+/).length);
         setEstimatedDuration(Math.round(data.summary.split(/\s+/).length / 2.5));
@@ -1200,11 +1191,16 @@ const CreateFromScratch = () => {
     try {
       const saved = localStorage.getItem(`vps_script_job_${projectId}`);
       if (saved && !vpsScriptJobId) {
-        setIsGeneratingScript(true);
-        setGenerationProgress(10);
-        setGenerationMessage("Reprise de la génération du script...");
-        setVpsScriptJobId(saved);
-        setStep("script");
+        // Only resume if we don't already have a script
+        if (!generatedScript) {
+          setIsGeneratingScript(true);
+          setGenerationProgress(10);
+          setGenerationMessage("Reprise de la génération du script...");
+          setVpsScriptJobId(saved);
+          setStep("script");
+        } else {
+          localStorage.removeItem(`vps_script_job_${projectId}`);
+        }
       }
     } catch (_) {}
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -947,23 +947,11 @@ const Index = () => {
 
       if (error) throw error;
 
+      // Clean up any stale VPS script job IDs
+      try { localStorage.removeItem(`vps_script_job_${projectId}`); } catch (_) {}
+
       // Check if this is a "from scratch" project that needs to continue the workflow
       const hasScript = data.summary && data.summary.length > 100;
-
-      // If a VPS script job ID is in localStorage, check if the script is already done
-      try {
-        const activeJob = localStorage.getItem(`vps_script_job_${projectId}`);
-        if (activeJob) {
-          if (hasScript) {
-            // Script already exists — stale job ID, clean up
-            localStorage.removeItem(`vps_script_job_${projectId}`);
-          } else {
-            // Script not done yet — redirect to generation UI
-            navigate(`/create-from-scratch?continue=${projectId}`);
-            return;
-          }
-        }
-      } catch (_) {}
       const hasAudio = !!data.audio_url;
       const hasTranscript = data.transcript_json && Object.keys(data.transcript_json).length > 0;
       
