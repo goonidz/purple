@@ -451,35 +451,39 @@ const Index = () => {
         
         if (scenesRes.data && scenesRes.data.length > 0) {
           // MERGE: timing from scenes JSON, images from project_scenes
-          const newPrompts: GeneratedPrompt[] = scenesRes.data.map((s: any) => {
-            const sceneIdx = s.scene_index; // Use scene_index from DB, not array index
-            return {
+          // Build map by scene_index to handle gaps in project_scenes
+          const sceneMap = new Map<number, any>();
+          for (const s of scenesRes.data) {
+            sceneMap.set(s.scene_index, s);
+          }
+          const totalScenes = Math.max(scenesJson.length, promptsJson.length, (scenesRes.data[scenesRes.data.length - 1]?.scene_index ?? -1) + 1);
+          const newPrompts: GeneratedPrompt[] = [];
+          for (let sceneIdx = 0; sceneIdx < totalScenes; sceneIdx++) {
+            const s = sceneMap.get(sceneIdx);
+            newPrompts[sceneIdx] = {
               scene: `Scène ${sceneIdx + 1}`,
-              prompt: s.prompt,
-              // Get timing from project.scenes (source of truth)
+              prompt: s?.prompt || promptsJson[sceneIdx]?.prompt,
               text: scenesJson[sceneIdx]?.text || promptsJson[sceneIdx]?.text || '',
               startTime: scenesJson[sceneIdx]?.startTime,
               endTime: scenesJson[sceneIdx]?.endTime,
               duration: scenesJson[sceneIdx]?.endTime && scenesJson[sceneIdx]?.startTime 
                 ? scenesJson[sceneIdx].endTime - scenesJson[sceneIdx].startTime 
                 : undefined,
-              // Images from project_scenes WITH FALLBACK to legacy JSON
-              imageUrl: s.upscaled_url || s.image_url || promptsJson[sceneIdx]?.imageUrl,
-              imageWidth: s.image_width || promptsJson[sceneIdx]?.imageWidth,
-              imageHeight: s.image_height || promptsJson[sceneIdx]?.imageHeight,
-              // QA data from project_scenes WITH FALLBACK
-              qa_checked: s.qa_checked ?? promptsJson[sceneIdx]?.qa_checked,
-              qa_status: s.qa_status || promptsJson[sceneIdx]?.qa_status,
-              qa_explication: s.qa_explication || promptsJson[sceneIdx]?.qa_explication,
-              qa_regeneration_prompt: s.qa_regeneration_prompt || promptsJson[sceneIdx]?.qa_regeneration_prompt,
-              was_regenerated: s.was_regenerated ?? promptsJson[sceneIdx]?.was_regenerated,
+              imageUrl: s ? (s.upscaled_url || s.image_url || promptsJson[sceneIdx]?.imageUrl) : promptsJson[sceneIdx]?.imageUrl,
+              imageWidth: s?.image_width || promptsJson[sceneIdx]?.imageWidth,
+              imageHeight: s?.image_height || promptsJson[sceneIdx]?.imageHeight,
+              qa_checked: s ? (s.qa_checked ?? promptsJson[sceneIdx]?.qa_checked) : promptsJson[sceneIdx]?.qa_checked,
+              qa_status: s?.qa_status || promptsJson[sceneIdx]?.qa_status,
+              qa_explication: s?.qa_explication || promptsJson[sceneIdx]?.qa_explication,
+              qa_regeneration_prompt: s?.qa_regeneration_prompt || promptsJson[sceneIdx]?.qa_regeneration_prompt,
+              was_regenerated: s ? (s.was_regenerated ?? promptsJson[sceneIdx]?.was_regenerated) : promptsJson[sceneIdx]?.was_regenerated,
               manually_regenerated: promptsJson[sceneIdx]?.manually_regenerated ?? false,
-              regenerated_prompt: s.regenerated_prompt || promptsJson[sceneIdx]?.regenerated_prompt,
-              isUpscaled: s.is_upscaled ?? promptsJson[sceneIdx]?.isUpscaled,
-              videoUrl: s.video_url || promptsJson[sceneIdx]?.videoUrl,
-              continuityGroupId: s.continuity_group_id || promptsJson[sceneIdx]?.continuityGroupId
+              regenerated_prompt: s?.regenerated_prompt || promptsJson[sceneIdx]?.regenerated_prompt,
+              isUpscaled: s ? (s.is_upscaled ?? promptsJson[sceneIdx]?.isUpscaled) : promptsJson[sceneIdx]?.isUpscaled,
+              videoUrl: s?.video_url || promptsJson[sceneIdx]?.videoUrl,
+              continuityGroupId: s?.continuity_group_id || promptsJson[sceneIdx]?.continuityGroupId
             };
-          });
+          }
           promptsWithGroups = calculateGroupsIfMissing(newPrompts);
           console.log(`[handleJobComplete] Loaded ${promptsWithGroups.length} prompts from project_scenes (merged with legacy fallback)`);
         } else {
@@ -813,37 +817,42 @@ const Index = () => {
 
         if (scenesRes.data && scenesRes.data.length > 0) {
           // MERGE: timing from scenes JSON, images from project_scenes, other fields from prompts JSON
+          // Build a map by scene_index to avoid sequential array issues when rows are missing
           const scenesData = scenesRes.data;
-          const newPrompts: GeneratedPrompt[] = scenesData.map((s) => {
-            const sceneIdx = s.scene_index; // Use scene_index from DB, not array index
-            return {
+          const sceneMap = new Map<number, any>();
+          for (const s of scenesData) {
+            sceneMap.set(s.scene_index, s);
+          }
+          
+          // Build array using scene_index as the actual position (not row order)
+          const totalScenes = Math.max(scenesJson.length, promptsJson.length, (scenesData[scenesData.length - 1]?.scene_index ?? -1) + 1);
+          const newPrompts: GeneratedPrompt[] = [];
+          for (let sceneIdx = 0; sceneIdx < totalScenes; sceneIdx++) {
+            const s = sceneMap.get(sceneIdx);
+            newPrompts[sceneIdx] = {
               scene: `Scène ${sceneIdx + 1}`,
-              prompt: s.prompt,
-              // Get timing from project.scenes (source of truth)
+              prompt: s?.prompt || promptsJson[sceneIdx]?.prompt,
               text: scenesJson[sceneIdx]?.text || promptsJson[sceneIdx]?.text || '',
               startTime: scenesJson[sceneIdx]?.startTime,
               endTime: scenesJson[sceneIdx]?.endTime,
               duration: scenesJson[sceneIdx]?.endTime && scenesJson[sceneIdx]?.startTime 
                 ? scenesJson[sceneIdx].endTime - scenesJson[sceneIdx].startTime 
                 : undefined,
-              // Images from project_scenes WITH FALLBACK to legacy JSON
-              imageUrl: s.upscaled_url || s.image_url || promptsJson[sceneIdx]?.imageUrl,
-              imageWidth: s.image_width || promptsJson[sceneIdx]?.imageWidth,
-              imageHeight: s.image_height || promptsJson[sceneIdx]?.imageHeight,
-              // QA data from project_scenes WITH FALLBACK
-              qa_checked: s.qa_checked ?? promptsJson[sceneIdx]?.qa_checked,
-              qa_status: s.qa_status || promptsJson[sceneIdx]?.qa_status,
-              qa_explication: s.qa_explication || promptsJson[sceneIdx]?.qa_explication,
-              qa_regeneration_prompt: s.qa_regeneration_prompt || promptsJson[sceneIdx]?.qa_regeneration_prompt,
-              was_regenerated: s.was_regenerated ?? promptsJson[sceneIdx]?.was_regenerated,
-              regenerated_prompt: s.regenerated_prompt || promptsJson[sceneIdx]?.regenerated_prompt,
-              isUpscaled: s.is_upscaled ?? promptsJson[sceneIdx]?.isUpscaled,
-              videoUrl: s.video_url || promptsJson[sceneIdx]?.videoUrl,
-              continuityGroupId: s.continuity_group_id || promptsJson[sceneIdx]?.continuityGroupId,
-              // Preserve manually_regenerated from legacy JSON
+              imageUrl: s ? (s.upscaled_url || s.image_url || promptsJson[sceneIdx]?.imageUrl) : promptsJson[sceneIdx]?.imageUrl,
+              imageWidth: s?.image_width || promptsJson[sceneIdx]?.imageWidth,
+              imageHeight: s?.image_height || promptsJson[sceneIdx]?.imageHeight,
+              qa_checked: s ? (s.qa_checked ?? promptsJson[sceneIdx]?.qa_checked) : promptsJson[sceneIdx]?.qa_checked,
+              qa_status: s?.qa_status || promptsJson[sceneIdx]?.qa_status,
+              qa_explication: s?.qa_explication || promptsJson[sceneIdx]?.qa_explication,
+              qa_regeneration_prompt: s?.qa_regeneration_prompt || promptsJson[sceneIdx]?.qa_regeneration_prompt,
+              was_regenerated: s ? (s.was_regenerated ?? promptsJson[sceneIdx]?.was_regenerated) : promptsJson[sceneIdx]?.was_regenerated,
+              regenerated_prompt: s?.regenerated_prompt || promptsJson[sceneIdx]?.regenerated_prompt,
+              isUpscaled: s ? (s.is_upscaled ?? promptsJson[sceneIdx]?.isUpscaled) : promptsJson[sceneIdx]?.isUpscaled,
+              videoUrl: s?.video_url || promptsJson[sceneIdx]?.videoUrl,
+              continuityGroupId: s?.continuity_group_id || promptsJson[sceneIdx]?.continuityGroupId,
               manually_regenerated: promptsJson[sceneIdx]?.manually_regenerated
             };
-          });
+          }
 
           const newHash = JSON.stringify(newPrompts);
           if (newHash !== lastHash) {
@@ -1019,35 +1028,39 @@ const Index = () => {
       
       if (projectScenesData && projectScenesData.length > 0) {
         // MERGE: timing from scenes JSON, images from project_scenes
-        const newPrompts: GeneratedPrompt[] = projectScenesData.map((s: any) => {
-          const sceneIdx = s.scene_index; // Use scene_index from DB, not array index
-          return {
+        // Build map by scene_index to handle gaps in project_scenes
+        const sceneMap = new Map<number, any>();
+        for (const s of projectScenesData) {
+          sceneMap.set(s.scene_index, s);
+        }
+        const totalScenes = Math.max(scenesJson.length, promptsJson.length, (projectScenesData[projectScenesData.length - 1]?.scene_index ?? -1) + 1);
+        const newPrompts: GeneratedPrompt[] = [];
+        for (let sceneIdx = 0; sceneIdx < totalScenes; sceneIdx++) {
+          const s = sceneMap.get(sceneIdx);
+          newPrompts[sceneIdx] = {
             scene: `Scène ${sceneIdx + 1}`,
-            prompt: s.prompt,
-            // Get timing from project.scenes (source of truth)
+            prompt: s?.prompt || promptsJson[sceneIdx]?.prompt,
             text: scenesJson[sceneIdx]?.text || promptsJson[sceneIdx]?.text || '',
             startTime: scenesJson[sceneIdx]?.startTime,
             endTime: scenesJson[sceneIdx]?.endTime,
             duration: scenesJson[sceneIdx]?.endTime && scenesJson[sceneIdx]?.startTime 
               ? scenesJson[sceneIdx].endTime - scenesJson[sceneIdx].startTime 
               : undefined,
-            // Images from project_scenes WITH FALLBACK to legacy JSON
-            imageUrl: s.upscaled_url || s.image_url || promptsJson[sceneIdx]?.imageUrl,
-            imageWidth: s.image_width || promptsJson[sceneIdx]?.imageWidth,
-            imageHeight: s.image_height || promptsJson[sceneIdx]?.imageHeight,
-            // QA data from project_scenes WITH FALLBACK
-            qa_checked: s.qa_checked ?? promptsJson[sceneIdx]?.qa_checked,
-            qa_status: s.qa_status || promptsJson[sceneIdx]?.qa_status,
-            qa_explication: s.qa_explication || promptsJson[sceneIdx]?.qa_explication,
-            qa_regeneration_prompt: s.qa_regeneration_prompt || promptsJson[sceneIdx]?.qa_regeneration_prompt,
-            was_regenerated: s.was_regenerated ?? promptsJson[sceneIdx]?.was_regenerated,
+            imageUrl: s ? (s.upscaled_url || s.image_url || promptsJson[sceneIdx]?.imageUrl) : promptsJson[sceneIdx]?.imageUrl,
+            imageWidth: s?.image_width || promptsJson[sceneIdx]?.imageWidth,
+            imageHeight: s?.image_height || promptsJson[sceneIdx]?.imageHeight,
+            qa_checked: s ? (s.qa_checked ?? promptsJson[sceneIdx]?.qa_checked) : promptsJson[sceneIdx]?.qa_checked,
+            qa_status: s?.qa_status || promptsJson[sceneIdx]?.qa_status,
+            qa_explication: s?.qa_explication || promptsJson[sceneIdx]?.qa_explication,
+            qa_regeneration_prompt: s?.qa_regeneration_prompt || promptsJson[sceneIdx]?.qa_regeneration_prompt,
+            was_regenerated: s ? (s.was_regenerated ?? promptsJson[sceneIdx]?.was_regenerated) : promptsJson[sceneIdx]?.was_regenerated,
             manually_regenerated: promptsJson[sceneIdx]?.manually_regenerated ?? false,
-            regenerated_prompt: s.regenerated_prompt || promptsJson[sceneIdx]?.regenerated_prompt,
-            isUpscaled: s.is_upscaled ?? promptsJson[sceneIdx]?.isUpscaled,
-            videoUrl: s.video_url || promptsJson[sceneIdx]?.videoUrl,
-            continuityGroupId: s.continuity_group_id || promptsJson[sceneIdx]?.continuityGroupId
+            regenerated_prompt: s?.regenerated_prompt || promptsJson[sceneIdx]?.regenerated_prompt,
+            isUpscaled: s ? (s.is_upscaled ?? promptsJson[sceneIdx]?.isUpscaled) : promptsJson[sceneIdx]?.isUpscaled,
+            videoUrl: s?.video_url || promptsJson[sceneIdx]?.videoUrl,
+            continuityGroupId: s?.continuity_group_id || promptsJson[sceneIdx]?.continuityGroupId
           };
-        });
+        }
         promptsWithGroups = calculateGroupsIfMissing(newPrompts);
         console.log(`[loadProjectData] Loaded ${promptsWithGroups.length} prompts from project_scenes (merged with legacy fallback)`);
       } else {
