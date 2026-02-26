@@ -732,8 +732,9 @@ const Index = () => {
       console.log("Loading project data for:", currentProjectId);
       loadProjectData(currentProjectId);
     } else {
-      // Reset loaded flag when no project is selected
+      // Reset loaded flags when no project is selected
       projectDataLoadedRef.current = false;
+      loadAttemptDoneRef.current = false;
     }
   }, [currentProjectId]);
 
@@ -882,8 +883,11 @@ const Index = () => {
 
   // Track if we've already shown the config modal for this session
   const hasShownConfigModalRef = useRef(false);
-  // Track if project data has been loaded at least once
+  // Track if project data was SUCCESSFULLY loaded (guards auto-save from overwriting DB with empty state)
   const projectDataLoadedRef = useRef(false);
+  // Track if load attempt finished (success or error) for UI loading spinner
+  const loadAttemptDoneRef = useRef(false);
+  const [, forceRender] = useState(0);
   
   // Show configuration modal if project has transcript but no scenes AND no prompts (only once per session)
   // IMPORTANT: Don't show if semi_auto mode is active (user just came from project creation workflow)
@@ -935,6 +939,7 @@ const Index = () => {
   useEffect(() => {
     hasShownConfigModalRef.current = false;
     projectDataLoadedRef.current = false;
+    loadAttemptDoneRef.current = false;
   }, [currentProjectId]);
 
   const loadProjectData = async (projectId: string) => {
@@ -1268,13 +1273,14 @@ const Index = () => {
         setCalendarStatus(entryWithStatus?.status || null);
       }
       
-      // Mark that project data has been loaded
+      // Mark that project data has been loaded successfully
       projectDataLoadedRef.current = true;
+      loadAttemptDoneRef.current = true;
     } catch (error: any) {
       console.error("Error loading project:", error);
       toast.error("Erreur lors du chargement du projet");
-      // Mark as loaded even on error so UI can render
-      projectDataLoadedRef.current = true;
+      loadAttemptDoneRef.current = true;
+      forceRender(n => n + 1);
     }
   };
 
@@ -3363,7 +3369,7 @@ const Index = () => {
   }
 
   // Show loading state while project is being loaded
-  if (currentProjectId && !projectDataLoadedRef.current) {
+  if (currentProjectId && !loadAttemptDoneRef.current) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-secondary/5">
         <AppHeader />
