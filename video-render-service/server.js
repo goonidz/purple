@@ -754,10 +754,30 @@ Respond ONLY with valid JSON in this format:
   const response = await callModel(planSystemPrompt, planUserPrompt, { ...modelConfig, webSearch: null, maxTokens: 8000 });
 
   // Extract JSON from response (may be wrapped in markdown code fences)
-  const jsonMatch = response.match(/\{[\s\S]*"parts"\s*:\s*\[[\s\S]*\][\s\S]*\}/);
-  if (!jsonMatch) throw new Error('Failed to parse plan JSON from model response');
+  let planJson;
+  try {
+    // Try extracting JSON block from markdown fences first
+    const fenceMatch = response.match(/```(?:json)?\s*([\s\S]*?)```/);
+    const jsonStr = fenceMatch ? fenceMatch[1].trim() : response.trim();
+    
+    // Try direct parse first
+    try {
+      planJson = JSON.parse(jsonStr);
+    } catch (_) {
+      // Fallback: extract the outermost JSON object
+      const jsonMatch = jsonStr.match(/\{[\s\S]*"parts"\s*:\s*\[[\s\S]*\][\s\S]*\}/);
+      if (!jsonMatch) {
+        console.error('[multi-step] Failed to parse plan. Response preview:', response.substring(0, 500));
+        throw new Error('Failed to parse plan JSON from model response');
+      }
+      planJson = JSON.parse(jsonMatch[0]);
+    }
+  } catch (parseErr) {
+    console.error('[multi-step] JSON parse error:', parseErr.message, '| Response preview:', response.substring(0, 500));
+    throw parseErr;
+  }
 
-  const plan = JSON.parse(jsonMatch[0]);
+  const plan = planJson;
   if (!Array.isArray(plan.parts) || plan.parts.length === 0) throw new Error('Plan has no parts');
 
   // Enforce max 4000 words per part
