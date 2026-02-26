@@ -181,6 +181,58 @@ function MobileDayCard({
   );
 }
 
+function MobileDayList({
+  daysInMonth,
+  getEntriesForDay,
+  onDayClick,
+  onEntryClick,
+}: {
+  daysInMonth: Date[];
+  getEntriesForDay: (date: Date) => ContentCalendarEntry[];
+  onDayClick: (date: Date) => void;
+  onEntryClick: (entry: ContentCalendarEntry) => void;
+}) {
+  const todayRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (todayRef.current) {
+      todayRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, []);
+
+  const visibleDays = daysInMonth.filter((day) => {
+    const dayEntries = getEntriesForDay(day);
+    return dayEntries.length > 0 || isSameDay(day, new Date());
+  });
+
+  if (visibleDays.length === 0) {
+    return (
+      <div className="md:hidden text-center text-muted-foreground py-12">
+        Aucune vidéo planifiée ce mois-ci
+      </div>
+    );
+  }
+
+  return (
+    <div className="md:hidden space-y-2">
+      {visibleDays.map((day) => {
+        const isToday = isSameDay(day, new Date());
+        return (
+          <div key={day.toISOString()} ref={isToday ? todayRef : undefined}>
+            <MobileDayCard
+              date={day}
+              entries={getEntriesForDay(day)}
+              isToday={isToday}
+              onDayClick={onDayClick}
+              onEntryClick={onEntryClick}
+            />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function Calendar() {
   const navigate = useNavigate();
   const [user, setUser] = useState<User | null>(null);
@@ -563,31 +615,12 @@ export default function Calendar() {
             </div>
 
             {/* Mobile: vertical day-by-day list */}
-            <div className="md:hidden space-y-2">
-              {daysInMonth.map((day) => {
-                const dayEntries = getEntriesForDay(day);
-                const hasEntries = dayEntries.length > 0;
-                const isToday = isSameDay(day, new Date());
-                
-                if (!hasEntries && !isToday) return null;
-
-                return (
-                  <MobileDayCard
-                    key={day.toISOString()}
-                    date={day}
-                    entries={dayEntries}
-                    isToday={isToday}
-                    onDayClick={handleDayClick}
-                    onEntryClick={handleEntryClick}
-                  />
-                );
-              })}
-              {daysInMonth.every((day) => getEntriesForDay(day).length === 0) && (
-                <div className="text-center text-muted-foreground py-12">
-                  Aucune vidéo planifiée ce mois-ci
-                </div>
-              )}
-            </div>
+            <MobileDayList
+              daysInMonth={daysInMonth}
+              getEntriesForDay={getEntriesForDay}
+              onDayClick={handleDayClick}
+              onEntryClick={handleEntryClick}
+            />
           </>
         ) : (
           <KanbanBoard
