@@ -1062,7 +1062,7 @@ def render_video_payload(payload: Dict[str, Any], progress_cb=None, step_cb=None
         print(f"[GPU Handler] Downloaded {len(scenes)} images in {download_time:.1f}s (HTTP/2)")
 
         # Process all scenes in parallel
-        MAX_WORKERS = 20  # Reduced to avoid I/O contention
+        MAX_WORKERS = 10
         step_cb(f"Traitement de {len(scenes)} scènes...")
         print(f"[GPU Handler] Processing {len(scenes)} scenes in parallel ({MAX_WORKERS} workers)...")
         process_start = time.time()
