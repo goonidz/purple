@@ -494,6 +494,17 @@ const CreateFromScratch = () => {
     return () => subscription.unsubscribe();
   }, [navigate, searchParams]);
 
+  // Default to GLM-5 if user has a Z.AI API key configured
+  useEffect(() => {
+    if (!user) return;
+    supabase.rpc("get_user_api_key", { key_name: "zai" }).then(({ data }) => {
+      if (data) {
+        setScriptModel("glm5");
+        setUseWebSearch(true);
+      }
+    });
+  }, [user]);
+
   // Auto-apply channel presets once they're loaded
   useEffect(() => {
     // Only run if we have presets loaded and calendar preset IDs in sessionStorage
@@ -2238,7 +2249,7 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                         <SelectValue>
                           {scriptModel === "claude" ? "Claude Sonnet 4.6" :
                            scriptModel === "claude-thinking" ? "Claude Opus 4.5" :
-                           scriptModel === "glm5" ? "GLM-5 (Z.AI)" :
+                           scriptModel === "glm5" ? "GLM-5 (Z.AI) (recommandé)" :
                            "GPT-5.1"}
                         </SelectValue>
                       </SelectTrigger>
@@ -2259,7 +2270,7 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                         </SelectItem>
                         <SelectItem value="glm5">
                           <div className="flex flex-col">
-                            <span className="font-medium">GLM-5 (Z.AI)</span>
+                            <span className="font-medium">GLM-5 (Z.AI) (recommandé)</span>
                             <span className="text-xs text-muted-foreground">Via Z.AI API directe (nécessite clé API Z.AI)</span>
                             <span className="text-xs text-primary mt-1 whitespace-normal break-words">✨ Deep thinking activé + recherche web</span>
                           </div>
