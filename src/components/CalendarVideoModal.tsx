@@ -197,6 +197,7 @@ export default function CalendarVideoModal({
     }
   }, [isOpen, userId]);
 
+  // Set immediate data from the lightweight entry prop, then fetch full data
   useEffect(() => {
     if (entry) {
       setTitle(entry.title);
@@ -226,6 +227,34 @@ export default function CalendarVideoModal({
       setChannelId(null);
     }
   }, [entry, selectedDate, initialSourceUrl, initialSourceThumbnailUrl, initialTitle]);
+
+  // Fetch full entry data when modal opens (calendar only passes lightweight data)
+  useEffect(() => {
+    if (!isOpen || !entry?.id) return;
+
+    const loadFullEntry = async () => {
+      const { data, error } = await supabase
+        .from("content_calendar")
+        .select("script, notes, audio_url, source_url, source_thumbnail_url, source_transcript")
+        .eq("id", entry.id)
+        .single();
+
+      if (error) {
+        console.error("Error loading full entry:", error);
+        return;
+      }
+      if (!data) return;
+
+      setScript(data.script || "");
+      setNotes(data.notes || "");
+      setAudioUrl(data.audio_url);
+      setSourceUrl(data.source_url || "");
+      setSourceThumbnailUrl(data.source_thumbnail_url || null);
+      setSourceTranscript(data.source_transcript || null);
+    };
+
+    loadFullEntry();
+  }, [isOpen, entry?.id]);
 
   const handleProjectSelect = (selectedProjectId: string) => {
     if (selectedProjectId === "none") {
