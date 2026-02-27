@@ -2888,62 +2888,66 @@ const Index = () => {
     }
 
     const sortedIndices = Array.from(selectedScenes).sort((a, b) => a - b);
+    const toastId = toast.loading(`Préparation du ZIP (0/${sortedIndices.length})...`);
     let successCount = 0;
     let errorCount = 0;
 
-    for (const index of sortedIndices) {
-      const scene = generatedPrompts[index];
-      if (!scene) continue;
+    try {
+      const JSZip = (await import('jszip')).default;
+      const zip = new JSZip();
 
-      const baseName = `scene_${index + 1}`;
+      for (const index of sortedIndices) {
+        const scene = generatedPrompts[index];
+        if (!scene) continue;
 
-      try {
-        // Export image if available
-        if (scene.imageUrl) {
-          const imageResponse = await fetch(scene.imageUrl);
-          if (!imageResponse.ok) throw new Error(`Failed to fetch image: ${imageResponse.status}`);
-          
-          const imageBlob = await imageResponse.blob();
-          const imageUrl = URL.createObjectURL(imageBlob);
-          const link = document.createElement('a');
-          link.href = imageUrl;
-          link.download = `${baseName}.jpg`;
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
-          
-          // Clean up URL after a delay
-          setTimeout(() => URL.revokeObjectURL(imageUrl), 100);
+        const baseName = `scene_${index + 1}`;
+
+        try {
+          if (scene.imageUrl) {
+            const imageResponse = await fetch(scene.imageUrl);
+            if (!imageResponse.ok) throw new Error(`HTTP ${imageResponse.status}`);
+            const imageBlob = await imageResponse.blob();
+            const ext = imageBlob.type.includes('png') ? 'png' : 'jpg';
+            zip.file(`${baseName}.${ext}`, imageBlob);
+          }
+
+          if (scene.prompt) {
+            zip.file(`${baseName}_prompt.txt`, scene.prompt);
+          }
+
+          successCount++;
+          toast.loading(`Préparation du ZIP (${successCount}/${sortedIndices.length})...`, { id: toastId });
+        } catch (error) {
+          console.error(`Error adding scene ${index + 1} to zip:`, error);
+          errorCount++;
         }
-
-        // Export prompt as text file
-        if (scene.prompt) {
-          const promptBlob = new Blob([scene.prompt], { type: 'text/plain' });
-          const promptUrl = URL.createObjectURL(promptBlob);
-          const promptLink = document.createElement('a');
-          promptLink.href = promptUrl;
-          promptLink.download = `${baseName}.txt`;
-          document.body.appendChild(promptLink);
-          promptLink.click();
-          document.body.removeChild(promptLink);
-          
-          setTimeout(() => URL.revokeObjectURL(promptUrl), 100);
-        }
-
-        successCount++;
-        
-        // Small delay between downloads to avoid browser blocking
-        await new Promise(resolve => setTimeout(resolve, 100));
-      } catch (error) {
-        console.error(`Error exporting scene ${index + 1}:`, error);
-        errorCount++;
       }
-    }
 
-    if (errorCount > 0) {
-      toast.warning(`${successCount} scène(s) exportée(s), ${errorCount} erreur(s)`);
-    } else {
-      toast.success(`${successCount} scène(s) exportée(s) !`);
+      if (successCount === 0) {
+        toast.error("Aucune scène n'a pu être exportée", { id: toastId });
+        return;
+      }
+
+      toast.loading("Génération du ZIP...", { id: toastId });
+      const blob = await zip.generateAsync({ type: 'blob' });
+      const safeName = (projectName || 'scenes').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${safeName}_${selectedScenes.size}_scenes.zip`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+      if (errorCount > 0) {
+        toast.warning(`${successCount} scène(s) exportée(s), ${errorCount} erreur(s)`, { id: toastId });
+      } else {
+        toast.success(`${successCount} scène(s) exportée(s) en ZIP !`, { id: toastId });
+      }
+    } catch (err) {
+      console.error("ZIP export error:", err);
+      toast.error("Erreur lors de la création du ZIP", { id: toastId });
     }
   };
 
@@ -4026,10 +4030,17 @@ const Index = () => {
                       {/* Header avec titre et boutons */}
                       <div className="space-y-3">
                         <div className="flex items-center justify-between">
-                          <h2 className="text-lg font-semibold">
-                            Scènes générées ({scenes.length > 0 ? scenes.length : generatedPrompts.length})
-                            {generatedPrompts.length > 0 && ` - ${generatedPrompts.length} prompts`}
-                          </h2>
+                          <div className="flex items-center gap-3">
+                            <h2 className="text-lg font-semibold">
+                              Scènes générées ({scenes.length > 0 ? scenes.length : generatedPrompts.length})
+                              {generatedPrompts.length > 0 && ` - ${generatedPrompts.length} prompts`}
+                            </h2>
+                            {selectedScenes.size > 0 && (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-primary text-primary-foreground">
+                                {selectedScenes.size} sélectionnée{selectedScenes.size > 1 ? 's' : ''}
+                              </span>
+                            )}
+                          </div>
                           <div className="flex gap-2">
                             {generatedPrompts.filter(p => p && p.imageUrl).length > 0 && (
                               <>
