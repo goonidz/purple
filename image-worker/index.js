@@ -1845,6 +1845,12 @@ async function processThumbnailsV2Pipeline(job) {
             .replace('The following images are examples', `${hasCharacter && numExamples > 0 ? Array.from({ length: numExamples }, (_, k) => `@img${2 + k}`).join(', ') : 'The attached images'} are examples`)
             .replace('Using the user\'s character from Image 1', `Using the character from @img1`);
 
+          // Ensure all uploaded assets are referenced — custom prompts may lack @img refs
+          const referencedCount = (ai33Prompt.match(/@img\d+/g) || []).length;
+          if (referencedCount < effectiveRefCount) {
+            ai33Prompt = imageRefDescription.trim() + '\n\n' + ai33Prompt;
+          }
+
           const variationPrompt = ai33Prompt;
 
           let imageBuffer;
