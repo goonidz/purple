@@ -492,7 +492,7 @@ export const ProjectConfigurationModal = ({
           break;
       }
       toast.info("Dimensions ajustées pour Z-Image Turbo (upscale x2 automatique)");
-    } else if (model === 'seedream-4.0' || model === 'seedream-4.5' || model === 'seedream-5-lite') {
+    } else if (model === 'seedream-4' || model === 'seedream-4.5' || model === 'seedream-5-lite') {
       // SeedDream can handle HD, restore HD resolutions based on aspect ratio
       switch (aspectRatio) {
         case "16:9":
@@ -756,7 +756,7 @@ export const ProjectConfigurationModal = ({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="seedream-4.0">SeedDream 4.0</SelectItem>
+                <SelectItem value="seedream-4">SeedDream 4.0</SelectItem>
                 <SelectItem value="seedream-4.5">SeedDream 4.5</SelectItem>
                 <SelectItem value="seedream-5-lite">SeedDream 5.0 Lite</SelectItem>
                 <SelectItem value="z-image-turbo">Z-Image Turbo (rapide)</SelectItem>

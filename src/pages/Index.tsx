@@ -1631,7 +1631,7 @@ const Index = () => {
           break;
       }
       toast.info("Dimensions ajustées pour Z-Image Turbo (upscale x2 automatique)");
-    } else if (model === 'seedream-4.0' || model === 'seedream-4.5' || model === 'seedream-5-lite') {
+    } else if (model === 'seedream-4' || model === 'seedream-4.5' || model === 'seedream-5-lite') {
       // SeedDream can handle HD, restore HD resolutions based on aspect ratio
       switch (aspectRatio) {
         case "16:9":

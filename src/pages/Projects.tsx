@@ -1069,7 +1069,7 @@ const Projects = () => {
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="seedream-4.0">SeedDream 4.0</SelectItem>
+                          <SelectItem value="seedream-4">SeedDream 4.0</SelectItem>
                           <SelectItem value="seedream-4.5">SeedDream 4.5</SelectItem>
                           <SelectItem value="seedream-5-lite">SeedDream 5.0 Lite</SelectItem>
                           <SelectItem value="z-image-turbo">Z-Image Turbo (rapide)</SelectItem>
