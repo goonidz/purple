@@ -1128,13 +1128,14 @@ const CreateFromScratch = () => {
           if (projectId) {
             const { data: projectData } = await supabase
               .from("projects")
-              .select("summary")
+              .select("script, summary")
               .eq("id", projectId)
               .single();
-            if (projectData?.summary && projectData.summary.length > 100) {
-              setGeneratedScript(projectData.summary);
-              setWordCount(projectData.summary.split(/\s+/).length);
-              setEstimatedDuration(Math.round(projectData.summary.split(/\s+/).length / 2.5));
+            const recoveredScript = projectData?.script || projectData?.summary;
+            if (recoveredScript && recoveredScript.length > 100) {
+              setGeneratedScript(recoveredScript);
+              setWordCount(recoveredScript.split(/\s+/).length);
+              setEstimatedDuration(Math.round(recoveredScript.split(/\s+/).length / 2.5));
               setIsGeneratingScript(false);
               setGenerationProgress(100);
               setGenerationMessage("Script récupéré !");
