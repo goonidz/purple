@@ -406,6 +406,39 @@ async function runQACheck(geminiKey, imageUrl, sourcePrompt, qaPrompt) {
 }
 
 // ============================================================================
+// GEMINI: REWRITE PROMPT FLAGGED AS SENSITIVE
+// ============================================================================
+
+async function cleanSensitivePrompt(geminiKey, originalPrompt) {
+  const systemPrompt = `The following image generation prompt was rejected by the AI image model for containing sensitive content.
+Rewrite it to convey the same scene while removing or softening any potentially sensitive elements (violence, weapons pointed at people, graphic injuries, nudity, drug use, etc.).
+Keep the EXACT same visual style, composition, character descriptions, and structure.
+Return ONLY the rewritten prompt text, nothing else.`;
+
+  const geminiResponse = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: `${systemPrompt}\n\nOriginal prompt:\n${originalPrompt}` }] }],
+        generationConfig: { temperature: 0.3, maxOutputTokens: 1000 },
+      }),
+    }
+  );
+
+  if (!geminiResponse.ok) {
+    const errText = await geminiResponse.text();
+    throw new Error(`Gemini API error ${geminiResponse.status}: ${errText.substring(0, 200)}`);
+  }
+
+  const result = await geminiResponse.json();
+  const cleaned = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+  if (!cleaned) throw new Error('Empty response from Gemini');
+  return cleaned;
+}
+
+// ============================================================================
 // DB: UPDATE SCENE IMAGE
 // ============================================================================
 
@@ -1044,6 +1077,30 @@ async function processImagePipeline(job) {
     }
 
   } catch (error) {
+    // Auto-regen on sensitive content errors (once only)
+    const isSensitive = /sensitive/i.test(error.message);
+    if (isSensitive && !isRegen && parentJobId) {
+      log(`  Scene ${sceneIndex + 1}: SENSITIVE content detected -> reformulating prompt via Gemini`);
+      try {
+        const geminiKey = await getUserApiKey(userId, 'gemini');
+        const cleanedPrompt = await cleanSensitivePrompt(geminiKey, metadata.prompt);
+        log(`  Scene ${sceneIndex + 1}: prompt reformulated (${cleanedPrompt.length} chars)`);
+        await createRegenJob(projectId, userId, sceneIndex, parentJobId, {
+          status: 'REJECT',
+          anomalie_detectee: 'sensitive',
+          explication: error.message,
+          prompt_regeneration: cleanedPrompt,
+        });
+        await supabase.from('generation_jobs')
+          .update({ status: 'completed', completed_at: new Date().toISOString() })
+          .eq('id', jobId);
+        if (parentJobId) await updateParentProgress(parentJobId);
+        return;
+      } catch (regenErr) {
+        logError(`  Scene ${sceneIndex + 1}: sensitive auto-regen failed:`, regenErr.message);
+      }
+    }
+
     logError(`Scene ${sceneIndex + 1} (job ${jobId.substring(0, 8)}...) FAILED:`, error.message);
     await supabase
       .from('generation_jobs')
