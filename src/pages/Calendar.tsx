@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { ChevronLeft, ChevronRight, ChevronDown, Filter, Calendar as CalendarIcon, LayoutGrid, Plus, Link2, Link2Off, Youtube, Check } from "lucide-react";
 import AppHeader from "@/components/AppHeader";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths } from "date-fns";
+import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths, subDays, addDays } from "date-fns";
 import { fr } from "date-fns/locale";
 import { toast } from "sonner";
 import CalendarVideoModal from "@/components/CalendarVideoModal";
@@ -304,6 +304,10 @@ export default function Calendar() {
     const start = startOfMonth(month);
     const end = endOfMonth(month);
 
+    // Extend range to cover overflow days visible in the grid (up to 6 days before/after)
+    const fetchStart = subDays(start, 7);
+    const fetchEnd = addDays(end, 7);
+
     const { data, error } = await supabase
       .from("content_calendar")
       .select(`
@@ -313,8 +317,8 @@ export default function Calendar() {
         channel:channels(id, name, color)
       `)
       .eq("user_id", user.id)
-      .gte("scheduled_date", format(start, "yyyy-MM-dd"))
-      .lte("scheduled_date", format(end, "yyyy-MM-dd"))
+      .gte("scheduled_date", format(fetchStart, "yyyy-MM-dd"))
+      .lte("scheduled_date", format(fetchEnd, "yyyy-MM-dd"))
       .order("scheduled_date", { ascending: true });
 
     if (error) {
@@ -497,6 +501,23 @@ export default function Calendar() {
   const startDay = startOfMonth(currentMonth).getDay();
   const adjustedStartDay = startDay === 0 ? 6 : startDay - 1;
 
+  // Overflow days from previous month (fill leading empty cells)
+  const prevOverflowDays = adjustedStartDay > 0
+    ? eachDayOfInterval({
+        start: subDays(startOfMonth(currentMonth), adjustedStartDay),
+        end: subDays(startOfMonth(currentMonth), 1),
+      })
+    : [];
+
+  // Overflow days from next month (fill trailing empty cells)
+  const trailingEmpty = (7 - ((adjustedStartDay + daysInMonth.length) % 7)) % 7;
+  const nextOverflowDays = trailingEmpty > 0
+    ? eachDayOfInterval({
+        start: addDays(endOfMonth(currentMonth), 1),
+        end: addDays(endOfMonth(currentMonth), trailingEmpty),
+      })
+    : [];
+
   const getEntriesForDay = (date: Date) => {
     return entries.filter(entry => {
       const matchesDate = isSameDay(new Date(entry.scheduled_date), date);
@@ -616,9 +637,18 @@ export default function Calendar() {
 
               {/* Calendar Days */}
               <div className="grid grid-cols-7">
-                {/* Empty cells for days before month starts */}
-                {Array.from({ length: adjustedStartDay }).map((_, index) => (
-                  <div key={`empty-${index}`} className="min-h-[120px] border-b border-r bg-muted/20" />
+                {/* Previous month overflow days */}
+                {prevOverflowDays.map((day) => (
+                  <CalendarDayCell
+                    key={day.toISOString()}
+                    date={day}
+                    entries={getEntriesForDay(day)}
+                    isToday={isSameDay(day, new Date())}
+                    isCurrentMonth={false}
+                    onDayClick={handleDayClick}
+                    onEntryClick={handleEntryClick}
+                    onEntryDrop={handleEntryDrop}
+                  />
                 ))}
 
                 {/* Days of the month */}
@@ -628,15 +658,25 @@ export default function Calendar() {
                     date={day}
                     entries={getEntriesForDay(day)}
                     isToday={isSameDay(day, new Date())}
+                    isCurrentMonth={true}
                     onDayClick={handleDayClick}
                     onEntryClick={handleEntryClick}
                     onEntryDrop={handleEntryDrop}
                   />
                 ))}
 
-                {/* Empty cells to complete the grid */}
-                {Array.from({ length: (7 - ((adjustedStartDay + daysInMonth.length) % 7)) % 7 }).map((_, index) => (
-                  <div key={`empty-end-${index}`} className="min-h-[120px] border-b border-r bg-muted/20" />
+                {/* Next month overflow days */}
+                {nextOverflowDays.map((day) => (
+                  <CalendarDayCell
+                    key={day.toISOString()}
+                    date={day}
+                    entries={getEntriesForDay(day)}
+                    isToday={isSameDay(day, new Date())}
+                    isCurrentMonth={false}
+                    onDayClick={handleDayClick}
+                    onEntryClick={handleEntryClick}
+                    onEntryDrop={handleEntryDrop}
+                  />
                 ))}
               </div>
             </div>
