@@ -414,7 +414,7 @@ async function processJob(
       throw new Error('WEBHOOK_MODE_ACTIVE');
     } else if (jobType === 'script_generation') {
       await processScriptGenerationJob(jobId, projectId, userId, metadata, authHeader, adminClient);
-    } else if (jobType === 'audio_generation' && (metadata?.provider === 'gemini_tts' || metadata?.provider === 'genaipro' || metadata?.provider === 'edgetts' || metadata?.rvcEnabled)) {
+    } else if (jobType === 'audio_generation' && (metadata?.provider === 'gemini_tts' || metadata?.provider === 'genaipro' || metadata?.provider === 'ai33' || metadata?.provider === 'edgetts' || metadata?.rvcEnabled)) {
       await adminClient
         .from('generation_jobs')
         .update({ status: 'pending' })

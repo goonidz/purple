@@ -245,7 +245,7 @@ const CreateFromScratch = () => {
   const [useWebSearch, setUseWebSearch] = useState(false);
   
   // Audio step
-  const [ttsProvider, setTtsProvider] = useState<"minimax" | "inworld" | "genaipro" | "edgetts">("genaipro");
+  const [ttsProvider, setTtsProvider] = useState<"minimax" | "inworld" | "genaipro" | "ai33" | "edgetts">("genaipro");
   const [selectedVoice, setSelectedVoice] = useState("English_expressive_narrator");
   const [inworldVoiceId, setInworldVoiceId] = useState("Dennis");
   const [inworldSpeakingRate, setInworldSpeakingRate] = useState(0.9);
@@ -768,8 +768,8 @@ const CreateFromScratch = () => {
 
   const applyTtsPreset = (preset: TtsPreset, opts?: { silent?: boolean }) => {
     // Load provider
-    if (preset.provider === "minimax" || preset.provider === "inworld" || preset.provider === "genaipro" || preset.provider === "edgetts") {
-      setTtsProvider(preset.provider as "minimax" | "inworld" | "genaipro" | "edgetts");
+    if (preset.provider === "minimax" || preset.provider === "inworld" || preset.provider === "genaipro" || preset.provider === "ai33" || preset.provider === "edgetts") {
+      setTtsProvider(preset.provider as "minimax" | "inworld" | "genaipro" | "ai33" | "edgetts");
     } else {
       toast.error("Ce preset utilise un fournisseur non supporté");
       return;
@@ -781,7 +781,7 @@ const CreateFromScratch = () => {
       if (!opts?.silent) {
         setInworldSpeakingRate(typeof preset.speed === "number" && Number.isFinite(preset.speed) ? preset.speed : 0.9);
       }
-    } else if (preset.provider === "genaipro") {
+    } else if (preset.provider === "genaipro" || preset.provider === "ai33") {
       setGenaiproVoiceId(preset.voice_id);
       if (preset.model) setGenaiproModel(preset.model);
       setGenaiproSpeed(typeof preset.speed === "number" ? preset.speed : 1.0);
@@ -852,7 +852,7 @@ const CreateFromScratch = () => {
         provider: ttsProvider,
       };
       const rvcData = { rvcEnabled, rvcModelUrl, rvcIndexUrl, rvcPitch, rvcIndexRate };
-      if (ttsProvider === "genaipro") {
+      if (ttsProvider === "genaipro" || ttsProvider === "ai33") {
         presetData.voice_id = genaiproVoiceId;
         presetData.model = genaiproModel;
         presetData.speed = genaiproSpeed;
@@ -943,7 +943,7 @@ const CreateFromScratch = () => {
         provider: ttsProvider,
       };
       const rvcData = { rvcEnabled, rvcModelUrl, rvcIndexUrl, rvcPitch, rvcIndexRate };
-      if (ttsProvider === "genaipro") {
+      if (ttsProvider === "genaipro" || ttsProvider === "ai33") {
         updateData.voice_id = genaiproVoiceId;
         updateData.model = genaiproModel;
         updateData.speed = genaiproSpeed;
@@ -1823,7 +1823,7 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
         script: generatedScript,
         provider: ttsProvider,
       };
-      if (ttsProvider === "genaipro") {
+      if (ttsProvider === "genaipro" || ttsProvider === "ai33") {
         audioMetadata.voice = genaiproVoiceId;
         audioMetadata.model = genaiproModel;
         audioMetadata.speed = genaiproSpeed;
@@ -2848,12 +2848,13 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
 
                       <div className="space-y-4">
                         <Label>Fournisseur TTS</Label>
-                        <Select value={ttsProvider} onValueChange={(value: "minimax" | "inworld" | "genaipro" | "edgetts") => setTtsProvider(value)}>
+                        <Select value={ttsProvider} onValueChange={(value: "minimax" | "inworld" | "genaipro" | "ai33" | "edgetts") => setTtsProvider(value)}>
                           <SelectTrigger>
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="genaipro">GenAIPro.vn (ElevenLabs)</SelectItem>
+                            <SelectItem value="ai33">AI33.pro (ElevenLabs)</SelectItem>
                             <SelectItem value="edgetts">EdgeTTS (Microsoft Neural)</SelectItem>
                             <SelectItem value="minimax">MiniMax (API Officielle)</SelectItem>
                             <SelectItem value="inworld">Inworld AI (TTS 1 Max)</SelectItem>
@@ -3095,7 +3096,7 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                         )}
                       </div>
 
-                      {ttsProvider === "genaipro" && (
+                      {(ttsProvider === "genaipro" || ttsProvider === "ai33") && (
                         <div className="space-y-4 p-4 bg-muted/50 rounded-lg">
                           <div className="space-y-2">
                             <Label>Voice ID</Label>
@@ -3457,7 +3458,7 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                           size="lg"
                         >
                           <Mic className="mr-2 h-4 w-4" />
-                          Générer l'audio avec {ttsProvider === "inworld" ? "Inworld" : ttsProvider === "genaipro" ? "ElevenLabs" : ttsProvider === "edgetts" ? "EdgeTTS" : "MiniMax"}{rvcEnabled ? " + RVC" : ""}
+                          Générer l'audio avec {ttsProvider === "inworld" ? "Inworld" : ttsProvider === "genaipro" ? "ElevenLabs" : ttsProvider === "ai33" ? "AI33" : ttsProvider === "edgetts" ? "EdgeTTS" : "MiniMax"}{rvcEnabled ? " + RVC" : ""}
                         </Button>
                       )}
 
@@ -3739,7 +3740,7 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
             <div className="p-4 bg-muted rounded-lg text-sm">
               <p className="font-medium mb-2">Configuration actuelle :</p>
               <ul className="space-y-1 text-muted-foreground">
-                <li>Fournisseur : {ttsProvider === "minimax" ? "MiniMax" : ttsProvider === "inworld" ? "Inworld AI" : ttsProvider === "edgetts" ? "EdgeTTS" : "ElevenLabs"}{rvcEnabled ? " + RVC" : ""}</li>
+                <li>Fournisseur : {ttsProvider === "minimax" ? "MiniMax" : ttsProvider === "inworld" ? "Inworld AI" : ttsProvider === "edgetts" ? "EdgeTTS" : ttsProvider === "ai33" ? "AI33.pro" : "ElevenLabs"}{rvcEnabled ? " + RVC" : ""}</li>
                 <li>Voix : {ttsProvider === "inworld" ? inworldVoiceId : ttsProvider === "edgetts" ? edgeTTSVoice : selectedVoice}</li>
                 {ttsProvider === "minimax" && (
                   <>
@@ -3783,13 +3784,14 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Fournisseur</Label>
-                <Select value={ttsProvider} onValueChange={(value: "minimax" | "inworld" | "genaipro" | "edgetts") => setTtsProvider(value)}>
+                <Select value={ttsProvider} onValueChange={(value: "minimax" | "inworld" | "genaipro" | "ai33" | "edgetts") => setTtsProvider(value)}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="genaipro">GenAIPro.vn (ElevenLabs)</SelectItem>
-                    <SelectItem value="edgetts">EdgeTTS + Voice Clone (RVC)</SelectItem>
+                    <SelectItem value="ai33">AI33.pro (ElevenLabs)</SelectItem>
+                    <SelectItem value="edgetts">EdgeTTS (Microsoft Neural)</SelectItem>
                     <SelectItem value="minimax">MiniMax (API Officielle)</SelectItem>
                     <SelectItem value="inworld">Inworld AI (TTS 1 Max)</SelectItem>
                   </SelectContent>

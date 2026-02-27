@@ -2661,6 +2661,129 @@ async function processGenaiproAudioPipeline(job) {
 }
 
 // ============================================================================
+// AI33 PRO TTS PIPELINE (ElevenLabs-compatible via ai33.pro)
+// ============================================================================
+
+const AI33_TTS_BASE = 'https://api.ai33.pro';
+const AI33_TTS_POLL_INTERVAL_MS = 5000;
+const AI33_TTS_MAX_POLL_ATTEMPTS = 120;
+
+async function processAi33AudioPipeline(job) {
+  const startTime = Date.now();
+  const { id: jobId, project_id: projectId, user_id: userId, metadata: meta } = job;
+
+  try {
+    const script = meta.script;
+    const voice = meta.voice || 'uju3wxzG5OhpWcoi3SMy';
+    const model = meta.model || 'eleven_multilingual_v2';
+
+    if (!script || script.trim().length < 5) throw new Error('No script provided for AI33 TTS');
+
+    log(`[AI33 TTS ${jobId}] Starting (voice=${voice}, model=${model}, script=${script.length} chars)`);
+
+    const apiKey = await getUserApiKey(userId, 'ai33');
+
+    // Step 1: Create TTS task
+    const createRes = await fetch(`${AI33_TTS_BASE}/v1/text-to-speech/${voice}?output_format=mp3_44100_128`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'xi-api-key': apiKey },
+      body: JSON.stringify({ text: script, model_id: model, with_transcript: false }),
+    });
+
+    if (!createRes.ok) {
+      const errBody = await createRes.text();
+      throw new Error(`AI33 TTS API error ${createRes.status}: ${errBody.substring(0, 300)}`);
+    }
+
+    const createData = await createRes.json();
+    const task_id = createData.task_id;
+    if (!task_id) throw new Error('No task_id in AI33 TTS response');
+
+    log(`[AI33 TTS ${jobId}] Task created: ${task_id} (credits remaining: ${createData.ec_remain_credits})`);
+    await supabase.from('generation_jobs')
+      .update({ metadata: { ...meta, ai33_task_id: task_id } })
+      .eq('id', jobId);
+
+    // Step 2: Poll for completion
+    let audioUrl = null;
+    for (let attempt = 0; attempt < AI33_TTS_MAX_POLL_ATTEMPTS; attempt++) {
+      await sleep(AI33_TTS_POLL_INTERVAL_MS);
+
+      if (attempt % 6 === 0) log(`[AI33 TTS ${jobId}] Polling (${attempt + 1}/${AI33_TTS_MAX_POLL_ATTEMPTS})...`);
+
+      const pollRes = await fetch(`${AI33_TTS_BASE}/v1/task/${task_id}`, {
+        headers: { 'xi-api-key': apiKey },
+      });
+
+      if (!pollRes.ok) { logError(`[AI33 TTS ${jobId}] Poll error: ${pollRes.status}`); continue; }
+
+      const taskData = await pollRes.json();
+
+      if (taskData.status === 'done') {
+        audioUrl = taskData.metadata?.audio_url;
+        if (!audioUrl) throw new Error('AI33 TTS completed but no audio_url in metadata');
+        break;
+      }
+      if (taskData.status === 'failed' || taskData.status === 'error') {
+        throw new Error(`AI33 TTS failed: ${taskData.error_message || 'Unknown error'}`);
+      }
+    }
+
+    if (!audioUrl) throw new Error('AI33 TTS timed out after 10 minutes');
+    log(`[AI33 TTS ${jobId}] Audio ready: ${audioUrl.substring(0, 80)}...`);
+
+    // Step 3: Download and upload to Supabase Storage
+    const audioRes = await fetch(audioUrl);
+    if (!audioRes.ok) throw new Error(`Failed to download AI33 audio: ${audioRes.status}`);
+    const audioBytes = Buffer.from(await audioRes.arrayBuffer());
+
+    const filename = `${userId}/${projectId || 'temp'}/${Date.now()}_ai33_generated.mp3`;
+    const { error: uploadError } = await supabase.storage
+      .from('audio-files')
+      .upload(filename, audioBytes, { contentType: 'audio/mpeg', upsert: true });
+    if (uploadError) throw new Error(`Failed to upload audio: ${uploadError.message}`);
+
+    const { data: { publicUrl } } = supabase.storage.from('audio-files').getPublicUrl(filename);
+    log(`[AI33 TTS ${jobId}] Audio uploaded: ${publicUrl.substring(0, 80)}...`);
+
+    let finalAudioUrl = publicUrl;
+
+    // Step 4: Optional RVC conversion
+    if (meta.rvcEnabled && meta.rvcModelUrl) {
+      finalAudioUrl = await applyRVCConversion(jobId, publicUrl, {
+        rvcModelUrl: meta.rvcModelUrl, rvcIndexUrl: meta.rvcIndexUrl || '',
+        rvcPitch: typeof meta.rvcPitch === 'number' ? meta.rvcPitch : 0,
+        rvcIndexRate: typeof meta.rvcIndexRate === 'number' ? meta.rvcIndexRate : 0.75,
+        userId, projectId,
+      }, meta);
+    }
+
+    // Step 5: Update project
+    if (projectId) {
+      await supabase.from('projects')
+        .update({ audio_url: finalAudioUrl, updated_at: new Date().toISOString() })
+        .eq('id', projectId);
+    }
+
+    await supabase.from('generation_jobs')
+      .update({
+        status: 'completed', progress: 1, current_step: 'Terminé !',
+        completed_at: new Date().toISOString(),
+        metadata: { ...meta, ai33_task_id: task_id, audioUrl: finalAudioUrl, durationMs: Date.now() - startTime },
+      })
+      .eq('id', jobId);
+
+    log(`[AI33 TTS ${jobId}] Done in ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
+
+  } catch (err) {
+    logError(`[AI33 TTS ${jobId}] Pipeline failed:`, err.message);
+    await supabase.from('generation_jobs')
+      .update({ status: 'failed', error_message: err.message, completed_at: new Date().toISOString() })
+      .eq('id', jobId);
+  }
+}
+
+// ============================================================================
 // EDGETTS PIPELINE (with optional RVC)
 // ============================================================================
 
@@ -3248,7 +3371,7 @@ async function processIdeaGenerationPipeline(job) {
 async function mainLoop() {
   log(`Image Worker started (MAX_CONCURRENT=${MAX_CONCURRENT}, POLL=${POLL_INTERVAL_MS}ms)`);
   log(`Supabase: ${SUPABASE_URL}`);
-  log(`Job types: single_image, thumbnails, single_prompt, audio_generation (gemini/genaipro/edgetts), idea_generation`);
+  log(`Job types: single_image, thumbnails, single_prompt, audio_generation (gemini/genaipro/ai33/edgetts), idea_generation`);
 
   while (true) {
     try {
@@ -3346,6 +3469,7 @@ async function mainLoop() {
               pipeline = processPromptJob(job);
             } else if (job.job_type === 'audio_generation') {
               if (job.metadata?.provider === 'genaipro') pipeline = processGenaiproAudioPipeline(job);
+              else if (job.metadata?.provider === 'ai33') pipeline = processAi33AudioPipeline(job);
               else if (job.metadata?.provider === 'edgetts') pipeline = processEdgeTTSPipeline(job);
               else if ((job.metadata?.provider === 'minimax' || job.metadata?.provider === 'inworld') && job.metadata?.rvcEnabled) pipeline = processEdgeFunctionWithRVC(job);
               else pipeline = processAudioTTSPipeline(job);
