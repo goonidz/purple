@@ -509,14 +509,13 @@ export default function Calendar() {
       })
     : [];
 
-  // Overflow days from next month (fill trailing empty cells)
+  // Overflow days from next month (fill trailing empty cells + one extra row)
   const trailingEmpty = (7 - ((adjustedStartDay + daysInMonth.length) % 7)) % 7;
-  const nextOverflowDays = trailingEmpty > 0
-    ? eachDayOfInterval({
-        start: addDays(endOfMonth(currentMonth), 1),
-        end: addDays(endOfMonth(currentMonth), trailingEmpty),
-      })
-    : [];
+  const trailingTotal = trailingEmpty + 7;
+  const nextOverflowDays = eachDayOfInterval({
+    start: addDays(endOfMonth(currentMonth), 1),
+    end: addDays(endOfMonth(currentMonth), trailingTotal),
+  });
 
   const getEntriesForDay = (date: Date) => {
     return entries.filter(entry => {
