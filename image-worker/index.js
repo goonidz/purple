@@ -2606,17 +2606,29 @@ async function processGenaiproAudioPipeline(job) {
 
     log(`[GenAIPro ${jobId}] Audio uploaded: ${publicUrl.substring(0, 80)}...`);
 
+    let finalAudioUrl = publicUrl;
     const estimatedDuration = Math.round(script.split(/\s+/).length / 2.5);
 
-    // Step 4: Update project
+    // Step 4: Optional RVC conversion
+    if (meta.rvcEnabled && meta.rvcModelUrl) {
+      finalAudioUrl = await applyRVCConversion(jobId, publicUrl, {
+        rvcModelUrl: meta.rvcModelUrl,
+        rvcIndexUrl: meta.rvcIndexUrl || '',
+        rvcPitch: typeof meta.rvcPitch === 'number' ? meta.rvcPitch : 0,
+        rvcIndexRate: typeof meta.rvcIndexRate === 'number' ? meta.rvcIndexRate : 0.75,
+        userId, projectId,
+      }, meta);
+    }
+
+    // Step 5: Update project
     if (projectId) {
       await supabase
         .from('projects')
-        .update({ audio_url: publicUrl, updated_at: new Date().toISOString() })
+        .update({ audio_url: finalAudioUrl, updated_at: new Date().toISOString() })
         .eq('id', projectId);
     }
 
-    // Step 5: Mark job completed
+    // Step 6: Mark job completed
     await supabase
       .from('generation_jobs')
       .update({
@@ -2626,7 +2638,7 @@ async function processGenaiproAudioPipeline(job) {
         metadata: {
           ...meta,
           genaipro_task_id: task_id,
-          audioUrl: publicUrl,
+          audioUrl: finalAudioUrl,
           duration: estimatedDuration,
           durationMs: Date.now() - startTime,
         },
@@ -2649,7 +2661,7 @@ async function processGenaiproAudioPipeline(job) {
 }
 
 // ============================================================================
-// EDGETTS + RVC PIPELINE
+// EDGETTS PIPELINE (with optional RVC)
 // ============================================================================
 
 // Split text into chunks of ~targetChars characters without cutting mid-sentence
@@ -2697,28 +2709,85 @@ async function generateEdgeTTSChunk(text, voice, rate) {
   return buffer;
 }
 
-async function processEdgeTTSRVCPipeline(job) {
+/**
+ * Standalone RVC conversion: takes an audio URL, sends to RunPod RVC, polls for result.
+ * Returns the final converted audio URL.
+ */
+async function applyRVCConversion(jobId, audioUrl, rvcParams, meta) {
+  const runpodRvcEndpointId = process.env.RUNPOD_RVC_ENDPOINT_ID;
+  const runpodApiKey = process.env.RUNPOD_API_KEY;
+  if (!runpodRvcEndpointId || !runpodApiKey) throw new Error('RUNPOD_RVC_ENDPOINT_ID and RUNPOD_API_KEY must be set for RVC');
+
+  const { rvcModelUrl, rvcIndexUrl = '', rvcPitch = 0, rvcIndexRate = 0.75, rvcFilterRadius = 3, userId, projectId } = rvcParams;
+  if (!rvcModelUrl) throw new Error('rvcModelUrl is required for RVC conversion');
+
+  await supabase
+    .from('generation_jobs')
+    .update({ current_step: 'Conversion de voix (RVC) en cours...', metadata: { ...meta, step: 'rvc_processing' } })
+    .eq('id', jobId);
+
+  log(`[RVC ${jobId}] Sending to RunPod RVC (endpoint: ${runpodRvcEndpointId})...`);
+  const runpodRes = await fetch(`https://api.runpod.ai/v2/${runpodRvcEndpointId}/run`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${runpodApiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      input: { audioUrl, rvcModelUrl, rvcIndexUrl, pitch: rvcPitch, indexRate: rvcIndexRate, filterRadius: rvcFilterRadius, jobId, userId, projectId },
+    }),
+  });
+
+  if (!runpodRes.ok) {
+    const errText = await runpodRes.text();
+    throw new Error(`RunPod RVC submit failed (${runpodRes.status}): ${errText.substring(0, 300)}`);
+  }
+
+  const runpodData = await runpodRes.json();
+  const runpodJobId = runpodData.id;
+  log(`[RVC ${jobId}] RunPod job submitted: ${runpodJobId}`);
+
+  await supabase
+    .from('generation_jobs')
+    .update({ metadata: { ...meta, runpodJobId, step: 'rvc_processing' }, current_step: 'Conversion de voix (RVC) en cours...' })
+    .eq('id', jobId);
+
+  const RUNPOD_POLL_INTERVAL_MS = 5000;
+  const RUNPOD_MAX_ATTEMPTS = 120;
+
+  for (let attempt = 0; attempt < RUNPOD_MAX_ATTEMPTS; attempt++) {
+    await sleep(RUNPOD_POLL_INTERVAL_MS);
+    const statusRes = await fetch(`https://api.runpod.ai/v2/${runpodRvcEndpointId}/status/${runpodJobId}`, {
+      headers: { 'Authorization': `Bearer ${runpodApiKey}` },
+    });
+    if (!statusRes.ok) { logError(`[RVC ${jobId}] RunPod poll error: ${statusRes.status}`); continue; }
+
+    const statusData = await statusRes.json();
+    if (attempt % 6 === 0) log(`[RVC ${jobId}] RunPod status: ${statusData.status} (${attempt + 1}/${RUNPOD_MAX_ATTEMPTS})`);
+
+    if (statusData.status === 'COMPLETED') {
+      const finalUrl = statusData.output?.audioUrl;
+      if (!finalUrl) throw new Error('RunPod RVC completed but no audioUrl in output');
+      log(`[RVC ${jobId}] RVC done: ${finalUrl}`);
+      return finalUrl;
+    }
+    if (statusData.status === 'FAILED') {
+      throw new Error(`RunPod RVC failed: ${statusData.error || JSON.stringify(statusData.output || {})}`);
+    }
+  }
+  throw new Error('RunPod RVC timed out after 10 minutes');
+}
+
+async function processEdgeTTSPipeline(job) {
   const startTime = Date.now();
   const { id: jobId, project_id: projectId, user_id: userId, metadata: meta } = job;
 
   try {
     const text = meta.script || meta.text;
     const voice = meta.voice || 'en-US-AndrewMultilingualNeural';
-    const rvcModelUrl = meta.rvcModelUrl;
-    const rvcIndexUrl = meta.rvcIndexUrl || '';
-    const rvcPitch = typeof meta.rvcPitch === 'number' ? meta.rvcPitch : 0;
-    const rvcIndexRate = typeof meta.rvcIndexRate === 'number' ? meta.rvcIndexRate : 0.75;
-    const rvcFilterRadius = typeof meta.rvcFilterRadius === 'number' ? meta.rvcFilterRadius : 3;
     const ttsSpeed = typeof meta.speed === 'number' ? meta.speed : 1.0;
+    const wantRVC = meta.rvcEnabled && meta.rvcModelUrl;
 
-    if (!text || text.trim().length < 5) throw new Error('No text provided for EdgeTTS+RVC');
-    if (!rvcModelUrl) throw new Error('rvcModelUrl is required for EdgeTTS+RVC');
+    if (!text || text.trim().length < 5) throw new Error('No text provided for EdgeTTS');
 
-    const runpodRvcEndpointId = process.env.RUNPOD_RVC_ENDPOINT_ID;
-    const runpodApiKey = process.env.RUNPOD_API_KEY;
-    if (!runpodRvcEndpointId || !runpodApiKey) throw new Error('RUNPOD_RVC_ENDPOINT_ID and RUNPOD_API_KEY must be set');
-
-    log(`[EdgeTTS+RVC ${jobId}] Starting (voice=${voice}, speed=${ttsSpeed}x, text=${text.length} chars)`);
+    log(`[EdgeTTS ${jobId}] Starting (voice=${voice}, speed=${ttsSpeed}x, rvc=${!!wantRVC}, text=${text.length} chars)`);
 
     // Step 1: Chunk text
     const chunks = chunkTextByChars(text, 2000);
@@ -2820,87 +2889,23 @@ async function processEdgeTTSRVCPipeline(job) {
     if (concatenatedUrl && concatenatedUrl.includes('localhost')) {
       concatenatedUrl = concatenatedUrl.replace(/http:\/\/localhost:\d+/, 'https://purpleai.duckdns.org/api/render');
     }
-    log(`[EdgeTTS+RVC ${jobId}] Concat done: ${concatenatedUrl} (${concatResult.totalDuration?.toFixed(1)}s)`);
+    log(`[EdgeTTS ${jobId}] Concat done: ${concatenatedUrl} (${concatResult.totalDuration?.toFixed(1)}s)`);
 
-    // Step 4: Send to RunPod RVC Serverless
-    await supabase
-      .from('generation_jobs')
-      .update({ progress: chunks.length + 1, current_step: 'Conversion de voix (RVC) en cours...', metadata: { ...meta, totalChunks: chunks.length, step: 'rvc_processing' } })
-      .eq('id', jobId);
-    log(`[EdgeTTS+RVC ${jobId}] Sending to RunPod RVC (endpoint: ${runpodRvcEndpointId})...`);
-    const runpodRes = await fetch(`https://api.runpod.ai/v2/${runpodRvcEndpointId}/run`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${runpodApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        input: {
-          audioUrl: concatenatedUrl,
-          rvcModelUrl,
-          rvcIndexUrl,
-          pitch: rvcPitch,
-          indexRate: rvcIndexRate,
-          filterRadius: rvcFilterRadius,
-          jobId,
-          userId,
-          projectId,
-        },
-      }),
-    });
+    let finalAudioUrl = concatenatedUrl;
 
-    if (!runpodRes.ok) {
-      const errText = await runpodRes.text();
-      throw new Error(`RunPod RVC submit failed (${runpodRes.status}): ${errText.substring(0, 300)}`);
+    // Step 4: Optional RVC conversion
+    if (wantRVC) {
+      await supabase.from('generation_jobs').update({ progress: chunks.length + 1 }).eq('id', jobId);
+      finalAudioUrl = await applyRVCConversion(jobId, concatenatedUrl, {
+        rvcModelUrl: meta.rvcModelUrl,
+        rvcIndexUrl: meta.rvcIndexUrl || '',
+        rvcPitch: typeof meta.rvcPitch === 'number' ? meta.rvcPitch : 0,
+        rvcIndexRate: typeof meta.rvcIndexRate === 'number' ? meta.rvcIndexRate : 0.75,
+        userId, projectId,
+      }, { ...meta, totalChunks: chunks.length });
     }
 
-    const runpodData = await runpodRes.json();
-    const runpodJobId = runpodData.id;
-    log(`[EdgeTTS+RVC ${jobId}] RunPod job submitted: ${runpodJobId}`);
-
-    await supabase
-      .from('generation_jobs')
-      .update({ metadata: { ...meta, totalChunks: chunks.length, runpodJobId, step: 'rvc_processing' }, current_step: 'Conversion de voix (RVC) en cours...' })
-      .eq('id', jobId);
-
-    // Step 5: Poll RunPod for result (max 10 min)
-    const RUNPOD_POLL_INTERVAL_MS = 5000;
-    const RUNPOD_MAX_ATTEMPTS = 120;
-    let finalAudioUrl = null;
-
-    for (let attempt = 0; attempt < RUNPOD_MAX_ATTEMPTS; attempt++) {
-      await sleep(RUNPOD_POLL_INTERVAL_MS);
-
-      const statusRes = await fetch(`https://api.runpod.ai/v2/${runpodRvcEndpointId}/status/${runpodJobId}`, {
-        headers: { 'Authorization': `Bearer ${runpodApiKey}` },
-      });
-
-      if (!statusRes.ok) {
-        logError(`[EdgeTTS+RVC ${jobId}] RunPod status poll error: ${statusRes.status}`);
-        continue;
-      }
-
-      const statusData = await statusRes.json();
-      if (attempt % 6 === 0) {
-        log(`[EdgeTTS+RVC ${jobId}] RunPod status: ${statusData.status} (${attempt + 1}/${RUNPOD_MAX_ATTEMPTS})`);
-      }
-
-      if (statusData.status === 'COMPLETED') {
-        finalAudioUrl = statusData.output?.audioUrl;
-        if (!finalAudioUrl) throw new Error('RunPod RVC completed but no audioUrl in output');
-        break;
-      }
-
-      if (statusData.status === 'FAILED') {
-        throw new Error(`RunPod RVC failed: ${statusData.error || JSON.stringify(statusData.output || {})}`);
-      }
-    }
-
-    if (!finalAudioUrl) throw new Error('RunPod RVC timed out after 10 minutes');
-
-    log(`[EdgeTTS+RVC ${jobId}] RVC done: ${finalAudioUrl}`);
-
-    // Step 6: Update project
+    // Step 5: Update project
     if (projectId) {
       await supabase
         .from('projects')
@@ -2912,7 +2917,7 @@ async function processEdgeTTSRVCPipeline(job) {
       .from('generation_jobs')
       .update({
         status: 'completed',
-        progress: chunks.length + 2,
+        progress: chunks.length + (wantRVC ? 2 : 1),
         current_step: 'Terminé !',
         completed_at: new Date().toISOString(),
         metadata: {
@@ -2925,10 +2930,10 @@ async function processEdgeTTSRVCPipeline(job) {
       })
       .eq('id', jobId);
 
-    log(`[EdgeTTS+RVC ${jobId}] Done in ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
+    log(`[EdgeTTS ${jobId}] Done in ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
 
   } catch (err) {
-    logError(`[EdgeTTS+RVC ${jobId}] Pipeline failed:`, err.message);
+    logError(`[EdgeTTS ${jobId}] Pipeline failed:`, err.message);
     await supabase
       .from('generation_jobs')
       .update({
@@ -2936,6 +2941,103 @@ async function processEdgeTTSRVCPipeline(job) {
         error_message: err.message,
         completed_at: new Date().toISOString(),
       })
+      .eq('id', jobId);
+  }
+}
+
+// ============================================================================
+// EDGE FUNCTION + RVC PIPELINE (MiniMax/Inworld with voice conversion)
+// ============================================================================
+
+async function processEdgeFunctionWithRVC(job) {
+  const startTime = Date.now();
+  const { id: jobId, project_id: projectId, user_id: userId, metadata: meta } = job;
+
+  try {
+    const provider = meta.provider;
+    let functionName;
+    if (provider === 'inworld') functionName = 'generate-audio-inworld';
+    else functionName = 'generate-audio-minimax';
+
+    log(`[${provider}+RVC ${jobId}] Starting: invoke ${functionName} then apply RVC`);
+
+    await supabase.from('generation_jobs')
+      .update({ current_step: `Génération audio (${provider})...`, metadata: { ...meta, step: 'tts_generation' } })
+      .eq('id', jobId);
+
+    // Step 1: Invoke the Supabase Edge Function to generate audio
+    const edgeFnUrl = `${SUPABASE_URL}/functions/v1/${functionName}`;
+    const response = await fetch(edgeFnUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        jobId,
+        projectId,
+        userId,
+        ...meta,
+      }),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`Edge Function ${functionName} failed (${response.status}): ${errText.substring(0, 300)}`);
+    }
+
+    log(`[${provider}+RVC ${jobId}] Edge Function returned OK, checking for audio_url...`);
+
+    // Step 2: Poll for the project's audio_url (Edge Function updates it directly)
+    let audioUrl = null;
+    for (let attempt = 0; attempt < 60; attempt++) {
+      await sleep(3000);
+      const { data: project } = await supabase
+        .from('projects')
+        .select('audio_url')
+        .eq('id', projectId)
+        .single();
+      if (project?.audio_url) {
+        audioUrl = project.audio_url;
+        break;
+      }
+    }
+
+    if (!audioUrl) throw new Error(`No audio_url found after ${provider} generation`);
+    log(`[${provider}+RVC ${jobId}] Audio generated: ${audioUrl.substring(0, 80)}...`);
+
+    // Step 3: Apply RVC conversion
+    const finalAudioUrl = await applyRVCConversion(jobId, audioUrl, {
+      rvcModelUrl: meta.rvcModelUrl,
+      rvcIndexUrl: meta.rvcIndexUrl || '',
+      rvcPitch: typeof meta.rvcPitch === 'number' ? meta.rvcPitch : 0,
+      rvcIndexRate: typeof meta.rvcIndexRate === 'number' ? meta.rvcIndexRate : 0.75,
+      userId, projectId,
+    }, meta);
+
+    // Step 4: Update project with RVC audio
+    if (projectId) {
+      await supabase.from('projects')
+        .update({ audio_url: finalAudioUrl, updated_at: new Date().toISOString() })
+        .eq('id', projectId);
+    }
+
+    await supabase.from('generation_jobs')
+      .update({
+        status: 'completed',
+        progress: 1,
+        current_step: 'Terminé !',
+        completed_at: new Date().toISOString(),
+        metadata: { ...meta, audioUrl: finalAudioUrl, durationMs: Date.now() - startTime },
+      })
+      .eq('id', jobId);
+
+    log(`[${provider}+RVC ${jobId}] Done in ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
+
+  } catch (err) {
+    logError(`[EdgeFn+RVC ${jobId}] Pipeline failed:`, err.message);
+    await supabase.from('generation_jobs')
+      .update({ status: 'failed', error_message: err.message, completed_at: new Date().toISOString() })
       .eq('id', jobId);
   }
 }
@@ -3146,7 +3248,7 @@ async function processIdeaGenerationPipeline(job) {
 async function mainLoop() {
   log(`Image Worker started (MAX_CONCURRENT=${MAX_CONCURRENT}, POLL=${POLL_INTERVAL_MS}ms)`);
   log(`Supabase: ${SUPABASE_URL}`);
-  log(`Job types: single_image, thumbnails, single_prompt, audio_generation (gemini/genaipro/edgetts_rvc), idea_generation`);
+  log(`Job types: single_image, thumbnails, single_prompt, audio_generation (gemini/genaipro/edgetts), idea_generation`);
 
   while (true) {
     try {
@@ -3244,7 +3346,8 @@ async function mainLoop() {
               pipeline = processPromptJob(job);
             } else if (job.job_type === 'audio_generation') {
               if (job.metadata?.provider === 'genaipro') pipeline = processGenaiproAudioPipeline(job);
-              else if (job.metadata?.provider === 'edgetts_rvc') pipeline = processEdgeTTSRVCPipeline(job);
+              else if (job.metadata?.provider === 'edgetts') pipeline = processEdgeTTSPipeline(job);
+              else if ((job.metadata?.provider === 'minimax' || job.metadata?.provider === 'inworld') && job.metadata?.rvcEnabled) pipeline = processEdgeFunctionWithRVC(job);
               else pipeline = processAudioTTSPipeline(job);
             } else if (job.job_type === 'idea_generation') {
               pipeline = processIdeaGenerationPipeline(job);
