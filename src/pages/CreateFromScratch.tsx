@@ -2550,23 +2550,13 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                 ) : (
                   <div className="flex gap-3">
                     <Button 
-                      onClick={handleGenerateAxes} 
-                      disabled={!customPrompt.trim() || !projectName.trim()}
-                      className="flex-1"
-                      size="lg"
-                    >
-                      <Sparkles className="mr-2 h-4 w-4" />
-                      Proposer des thèses (Gemini)
-                    </Button>
-                    <Button 
                       onClick={handleGenerateScript} 
                       disabled={!customPrompt.trim() || !projectName.trim()}
-                      variant="secondary"
-                      className="flex-1"
+                      className="flex-1 text-white"
                       size="lg"
                     >
                       <FileText className="mr-2 h-4 w-4" />
-                      Écrire directement
+                      Écrire
                     </Button>
                   </div>
                 )}
