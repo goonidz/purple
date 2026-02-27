@@ -968,8 +968,15 @@ const Index = () => {
       const hasScript = (data.script && data.script.length > 100) || (data.summary && data.summary.length > 100);
       const hasAudio = !!data.audio_url;
       const hasTranscript = data.transcript_json && Object.keys(data.transcript_json).length > 0;
+      const hasScenes = Array.isArray(data.scenes) && data.scenes.length > 0;
       
       if (hasScript && !hasAudio && !hasTranscript) {
+        navigate(`/create-from-scratch?continue=${projectId}`);
+        return;
+      }
+
+      // Project has nothing yet — redirect to create-from-scratch to start/continue the workflow
+      if (!hasScript && !hasAudio && !hasTranscript && !hasScenes) {
         navigate(`/create-from-scratch?continue=${projectId}`);
         return;
       }

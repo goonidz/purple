@@ -546,7 +546,7 @@ const CreateFromScratch = () => {
     try {
       const { data, error } = await supabase
         .from("projects")
-        .select("id, name, summary, audio_url, transcript_json")
+        .select("id, name, script, summary, audio_url, transcript_json")
         .eq("id", projectIdToLoad)
         .single();
 
@@ -562,12 +562,12 @@ const CreateFromScratch = () => {
         return;
       }
 
-      // If script already exists, show it directly (and clean up any stale job ID)
-      if (data.summary) {
+      const recoveredScript = data.script || data.summary;
+      if (recoveredScript && recoveredScript.length > 100) {
         try { localStorage.removeItem(`vps_script_job_${data.id}`); } catch (_) {}
-        setGeneratedScript(data.summary);
-        setWordCount(data.summary.split(/\s+/).length);
-        setEstimatedDuration(Math.round(data.summary.split(/\s+/).length / 2.5));
+        setGeneratedScript(recoveredScript);
+        setWordCount(recoveredScript.split(/\s+/).length);
+        setEstimatedDuration(Math.round(recoveredScript.split(/\s+/).length / 2.5));
         setStep("script");
         toast.success("Script récupéré ! Continuez avec la génération audio.");
       }
