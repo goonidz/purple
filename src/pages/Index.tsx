@@ -2912,7 +2912,7 @@ const Index = () => {
           }
 
           if (scene.prompt) {
-            zip.file(`${baseName}_prompt.txt`, scene.prompt);
+            zip.file(`${baseName}.txt`, scene.prompt);
           }
 
           successCount++;
