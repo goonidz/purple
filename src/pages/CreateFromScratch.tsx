@@ -264,6 +264,9 @@ const CreateFromScratch = () => {
   // EdgeTTS settings
   const [edgeTTSVoice, setEdgeTTSVoice] = useState("en-US-AndrewMultilingualNeural");
   const [edgeTTSSpeed, setEdgeTTSSpeed] = useState(1.0);
+  // Audio Tags (prepend tag before each paragraph)
+  const [audioTagsEnabled, setAudioTagsEnabled] = useState(false);
+  const [audioTagsText, setAudioTagsText] = useState("");
   // RVC settings (independent of provider)
   const [rvcEnabled, setRvcEnabled] = useState(false);
   const [rvcModelUrl, setRvcModelUrl] = useState("");
@@ -815,7 +818,7 @@ const CreateFromScratch = () => {
       }
     }
 
-    // Load RVC settings (stored in emotion JSON for all providers)
+    // Load RVC + Audio Tags settings (stored in emotion JSON for all providers)
     try {
       const emotionData = preset.emotion ? JSON.parse(preset.emotion) : {};
       setRvcEnabled(!!emotionData.rvcEnabled);
@@ -823,7 +826,10 @@ const CreateFromScratch = () => {
       if (emotionData.rvcIndexUrl !== undefined) setRvcIndexUrl(emotionData.rvcIndexUrl);
       if (typeof emotionData.rvcPitch === "number") setRvcPitch(emotionData.rvcPitch);
       if (typeof emotionData.rvcIndexRate === "number") setRvcIndexRate(emotionData.rvcIndexRate);
-    } catch { /* not JSON or no RVC data, ignore */ }
+      setAudioTagsEnabled(!!emotionData.audioTagsEnabled);
+      if (typeof emotionData.audioTagsText === "string") setAudioTagsText(emotionData.audioTagsText);
+      else setAudioTagsText("");
+    } catch { /* not JSON or no RVC/audioTags data, ignore */ }
 
     setSelectedTtsPresetId(preset.id);
     if (!opts?.silent) {
@@ -852,20 +858,21 @@ const CreateFromScratch = () => {
         provider: ttsProvider,
       };
       const rvcData = { rvcEnabled, rvcModelUrl, rvcIndexUrl, rvcPitch, rvcIndexRate };
+      const audioTagsData = { audioTagsEnabled, audioTagsText };
       if (ttsProvider === "genaipro" || ttsProvider === "ai33") {
         presetData.voice_id = genaiproVoiceId;
         presetData.model = genaiproModel;
         presetData.speed = genaiproSpeed;
         presetData.volume = genaiproStability;
         presetData.pitch = Math.round(genaiproSimilarity * 100);
-        presetData.emotion = JSON.stringify({ style: genaiproStyle, speakerBoost: genaiproSpeakerBoost, ...rvcData });
+        presetData.emotion = JSON.stringify({ style: genaiproStyle, speakerBoost: genaiproSpeakerBoost, ...rvcData, ...audioTagsData });
       } else if (ttsProvider === "edgetts") {
         presetData.voice_id = edgeTTSVoice;
-        presetData.emotion = JSON.stringify({ edgeTTSSpeed, ...rvcData });
+        presetData.emotion = JSON.stringify({ edgeTTSSpeed, ...rvcData, ...audioTagsData });
       } else if (ttsProvider === "inworld") {
         presetData.voice_id = inworldVoiceId;
         presetData.speed = inworldSpeakingRate;
-        presetData.emotion = JSON.stringify(rvcData);
+        presetData.emotion = JSON.stringify({ ...rvcData, ...audioTagsData });
       } else {
         presetData.voice_id = selectedVoice;
         presetData.model = minimaxModel;
@@ -874,7 +881,7 @@ const CreateFromScratch = () => {
         presetData.volume = minimaxVolume;
         presetData.language_boost = minimaxLanguageBoost;
         presetData.english_normalization = minimaxEnglishNormalization;
-        presetData.emotion = JSON.stringify({ minimaxEmotion, ...rvcData });
+        presetData.emotion = JSON.stringify({ minimaxEmotion, ...rvcData, ...audioTagsData });
       }
       const { error } = await supabase
         .from("tts_presets")
@@ -943,20 +950,21 @@ const CreateFromScratch = () => {
         provider: ttsProvider,
       };
       const rvcData = { rvcEnabled, rvcModelUrl, rvcIndexUrl, rvcPitch, rvcIndexRate };
+      const audioTagsData = { audioTagsEnabled, audioTagsText };
       if (ttsProvider === "genaipro" || ttsProvider === "ai33") {
         updateData.voice_id = genaiproVoiceId;
         updateData.model = genaiproModel;
         updateData.speed = genaiproSpeed;
         updateData.volume = genaiproStability;
         updateData.pitch = Math.round(genaiproSimilarity * 100);
-        updateData.emotion = JSON.stringify({ style: genaiproStyle, speakerBoost: genaiproSpeakerBoost, ...rvcData });
+        updateData.emotion = JSON.stringify({ style: genaiproStyle, speakerBoost: genaiproSpeakerBoost, ...rvcData, ...audioTagsData });
       } else if (ttsProvider === "edgetts") {
         updateData.voice_id = edgeTTSVoice;
-        updateData.emotion = JSON.stringify({ edgeTTSSpeed, ...rvcData });
+        updateData.emotion = JSON.stringify({ edgeTTSSpeed, ...rvcData, ...audioTagsData });
       } else if (ttsProvider === "inworld") {
         updateData.voice_id = inworldVoiceId;
         updateData.speed = inworldSpeakingRate;
-        updateData.emotion = JSON.stringify(rvcData);
+        updateData.emotion = JSON.stringify({ ...rvcData, ...audioTagsData });
       } else {
         updateData.voice_id = selectedVoice;
         updateData.model = minimaxModel;
@@ -965,7 +973,7 @@ const CreateFromScratch = () => {
         updateData.volume = minimaxVolume;
         updateData.language_boost = minimaxLanguageBoost;
         updateData.english_normalization = minimaxEnglishNormalization;
-        updateData.emotion = JSON.stringify({ minimaxEmotion, ...rvcData });
+        updateData.emotion = JSON.stringify({ minimaxEmotion, ...rvcData, ...audioTagsData });
       }
       const { error } = await supabase
         .from("tts_presets")
@@ -1857,6 +1865,12 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
         audioMetadata.rvcIndexUrl = rvcIndexUrl;
         audioMetadata.rvcPitch = rvcPitch;
         audioMetadata.rvcIndexRate = rvcIndexRate;
+      }
+
+      // Add audio tags if enabled
+      if (audioTagsEnabled && audioTagsText.trim()) {
+        audioMetadata.audioTagsEnabled = true;
+        audioMetadata.audioTagsText = audioTagsText.trim();
       }
 
       // Start audio generation job via backend
@@ -2973,6 +2987,40 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                           </div>
                         </div>
                       )}
+
+                      {/* Audio Tags - prepend emotion tag before each paragraph */}
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg border">
+                          <div className="space-y-0.5">
+                            <Label className="text-sm font-medium">Audio Tags</Label>
+                            <p className="text-xs text-muted-foreground">
+                              Ajouter un tag avant chaque paragraphe du script (ex: [excited], [whispering]).
+                            </p>
+                          </div>
+                          <input
+                            type="checkbox"
+                            checked={audioTagsEnabled}
+                            onChange={(e) => setAudioTagsEnabled(e.target.checked)}
+                            className="h-5 w-5 rounded border-gray-300 text-primary focus:ring-primary"
+                          />
+                        </div>
+
+                        {audioTagsEnabled && (
+                          <div className="p-4 bg-muted/50 rounded-lg border border-primary/20">
+                            <div className="space-y-2">
+                              <Label>Tag à insérer avant chaque paragraphe</Label>
+                              <Input
+                                value={audioTagsText}
+                                onChange={(e) => setAudioTagsText(e.target.value)}
+                                placeholder="[excited]"
+                              />
+                              <p className="text-xs text-muted-foreground">
+                                Ce texte sera ajouté automatiquement avant chaque paragraphe du script lors de la génération audio.
+                              </p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
 
                       {/* RVC Voice Conversion - available for all providers */}
                       <div className="space-y-4">

@@ -2186,6 +2186,16 @@ async function checkDiskUsage() {
 }
 
 // ============================================================================
+// TTS: AUDIO TAGS (prepend user tag before each paragraph)
+// ============================================================================
+
+function applyAudioTags(text, meta) {
+  if (!meta.audioTagsEnabled || !meta.audioTagsText) return text;
+  const tag = meta.audioTagsText.trim();
+  return text.split(/\n\n+/).map(p => p.trim()).filter(Boolean).map(p => `${tag} ${p}`).join('\n\n');
+}
+
+// ============================================================================
 // TTS: TEXT CHUNKING (split by sentences, ~200-300 words per chunk)
 // ============================================================================
 
@@ -2312,7 +2322,7 @@ async function processAudioTTSPipeline(job) {
 
   try {
     const meta = job.metadata || {};
-    const text = meta.text;
+    const text = applyAudioTags(meta.text, meta);
     const voice = meta.voice || 'Puck';
     const styleInstruction = meta.styleInstruction || 'energetic YouTube narrator. Natural and conversational, confident and slightly playful. Medium-fast pace. Strong emphasis on key words. Vary pitch and intonation to avoid monotone. Short pauses after punchlines and before important numbers. Sound curious, occasionally skeptical. Smile in the voice. Avoid robotic cadence.';
     const projectId = job.project_id;
@@ -2489,7 +2499,7 @@ async function processGenaiproAudioPipeline(job) {
   const { id: jobId, project_id: projectId, user_id: userId, metadata: meta } = job;
 
   try {
-    const script = meta.script;
+    const script = applyAudioTags(meta.script, meta);
     const voice = meta.voice || 'uju3wxzG5OhpWcoi3SMy';
     const model = meta.model || 'eleven_multilingual_v2';
     const speed = meta.speed ?? 1.0;
@@ -2673,7 +2683,7 @@ async function processAi33AudioPipeline(job) {
   const { id: jobId, project_id: projectId, user_id: userId, metadata: meta } = job;
 
   try {
-    const script = meta.script;
+    const script = applyAudioTags(meta.script, meta);
     const voice = meta.voice || 'uju3wxzG5OhpWcoi3SMy';
     const model = meta.model || 'eleven_multilingual_v2';
 
@@ -2903,7 +2913,7 @@ async function processEdgeTTSPipeline(job) {
   const { id: jobId, project_id: projectId, user_id: userId, metadata: meta } = job;
 
   try {
-    const text = meta.script || meta.text;
+    const text = applyAudioTags(meta.script || meta.text, meta);
     const voice = meta.voice || 'en-US-AndrewMultilingualNeural';
     const ttsSpeed = typeof meta.speed === 'number' ? meta.speed : 1.0;
     const wantRVC = meta.rvcEnabled && meta.rvcModelUrl;
@@ -3088,6 +3098,12 @@ async function processEdgeFunctionWithRVC(job) {
       .update({ current_step: `Génération audio (${provider})...`, metadata: { ...meta, step: 'tts_generation' } })
       .eq('id', jobId);
 
+    // Apply audio tags to script before sending to Edge Function
+    const taggedMeta = { ...meta };
+    if (meta.audioTagsEnabled && meta.audioTagsText && meta.script) {
+      taggedMeta.script = applyAudioTags(meta.script, meta);
+    }
+
     // Step 1: Invoke the Supabase Edge Function to generate audio
     const edgeFnUrl = `${SUPABASE_URL}/functions/v1/${functionName}`;
     const response = await fetch(edgeFnUrl, {
@@ -3100,7 +3116,7 @@ async function processEdgeFunctionWithRVC(job) {
         jobId,
         projectId,
         userId,
-        ...meta,
+        ...taggedMeta,
       }),
     });
 
