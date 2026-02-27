@@ -965,7 +965,7 @@ const Index = () => {
       try { localStorage.removeItem(`vps_script_job_${projectId}`); } catch (_) {}
 
       // Check if this is a "from scratch" project that needs to continue the workflow
-      const hasScript = data.summary && data.summary.length > 100;
+      const hasScript = (data.script && data.script.length > 100) || (data.summary && data.summary.length > 100);
       const hasAudio = !!data.audio_url;
       const hasTranscript = data.transcript_json && Object.keys(data.transcript_json).length > 0;
       
