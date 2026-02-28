@@ -6,7 +6,9 @@ import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
-import { Loader2, Play, Download, Volume2, Square, Clock, Trash2, AlertCircle } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Loader2, Play, Download, Volume2, Square, Clock, Trash2, AlertCircle, FolderOpen, Save, ChevronDown, Pencil, Copy } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
@@ -29,6 +31,20 @@ interface HistoryJob {
   error_message: string | null;
   progress: number | null;
   total: number | null;
+}
+
+interface TtsPreset {
+  id: string;
+  name: string;
+  provider: string;
+  voice_id: string;
+  model: string | null;
+  speed: number;
+  pitch: number;
+  volume: number;
+  language_boost: string;
+  english_normalization: boolean;
+  emotion: string;
 }
 
 interface AudioTTSGeneratorProps {
@@ -55,16 +71,214 @@ export function AudioTTSGenerator({ initialText }: AudioTTSGeneratorProps) {
   const [rvcPitch, setRvcPitch] = useState(0);
   const [rvcIndexRate, setRvcIndexRate] = useState(0.75);
 
+  // Preset management
+  const [presets, setPresets] = useState<TtsPreset[]>([]);
+  const [selectedPresetId, setSelectedPresetId] = useState<string>("");
+  const [presetPopoverOpen, setPresetPopoverOpen] = useState(false);
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [newPresetName, setNewPresetName] = useState("");
+  const [editPresetName, setEditPresetName] = useState("");
+  const [editingPresetId, setEditingPresetId] = useState<string | null>(null);
+  const [isSavingPreset, setIsSavingPreset] = useState(false);
+
   useEffect(() => {
     if (initialText && !text) setText(initialText);
   }, [initialText]);
 
   useEffect(() => {
     fetchHistory();
+    loadPresets();
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
     };
   }, []);
+
+  const loadPresets = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("tts_presets")
+        .select("*")
+        .order("name", { ascending: true });
+
+      if (error) throw error;
+      const all = (data || []) as TtsPreset[];
+      // Show all presets (user can load any provider preset here for RVC settings)
+      setPresets(all);
+    } catch (err) {
+      console.error("Error loading presets:", err);
+    }
+  };
+
+  const applyPreset = (preset: TtsPreset) => {
+    // For Gemini TTS presets, load voice from voice_id
+    if (preset.provider === "gemini_tts") {
+      if (preset.voice_id) setVoice(preset.voice_id);
+    }
+
+    // Load RVC + style from emotion JSON
+    try {
+      const emotionData = preset.emotion ? JSON.parse(preset.emotion) : {};
+      if (typeof emotionData.styleInstruction === "string") setStyleInstruction(emotionData.styleInstruction);
+      setRvcEnabled(!!emotionData.rvcEnabled);
+      if (emotionData.rvcModelUrl) setRvcModelUrl(emotionData.rvcModelUrl);
+      if (emotionData.rvcIndexUrl !== undefined) setRvcIndexUrl(emotionData.rvcIndexUrl);
+      if (typeof emotionData.rvcPitch === "number") setRvcPitch(emotionData.rvcPitch);
+      if (typeof emotionData.rvcIndexRate === "number") setRvcIndexRate(emotionData.rvcIndexRate);
+    } catch { /* ignore */ }
+
+    setSelectedPresetId(preset.id);
+    toast.success(`Preset "${preset.name}" chargé`);
+  };
+
+  const handleSavePreset = async () => {
+    if (!newPresetName.trim()) {
+      toast.error("Veuillez entrer un nom pour le preset");
+      return;
+    }
+
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+
+    setIsSavingPreset(true);
+    try {
+      const emotionData = {
+        styleInstruction,
+        rvcEnabled,
+        rvcModelUrl,
+        rvcIndexUrl,
+        rvcPitch,
+        rvcIndexRate,
+      };
+
+      const { error } = await supabase
+        .from("tts_presets")
+        .insert([{
+          user_id: session.user.id,
+          name: newPresetName.trim(),
+          provider: "gemini_tts",
+          voice_id: voice,
+          emotion: JSON.stringify(emotionData),
+        }]);
+
+      if (error) throw error;
+
+      toast.success("Preset sauvegardé !");
+      setSaveDialogOpen(false);
+      setNewPresetName("");
+      loadPresets();
+    } catch (error: any) {
+      console.error("Error saving preset:", error);
+      toast.error("Erreur lors de la sauvegarde");
+    } finally {
+      setIsSavingPreset(false);
+    }
+  };
+
+  const handleUpdatePreset = async () => {
+    if (!editingPresetId || !editPresetName.trim()) {
+      toast.error("Veuillez entrer un nom pour le preset");
+      return;
+    }
+
+    setIsSavingPreset(true);
+    try {
+      const emotionData = {
+        styleInstruction,
+        rvcEnabled,
+        rvcModelUrl,
+        rvcIndexUrl,
+        rvcPitch,
+        rvcIndexRate,
+      };
+
+      const { error } = await supabase
+        .from("tts_presets")
+        .update({
+          name: editPresetName.trim(),
+          provider: "gemini_tts",
+          voice_id: voice,
+          emotion: JSON.stringify(emotionData),
+        })
+        .eq("id", editingPresetId);
+
+      if (error) throw error;
+
+      toast.success("Preset mis à jour !");
+      setEditDialogOpen(false);
+      setEditingPresetId(null);
+      loadPresets();
+    } catch (error: any) {
+      console.error("Error updating preset:", error);
+      toast.error("Erreur lors de la mise à jour");
+    } finally {
+      setIsSavingPreset(false);
+    }
+  };
+
+  const handleDeletePreset = async (presetId: string) => {
+    const preset = presets.find(p => p.id === presetId);
+    if (!preset) return;
+    if (!confirm(`Supprimer le preset "${preset.name}" ?`)) return;
+
+    try {
+      const { error } = await supabase
+        .from("tts_presets")
+        .delete()
+        .eq("id", presetId);
+
+      if (error) throw error;
+
+      toast.success("Preset supprimé");
+      if (selectedPresetId === presetId) setSelectedPresetId("");
+      loadPresets();
+    } catch (error: any) {
+      console.error("Error deleting preset:", error);
+      toast.error("Erreur lors de la suppression");
+    }
+  };
+
+  const handleOpenEdit = (presetId: string) => {
+    const preset = presets.find(p => p.id === presetId);
+    if (!preset) return;
+    setEditingPresetId(presetId);
+    setEditPresetName(preset.name);
+    applyPreset(preset);
+    setEditDialogOpen(true);
+  };
+
+  const handleDuplicate = async (presetId: string) => {
+    const preset = presets.find(p => p.id === presetId);
+    if (!preset) return;
+
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+
+    try {
+      const { error } = await supabase
+        .from("tts_presets")
+        .insert([{
+          user_id: session.user.id,
+          name: `${preset.name} (copie)`,
+          provider: preset.provider,
+          voice_id: preset.voice_id,
+          model: preset.model,
+          speed: preset.speed,
+          pitch: preset.pitch,
+          volume: preset.volume,
+          language_boost: preset.language_boost,
+          english_normalization: preset.english_normalization,
+          emotion: preset.emotion,
+        }]);
+
+      if (error) throw error;
+      toast.success("Preset dupliqué !");
+      loadPresets();
+    } catch (error: any) {
+      console.error("Error duplicating preset:", error);
+      toast.error("Erreur lors de la duplication");
+    }
+  };
 
   const fetchHistory = async () => {
     const { data: { session } } = await supabase.auth.getSession();
@@ -200,7 +414,7 @@ export function AudioTTSGenerator({ initialText }: AudioTTSGeneratorProps) {
     fetchHistory();
   };
 
-  const handleDelete = async (id: string) => {
+  const handleDeleteJob = async (id: string) => {
     await supabase.from("generation_jobs").delete().eq("id", id);
     setHistory((prev) => prev.filter((j) => j.id !== id));
   };
@@ -214,6 +428,18 @@ export function AudioTTSGenerator({ initialText }: AudioTTSGeneratorProps) {
   const formatDate = (dateStr: string) => {
     const d = new Date(dateStr);
     return d.toLocaleDateString("fr-FR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  };
+
+  const providerLabel = (provider: string) => {
+    switch (provider) {
+      case "gemini_tts": return "Gemini TTS";
+      case "minimax": return "MiniMax";
+      case "inworld": return "Inworld";
+      case "genaipro": return "ElevenLabs";
+      case "ai33": return "AI33";
+      case "edgetts": return "EdgeTTS";
+      default: return provider;
+    }
   };
 
   const wordCount = text.trim().split(/\s+/).filter(Boolean).length;
@@ -231,6 +457,102 @@ export function AudioTTSGenerator({ initialText }: AudioTTSGeneratorProps) {
         <div className="flex items-center gap-2">
           <Volume2 className="h-5 w-5 text-primary" />
           <h3 className="text-lg font-semibold">Gemini TTS Audio Generator</h3>
+        </div>
+
+        {/* Preset selector */}
+        <div className="space-y-2">
+          <Label>Preset</Label>
+          <div className="flex gap-2">
+            <Popover open={presetPopoverOpen} onOpenChange={setPresetPopoverOpen}>
+              <PopoverTrigger asChild>
+                <Button variant="outline" className="flex-1 justify-between">
+                  <span className="flex items-center gap-2">
+                    <FolderOpen className="h-4 w-4" />
+                    {selectedPresetId
+                      ? presets.find(p => p.id === selectedPresetId)?.name || "Sélectionner..."
+                      : "Sélectionner un preset..."}
+                  </span>
+                  <ChevronDown className="h-4 w-4 opacity-50" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-80 p-0 bg-popover z-50" align="start">
+                <div className="p-2 border-b">
+                  <p className="text-sm font-medium">Presets TTS sauvegardés</p>
+                </div>
+                {presets.length === 0 ? (
+                  <div className="p-4 text-center text-sm text-muted-foreground">
+                    Aucun preset sauvegardé
+                  </div>
+                ) : (
+                  <div className="max-h-60 overflow-y-auto">
+                    {presets.map((preset) => (
+                      <div
+                        key={preset.id}
+                        className="flex items-center justify-between p-2 hover:bg-muted cursor-pointer"
+                      >
+                        <div
+                          className="flex-1 pr-2"
+                          onClick={() => {
+                            applyPreset(preset);
+                            setPresetPopoverOpen(false);
+                          }}
+                        >
+                          <p className="font-medium text-sm">{preset.name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {providerLabel(preset.provider)} - {preset.voice_id}
+                          </p>
+                        </div>
+                        <div className="flex gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenEdit(preset.id);
+                              setPresetPopoverOpen(false);
+                            }}
+                          >
+                            <Pencil className="h-3 w-3" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDuplicate(preset.id);
+                              setPresetPopoverOpen(false);
+                            }}
+                          >
+                            <Copy className="h-3 w-3" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-destructive hover:text-destructive"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeletePreset(preset.id);
+                            }}
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </PopoverContent>
+            </Popover>
+            <Button
+              variant="outline"
+              onClick={() => setSaveDialogOpen(true)}
+            >
+              <Save className="h-4 w-4 mr-2" />
+              Sauvegarder
+            </Button>
+          </div>
         </div>
 
         <div className="space-y-2">
@@ -498,7 +820,7 @@ export function AudioTTSGenerator({ initialText }: AudioTTSGeneratorProps) {
                         <Download className="h-3.5 w-3.5" />
                       </a>
                     </Button>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => handleDelete(job.id)}>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => handleDeleteJob(job.id)}>
                       <Trash2 className="h-3.5 w-3.5" />
                     </Button>
                   </div>
@@ -521,7 +843,7 @@ export function AudioTTSGenerator({ initialText }: AudioTTSGeneratorProps) {
                   </div>
                   <div className="flex items-center gap-1">
                     <span className="text-xs text-muted-foreground mr-2">{formatDate(job.created_at)}</span>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => handleDelete(job.id)}>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => handleDeleteJob(job.id)}>
                       <Trash2 className="h-3.5 w-3.5" />
                     </Button>
                   </div>
@@ -531,6 +853,76 @@ export function AudioTTSGenerator({ initialText }: AudioTTSGeneratorProps) {
           </div>
         </Card>
       )}
+
+      {/* Save Preset Dialog */}
+      <Dialog open={saveDialogOpen} onOpenChange={setSaveDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Sauvegarder le preset</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="newPresetName">Nom du preset</Label>
+              <Input
+                id="newPresetName"
+                placeholder="Ma configuration TTS..."
+                value={newPresetName}
+                onChange={(e) => setNewPresetName(e.target.value)}
+              />
+            </div>
+            <div className="p-4 bg-muted rounded-lg text-sm">
+              <p className="font-medium mb-2">Configuration actuelle :</p>
+              <ul className="space-y-1 text-muted-foreground">
+                <li>Fournisseur : Gemini TTS{rvcEnabled ? " + RVC" : ""}</li>
+                <li>Voix : {voice}</li>
+                <li>Style : {styleInstruction.substring(0, 60)}...</li>
+                {rvcEnabled && <li>RVC : pitch {rvcPitch}, index rate {rvcIndexRate}</li>}
+              </ul>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSaveDialogOpen(false)}>
+              Annuler
+            </Button>
+            <Button onClick={handleSavePreset} disabled={isSavingPreset || !newPresetName.trim()}>
+              {isSavingPreset ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+              Sauvegarder
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Preset Dialog */}
+      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Modifier le preset</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="editPresetName">Nom du preset</Label>
+              <Input
+                id="editPresetName"
+                placeholder="Ma configuration TTS..."
+                value={editPresetName}
+                onChange={(e) => setEditPresetName(e.target.value)}
+              />
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Les paramètres actuels (voix, style, RVC) seront sauvegardés dans ce preset.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditDialogOpen(false)}>
+              Annuler
+            </Button>
+            <Button onClick={handleUpdatePreset} disabled={isSavingPreset || !editPresetName.trim()}>
+              {isSavingPreset ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+              Mettre à jour
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
