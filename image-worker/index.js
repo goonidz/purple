@@ -2510,6 +2510,18 @@ async function processAudioTTSPipeline(job) {
 
     log(`[TTS ${jobId}] Merge complete: ${finalAudioUrl} (${concatResult.totalDuration?.toFixed(1)}s)`);
 
+    // Optional RVC conversion
+    if (meta.rvcEnabled && meta.rvcModelUrl) {
+      log(`[TTS ${jobId}] Applying RVC conversion...`);
+      finalAudioUrl = await applyRVCConversion(jobId, finalAudioUrl, {
+        rvcModelUrl: meta.rvcModelUrl,
+        rvcIndexUrl: meta.rvcIndexUrl || '',
+        rvcPitch: typeof meta.rvcPitch === 'number' ? meta.rvcPitch : 0,
+        rvcIndexRate: typeof meta.rvcIndexRate === 'number' ? meta.rvcIndexRate : 0.75,
+      }, meta);
+      log(`[TTS ${jobId}] RVC conversion complete: ${finalAudioUrl}`);
+    }
+
     if (projectId) {
       await supabase
         .from('projects')

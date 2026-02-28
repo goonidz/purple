@@ -48,6 +48,13 @@ export function AudioTTSGenerator({ initialText }: AudioTTSGeneratorProps) {
   const [history, setHistory] = useState<HistoryJob[]>([]);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // RVC settings
+  const [rvcEnabled, setRvcEnabled] = useState(false);
+  const [rvcModelUrl, setRvcModelUrl] = useState("");
+  const [rvcIndexUrl, setRvcIndexUrl] = useState("");
+  const [rvcPitch, setRvcPitch] = useState(0);
+  const [rvcIndexRate, setRvcIndexRate] = useState(0.75);
+
   useEffect(() => {
     if (initialText && !text) setText(initialText);
   }, [initialText]);
@@ -155,6 +162,13 @@ export function AudioTTSGenerator({ initialText }: AudioTTSGeneratorProps) {
             styleInstruction,
             provider: "gemini_tts",
             standalone: true,
+            ...(rvcEnabled && rvcModelUrl ? {
+              rvcEnabled: true,
+              rvcModelUrl,
+              rvcIndexUrl,
+              rvcPitch,
+              rvcIndexRate,
+            } : {}),
           },
         })
         .select()
@@ -260,6 +274,126 @@ export function AudioTTSGenerator({ initialText }: AudioTTSGeneratorProps) {
           </div>
         </div>
 
+        {/* RVC Voice Conversion */}
+        <div className="space-y-4">
+          <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg border">
+            <div className="space-y-0.5">
+              <Label className="text-sm font-medium">Conversion de voix (RVC)</Label>
+              <p className="text-xs text-muted-foreground">
+                Convertir l'audio généré avec un modèle de voix RVC via GPU (RunPod).
+              </p>
+            </div>
+            <input
+              type="checkbox"
+              checked={rvcEnabled}
+              onChange={(e) => setRvcEnabled(e.target.checked)}
+              className="h-5 w-5 rounded border-gray-300 text-primary focus:ring-primary"
+              disabled={isGenerating}
+            />
+          </div>
+
+          {rvcEnabled && (
+            <div className="space-y-4 p-4 bg-muted/50 rounded-lg border border-primary/20">
+              <div className="space-y-2">
+                <Label>URL du modèle RVC (.pth) — HuggingFace</Label>
+                <Input
+                  value={rvcModelUrl}
+                  onChange={(e) => setRvcModelUrl(e.target.value)}
+                  placeholder="https://huggingface.co/.../model.pth"
+                  disabled={isGenerating}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Fichier <code>.pth</code> de votre voix entraînée sur HuggingFace. Ex : <code>https://huggingface.co/user/repo/resolve/main/model.pth</code>
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label>URL de l'index RVC (.index) — optionnel</Label>
+                <Input
+                  value={rvcIndexUrl}
+                  onChange={(e) => setRvcIndexUrl(e.target.value)}
+                  placeholder="https://huggingface.co/.../model.index"
+                  disabled={isGenerating}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Fichier <code>.index</code> FAISS associé au modèle. Améliore la qualité de conversion.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label>Décalage de pitch (demi-tons)</Label>
+                  <input
+                    type="number"
+                    min="-24"
+                    max="24"
+                    step="1"
+                    value={rvcPitch}
+                    onChange={(e) => {
+                      const v = parseInt(e.target.value);
+                      if (!isNaN(v)) setRvcPitch(Math.min(24, Math.max(-24, v)));
+                    }}
+                    className="w-16 text-right text-sm bg-muted border border-border rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-primary"
+                    disabled={isGenerating}
+                  />
+                </div>
+                <input
+                  type="range"
+                  min="-24"
+                  max="24"
+                  step="1"
+                  value={rvcPitch}
+                  onChange={(e) => setRvcPitch(parseInt(e.target.value))}
+                  className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
+                  disabled={isGenerating}
+                />
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>-24 (grave)</span>
+                  <span>0</span>
+                  <span>+24 (aigu)</span>
+                </div>
+                <p className="text-xs text-amber-600">
+                  Pour une conversion voix femme → homme : -12. Homme → femme : +12.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label>Index Rate</Label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    value={rvcIndexRate}
+                    onChange={(e) => {
+                      const v = parseFloat(e.target.value);
+                      if (!isNaN(v)) setRvcIndexRate(Math.min(1, Math.max(0, v)));
+                    }}
+                    className="w-16 text-right text-sm bg-muted border border-border rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-primary"
+                    disabled={isGenerating}
+                  />
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.05"
+                  value={rvcIndexRate}
+                  onChange={(e) => setRvcIndexRate(parseFloat(e.target.value))}
+                  className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
+                  disabled={isGenerating}
+                />
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>0 (désactivé)</span>
+                  <span>0.75 (recommandé)</span>
+                  <span>1.0</span>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
         {isGenerating && (
           <div className="space-y-2 p-3 bg-muted/30 rounded-lg">
             <div className="flex items-center justify-between text-sm">
@@ -291,7 +425,7 @@ export function AudioTTSGenerator({ initialText }: AudioTTSGeneratorProps) {
             ) : (
               <>
                 <Play className="h-4 w-4 mr-2" />
-                Generate Audio
+                Generate Audio{rvcEnabled ? " + RVC" : ""}
               </>
             )}
           </Button>
