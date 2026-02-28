@@ -127,45 +127,123 @@ serve(async (req) => {
     if (mode === 'describe') {
       const describePrompt = `You are a thumbnail composition analyst. Describe this YouTube thumbnail as a structured creative brief that can be used to recreate a similar thumbnail from scratch.
 
-OUTPUT FORMAT — Use EXACTLY these sections in this order. Fill each section with concrete, specific details from the image. If a section does not apply (e.g., no symbolic object), write "None" for that section.
+You must be EXTREMELY detailed and specific. Each section must contain multiple bullet points with granular descriptions. Think like a graphic designer writing production specs.
+
+OUTPUT FORMAT — Use EXACTLY these sections in this order. Fill each section with concrete, specific, granular details from the image. If a section does not apply (e.g., no symbolic object), write "None" for that section.
 
 BACKGROUND (FULL WIDTH)
-- Background color(s), gradient, blur, texture
-- Tone and mood of the background
-- Level of detail (clean, busy, photographic, illustrated, etc.)
+Describe in detail:
+- Exact background color(s) (e.g., "soft muted teal / blue-green")
+- Gradient direction and intensity, or solid color
+- Blur level and texture
+- Tone and mood (e.g., "calm but somber", "energetic and bold")
+- Level of detail: clean, busy, photographic, illustrated, etc.
+- Any patterns, shapes, or environmental elements in the background
 
-CHARACTER (LEFT/RIGHT/CENTER — specify position and approximate % of frame)
-- Position in frame and framing (headshot, upper body, full body)
-- Direction they face (camera, left, right)
-- Expression and emotion conveyed
-- Posture, hand gestures, body language
-- Separation from background (depth of field, cutout, glow, etc.)
+CHARACTER (specify position: LEFT/RIGHT/CENTER and approximate % of frame, e.g., "LEFT SIDE – 35-40%")
+Describe in detail:
+- Exact position in frame (left third, center, right side, etc.) and approximate percentage of frame occupied
+- Framing: headshot, upper body, full body, etc.
+- Direction they face: directly toward camera, angled left/right, profile
+- Expression: be very specific (e.g., "serious, concerned, attentive" not just "serious")
+- Emotion conveyed (e.g., "worry, realism, and responsibility")
+- Posture: relaxed, tense, arms crossed, pointing, hands on hips, etc.
+- Hand gestures and body language details
+- Separation from background: soft depth of field, hard cutout, glow, shadow, etc.
+- Role/function of the character in the composition (e.g., "functions as the voice of the generation", "acts as an authority figure")
 - IMPORTANT: Never describe the person's physical appearance (skin color, hair, clothes, gender, age). Always refer to them as "the character" or "my character".
 - If multiple people: use "my character" for the main subject, describe others generically.
 
-MAIN TEXT (specify position — dominant element)
+MAIN TEXT (specify position, e.g., "RIGHT SIDE – DOMINANT")
+Describe in detail:
 - Exact text visible, reproduced in UPPERCASE between quotes
-- Layout: stacked lines, single line, curved, etc.
-- Font style: bold, sans-serif, serif, handwritten, etc.
-- Color and effects: outline, shadow, glow, gradient
-- Approximate size relative to frame
-- Alignment
+- Text layout: list each line separately (e.g., Line 1: "GEN X", Line 2: "RETIREMENT", Line 3: "CRISIS")
+- All caps or mixed case
+- Font style: bold, thin, sans-serif, serif, handwritten, etc.
+- Font color with specifics (e.g., "light blue / cyan tone with dark outline or shadow")
+- Font size relative to frame (e.g., "very large, occupying most of the right half")
+- Effects: outline, drop shadow, glow, gradient, 3D effect, stroke
+- Vertical or horizontal stacking
+- Alignment: left, center, right, center-right
+- Whether the text is the most dominant element or secondary
 
-SYMBOLIC OBJECT(S) (specify position)
-- What objects, icons, emojis, graphics, arrows, or visual elements are present
-- Style: flat, realistic, 3D, illustrated
-- Color tone
-- Purpose/symbolism in context
+SYMBOLIC OBJECT(S) (specify exact position, e.g., "BOTTOM RIGHT")
+Describe in detail for each object:
+- What the object is (e.g., "a retro cassette tape", "a stack of dollar bills", "a red arrow pointing down")
+- Visual style: flat, semi-realistic, photographic, 3D rendered, illustrated
+- Color tone of the object
+- Shadow or grounding effect
+- Symbolic meaning in context (e.g., "acts as a generational symbol / nostalgia / Gen X reference")
+- Size relative to other elements (e.g., "should not overpower the headline")
 
 COLOR & MOOD
-- Dominant color palette
-- Overall mood: aggressive, calm, serious, fun, dramatic, educational, etc.
-- Contrast level and saturation
+- Exact dominant color palette (e.g., "cool palette: blues, teals")
+- Colors to avoid (e.g., "no bright or aggressive colors")
+- Overall mood: calm, serious, reflective, aggressive, fun, dramatic, etc.
+- Vibe: educational, explanatory, sensational, clickbait, premium, etc.
+- Contrast level and saturation notes
 
 VISUAL HIERARCHY (ordered from most to least dominant)
-- List elements in order of visual impact/attention
+List every element in order of visual impact/attention, e.g.:
+1. "CRISIS" (text)
+2. "RETIREMENT" (text)
+3. "GEN X" (text)
+4. Character (emotional anchor)
+5. Cassette tape (symbolic context)
 
-Respond ONLY with the structured description. No introduction, no commentary, no summary.`;
+--- EXAMPLE OUTPUT (for reference — your output must match this level of detail) ---
+
+BACKGROUND (FULL WIDTH)
+Soft, muted teal / blue-green background.
+Slight gradient or subtle blur.
+Calm but somber tone.
+No sharp details; background should feel neutral and serious.
+
+CHARACTER (LEFT SIDE – 35–40%)
+Single character positioned on the left third of the frame.
+Framing: upper body visible.
+Facing directly toward the camera.
+Expression: serious, concerned, attentive.
+Emotion conveys worry, realism, and responsibility.
+Neutral posture, arms relaxed.
+Clean separation from background (soft depth of field or cutout).
+Character functions as the "voice of the generation."
+
+MAIN TEXT (RIGHT SIDE – DOMINANT)
+Large stacked headline occupying most of the right half.
+Text layout:
+Line 1: "GEN X"
+Line 2: "RETIREMENT"
+Line 3: "CRISIS"
+All text: Uppercase, Bold sans-serif, Light blue / cyan tone with dark outline or shadow.
+Very large font size, strong vertical stacking.
+Aligned left or center-right.
+Text should be the most dominant element in the thumbnail.
+
+SYMBOLIC OBJECT (BOTTOM RIGHT)
+A retro cassette tape placed at the bottom right.
+Flat or semi-realistic appearance.
+Blue-toned casing.
+Slight shadow to ground it visually.
+Acts as a generational symbol (nostalgia / Gen X reference).
+Object should not overpower the headline.
+
+COLOR & MOOD
+Cool color palette (blues, teals).
+No bright or aggressive colors.
+Calm, serious, reflective tone.
+Educational / explanatory vibe rather than sensational.
+
+VISUAL HIERARCHY
+1. "CRISIS"
+2. "RETIREMENT"
+3. "GEN X"
+4. Character (emotional anchor)
+5. Cassette tape (symbolic context)
+
+--- END EXAMPLE ---
+
+Now analyze the provided thumbnail with AT LEAST this level of detail. Respond ONLY with the structured description. No introduction, no commentary, no summary.`;
 
       const geminiResponse = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`,
@@ -179,7 +257,7 @@ Respond ONLY with the structured description. No introduction, no commentary, no
                 { inline_data: { mime_type: "image/jpeg", data: await fetchImageAsBase64(imageUrl) } }
               ]
             }],
-            generationConfig: { temperature: 0.3, maxOutputTokens: 1500 }
+            generationConfig: { temperature: 0.3, maxOutputTokens: 3000 }
           })
         }
       );
