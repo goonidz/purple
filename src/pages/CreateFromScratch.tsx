@@ -1095,7 +1095,7 @@ const CreateFromScratch = () => {
           setGenerationProgress(100);
           setGenerationMessage("Script terminé !");
 
-          // Get script from job metadata
+          // Get script from job metadata, or fall back to projects.script
           const metadata = jobs.metadata as any;
           if (metadata?.script) {
             setGeneratedScript(metadata.script);
@@ -1103,6 +1103,19 @@ const CreateFromScratch = () => {
             setEstimatedDuration(metadata.estimatedDuration || 0);
             setStep("script");
             toast.success("Script généré avec succès !");
+          } else if (projectId) {
+            const { data: projectData } = await supabase
+              .from("projects")
+              .select("script")
+              .eq("id", projectId)
+              .single();
+            if (projectData?.script && projectData.script.length > 50) {
+              setGeneratedScript(projectData.script);
+              setWordCount(projectData.script.split(/\s+/).filter((w: string) => w.length > 0).length);
+              setEstimatedDuration(Math.round(projectData.script.split(/\s+/).filter((w: string) => w.length > 0).length / 2.5));
+              setStep("script");
+              toast.success("Script généré avec succès !");
+            }
           }
           setScriptJobId(null);
         } else if (jobs.status === 'failed') {
