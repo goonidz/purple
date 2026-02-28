@@ -541,10 +541,12 @@ async function saveScriptToSupabase({ projectId, script, model, generationTime, 
 // ============================================================================
 
 async function callModel(sysPrompt, userPrompt, modelConfig) {
-  const { model, apiKey, isGlm5, isOpenRouter, webSearch, effort, maxTokens = 16000 } = modelConfig;
+  const { model, apiKey, isGlm5, isOpenRouter, openRouterModel, webSearch, effort, maxTokens = 16000 } = modelConfig;
 
   if (isOpenRouter) {
-    return callOpenRouter(sysPrompt, userPrompt, { apiKey, maxTokens });
+    const orModel = openRouterModel || OPENROUTER_MODELS[model] || 'z-ai/glm-5';
+    const result = await callOpenRouter(sysPrompt, userPrompt, { apiKey, maxTokens, openRouterModel: orModel, enableFallback: true });
+    return result.text;
   }
 
   if (isGlm5) {
@@ -616,8 +618,17 @@ async function callModel(sysPrompt, userPrompt, modelConfig) {
 // OpenRouter API helper (OpenAI-compatible)
 // ============================================================================
 
+const OPENROUTER_MODELS = {
+  'glm-5': 'z-ai/glm-5',
+  'qwen3.5-397b': 'qwen/qwen3.5-397b-a17b',
+};
+
+const OPENROUTER_FALLBACK_CHAIN = {
+  'z-ai/glm-5': 'qwen/qwen3.5-397b-a17b',
+};
+
 async function callOpenRouter(sysPrompt, userPrompt, config) {
-  const { apiKey, maxTokens = 16000, openRouterModel = 'z-ai/glm-5' } = config;
+  const { apiKey, maxTokens = 16000, openRouterModel = 'z-ai/glm-5', enableFallback = false } = config;
   const trimmedKey = (apiKey || '').trim();
 
   const requestBody = {
@@ -630,20 +641,30 @@ async function callOpenRouter(sysPrompt, userPrompt, config) {
     ],
   };
 
-  const resp = await axios.post('https://openrouter.ai/api/v1/chat/completions', requestBody, {
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${trimmedKey}`,
-      'HTTP-Referer': 'https://purpleai.duckdns.org',
-      'X-Title': 'VideoFlow',
-    },
-    timeout: 600000,
-  });
+  try {
+    const resp = await axios.post('https://openrouter.ai/api/v1/chat/completions', requestBody, {
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${trimmedKey}`,
+        'HTTP-Referer': 'https://purpleai.duckdns.org',
+        'X-Title': 'VideoFlow',
+      },
+      timeout: 600000,
+    });
 
-  if (resp.data.choices && resp.data.choices.length > 0) {
-    return resp.data.choices[0].message?.content || '';
+    if (resp.data.choices && resp.data.choices.length > 0) {
+      return { text: resp.data.choices[0].message?.content || '', model: openRouterModel };
+    }
+    return { text: '', model: openRouterModel };
+  } catch (err) {
+    const status = err.response?.status;
+    const fallbackModel = OPENROUTER_FALLBACK_CHAIN[openRouterModel];
+    if (enableFallback && fallbackModel && (status === 429 || status === 502 || status === 503)) {
+      console.warn(`[openrouter] ${openRouterModel} returned ${status}, falling back to ${fallbackModel}`);
+      return callOpenRouter(sysPrompt, userPrompt, { ...config, openRouterModel: fallbackModel, enableFallback: false });
+    }
+    throw err;
   }
-  return '';
 }
 
 // ============================================================================
@@ -913,6 +934,7 @@ RÈGLE CRITIQUE SUR LA LONGUEUR:
         apiKey: isOpenRouter ? (openrouterApiKey || '').trim() : isGlm5 ? (zaiApiKey || '').trim() : anthropicApiKey,
         isGlm5,
         isOpenRouter,
+        openRouterModel: isOpenRouter ? (OPENROUTER_MODELS[model] || 'z-ai/glm-5') : undefined,
         webSearch: isOpenRouter ? null : webSearch,
         effort,
         maxTokens: 16000,
@@ -942,7 +964,7 @@ RÈGLE CRITIQUE SUR LA LONGUEUR:
             ...jobs.get(jobId),
             progress: partProgress,
             currentStep: `Écriture partie ${partNum}/${totalParts} : ${plan.parts[i].title}...`,
-            model: isOpenRouter ? 'glm-5 (OpenRouter)' : isGlm5 ? 'glm-5' : model,
+            model: isOpenRouter ? `${model === 'qwen3.5-397b' ? 'Qwen 3.5' : 'GLM-5'} (OpenRouter)` : isGlm5 ? 'glm-5' : model,
           });
 
           console.log(`[generate-script] [${jobId}] Generating part ${partNum}/${totalParts}: "${plan.parts[i].title}" (~${plan.parts[i].targetWords} words)`);
@@ -968,7 +990,8 @@ RÈGLE CRITIQUE SUR LA LONGUEUR:
         }
 
         script = generatedParts.join('\n\n');
-        resolvedModel = isOpenRouter ? 'glm-5 (OpenRouter)' : isGlm5 ? 'glm-5' : (await resolveAnthropicModelId({ apiKey: anthropicApiKey, requestedModel: model }));
+        const orDisplayName = model === 'qwen3.5-397b' ? 'Qwen 3.5' : 'GLM-5';
+        resolvedModel = isOpenRouter ? `${orDisplayName} (OpenRouter)` : isGlm5 ? 'glm-5' : (await resolveAnthropicModelId({ apiKey: anthropicApiKey, requestedModel: model }));
       }
       // If plan failed, script is still empty → falls through to single-call below
     }
@@ -977,17 +1000,24 @@ RÈGLE CRITIQUE SUR LA LONGUEUR:
     if (!script && isOpenRouter) {
       // ── OpenRouter path ──
       const trimmedOrKey = (openrouterApiKey || '').trim();
-      console.log(`[generate-script] [${jobId}] Starting script generation with OpenRouter (GLM-5)`);
+      const orModelId = OPENROUTER_MODELS[model] || 'z-ai/glm-5';
+      const displayName = model === 'qwen3.5-397b' ? 'Qwen 3.5' : 'GLM-5';
+      console.log(`[generate-script] [${jobId}] Starting script generation with OpenRouter (${displayName})`);
 
       jobs.set(jobId, {
         ...jobs.get(jobId),
         progress: 15,
-        currentStep: 'GLM-5 réfléchit (OpenRouter)...',
-        model: 'glm-5 (OpenRouter)',
+        currentStep: `${displayName} réfléchit (OpenRouter)...`,
+        model: `${displayName} (OpenRouter)`,
       });
 
-      script = await callOpenRouter(systemPrompt, customPrompt, { apiKey: trimmedOrKey, maxTokens: 16000 });
-      resolvedModel = 'glm-5 (OpenRouter)';
+      const orResult = await callOpenRouter(systemPrompt, customPrompt, { apiKey: trimmedOrKey, maxTokens: 16000, openRouterModel: orModelId, enableFallback: true });
+      script = orResult.text;
+      const usedModel = orResult.model === orModelId ? displayName : (Object.entries(OPENROUTER_MODELS).find(([, v]) => v === orResult.model)?.[0] || orResult.model);
+      resolvedModel = `${usedModel} (OpenRouter)`;
+      if (orResult.model !== orModelId) {
+        console.log(`[generate-script] [${jobId}] Fallback used: ${orModelId} -> ${orResult.model}`);
+      }
 
       if (!script) throw new Error('No script content returned from OpenRouter API');
 
@@ -3060,9 +3090,12 @@ RÈGLE CRITIQUE SUR LA LONGUEUR:
 
     if (isOpenRouter) {
       // ── OpenRouter sync path ──
-      console.log(`[generate-script] Starting script generation with OpenRouter (GLM-5)`);
-      script = await callOpenRouter(systemPrompt, customPrompt, { apiKey: openrouterApiKey, maxTokens: 16000 });
-      resolvedModel = 'glm-5 (OpenRouter)';
+      const orModelId = OPENROUTER_MODELS[model] || 'z-ai/glm-5';
+      const syncDisplayName = model === 'qwen3.5-397b' ? 'Qwen 3.5' : 'GLM-5';
+      console.log(`[generate-script] Starting script generation with OpenRouter (${syncDisplayName})`);
+      const orResult = await callOpenRouter(systemPrompt, customPrompt, { apiKey: openrouterApiKey, maxTokens: 16000, openRouterModel: orModelId, enableFallback: true });
+      script = orResult.text;
+      resolvedModel = `${syncDisplayName} (OpenRouter)`;
       if (!script) throw new Error('No script content returned from OpenRouter API');
 
     } else if (isGlm5) {

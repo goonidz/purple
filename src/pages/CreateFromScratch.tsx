@@ -238,7 +238,7 @@ const CreateFromScratch = () => {
   const [generationMessage, setGenerationMessage] = useState("");
   const [wordCount, setWordCount] = useState(0);
   const [estimatedDuration, setEstimatedDuration] = useState(0);
-  const [scriptModel, setScriptModel] = useState<"claude" | "claude-thinking" | "gpt5" | "glm5" | "glm5-openrouter">("claude");
+  const [scriptModel, setScriptModel] = useState<"claude" | "claude-thinking" | "gpt5" | "glm5" | "glm5-openrouter" | "qwen3.5">("claude");
   const [useOwnText, setUseOwnText] = useState(false);
   const [customScriptText, setCustomScriptText] = useState("");
   const [vpsScriptJobId, setVpsScriptJobId] = useState<string | null>(null);
@@ -1503,6 +1503,56 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
         throw new Error("Pas de job ID reçu du VPS");
       }
 
+      // Qwen 3.5 via OpenRouter
+      if (scriptModel === "qwen3.5") {
+        const { data: openrouterKeyData, error: openrouterKeyError } = await supabase.rpc("get_user_api_key", {
+          key_name: "openrouter",
+        });
+
+        if (openrouterKeyError || !openrouterKeyData) {
+          clearInterval(progressInterval);
+          setIsGeneratingScript(false);
+          toast.error("Clé API OpenRouter manquante. Configurez-la dans votre profil.");
+          return;
+        }
+
+        const VPS_URL = import.meta.env.VITE_VPS_URL || "https://purpleai.duckdns.org/api/render";
+
+        const response = await fetch(`${VPS_URL}/generate-script`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            openrouterApiKey: openrouterKeyData,
+            customPrompt: finalPrompt,
+            model: "qwen3.5-397b",
+            provider: "openrouter",
+            async: true,
+            projectId: tempProject.id,
+            userId: user!.id,
+          }),
+        });
+
+        clearInterval(progressInterval);
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.error || `Erreur VPS: ${response.status}`);
+        }
+
+        const result = await response.json();
+        if (result?.jobId) {
+          setVpsScriptJobId(result.jobId);
+          try {
+            localStorage.setItem(`vps_script_job_${tempProject.id}`, result.jobId);
+          } catch (_) {}
+          setStep("script");
+          toast.info("Génération du script avec Qwen 3.5 (OpenRouter) en cours... Vous pouvez quitter cette page.");
+          return;
+        }
+
+        throw new Error("Pas de job ID reçu du VPS");
+      }
+
       // GLM-5: use VPS + Z.AI API direct
       if (scriptModel === "glm5") {
         const { data: zaiKeyData, error: zaiKeyError } = await supabase.rpc("get_user_api_key", {
@@ -2399,16 +2449,17 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                   <div className="space-y-2">
                     <Label>Modèle pour le script</Label>
                     <Select value={scriptModel} onValueChange={(v) => {
-                      const val = v as "claude" | "claude-thinking" | "gpt5" | "glm5" | "glm5-openrouter";
+                      const val = v as "claude" | "claude-thinking" | "gpt5" | "glm5" | "glm5-openrouter" | "qwen3.5";
                       setScriptModel(val);
                       if (val === "glm5") setUseWebSearch(true);
-                      if (val === "glm5-openrouter") setUseWebSearch(false);
+                      if (val === "glm5-openrouter" || val === "qwen3.5") setUseWebSearch(false);
                     }}>
                       <SelectTrigger>
                         <SelectValue>
                           {scriptModel === "claude" ? "Claude Sonnet 4.6" :
                            scriptModel === "claude-thinking" ? "Claude Opus 4.5" :
                            scriptModel === "glm5-openrouter" ? "GLM-5 (OpenRouter) (recommandé)" :
+                           scriptModel === "qwen3.5" ? "Qwen 3.5 397B (OpenRouter)" :
                            scriptModel === "glm5" ? "GLM-5 (Z.AI)" :
                            "GPT-5.1"}
                         </SelectValue>
@@ -2419,6 +2470,13 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                             <span className="font-medium">GLM-5 (OpenRouter) (recommandé)</span>
                             <span className="text-xs text-muted-foreground">Via OpenRouter (nécessite clé API OpenRouter)</span>
                             <span className="text-xs text-primary mt-1 whitespace-normal break-words">✨ Deep thinking + limites élevées</span>
+                          </div>
+                        </SelectItem>
+                        <SelectItem value="qwen3.5">
+                          <div className="flex flex-col">
+                            <span className="font-medium">Qwen 3.5 397B (OpenRouter)</span>
+                            <span className="text-xs text-muted-foreground">Via OpenRouter (nécessite clé API OpenRouter)</span>
+                            <span className="text-xs text-primary mt-1 whitespace-normal break-words">✨ Deep thinking — fallback de GLM-5</span>
                           </div>
                         </SelectItem>
                         <SelectItem value="glm5">
@@ -2453,7 +2511,7 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                   </div>
 
                   {/* Web search toggle (Claude + GLM-5 Z.AI only -- not available via OpenRouter) */}
-                  {scriptModel !== "gpt5" && scriptModel !== "glm5-openrouter" && (
+                  {scriptModel !== "gpt5" && scriptModel !== "glm5-openrouter" && scriptModel !== "qwen3.5" && (
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
                         <Label>Recherche web {scriptModel === "glm5" ? "(Z.AI)" : "(Anthropic)"}</Label>
