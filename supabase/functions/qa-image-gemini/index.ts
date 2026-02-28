@@ -125,28 +125,47 @@ serve(async (req) => {
 
     // ---- MODE: describe (thumbnail composition analysis) ----
     if (mode === 'describe') {
-      const describePrompt = `Décris la composition de cette miniature YouTube de manière complète et détaillée en français, comme un brief créatif pour recréer une miniature similaire.
+      const describePrompt = `You are a thumbnail composition analyst. Describe this YouTube thumbnail as a structured creative brief that can be used to recreate a similar thumbnail from scratch.
 
-RÈGLES IMPORTANTES :
-1. PERSONNAGE : Ne décris JAMAIS l'apparence physique de la personne (couleur de peau, cheveux, vêtements, genre, âge, etc.). Remplace TOUTE description de la personne ou du personnage par "mon personnage". Exemples :
-   - "Un homme en costume bleu avec un air choqué" → "Mon personnage avec une expression choquée"
-   - "Une femme blonde qui sourit" → "Mon personnage qui sourit"
-   - Si plusieurs personnes, utilise "mon personnage" pour le sujet principal et décris les autres de manière générique.
+OUTPUT FORMAT — Use EXACTLY these sections in this order. Fill each section with concrete, specific details from the image. If a section does not apply (e.g., no symbolic object), write "None" for that section.
 
-2. TEXTE : Si du texte est visible sur la miniature, reproduis-le TOUJOURS EN MAJUSCULES entre guillemets. Exemples :
-   - Texte visible "make money online" → écris "MAKE MONEY ONLINE"
-   - Texte visible "Before / After" → écris "BEFORE / AFTER"
+BACKGROUND (FULL WIDTH)
+- Background color(s), gradient, blur, texture
+- Tone and mood of the background
+- Level of detail (clean, busy, photographic, illustrated, etc.)
 
-3. DESCRIPTION COMPLÈTE : Inclus tous ces éléments :
-   - La mise en page et la composition (disposition des éléments, symétrie, etc.)
-   - L'expression faciale / émotion de mon personnage (choqué, souriant, sérieux, excité, etc.)
-   - La pose et le langage corporel (bras croisés, doigt pointé, main sur la tête, etc.)
-   - Les couleurs dominantes et l'ambiance visuelle
-   - Les éléments graphiques (flèches, cercles, emojis, icônes, effets avant/après, split screen, etc.)
-   - Les objets ou éléments en arrière-plan
-   - Le style global de la miniature (minimaliste, chargé, professionnel, clickbait, etc.)
+CHARACTER (LEFT/RIGHT/CENTER — specify position and approximate % of frame)
+- Position in frame and framing (headshot, upper body, full body)
+- Direction they face (camera, left, right)
+- Expression and emotion conveyed
+- Posture, hand gestures, body language
+- Separation from background (depth of field, cutout, glow, etc.)
+- IMPORTANT: Never describe the person's physical appearance (skin color, hair, clothes, gender, age). Always refer to them as "the character" or "my character".
+- If multiple people: use "my character" for the main subject, describe others generically.
 
-Réponds uniquement avec la description, sans introduction ni commentaire.`;
+MAIN TEXT (specify position — dominant element)
+- Exact text visible, reproduced in UPPERCASE between quotes
+- Layout: stacked lines, single line, curved, etc.
+- Font style: bold, sans-serif, serif, handwritten, etc.
+- Color and effects: outline, shadow, glow, gradient
+- Approximate size relative to frame
+- Alignment
+
+SYMBOLIC OBJECT(S) (specify position)
+- What objects, icons, emojis, graphics, arrows, or visual elements are present
+- Style: flat, realistic, 3D, illustrated
+- Color tone
+- Purpose/symbolism in context
+
+COLOR & MOOD
+- Dominant color palette
+- Overall mood: aggressive, calm, serious, fun, dramatic, educational, etc.
+- Contrast level and saturation
+
+VISUAL HIERARCHY (ordered from most to least dominant)
+- List elements in order of visual impact/attention
+
+Respond ONLY with the structured description. No introduction, no commentary, no summary.`;
 
       const geminiResponse = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`,
@@ -160,7 +179,7 @@ Réponds uniquement avec la description, sans introduction ni commentaire.`;
                 { inline_data: { mime_type: "image/jpeg", data: await fetchImageAsBase64(imageUrl) } }
               ]
             }],
-            generationConfig: { temperature: 0.3, maxOutputTokens: 300 }
+            generationConfig: { temperature: 0.3, maxOutputTokens: 1500 }
           })
         }
       );
