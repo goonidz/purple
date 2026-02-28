@@ -484,9 +484,12 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
 
   const loadPresets = async () => {
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
       const { data, error } = await supabase
         .from("thumbnail_presets")
         .select("*")
+        .eq("user_id", user.id)
         .order("name", { ascending: true });
 
       if (error) throw error;

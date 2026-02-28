@@ -128,9 +128,12 @@ export const ProjectConfigurationModal = ({
 
   const loadLoraPresets = async () => {
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
       const { data, error } = await supabase
         .from("lora_presets")
         .select("*")
+        .eq("user_id", user.id)
         .order("name", { ascending: true });
 
       if (error) throw error;
@@ -142,9 +145,12 @@ export const ProjectConfigurationModal = ({
 
   const loadThumbnailPresets = async () => {
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
       const { data, error } = await supabase
         .from("thumbnail_presets")
         .select("*")
+        .eq("user_id", user.id)
         .order("name", { ascending: true });
 
       if (error) throw error;

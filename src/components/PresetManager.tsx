@@ -263,9 +263,12 @@ export const PresetManager = ({ currentConfig, onLoadPreset, autoLoadPresetId, c
 
   const loadLoraPresets = async () => {
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
       const { data, error } = await supabase
         .from("lora_presets")
         .select("*")
+        .eq("user_id", user.id)
         .order("name", { ascending: true });
 
       if (error) throw error;
@@ -278,9 +281,12 @@ export const PresetManager = ({ currentConfig, onLoadPreset, autoLoadPresetId, c
   const loadPresets = async () => {
     setIsLoading(true);
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { setIsLoading(false); return; }
       const { data, error } = await supabase
         .from("presets")
         .select("*")
+        .eq("user_id", user.id)
         .order("name", { ascending: true });
 
       if (error) throw error;

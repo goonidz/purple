@@ -96,15 +96,16 @@ export function AudioTTSGenerator({ initialText }: AudioTTSGeneratorProps) {
 
   const loadPresets = async () => {
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
       const { data, error } = await supabase
         .from("tts_presets")
         .select("*")
+        .eq("user_id", user.id)
         .order("name", { ascending: true });
 
       if (error) throw error;
-      const all = (data || []) as TtsPreset[];
-      // Show all presets (user can load any provider preset here for RVC settings)
-      setPresets(all);
+      setPresets((data || []) as TtsPreset[]);
     } catch (err) {
       console.error("Error loading presets:", err);
     }

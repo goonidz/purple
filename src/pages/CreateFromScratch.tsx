@@ -582,9 +582,12 @@ const CreateFromScratch = () => {
 
   const loadPresets = async () => {
     try {
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      if (!currentUser) return;
       const { data, error } = await supabase
         .from("script_presets")
         .select("*")
+        .eq("user_id", currentUser.id)
         .order("name", { ascending: true });
 
       if (error) throw error;
@@ -747,9 +750,12 @@ const CreateFromScratch = () => {
   // TTS Preset functions
   const loadTtsPresets = async () => {
     try {
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      if (!currentUser) return;
       const { data, error } = await supabase
         .from("tts_presets")
         .select("*")
+        .eq("user_id", currentUser.id)
         .order("name", { ascending: true });
 
       if (error) throw error;

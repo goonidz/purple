@@ -170,17 +170,6 @@ Deno.serve(async (req) => {
       console.log(`${modelVersion}: dimensions rounded to multiples of 16: ${width}x${height}`);
     }
     
-    // SeedDream 5 Lite: clamp dimensions to 1024-4096 range
-    if (modelVersion === 'seedream-5-lite') {
-      const MIN_DIM = 1024;
-      const MAX_DIM = 4096;
-      if (width < MIN_DIM || width > MAX_DIM || height < MIN_DIM || height > MAX_DIM) {
-        width = Math.max(MIN_DIM, Math.min(MAX_DIM, width));
-        height = Math.max(MIN_DIM, Math.min(MAX_DIM, height));
-        console.log(`SeedDream 5 Lite: clamped dimensions to ${width}x${height} (range ${MIN_DIM}-${MAX_DIM})`);
-      }
-    }
-    
     // SeedDream 4.5 ALWAYS requires minimum 3,686,400 pixels (not just with image_input)
     // SeedDream 4.0 does not have this constraint
     if (modelVersion === 'seedream-4.5') {
@@ -224,19 +213,38 @@ Deno.serve(async (req) => {
         input.lora_scales = scales;
         console.log('Z-Image Turbo LoRA: using lora_weights', weights, 'with lora_scales', scales);
       }
+    } else if (modelVersion === 'seedream-5-lite') {
+      // SeedDream 5 Lite uses size + aspect_ratio (not custom width/height)
+      const ASPECT_RATIOS = ['1:1', '4:3', '3:4', '16:9', '9:16', '3:2', '2:3', '21:9'];
+      const ratio = width / height;
+      let bestAR = '1:1';
+      let bestDiff = Infinity;
+      for (const ar of ASPECT_RATIOS) {
+        const [w, h] = ar.split(':').map(Number);
+        const diff = Math.abs(ratio - w / h);
+        if (diff < bestDiff) { bestDiff = diff; bestAR = ar; }
+      }
+      const maxDim = Math.max(width, height);
+      input.size = maxDim > 2048 ? '3K' : '2K';
+      input.aspect_ratio = bestAR;
+      console.log(`SeedDream 5 Lite: using size=${input.size}, aspect_ratio=${bestAR} (from ${requestedWidth}x${requestedHeight})`);
+      
+      if (body.image_urls && body.image_urls.length > 0) {
+        input.image_input = body.image_urls;
+        console.log(`${modelVersion}: using ${body.image_urls.length} image references`);
+      }
+      if (body.seed) input.seed = body.seed;
     } else {
-      // SeedDream models
+      // SeedDream 4 / 4.5
       input.size = "custom";
       input.width = width;
       input.height = height;
       
-      // Add image reference if provided (only for SeedDream models)
       if (body.image_urls && body.image_urls.length > 0) {
         input.image_input = body.image_urls;
         console.log(`${modelVersion}: using ${body.image_urls.length} image references`);
       }
       
-      // Add optional parameters if provided
       if (body.seed) input.seed = body.seed
       if (body.guidance_scale) input.guidance_scale = body.guidance_scale
       if (body.num_inference_steps) input.num_inference_steps = body.num_inference_steps

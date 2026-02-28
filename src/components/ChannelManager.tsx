@@ -224,12 +224,15 @@ export default function ChannelManager({
   const loadPresets = async () => {
     setIsLoadingPresets(true);
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { setIsLoadingPresets(false); return; }
+      const uid = user.id;
       const [scriptData, ttsData, projectData, thumbnailData, thumbnailV2Data] = await Promise.all([
-        supabase.from("script_presets").select("id, name").order("name"),
-        supabase.from("tts_presets").select("id, name").order("name"),
-        supabase.from("presets").select("id, name").order("name"),
-        supabase.from("thumbnail_presets").select("id, name").is("channel_handle", null).order("name"),
-        supabase.from("thumbnail_presets").select("id, name").not("channel_handle", "is", null).order("name"),
+        supabase.from("script_presets").select("id, name").eq("user_id", uid).order("name"),
+        supabase.from("tts_presets").select("id, name").eq("user_id", uid).order("name"),
+        supabase.from("presets").select("id, name").eq("user_id", uid).order("name"),
+        supabase.from("thumbnail_presets").select("id, name").eq("user_id", uid).is("channel_handle", null).order("name"),
+        supabase.from("thumbnail_presets").select("id, name").eq("user_id", uid).not("channel_handle", "is", null).order("name"),
       ]);
 
       if (scriptData.error) throw scriptData.error;
