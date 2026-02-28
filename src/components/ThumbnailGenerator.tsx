@@ -960,6 +960,7 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
     setEditingPreset(preset);
     setEditName(preset.name);
     setEditCustomPrompt(preset.custom_prompt || DEFAULT_THUMBNAIL_PROMPT);
+    setImageModel(preset.image_model || "seedream-4.5");
     setIsEditDialogOpen(true);
   };
 
@@ -1676,6 +1677,22 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
                   className="w-32 h-32 object-cover rounded border mt-2"
                 />
               )}
+            </div>
+
+            <div>
+              <Label>Modèle de génération d'image</Label>
+              <Select value={imageModel} onValueChange={setImageModel}>
+                <SelectTrigger className="mt-2">
+                  <SelectValue placeholder="Choisir un modèle" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="seedream-4.5">SeedDream 4.5 (Recommandé)</SelectItem>
+                  <SelectItem value="seedream-5-lite">SeedDream 5.0 Lite</SelectItem>
+                  <SelectItem value="ai33-gemini-image">Gemini Pro Image via AI33 Pro</SelectItem>
+                  <SelectItem value="seedream-4">SeedDream 4.0</SelectItem>
+                  <SelectItem value="z-image-turbo">Z-Image Turbo (Rapide)</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             <div>
