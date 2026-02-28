@@ -924,7 +924,7 @@ RÈGLE CRITIQUE SUR LA LONGUEUR:
     // ── Multi-step detection ──
     jobs.set(jobId, { ...jobs.get(jobId), progress: 5, currentStep: 'Analyse du prompt...' });
     const targetWords = await detectTargetWordCount(customPrompt, userId);
-    const useMultiStep = targetWords && targetWords > 5000;
+    const useMultiStep = targetWords && targetWords > 4000;
 
     if (useMultiStep) {
       console.log(`[generate-script] [${jobId}] Multi-step mode: ${targetWords} words requested`);
