@@ -165,12 +165,14 @@ export function JobProgressIndicator({ job, onCancel, className }: JobProgressIn
                 <span className="text-xs text-muted-foreground w-12 text-right">{progressImages}/{totalScenes}</span>
               </div>
               
-              {/* QA progress */}
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-muted-foreground w-16">QA</span>
-                <Progress value={qaPercent} className="h-1.5 flex-1" />
-                <span className="text-xs text-muted-foreground w-12 text-right">{progressQA}/{totalScenes}</span>
-              </div>
+              {/* QA progress — hidden when QA was skipped (non-LoRA models) */}
+              {(progressQA > 0 || (progressImages > 0 && progressUpscale === 0)) && (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground w-16">QA</span>
+                  <Progress value={qaPercent} className="h-1.5 flex-1" />
+                  <span className="text-xs text-muted-foreground w-12 text-right">{progressQA}/{totalScenes}</span>
+                </div>
+              )}
               
               {/* Upscale progress */}
               <div className="flex items-center gap-2">

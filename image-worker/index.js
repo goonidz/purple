@@ -1063,8 +1063,10 @@ async function processImagePipeline(job) {
       log(`  Scene ${sceneIndex + 1}: QA skipped (model ${modelForQA} is not LoRA)`);
     }
 
-    // ---- STEP 8: Update QA result in DB ----
-    await updateSceneQA(projectId, sceneIndex, qaResult);
+    // ---- STEP 8: Update QA result in DB (only if QA was actually run) ----
+    if (isLoraModel) {
+      await updateSceneQA(projectId, sceneIndex, qaResult);
+    }
 
     // ---- CHECK: Abort if cancelled before upscale ----
     if (await isJobCancelled(jobId, parentJobId)) {
