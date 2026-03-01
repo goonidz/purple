@@ -60,12 +60,14 @@ function MobileDayCard({
   date,
   entries,
   isToday,
+  blurTitles = false,
   onDayClick,
   onEntryClick,
 }: {
   date: Date;
   entries: ContentCalendarEntry[];
   isToday: boolean;
+  blurTitles?: boolean;
   onDayClick: (date: Date) => void;
   onEntryClick: (entry: ContentCalendarEntry) => void;
 }) {
@@ -146,7 +148,7 @@ function MobileDayCard({
                     style={{ backgroundColor: entry.channel!.color }}
                   />
                 )}
-                <span className="truncate flex-1">{entry.title}</span>
+                <span className={cn("truncate flex-1", blurTitles && "blur-[4px] select-none")}>{entry.title}</span>
               </div>
             );
           })}
@@ -184,6 +186,7 @@ function MobileDayCard({
 function MobileDayList({
   daysInMonth,
   getEntriesForDay,
+  blurTitles = false,
   onDayClick,
   onEntryClick,
   currentMonth,
@@ -192,6 +195,7 @@ function MobileDayList({
 }: {
   daysInMonth: Date[];
   getEntriesForDay: (date: Date) => ContentCalendarEntry[];
+  blurTitles?: boolean;
   onDayClick: (date: Date) => void;
   onEntryClick: (entry: ContentCalendarEntry) => void;
   currentMonth: Date;
@@ -229,6 +233,7 @@ function MobileDayList({
                 date={day}
                 entries={getEntriesForDay(day)}
                 isToday={isToday}
+                blurTitles={blurTitles}
                 onDayClick={onDayClick}
                 onEntryClick={onEntryClick}
               />
@@ -273,6 +278,7 @@ export default function Calendar() {
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [viewMode, setViewMode] = useState<'calendar' | 'kanban'>('calendar');
   const [compactMode, setCompactMode] = useState(false);
+  const [blurTitles, setBlurTitles] = useState(false);
 
   // Ref to track current month for use in callbacks (avoids stale closures)
   const currentMonthRef = useRef(currentMonth);
@@ -594,7 +600,7 @@ export default function Calendar() {
               </Button>
             </div>
 
-            {/* Compact mode toggle */}
+            {/* Calendar display options */}
             {viewMode === 'calendar' && (
               <label className="hidden sm:flex items-center gap-1.5 cursor-pointer text-xs text-muted-foreground hover:text-foreground transition-colors">
                 <input
@@ -606,6 +612,15 @@ export default function Calendar() {
                 Max 5/jour
               </label>
             )}
+            <label className="flex items-center gap-1.5 cursor-pointer text-xs text-muted-foreground hover:text-foreground transition-colors">
+              <input
+                type="checkbox"
+                checked={blurTitles}
+                onChange={(e) => setBlurTitles(e.target.checked)}
+                className="h-3.5 w-3.5 rounded border-gray-300 text-primary focus:ring-primary"
+              />
+              Masquer titres
+            </label>
 
             {/* Channel Filter */}
             <div className="flex items-center gap-2">
@@ -659,6 +674,7 @@ export default function Calendar() {
                     isToday={isSameDay(day, new Date())}
                     isCurrentMonth={false}
                     maxPerDay={compactMode ? 5 : null}
+                    blurTitles={blurTitles}
                     onDayClick={handleDayClick}
                     onEntryClick={handleEntryClick}
                     onEntryDrop={handleEntryDrop}
@@ -674,6 +690,7 @@ export default function Calendar() {
                     isToday={isSameDay(day, new Date())}
                     isCurrentMonth={true}
                     maxPerDay={compactMode ? 5 : null}
+                    blurTitles={blurTitles}
                     onDayClick={handleDayClick}
                     onEntryClick={handleEntryClick}
                     onEntryDrop={handleEntryDrop}
@@ -689,6 +706,7 @@ export default function Calendar() {
                     isToday={isSameDay(day, new Date())}
                     isCurrentMonth={false}
                     maxPerDay={compactMode ? 5 : null}
+                    blurTitles={blurTitles}
                     onDayClick={handleDayClick}
                     onEntryClick={handleEntryClick}
                     onEntryDrop={handleEntryDrop}
@@ -701,6 +719,7 @@ export default function Calendar() {
             <MobileDayList
               daysInMonth={daysInMonth}
               getEntriesForDay={getEntriesForDay}
+              blurTitles={blurTitles}
               onDayClick={handleDayClick}
               onEntryClick={handleEntryClick}
               currentMonth={currentMonth}

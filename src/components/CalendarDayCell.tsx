@@ -36,6 +36,7 @@ interface CalendarDayCellProps {
   isToday: boolean;
   isCurrentMonth?: boolean;
   maxPerDay?: number | null;
+  blurTitles?: boolean;
   onDayClick: (date: Date) => void;
   onEntryClick: (entry: ContentCalendarEntry) => void;
   onEntryDrop: (entryId: string, newDate: Date) => void;
@@ -70,6 +71,7 @@ export default function CalendarDayCell({
   isToday,
   isCurrentMonth = true,
   maxPerDay = null,
+  blurTitles = false,
   onDayClick,
   onEntryClick,
   onEntryDrop,
@@ -220,7 +222,7 @@ export default function CalendarDayCell({
                   </TooltipContent>
                 </Tooltip>
               )}
-              <span className="truncate">{entry.title}</span>
+              <span className={cn("truncate", blurTitles && "blur-[4px] select-none")}>{entry.title}</span>
             </div>
           );
         })}
