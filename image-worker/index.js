@@ -360,19 +360,45 @@ async function runQACheck(geminiKey, imageUrl, sourcePrompt, qaPrompt) {
   const imgBuffer = Buffer.from(await imgResponse.arrayBuffer());
   const base64 = imgBuffer.toString('base64');
 
+  const fewShotExample = JSON.stringify({
+    status: 'REJECT',
+    anomalie_detectee: 'anatomie',
+    explication: 'Le personnage possède 6 doigts sur la main qui tient le haut du calendrier.',
+    prompt_regeneration: 'simple 2D cartoon illustration by using the same style and character I sent you, showing him holding a large empty calendar grid, clean white background',
+  }, null, 2);
+
   const geminiResponse = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${geminiKey}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        contents: [{
-          parts: [
-            { text: promptToUse },
-            { inline_data: { mime_type: 'image/jpeg', data: base64 } },
-          ],
-        }],
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              { text: promptToUse },
+              { text: '[Image to analyze: a cartoon character with 6 fingers holding a calendar]' },
+            ],
+          },
+          {
+            role: 'model',
+            parts: [
+              { text: fewShotExample },
+            ],
+          },
+          {
+            role: 'user',
+            parts: [
+              { inline_data: { mime_type: 'image/jpeg', data: base64 } },
+            ],
+          },
+        ],
         generationConfig: {
+          thinkingConfig: {
+            thinkingLevel: 'MINIMAL',
+          },
+          mediaResolution: 'MEDIA_RESOLUTION_LOW',
           temperature: 0.1,
           maxOutputTokens: 500,
           responseMimeType: 'application/json',
@@ -397,7 +423,9 @@ async function runQACheck(geminiKey, imageUrl, sourcePrompt, qaPrompt) {
   }
 
   const geminiResult = await geminiResponse.json();
-  const responseText = geminiResult.candidates?.[0]?.content?.parts?.[0]?.text;
+  const parts = geminiResult.candidates?.[0]?.content?.parts || [];
+  const responsePart = parts.filter(p => p.text && !p.thought).pop();
+  const responseText = responsePart?.text;
   if (!responseText) {
     throw new Error('No response text from Gemini');
   }

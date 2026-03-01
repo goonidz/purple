@@ -141,6 +141,7 @@ Describe in detail:
 - Any patterns, shapes, or environmental elements in the background
 
 CHARACTER (specify position: LEFT/RIGHT/CENTER and approximate % of frame, e.g., "LEFT SIDE – 35-40%")
+YOU MUST USE MY CHARACTER
 Describe in detail:
 - Exact position in frame (left third, center, right side, etc.) and approximate percentage of frame occupied
 - Framing: headshot, upper body, full body, etc.
@@ -200,6 +201,7 @@ Calm but somber tone.
 No sharp details; background should feel neutral and serious.
 
 CHARACTER (LEFT SIDE – 35–40%)
+YOU MUST USE MY CHARACTER
 Single character positioned on the left third of the frame.
 Framing: upper body visible.
 Facing directly toward the camera.
@@ -300,9 +302,16 @@ Now analyze the provided thumbnail with AT LEAST this level of detail. Respond O
     console.log(promptToUse);
     console.log('[qa-image-gemini] ========================================')
 
-    // Use Gemini 2.0 Flash (higher quota than gemini-2.5-flash-lite which has 20 req/day free tier)
+    const imageBase64 = await fetchImageAsBase64(imageUrl);
+    const fewShotExample = JSON.stringify({
+      status: "REJECT",
+      anomalie_detectee: "anatomie",
+      explication: "Le personnage possède 6 doigts sur la main qui tient le haut du calendrier.",
+      prompt_regeneration: "simple 2D cartoon illustration by using the same style and character I sent you, showing him holding a large empty calendar grid, clean white background"
+    }, null, 2);
+
     const geminiResponse = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${geminiKey}`,
       {
         method: 'POST',
         headers: {
@@ -311,20 +320,35 @@ Now analyze the provided thumbnail with AT LEAST this level of detail. Respond O
         body: JSON.stringify({
           contents: [
             {
+              role: "user",
               parts: [
-                {
-                  text: promptToUse
-                },
+                { text: promptToUse },
+                { text: "[Image to analyze: a cartoon character with 6 fingers holding a calendar]" }
+              ]
+            },
+            {
+              role: "model",
+              parts: [
+                { text: fewShotExample }
+              ]
+            },
+            {
+              role: "user",
+              parts: [
                 {
                   inline_data: {
                     mime_type: "image/jpeg",
-                    data: await fetchImageAsBase64(imageUrl)
+                    data: imageBase64
                   }
                 }
               ]
             }
           ],
           generationConfig: {
+            thinkingConfig: {
+              thinkingLevel: "MINIMAL",
+            },
+            mediaResolution: "MEDIA_RESOLUTION_LOW",
             temperature: 0.1,
             maxOutputTokens: 500,
             responseMimeType: "application/json",
@@ -365,8 +389,11 @@ Now analyze the provided thumbnail with AT LEAST this level of detail. Respond O
 
     const geminiResult = await geminiResponse.json();
     
-    // Extract the response text
-    const responseText = geminiResult.candidates?.[0]?.content?.parts?.[0]?.text;
+    // With thinking enabled, Gemini may return multiple parts (thought + text).
+    // Extract the last non-thought text part.
+    const parts = geminiResult.candidates?.[0]?.content?.parts || [];
+    const responsePart = parts.filter((p: any) => p.text && !p.thought).pop();
+    const responseText = responsePart?.text;
     
     if (!responseText) {
       throw new Error('No response text from Gemini');
