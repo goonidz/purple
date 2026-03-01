@@ -35,6 +35,7 @@ interface CalendarDayCellProps {
   entries: ContentCalendarEntry[];
   isToday: boolean;
   isCurrentMonth?: boolean;
+  maxPerDay?: number | null;
   onDayClick: (date: Date) => void;
   onEntryClick: (entry: ContentCalendarEntry) => void;
   onEntryDrop: (entryId: string, newDate: Date) => void;
@@ -68,6 +69,7 @@ export default function CalendarDayCell({
   entries,
   isToday,
   isCurrentMonth = true,
+  maxPerDay = null,
   onDayClick,
   onEntryClick,
   onEntryDrop,
@@ -132,22 +134,18 @@ export default function CalendarDayCell({
       </div>
 
       <div className="space-y-1">
-        {[...entries]
-          .sort((a, b) => {
+        {(() => {
+          const sorted = [...entries].sort((a, b) => {
             const aCompleted = a.status === 'completed';
             const bCompleted = b.status === 'completed';
-            
-            // If completion status differs, completed first
-            if (aCompleted !== bCompleted) {
-              return aCompleted ? -1 : 1;
-            }
-            
-            // Same completion status: sort by channel color
+            if (aCompleted !== bCompleted) return aCompleted ? -1 : 1;
             const aColor = a.channel?.color || '#ffffff';
             const bColor = b.channel?.color || '#ffffff';
             return aColor.localeCompare(bColor);
-          })
-          .slice(0, 5)
+          });
+          const visible = maxPerDay ? sorted.slice(0, maxPerDay) : sorted;
+          return visible;
+        })()
           .map((entry) => {
           const hasChannel = !!entry.channel?.name;
           const isCompleted = entry.status === 'completed';
@@ -226,7 +224,7 @@ export default function CalendarDayCell({
             </div>
           );
         })}
-        {entries.length > 5 && (
+        {maxPerDay && entries.length > maxPerDay && (
           <button
             className="text-xs text-muted-foreground pl-1 hover:text-primary transition-colors w-full text-left"
             onClick={(e) => {
@@ -234,7 +232,7 @@ export default function CalendarDayCell({
               setShowAllEntriesDialog(true);
             }}
           >
-            +{entries.length - 5} autres
+            +{entries.length - maxPerDay} autres
           </button>
         )}
       </div>

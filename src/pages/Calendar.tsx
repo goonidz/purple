@@ -272,6 +272,7 @@ export default function Calendar() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [viewMode, setViewMode] = useState<'calendar' | 'kanban'>('calendar');
+  const [compactMode, setCompactMode] = useState(false);
 
   // Ref to track current month for use in callbacks (avoids stale closures)
   const currentMonthRef = useRef(currentMonth);
@@ -593,6 +594,19 @@ export default function Calendar() {
               </Button>
             </div>
 
+            {/* Compact mode toggle */}
+            {viewMode === 'calendar' && (
+              <label className="hidden sm:flex items-center gap-1.5 cursor-pointer text-xs text-muted-foreground hover:text-foreground transition-colors">
+                <input
+                  type="checkbox"
+                  checked={compactMode}
+                  onChange={(e) => setCompactMode(e.target.checked)}
+                  className="h-3.5 w-3.5 rounded border-gray-300 text-primary focus:ring-primary"
+                />
+                Max 5/jour
+              </label>
+            )}
+
             {/* Channel Filter */}
             <div className="flex items-center gap-2">
               <Filter className="h-4 w-4 text-muted-foreground hidden sm:block" />
@@ -644,6 +658,7 @@ export default function Calendar() {
                     entries={getEntriesForDay(day)}
                     isToday={isSameDay(day, new Date())}
                     isCurrentMonth={false}
+                    maxPerDay={compactMode ? 5 : null}
                     onDayClick={handleDayClick}
                     onEntryClick={handleEntryClick}
                     onEntryDrop={handleEntryDrop}
@@ -658,6 +673,7 @@ export default function Calendar() {
                     entries={getEntriesForDay(day)}
                     isToday={isSameDay(day, new Date())}
                     isCurrentMonth={true}
+                    maxPerDay={compactMode ? 5 : null}
                     onDayClick={handleDayClick}
                     onEntryClick={handleEntryClick}
                     onEntryDrop={handleEntryDrop}
@@ -672,6 +688,7 @@ export default function Calendar() {
                     entries={getEntriesForDay(day)}
                     isToday={isSameDay(day, new Date())}
                     isCurrentMonth={false}
+                    maxPerDay={compactMode ? 5 : null}
                     onDayClick={handleDayClick}
                     onEntryClick={handleEntryClick}
                     onEntryDrop={handleEntryDrop}
