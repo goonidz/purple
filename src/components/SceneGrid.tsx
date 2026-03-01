@@ -43,6 +43,7 @@ interface GeneratedPrompt {
   qa_status?: 'OK' | 'REJECT';
   qa_explication?: string;
   qa_regeneration_prompt?: string;
+  qa_previous_rejection?: string;
   was_regenerated?: boolean;
   regenerated_prompt?: string;
 }
@@ -505,8 +506,11 @@ export function SceneGrid({
                         <Check className="h-3.5 w-3.5" />
                       </div>
                     </TooltipTrigger>
-                    <TooltipContent>
-                      <p>{prompt?.was_regenerated ? 'Image régénérée après rejet qualité' : 'Qualité validée automatiquement'}</p>
+                    <TooltipContent className="max-w-xs">
+                      <p className="font-semibold">{prompt?.was_regenerated ? 'Image régénérée après rejet qualité' : 'Qualité validée automatiquement'}</p>
+                      {prompt?.was_regenerated && prompt?.qa_previous_rejection && (
+                        <p className="text-sm mt-1 opacity-80">Raison du rejet : {prompt.qa_previous_rejection}</p>
+                      )}
                     </TooltipContent>
                   </Tooltip>
                 </TooltipProvider>

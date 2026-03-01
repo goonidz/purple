@@ -97,6 +97,7 @@ interface GeneratedPrompt {
   qa_explication?: string;
   qa_regeneration_prompt?: string;
   qa_regenerated?: boolean;
+  qa_previous_rejection?: string;
   was_regenerated?: boolean;
   regenerated_prompt?: string;
 }
@@ -476,6 +477,7 @@ const Index = () => {
               qa_status: s?.qa_status || promptsJson[sceneIdx]?.qa_status,
               qa_explication: s?.qa_explication || promptsJson[sceneIdx]?.qa_explication,
               qa_regeneration_prompt: s?.qa_regeneration_prompt || promptsJson[sceneIdx]?.qa_regeneration_prompt,
+              qa_previous_rejection: promptsJson[sceneIdx]?.qa_previous_rejection,
               was_regenerated: s ? (s.was_regenerated ?? promptsJson[sceneIdx]?.was_regenerated) : promptsJson[sceneIdx]?.was_regenerated,
               manually_regenerated: promptsJson[sceneIdx]?.manually_regenerated ?? false,
               regenerated_prompt: s?.regenerated_prompt || promptsJson[sceneIdx]?.regenerated_prompt,
@@ -845,6 +847,7 @@ const Index = () => {
               qa_status: s?.qa_status || promptsJson[sceneIdx]?.qa_status,
               qa_explication: s?.qa_explication || promptsJson[sceneIdx]?.qa_explication,
               qa_regeneration_prompt: s?.qa_regeneration_prompt || promptsJson[sceneIdx]?.qa_regeneration_prompt,
+              qa_previous_rejection: promptsJson[sceneIdx]?.qa_previous_rejection,
               was_regenerated: s ? (s.was_regenerated ?? promptsJson[sceneIdx]?.was_regenerated) : promptsJson[sceneIdx]?.was_regenerated,
               regenerated_prompt: s?.regenerated_prompt || promptsJson[sceneIdx]?.regenerated_prompt,
               isUpscaled: s ? (s.is_upscaled ?? promptsJson[sceneIdx]?.isUpscaled) : promptsJson[sceneIdx]?.isUpscaled,
@@ -1060,6 +1063,7 @@ const Index = () => {
             qa_status: s?.qa_status || promptsJson[sceneIdx]?.qa_status,
             qa_explication: s?.qa_explication || promptsJson[sceneIdx]?.qa_explication,
             qa_regeneration_prompt: s?.qa_regeneration_prompt || promptsJson[sceneIdx]?.qa_regeneration_prompt,
+            qa_previous_rejection: promptsJson[sceneIdx]?.qa_previous_rejection,
             was_regenerated: s ? (s.was_regenerated ?? promptsJson[sceneIdx]?.was_regenerated) : promptsJson[sceneIdx]?.was_regenerated,
             manually_regenerated: promptsJson[sceneIdx]?.manually_regenerated ?? false,
             regenerated_prompt: s?.regenerated_prompt || promptsJson[sceneIdx]?.regenerated_prompt,
@@ -2318,10 +2322,9 @@ const Index = () => {
     updatedPrompts[index] = {
       ...updatedPrompts[index],
       prompt: prompt.qa_regeneration_prompt,
-      // Keep QA flags visible during regeneration, mark as manually regenerated
       manually_regenerated: true,
-      qa_regeneration_prompt: undefined // Remove the button after clicking it
-      // qa_checked, qa_status, qa_explication restent inchangés pour garder les badges visibles
+      qa_regeneration_prompt: undefined,
+      qa_previous_rejection: prompt.qa_explication || updatedPrompts[index].qa_previous_rejection,
     };
     
     // Update state FIRST
@@ -2348,7 +2351,8 @@ const Index = () => {
             ...dbPrompts[index], 
             prompt: prompt.qa_regeneration_prompt,
             manually_regenerated: true,
-            qa_regeneration_prompt: undefined
+            qa_regeneration_prompt: undefined,
+            qa_previous_rejection: prompt.qa_explication || dbPrompts[index].qa_previous_rejection,
           };
           await supabase
             .from('projects')
