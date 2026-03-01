@@ -724,8 +724,16 @@ async function chainNextJob(
     
     nextJobType = 'images';
   } else if (completedJobType === 'images') {
-    // After images, chain to QA for quality check
-    nextJobType = 'qa';
+    // After images, chain to QA only for LoRA models (higher artifact rate)
+    const projectModel = project.image_model || '';
+    const isLoraModel = projectModel.includes('lora');
+    if (isLoraModel) {
+      console.log(`Model is ${projectModel} (LoRA) -> chaining to QA`);
+      nextJobType = 'qa';
+    } else {
+      console.log(`Model is ${projectModel} (non-LoRA) -> skipping QA, chaining to upscale`);
+      nextJobType = 'upscale';
+    }
   } else if (completedJobType === 'qa') {
     // After QA, check if there's a qa_regen job pending/processing
     const { data: qaRegenJobs } = await adminClient

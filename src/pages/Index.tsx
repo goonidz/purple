@@ -4268,6 +4268,26 @@ const Index = () => {
                                     QA
                                   </Button>
                                 )}
+                                {(() => {
+                                  const withQA = generatedPrompts.filter((p: any) => p?.qa_checked);
+                                  const ok = withQA.filter((p: any) => p?.qa_status === 'OK').length;
+                                  const rejected = withQA.filter((p: any) => p?.qa_status === 'REJECT').length;
+                                  const regen = generatedPrompts.filter((p: any) => p?.was_regenerated).length;
+                                  if (withQA.length === 0 && regen === 0) return null;
+                                  return (
+                                    <span className="text-xs text-muted-foreground flex items-center gap-1.5 ml-1">
+                                      {withQA.length > 0 && (
+                                        <>
+                                          <span className="text-green-500 font-medium">{ok}✓</span>
+                                          <span className="text-red-500 font-medium">{rejected}✗</span>
+                                        </>
+                                      )}
+                                      {regen > 0 && (
+                                        <span className="text-blue-500 font-medium">{regen} regen</span>
+                                      )}
+                                    </span>
+                                  );
+                                })()}
                                 {isGeneratingImages && getJobByType('images') && (
                                   <Button
                                     onClick={() => {

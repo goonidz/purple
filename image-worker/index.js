@@ -1034,27 +1034,33 @@ async function processImagePipeline(job) {
       return;
     }
 
-    // ---- STEP 7: QA check ----
+    // ---- STEP 7: QA check (only for LoRA models) ----
+    const modelForQA = (metadata.model || 'seedream-4.5').toLowerCase();
+    const isLoraModel = modelForQA.includes('lora');
     let qaResult = { status: 'OK', anomalie_detectee: 'aucune', explication: '', prompt_regeneration: '' };
-    try {
-      const geminiKey = await getUserApiKey(userId, 'gemini');
 
-      // Get QA prompt from parent job metadata if available
-      let qaPrompt = null;
-      if (parentJobId) {
-        const { data: parentData } = await supabase
-          .from('generation_jobs')
-          .select('metadata')
-          .eq('id', parentJobId)
-          .single();
-        qaPrompt = parentData?.metadata?.qaPrompt || null;
+    if (isLoraModel) {
+      try {
+        const geminiKey = await getUserApiKey(userId, 'gemini');
+
+        let qaPrompt = null;
+        if (parentJobId) {
+          const { data: parentData } = await supabase
+            .from('generation_jobs')
+            .select('metadata')
+            .eq('id', parentJobId)
+            .single();
+          qaPrompt = parentData?.metadata?.qaPrompt || null;
+        }
+
+        qaResult = await runQACheck(geminiKey, publicUrl, metadata.prompt, qaPrompt);
+        log(`  Scene ${sceneIndex + 1}: QA -> ${qaResult.status}${qaResult.anomalie_detectee !== 'aucune' ? ` (${qaResult.anomalie_detectee})` : ''}`);
+      } catch (qaError) {
+        log(`  Scene ${sceneIndex + 1}: QA error (assumed OK): ${qaError.message.substring(0, 100)}`);
+        qaResult = { status: 'OK', anomalie_detectee: 'aucune', explication: `QA error: ${qaError.message.substring(0, 100)}`, prompt_regeneration: '' };
       }
-
-      qaResult = await runQACheck(geminiKey, publicUrl, metadata.prompt, qaPrompt);
-      log(`  Scene ${sceneIndex + 1}: QA -> ${qaResult.status}${qaResult.anomalie_detectee !== 'aucune' ? ` (${qaResult.anomalie_detectee})` : ''}`);
-    } catch (qaError) {
-      log(`  Scene ${sceneIndex + 1}: QA error (assumed OK): ${qaError.message.substring(0, 100)}`);
-      qaResult = { status: 'OK', anomalie_detectee: 'aucune', explication: `QA error: ${qaError.message.substring(0, 100)}`, prompt_regeneration: '' };
+    } else {
+      log(`  Scene ${sceneIndex + 1}: QA skipped (model ${modelForQA} is not LoRA)`);
     }
 
     // ---- STEP 8: Update QA result in DB ----
