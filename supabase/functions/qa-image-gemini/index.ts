@@ -40,6 +40,7 @@ RÈGLE SUR L'ANATOMIE
 
 - Membres EN TROP (3 bras, 6 doigts, 3 jambes) = BUG = status: "REJECT"
 - Membre détaché du corps ou traversant un objet = BUG = status: "REJECT"
+- Membre FUSIONNANT/CLIPPANT avec une autre partie du corps (ex: main qui s'enfonce dans la joue, bras qui fusionne avec le torse, doigts qui traversent le menton) = BUG = status: "REJECT"
 - Personnage sans visage ou simplifié = PAS UN BUG = status: "OK"
 
 ========================================
@@ -348,7 +349,7 @@ Now analyze the provided thumbnail with AT LEAST this level of detail. Respond O
             thinkingConfig: {
               thinkingLevel: "MINIMAL",
             },
-            mediaResolution: "MEDIA_RESOLUTION_LOW",
+            mediaResolution: "MEDIA_RESOLUTION_MEDIUM",
             temperature: 0.1,
             maxOutputTokens: 500,
             responseMimeType: "application/json",
