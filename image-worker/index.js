@@ -1239,8 +1239,9 @@ async function processThumbnailsPipeline(job) {
   try {
     // ---- STEP 1: Get API keys ----
     const isAI33Thumb = (imageModel || 'seedream-4.5') === 'ai33-gemini-image';
+    const isAI33GeminiFlash = (imageModel || 'seedream-4.5') === 'ai33-gemini-flash';
     const isAI33Seedream = (imageModel || 'seedream-4.5') === 'ai33-seedream-4.5';
-    const needsAI33Key = isAI33Thumb || isAI33Seedream;
+    const needsAI33Key = isAI33Thumb || isAI33GeminiFlash || isAI33Seedream;
     let replicateClient = null;
     let ai33ThumbKey = null;
     if (needsAI33Key) {
@@ -1305,7 +1306,7 @@ async function processThumbnailsPipeline(job) {
         const effectiveProjectId = standalone ? (thumbnailProjectId || 'standalone') : projectId;
         let publicUrl;
 
-        if (isAI33Thumb || isAI33Seedream) {
+        if (isAI33Thumb || isAI33GeminiFlash || isAI33Seedream) {
           // Keep-alive so stale checker doesn't kill a slow AI33 job
           await supabase.from('generation_jobs').update({ updated_at: new Date().toISOString() }).eq('id', jobId);
           let imageBuffer;
@@ -1316,6 +1317,8 @@ async function processThumbnailsPipeline(job) {
             try {
               if (isAI33Seedream) {
                 imageBuffer = await generateSceneWithAI33Seedream(ai33ThumbKey, { prompt, width: 1920, height: 1080, styleRefs: allImageRefs });
+              } else if (isAI33GeminiFlash) {
+                imageBuffer = await generateWithAI33(ai33ThumbKey, prompt, allImageRefs, '16:9', 'gemini-3.1-flash-image-preview');
               } else {
                 imageBuffer = await generateWithAI33(ai33ThumbKey, prompt, allImageRefs, '16:9');
               }
@@ -1721,7 +1724,7 @@ const AI33_BASE = 'https://api.ai33.pro';
 const AI33_POLL_INTERVAL_MS = 4000;
 const AI33_MAX_POLL_ATTEMPTS = 75; // ~5min max
 
-async function generateWithAI33(ai33Key, prompt, imageUrls, aspectRatio = '16:9') {
+async function generateWithAI33(ai33Key, prompt, imageUrls, aspectRatio = '16:9', modelId = 'gemini-3-pro-image-preview') {
   const FormData = (await import('form-data')).default;
 
   // Download reference images first (if any)
@@ -1750,7 +1753,7 @@ async function generateWithAI33(ai33Key, prompt, imageUrls, aspectRatio = '16:9'
   // Build multipart form
   const form = new FormData();
   form.append('prompt', finalPrompt);
-  form.append('model_id', 'gemini-3-pro-image-preview');
+  form.append('model_id', modelId);
   form.append('generations_count', '1');
   form.append('model_parameters', JSON.stringify({ aspect_ratio: aspectRatio, resolution: '1K' }));
   for (let i = 0; i < assetBuffers.length; i++) {
@@ -1890,6 +1893,7 @@ async function processThumbnailsV2Pipeline(job) {
   const model = imageModel || 'ai33-seedream-4.5';
   const isGemini = model.startsWith('gemini-');
   const isAI33 = model === 'ai33-gemini-image';
+  const isAI33GeminiFlash = model === 'ai33-gemini-flash';
   const isAI33Seedream = model === 'ai33-seedream-4.5';
   log(`Processing thumbnails V2 (job ${jobId.substring(0, 8)}...) - ${count} thumbnails, model: ${model}${systemPrompt ? ' [custom prompt]' : ''}`);
 
@@ -1919,7 +1923,7 @@ async function processThumbnailsV2Pipeline(job) {
     let replicateClient = null;
     let geminiKey = null;
     let ai33Key = null;
-    if (isAI33 || isAI33Seedream) {
+    if (isAI33 || isAI33GeminiFlash || isAI33Seedream) {
       ai33Key = await getUserApiKey(userId, 'ai33');
     } else if (isGemini) {
       geminiKey = await getUserApiKey(userId, 'gemini');
@@ -1964,7 +1968,7 @@ async function processThumbnailsV2Pipeline(job) {
 
         // Stagger parallel AI33 polls: each thumbnail waits i*8s before its first request
         // to avoid all thumbnails hitting the rate limit simultaneously
-        if ((isAI33 || isAI33Seedream) && i > 0) {
+        if ((isAI33 || isAI33GeminiFlash || isAI33Seedream) && i > 0) {
           await sleep(i * 8000);
         }
 
@@ -2033,6 +2037,49 @@ async function processThumbnailsV2Pipeline(job) {
               clearInterval(keepAliveTimer);
               if (attempt === 3) throw retryErr;
               log(`  Thumbnail V2 ${i + 1}: AI33 attempt ${attempt} failed (${retryErr.message?.substring(0, 80)}), retrying in ${attempt * 5}s...`);
+              await sleep(attempt * 5000);
+            }
+          }
+          const filename = `thumb_v2_${i + 1}_${timestamp}.png`;
+          publicUrl = await uploadBufferToStorage(imageBuffer, effectiveProjectId, filename, 'image/png');
+          usedPrompt = variationPrompt;
+        } else if (isAI33GeminiFlash) {
+          // Same logic as isAI33 but with gemini-3.1-flash-image-preview model
+          const AI33_MAX_ASSETS = 6;
+          const effectiveRefCount = Math.min(allImageRefs.length, AI33_MAX_ASSETS);
+          const hasCharacter = !!characterRefUrl;
+          const numExamples = effectiveRefCount - (hasCharacter ? 1 : 0);
+          let imageRefDescription = '';
+          if (hasCharacter) {
+            imageRefDescription += `@img1 is the character that MUST be used in the thumbnail.\n`;
+          }
+          if (numExamples > 0) {
+            const exampleRefs = Array.from({ length: numExamples }, (_, k) => `@img${(hasCharacter ? 2 : 1) + k}`).join(', ');
+            imageRefDescription += `${exampleRefs} are example thumbnails from the channel — study their composition, typography, color palette, and style.\n`;
+          }
+          let ai33Prompt = prompt
+            .replace('Image 1 will always contain the character that must be used in the thumbnail.', imageRefDescription.trim())
+            .replace('The following images are examples', `${hasCharacter && numExamples > 0 ? Array.from({ length: numExamples }, (_, k) => `@img${2 + k}`).join(', ') : 'The attached images'} are examples`)
+            .replace('Using the user\'s character from Image 1', `Using the character from @img1`);
+          const referencedCount = (ai33Prompt.match(/@img\d+/g) || []).length;
+          if (referencedCount < effectiveRefCount) {
+            ai33Prompt = imageRefDescription.trim() + '\n\n' + ai33Prompt;
+          }
+          const variationPrompt = ai33Prompt;
+
+          let imageBuffer;
+          for (let attempt = 1; attempt <= 3; attempt++) {
+            const keepAliveTimer = setInterval(async () => {
+              await supabase.from('generation_jobs').update({ updated_at: new Date().toISOString() }).eq('id', jobId);
+            }, 60000);
+            try {
+              imageBuffer = await generateWithAI33(ai33Key, variationPrompt, allImageRefs, '16:9', 'gemini-3.1-flash-image-preview');
+              clearInterval(keepAliveTimer);
+              break;
+            } catch (retryErr) {
+              clearInterval(keepAliveTimer);
+              if (attempt === 3) throw retryErr;
+              log(`  Thumbnail V2 ${i + 1}: AI33 Flash attempt ${attempt} failed (${retryErr.message?.substring(0, 80)}), retrying in ${attempt * 5}s...`);
               await sleep(attempt * 5000);
             }
           }
