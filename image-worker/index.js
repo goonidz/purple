@@ -5,7 +5,8 @@ const { createClient } = require('@supabase/supabase-js');
 // ============================================================================
 // CONFIGURATION
 // ============================================================================
-const MAX_CONCURRENT = 20;
+const MAX_CONCURRENT_DEFAULT = 20;
+const MAX_CONCURRENT_AI33 = 40;
 const POLL_INTERVAL_MS = 3000;
 const REPLICATE_POLL_MS = 2000;
 const REPLICATE_TIMEOUT_MS = 5 * 60 * 1000;
@@ -3520,7 +3521,7 @@ async function processIdeaGenerationPipeline(job) {
 // ============================================================================
 
 async function mainLoop() {
-  log(`Image Worker started (MAX_CONCURRENT=${MAX_CONCURRENT}, POLL=${POLL_INTERVAL_MS}ms)`);
+  log(`Image Worker started (MAX_CONCURRENT=${MAX_CONCURRENT_DEFAULT}/${MAX_CONCURRENT_AI33} ai33, POLL=${POLL_INTERVAL_MS}ms)`);
   log(`Supabase: ${SUPABASE_URL}`);
   log(`Job types: single_image, thumbnails, single_prompt, audio_generation (gemini/genaipro/ai33/edgetts), idea_generation`);
 
@@ -3528,9 +3529,9 @@ async function mainLoop() {
     try {
       await checkDiskUsage();
       await cleanupStuckParents();
-      const availableSlots = MAX_CONCURRENT - activeJobs;
+      const prelimSlots = MAX_CONCURRENT_AI33 - activeJobs;
 
-      if (availableSlots > 0) {
+      if (prelimSlots > 0) {
         // Fair round-robin: fetch more jobs than needed, then pick evenly across projects
         const { data: pendingJobs, error } = await supabase
           .from('generation_jobs')
@@ -3578,6 +3579,12 @@ async function mainLoop() {
             byProject.get(pid).push(job);
           }
 
+          // Dynamic concurrency: 40 if all pending image jobs use AI33, otherwise 20
+          const pendingImageJobs = validJobs.filter(j => j.job_type === 'single_image');
+          const allAI33 = pendingImageJobs.length > 0 && pendingImageJobs.every(j => j.metadata?.model === 'ai33-seedream-4.5');
+          const effectiveMax = allAI33 ? MAX_CONCURRENT_AI33 : MAX_CONCURRENT_DEFAULT;
+          const availableSlots = Math.max(0, effectiveMax - activeJobs);
+
           // Round-robin pick across projects
           const fairJobs = [];
           const projectQueues = [...byProject.values()];
@@ -3590,7 +3597,7 @@ async function mainLoop() {
             idx++;
           }
 
-          log(`Found ${validJobs.length} pending jobs from ${byProject.size} project(s), picking ${fairJobs.length} (active: ${activeJobs}/${MAX_CONCURRENT})`);
+          log(`Found ${validJobs.length} pending jobs from ${byProject.size} project(s), picking ${fairJobs.length} (active: ${activeJobs}/${effectiveMax}${allAI33 ? ' AI33' : ''})`);
 
           for (const job of fairJobs) {
             // Atomically claim by setting to processing
