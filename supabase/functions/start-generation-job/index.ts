@@ -283,9 +283,9 @@ serve(async (req) => {
     } else if (jobType === 'single_prompt' || jobType === 'single_image') {
       total = 1; // Single item
     } else if (jobType === 'thumbnails') {
-      total = 3; // Always generate 3 thumbnails
+      total = 5; // Always generate 5 thumbnails
     } else if (jobType === 'thumbnails_v2') {
-      total = metadata.numThumbnails || 3;
+      total = metadata.numThumbnails || 5;
     } else if (jobType === 'script_generation') {
       total = 1; // Single script generation
     } else if (jobType === 'audio_generation') {
@@ -851,7 +851,7 @@ async function chainNextJob(
       imageHeight
     };
   } else if (nextJobType === 'thumbnails') {
-    total = 3; // Always 3 thumbnails
+    total = 5; // Always 5 thumbnails
     
     // For thumbnails, we need to fetch the thumbnail preset data
     const thumbnailPresetId = project.thumbnail_preset_id;
