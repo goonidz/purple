@@ -5610,6 +5610,7 @@ Remember: Use temporal context to understand the topic, but the query must be PR
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="seedream-4.5">SeedDream 4.5 (Recommandé)</SelectItem>
+                      <SelectItem value="ai33-seedream-4.5">SeedDream 4.5 via AI33 Pro</SelectItem>
                       <SelectItem value="seedream-5-lite">SeedDream 5.0 Lite</SelectItem>
                       <SelectItem value="seedream-4">SeedDream 4.0</SelectItem>
                       <SelectItem value="z-image-turbo">Z-Image Turbo (Rapide, max 720p)</SelectItem>

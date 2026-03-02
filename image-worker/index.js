@@ -970,25 +970,33 @@ async function processImagePipeline(job) {
   log(`Processing scene ${sceneIndex + 1} (job ${jobId.substring(0, 8)}...) ${isRegen ? '[REGEN]' : ''}`);
 
   try {
-    // ---- STEP 1: Get user's Replicate API key ----
-    const replicateKey = await getUserApiKey(userId, 'replicate');
-    const replicateClient = new Replicate({ auth: replicateKey });
+    const isAI33Seedream = metadata.model === 'ai33-seedream-4.5';
+    let publicUrl;
+    let replicateClient = null;
 
-    // ---- STEP 2: Build input & generate image ----
-    const { input, modelName } = buildReplicateInput(metadata);
-    log(`  Scene ${sceneIndex + 1}: generating with ${metadata.model || 'seedream-4.5'}...`);
-
-    const result = await runReplicatePrediction(replicateClient, modelName, input);
-    const imageOutput = Array.isArray(result.output) ? result.output[0] : result.output;
-
-    if (!imageOutput) {
-      throw new Error('No image output from Replicate');
+    if (isAI33Seedream) {
+      // ---- AI33 Seedream 4.5 path ----
+      const ai33Key = await getUserApiKey(userId, 'ai33');
+      log(`  Scene ${sceneIndex + 1}: generating with AI33 Seedream 4.5...`);
+      const imageBuffer = await generateSceneWithAI33Seedream(ai33Key, metadata);
+      const timestamp = Date.now();
+      const filename = `scene_${sceneIndex + 1}_${timestamp}.jpg`;
+      publicUrl = await uploadBufferToStorage(imageBuffer, projectId, filename, 'image/png');
+    } else {
+      // ---- Replicate path ----
+      const replicateKey = await getUserApiKey(userId, 'replicate');
+      replicateClient = new Replicate({ auth: replicateKey });
+      const { input, modelName } = buildReplicateInput(metadata);
+      log(`  Scene ${sceneIndex + 1}: generating with ${metadata.model || 'seedream-4.5'}...`);
+      const result = await runReplicatePrediction(replicateClient, modelName, input);
+      const imageOutput = Array.isArray(result.output) ? result.output[0] : result.output;
+      if (!imageOutput) {
+        throw new Error('No image output from Replicate');
+      }
+      const timestamp = Date.now();
+      const filename = `scene_${sceneIndex + 1}_${timestamp}.jpg`;
+      publicUrl = await uploadImageToStorage(imageOutput, projectId, filename);
     }
-
-    // ---- STEP 3: Upload to Supabase Storage ----
-    const timestamp = Date.now();
-    const filename = `scene_${sceneIndex + 1}_${timestamp}.jpg`;
-    const publicUrl = await uploadImageToStorage(imageOutput, projectId, filename);
     log(`  Scene ${sceneIndex + 1}: uploaded -> ${publicUrl.substring(0, 80)}...`);
 
     // ---- STEP 4: Update project_scenes ----
@@ -1803,6 +1811,44 @@ async function _ai33Generate(ai33Key, form) {
   }
 
   throw new Error('AI33 task timed out after polling');
+}
+
+// Generate a scene image via AI33 Seedream 4.5
+async function generateSceneWithAI33Seedream(ai33Key, metadata) {
+  const FormData = (await import('form-data')).default;
+  const prompt = typeof metadata.prompt === 'string' ? metadata.prompt.replace(/dead/gi, '') : metadata.prompt;
+  const width = metadata.width || 1920;
+  const height = metadata.height || 1080;
+
+  // Map dimensions to aspect ratio string
+  const ratio = width / height;
+  let aspectRatio = '16:9';
+  if (Math.abs(ratio - 1) < 0.1) aspectRatio = '1:1';
+  else if (Math.abs(ratio - 9 / 16) < 0.1) aspectRatio = '9:16';
+  else if (Math.abs(ratio - 4 / 3) < 0.1) aspectRatio = '4:3';
+  else if (Math.abs(ratio - 3 / 4) < 0.1) aspectRatio = '3:4';
+
+  const form = new FormData();
+  form.append('prompt', prompt);
+  form.append('model_id', 'bytedance-seedream-4.5');
+  form.append('generations_count', '1');
+  form.append('model_parameters', JSON.stringify({ aspect_ratio: aspectRatio, resolution: '2K' }));
+
+  // Handle style reference images
+  if (metadata.styleRefs && metadata.styleRefs.length > 0) {
+    let imgIdx = 1;
+    for (const refUrl of metadata.styleRefs) {
+      try {
+        const res = await fetch(refUrl);
+        if (res.ok) {
+          form.append('assets', Buffer.from(await res.arrayBuffer()), { filename: `ref_${imgIdx}.png`, contentType: 'image/png' });
+          imgIdx++;
+        }
+      } catch (_) {}
+    }
+  }
+
+  return await _ai33Generate(ai33Key, form);
 }
 
 async function processThumbnailsV2Pipeline(job) {
