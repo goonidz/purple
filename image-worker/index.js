@@ -976,10 +976,25 @@ async function processImagePipeline(job) {
     let replicateClient = null;
 
     if (isAI33Seedream) {
-      // ---- AI33 Seedream 4.5 path ----
+      // ---- AI33 Seedream 4.5 path (with invalid_generation retry) ----
       const ai33Key = await getUserApiKey(userId, 'ai33');
       log(`  Scene ${sceneIndex + 1}: generating with AI33 Seedream 4.5...`);
-      const imageBuffer = await generateSceneWithAI33Seedream(ai33Key, metadata);
+      let imageBuffer;
+      try {
+        imageBuffer = await generateSceneWithAI33Seedream(ai33Key, metadata);
+      } catch (ai33Err) {
+        const isInvalid = /invalid_generation/i.test(ai33Err.message);
+        if (isInvalid && !isRegen) {
+          log(`  Scene ${sceneIndex + 1}: AI33 invalid_generation -> reformulating prompt via Gemini & retrying...`);
+          const geminiKey = await getUserApiKey(userId, 'gemini');
+          const cleanedPrompt = await cleanSensitivePrompt(geminiKey, metadata.prompt);
+          log(`  Scene ${sceneIndex + 1}: prompt reformulated (${cleanedPrompt.length} chars), retrying AI33...`);
+          const newMetadata = { ...metadata, prompt: cleanedPrompt };
+          imageBuffer = await generateSceneWithAI33Seedream(ai33Key, newMetadata);
+        } else {
+          throw ai33Err;
+        }
+      }
       const timestamp = Date.now();
       const filename = `scene_${sceneIndex + 1}_${timestamp}.jpg`;
       publicUrl = await uploadBufferToStorage(imageBuffer, projectId, filename, 'image/png');
@@ -1100,10 +1115,10 @@ async function processImagePipeline(job) {
     }
 
   } catch (error) {
-    // Auto-regen on sensitive content errors (once only)
-    const isSensitive = /sensitive/i.test(error.message);
+    // Auto-regen on sensitive / invalid_generation errors (once only)
+    const isSensitive = /sensitive|invalid_generation/i.test(error.message);
     if (isSensitive && !isRegen && parentJobId) {
-      log(`  Scene ${sceneIndex + 1}: SENSITIVE content detected -> reformulating prompt via Gemini`);
+      log(`  Scene ${sceneIndex + 1}: Content rejected (${/invalid_generation/i.test(error.message) ? 'invalid_generation' : 'sensitive'}) -> reformulating prompt via Gemini`);
       try {
         const geminiKey = await getUserApiKey(userId, 'gemini');
         const cleanedPrompt = await cleanSensitivePrompt(geminiKey, metadata.prompt);
