@@ -27,6 +27,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 // ============================================================================
 let activeJobs = 0;
 const apiKeyCache = new Map();
+const processingJobIds = new Set();
 
 // ============================================================================
 // QA PROMPT (from qa-image-gemini/index.ts)
@@ -3602,9 +3603,10 @@ async function mainLoop() {
               .eq('status', 'cancelled');
             if (parents) parents.forEach(p => cancelledParents.add(p.id));
           }
-          const validJobs = cancelledParents.size > 0
+          const filteredJobs = cancelledParents.size > 0
             ? pendingJobs.filter(j => !j.parent_job_id || !cancelledParents.has(j.parent_job_id))
             : pendingJobs;
+          const validJobs = filteredJobs.filter(j => !processingJobIds.has(j.id));
 
           // Auto-cancel orphaned jobs
           if (cancelledParents.size > 0) {
@@ -3647,6 +3649,9 @@ async function mainLoop() {
           log(`Found ${validJobs.length} pending jobs from ${byProject.size} project(s), picking ${fairJobs.length} (active: ${activeJobs}/${effectiveMax}${allAI33 ? ' AI33' : ''})`);
 
           for (const job of fairJobs) {
+            // In-memory guard: skip jobs already being processed by this worker
+            if (processingJobIds.has(job.id)) continue;
+
             // Atomically claim by setting to processing
             const { data: claimed, error: claimError } = await supabase
               .from('generation_jobs')
@@ -3660,6 +3665,7 @@ async function mainLoop() {
               continue; // Another worker/process claimed it
             }
 
+            processingJobIds.add(job.id);
             activeJobs++;
 
             // Route to the correct pipeline
@@ -3682,7 +3688,7 @@ async function mainLoop() {
               pipeline = processIdeaGenerationPipeline(job);
             }
 
-            pipeline.finally(() => { activeJobs--; });
+            pipeline.finally(() => { activeJobs--; processingJobIds.delete(job.id); });
           }
         }
       }
