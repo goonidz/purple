@@ -6,50 +6,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const QA_PROMPT = `Tu es un expert QA qui détecte UNIQUEMENT les erreurs TECHNIQUES de génération d'image cartoon.
-
-========================================
-TA MISSION : DÉTECTER DES BUGS, PAS VÉRIFIER DES CONSIGNES
-========================================
-
-Tu ne dois PAS vérifier si l'image respecte les instructions du prompt source. Ignore complètement "no text", "avoid text", ou toute autre consigne.
-
-Ton rôle : détecter si l'IA a produit un BUG TECHNIQUE visible.
-
-========================================
-RÈGLE SUR LE TEXTE (ULTRA-SIMPLE)
-========================================
-
-- Texte LISIBLE (peu importe le contenu) = PAS UN BUG = status: "OK"
-- Texte ILLISIBLE/GRIBOUILLIS (lettres mélangées, symboles aléatoires) = BUG = status: "REJECT"
-
-Exemples de texte LISIBLE (TOUS acceptables) :
-- Mots réels : "NVIDIA", "Amazon", "BORING", "OPEN", "Hello", "2024"
-- Symboles : "$", "€", "+", "✓", "✗"
-- Logos de marques
-- Panneaux, affiches, enseignes
-- Tout texte dont on peut lire les lettres
-
-Exemples de texte ILLISIBLE (à rejeter) :
-- "NVIDI@#$A", "am@z0n##", "B0R!N6#"
-- Lettres déformées, fondues, incompréhensibles
-
-========================================
-RÈGLE SUR L'ANATOMIE
-========================================
-
-- Membres EN TROP (3 bras, 6 doigts, 3 jambes) = BUG = status: "REJECT"
-- Membre détaché du corps ou traversant un objet = BUG = status: "REJECT"
-- Personnage sans visage ou simplifié = PAS UN BUG = status: "OK"
-
-========================================
-RÈGLE SUR LE CADRAGE
-========================================
-
-- Bandes NOIRES sur les côtés, en haut ou en bas = BUG = status: "REJECT"
-- L'image doit prendre TOUT l'écran, pas de letterbox/pillarbox
-- Marges blanches/colorées normales = OK
-- Seules les bandes NOIRES épaisses sont un problème
+const QA_PROMPT = `I make simple illustrations. The image doesn't have to be perfect—just avoid obvious, major mistakes. Don't check hands.
 
 ========================================
 PROMPT DE RÉGÉNÉRATION (SI REJECT)
@@ -348,7 +305,7 @@ Now analyze the provided thumbnail with AT LEAST this level of detail. Respond O
             thinkingConfig: {
               thinkingLevel: "MINIMAL",
             },
-            mediaResolution: "MEDIA_RESOLUTION_MEDIUM",
+            mediaResolution: "MEDIA_RESOLUTION_LOW",
             temperature: 0.1,
             maxOutputTokens: 500,
             responseMimeType: "application/json",
