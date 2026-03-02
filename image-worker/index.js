@@ -1712,7 +1712,7 @@ async function generateWithGemini(geminiKey, prompt, imageUrls, modelName, examp
 
 const AI33_BASE = 'https://api.ai33.pro';
 const AI33_POLL_INTERVAL_MS = 4000;
-const AI33_MAX_POLL_ATTEMPTS = 180; // ~12min max
+const AI33_MAX_POLL_ATTEMPTS = 75; // ~5min max
 
 async function generateWithAI33(ai33Key, prompt, imageUrls, aspectRatio = '16:9') {
   const FormData = (await import('form-data')).default;
