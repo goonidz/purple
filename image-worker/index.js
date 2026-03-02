@@ -526,15 +526,36 @@ async function updateSceneImage(projectId, sceneIndex, publicUrl, metadata) {
 async function updateSceneQA(projectId, sceneIndex, qaResult) {
   const status = qaResult.status === 'OK' ? 'OK' : (qaResult.status === 'REJECT' ? 'REJECT' : 'OK');
 
+  // If transitioning to OK, check if previous status was REJECT to save rejection reason
+  let previousRejection = null;
+  if (status === 'OK') {
+    try {
+      const { data: scene } = await supabase
+        .from('project_scenes')
+        .select('qa_status, qa_explication')
+        .eq('project_id', projectId)
+        .eq('scene_index', sceneIndex)
+        .single();
+      if (scene?.qa_status === 'REJECT' && scene?.qa_explication) {
+        previousRejection = scene.qa_explication;
+      }
+    } catch (_) {}
+  }
+
+  const updateData = {
+    qa_checked: true,
+    qa_status: status,
+    qa_explication: qaResult.explication || null,
+    qa_regeneration_prompt: qaResult.prompt_regeneration || null,
+    updated_at: new Date().toISOString(),
+  };
+  if (previousRejection) {
+    updateData.qa_previous_rejection = previousRejection;
+  }
+
   const { error } = await supabase
     .from('project_scenes')
-    .update({
-      qa_checked: true,
-      qa_status: status,
-      qa_explication: qaResult.explication || null,
-      qa_regeneration_prompt: qaResult.prompt_regeneration || null,
-      updated_at: new Date().toISOString(),
-    })
+    .update(updateData)
     .eq('project_id', projectId)
     .eq('scene_index', sceneIndex);
 
