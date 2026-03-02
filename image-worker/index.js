@@ -1,6 +1,7 @@
 require('dotenv').config();
 const Replicate = require('replicate');
 const { createClient } = require('@supabase/supabase-js');
+const sharp = require('sharp');
 
 // ============================================================================
 // CONFIGURATION
@@ -1484,12 +1485,27 @@ Produce the final thumbnail image.
 Video Title:
 {videoTitle}`;
 
-// Upload a raw Buffer (e.g. from Gemini base64 response) to Supabase Storage
+// Compress a PNG buffer to JPEG (quality 85) for smaller file sizes
+async function compressPngToJpeg(buffer) {
+  return sharp(buffer).jpeg({ quality: 85 }).toBuffer();
+}
+
+// Upload a raw Buffer to Supabase Storage — auto-converts PNG to JPEG
 async function uploadBufferToStorage(buffer, projectId, filename, contentType = 'image/png') {
-  const storagePath = `${projectId}/${filename}`;
+  let finalBuffer = buffer;
+  let finalContentType = contentType;
+  let finalFilename = filename;
+
+  if (contentType === 'image/png') {
+    finalBuffer = await compressPngToJpeg(buffer);
+    finalContentType = 'image/jpeg';
+    finalFilename = filename.replace(/\.png$/i, '.jpg');
+  }
+
+  const storagePath = `${projectId}/${finalFilename}`;
   const { error: uploadError } = await supabase.storage
     .from('generated-images')
-    .upload(storagePath, buffer, { contentType, upsert: true });
+    .upload(storagePath, finalBuffer, { contentType: finalContentType, upsert: true });
   if (uploadError) throw new Error(`Storage upload failed: ${uploadError.message}`);
   const { data: { publicUrl } } = supabase.storage
     .from('generated-images')
