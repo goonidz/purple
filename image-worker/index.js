@@ -1739,16 +1739,21 @@ async function generateWithAI33(ai33Key, prompt, imageUrls, aspectRatio = '16:9'
 }
 
 async function _ai33Generate(ai33Key, form) {
-  // Step 1: Submit generation task
-  const createRes = await fetch(`${AI33_BASE}/v1i/task/generate-image`, {
-    method: 'POST',
-    headers: {
-      'xi-api-key': ai33Key,
-      ...form.getHeaders(),
-    },
-    body: form.getBuffer(),
-  });
-
+  // Step 1: Submit generation task — retry on 429
+  let createRes;
+  for (let retry = 0; retry <= 4; retry++) {
+    createRes = await fetch(`${AI33_BASE}/v1i/task/generate-image`, {
+      method: 'POST',
+      headers: { 'xi-api-key': ai33Key, ...form.getHeaders() },
+      body: form.getBuffer(),
+    });
+    if (createRes.status === 429 && retry < 4) {
+      log(`  AI33: Rate limited on submit (429), retry ${retry + 1}/4 in 10s...`);
+      await sleep(10000);
+      continue;
+    }
+    break;
+  }
   if (!createRes.ok) {
     const errBody = await createRes.text();
     throw new Error(`AI33 generate-image error (${createRes.status}): ${errBody.substring(0, 300)}`);
