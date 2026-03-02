@@ -1238,9 +1238,11 @@ async function processThumbnailsPipeline(job) {
   try {
     // ---- STEP 1: Get API keys ----
     const isAI33Thumb = (imageModel || 'seedream-4.5') === 'ai33-gemini-image';
+    const isAI33Seedream = (imageModel || 'seedream-4.5') === 'ai33-seedream-4.5';
+    const needsAI33Key = isAI33Thumb || isAI33Seedream;
     let replicateClient = null;
     let ai33ThumbKey = null;
-    if (isAI33Thumb) {
+    if (needsAI33Key) {
       ai33ThumbKey = await getUserApiKey(userId, 'ai33');
     } else {
       const replicateKey = await getUserApiKey(userId, 'replicate');
@@ -1302,7 +1304,7 @@ async function processThumbnailsPipeline(job) {
         const effectiveProjectId = standalone ? (thumbnailProjectId || 'standalone') : projectId;
         let publicUrl;
 
-        if (isAI33Thumb) {
+        if (isAI33Thumb || isAI33Seedream) {
           // Keep-alive so stale checker doesn't kill a slow AI33 job
           await supabase.from('generation_jobs').update({ updated_at: new Date().toISOString() }).eq('id', jobId);
           let imageBuffer;
@@ -1311,7 +1313,11 @@ async function processThumbnailsPipeline(job) {
               await supabase.from('generation_jobs').update({ updated_at: new Date().toISOString() }).eq('id', jobId);
             }, 60000);
             try {
-              imageBuffer = await generateWithAI33(ai33ThumbKey, prompt, allImageRefs, '16:9');
+              if (isAI33Seedream) {
+                imageBuffer = await generateSceneWithAI33Seedream(ai33ThumbKey, { prompt, width: 1920, height: 1080, styleRefs: allImageRefs });
+              } else {
+                imageBuffer = await generateWithAI33(ai33ThumbKey, prompt, allImageRefs, '16:9');
+              }
               clearInterval(keepAliveTimer);
               break;
             } catch (retryErr) {
@@ -1880,9 +1886,10 @@ async function processThumbnailsV2Pipeline(job) {
   } = metadata || {};
 
   const count = numThumbnails || 3;
-  const model = imageModel || 'seedream-4.5';
+  const model = imageModel || 'ai33-seedream-4.5';
   const isGemini = model.startsWith('gemini-');
   const isAI33 = model === 'ai33-gemini-image';
+  const isAI33Seedream = model === 'ai33-seedream-4.5';
   log(`Processing thumbnails V2 (job ${jobId.substring(0, 8)}...) - ${count} thumbnails, model: ${model}${systemPrompt ? ' [custom prompt]' : ''}`);
 
   try {
@@ -1911,7 +1918,7 @@ async function processThumbnailsV2Pipeline(job) {
     let replicateClient = null;
     let geminiKey = null;
     let ai33Key = null;
-    if (isAI33) {
+    if (isAI33 || isAI33Seedream) {
       ai33Key = await getUserApiKey(userId, 'ai33');
     } else if (isGemini) {
       geminiKey = await getUserApiKey(userId, 'gemini');
@@ -1956,11 +1963,31 @@ async function processThumbnailsV2Pipeline(job) {
 
         // Stagger parallel AI33 polls: each thumbnail waits i*8s before its first request
         // to avoid all thumbnails hitting the rate limit simultaneously
-        if (isAI33 && i > 0) {
+        if ((isAI33 || isAI33Seedream) && i > 0) {
           await sleep(i * 8000);
         }
 
-        if (isAI33) {
+        if (isAI33Seedream) {
+          let imageBuffer;
+          for (let attempt = 1; attempt <= 3; attempt++) {
+            const keepAliveTimer = setInterval(async () => {
+              await supabase.from('generation_jobs').update({ updated_at: new Date().toISOString() }).eq('id', jobId);
+            }, 60000);
+            try {
+              imageBuffer = await generateSceneWithAI33Seedream(ai33Key, { prompt, width: 1920, height: 1080, styleRefs: allImageRefs });
+              clearInterval(keepAliveTimer);
+              break;
+            } catch (retryErr) {
+              clearInterval(keepAliveTimer);
+              if (attempt === 3) throw retryErr;
+              log(`  Thumbnail V2 ${i + 1}: AI33 Seedream attempt ${attempt} failed (${retryErr.message?.substring(0, 80)}), retrying in ${attempt * 5}s...`);
+              await sleep(attempt * 5000);
+            }
+          }
+          const filename = `thumb_v2_${i + 1}_${timestamp}.png`;
+          publicUrl = await uploadBufferToStorage(imageBuffer, effectiveProjectId, filename, 'image/png');
+          usedPrompt = prompt;
+        } else if (isAI33) {
           // AI33 Pro (Gemini Pro Image): rebuild prompt with explicit @img references
           // allImageRefs[0] = character ref (if present), rest = example thumbnails
           // Cap to 10 to match the API asset limit enforced inside generateWithAI33

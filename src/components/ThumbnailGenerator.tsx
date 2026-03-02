@@ -95,7 +95,7 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
   const [isEditingImage, setIsEditingImage] = useState(false);
   const [customPrompt, setCustomPrompt] = useState(DEFAULT_THUMBNAIL_PROMPT);
   const [generatedPrompts, setGeneratedPrompts] = useState<string[]>([]);
-  const [imageModel, setImageModel] = useState<string>("seedream-4.5");
+  const [imageModel, setImageModel] = useState<string>("ai33-seedream-4.5");
   const [textModel, setTextModel] = useState<string>("claude-sonnet-4");
   const [userIdea, setUserIdea] = useState<string>("");
   const [isDescribingThumbnail, setIsDescribingThumbnail] = useState(false);
@@ -561,7 +561,7 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
     setExampleUrls(preset.example_urls || []);
     setCharacterRefUrl(preset.character_ref_url || "");
     setCustomPrompt(preset.custom_prompt || DEFAULT_THUMBNAIL_PROMPT);
-    setImageModel(preset.image_model || "seedream-4.5");
+    setImageModel(preset.image_model || "ai33-seedream-4.5");
     toast.success("Preset chargé !");
   };
 
@@ -960,7 +960,7 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
     setEditingPreset(preset);
     setEditName(preset.name);
     setEditCustomPrompt(preset.custom_prompt || DEFAULT_THUMBNAIL_PROMPT);
-    setImageModel(preset.image_model || "seedream-4.5");
+    setImageModel(preset.image_model || "ai33-seedream-4.5");
     setIsEditDialogOpen(true);
   };
 
@@ -1398,7 +1398,8 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
                 <SelectValue placeholder="Choisir un modèle" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="seedream-4.5">SeedDream 4.5 (Recommandé)</SelectItem>
+                <SelectItem value="ai33-seedream-4.5">Seedream 4.5 via AI33 Pro (Recommandé)</SelectItem>
+                <SelectItem value="seedream-4.5">SeedDream 4.5 via Replicate</SelectItem>
                 <SelectItem value="seedream-5-lite">SeedDream 5.0 Lite</SelectItem>
                 <SelectItem value="ai33-gemini-image">Gemini Pro Image via AI33 Pro</SelectItem>
                 <SelectItem value="seedream-4">SeedDream 4.0</SelectItem>
@@ -1686,7 +1687,8 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
                   <SelectValue placeholder="Choisir un modèle" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="seedream-4.5">SeedDream 4.5 (Recommandé)</SelectItem>
+                  <SelectItem value="ai33-seedream-4.5">Seedream 4.5 via AI33 Pro (Recommandé)</SelectItem>
+                  <SelectItem value="seedream-4.5">SeedDream 4.5 via Replicate</SelectItem>
                   <SelectItem value="seedream-5-lite">SeedDream 5.0 Lite</SelectItem>
                   <SelectItem value="ai33-gemini-image">Gemini Pro Image via AI33 Pro</SelectItem>
                   <SelectItem value="seedream-4">SeedDream 4.0</SelectItem>

@@ -90,7 +90,7 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
   const [isDraggingCharacter, setIsDraggingCharacter] = useState(false);
   const [userDirectives, setUserDirectives] = useState("");
   const [systemPrompt, setSystemPrompt] = useState(DEFAULT_THUMBNAIL_PROMPT);
-  const [imageModel, setImageModel] = useState("ai33-gemini-image");
+  const [imageModel, setImageModel] = useState("ai33-seedream-4.5");
   const [numThumbnails, setNumThumbnails] = useState(3);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedThumbnails, setGeneratedThumbnails] = useState<string[]>([]);
@@ -109,7 +109,7 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
   const [editCharacterRefUrl, setEditCharacterRefUrl] = useState("");
   const [editUserDirectives, setEditUserDirectives] = useState("");
   const [editSystemPrompt, setEditSystemPrompt] = useState(DEFAULT_THUMBNAIL_PROMPT);
-  const [editImageModel, setEditImageModel] = useState("ai33-gemini-image");
+  const [editImageModel, setEditImageModel] = useState("ai33-seedream-4.5");
   const [isUploadingEdit, setIsUploadingEdit] = useState(false);
   const [duplicateName, setDuplicateName] = useState("");
 
@@ -293,7 +293,7 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
     setCharacterRefUrl(preset.character_ref_url || "");
     setUserDirectives(preset.custom_prompt || "");
     setSystemPrompt(preset.system_prompt || DEFAULT_THUMBNAIL_PROMPT);
-    setImageModel(preset.image_model || "ai33-gemini-image");
+    setImageModel(preset.image_model || "ai33-seedream-4.5");
   };
 
   const handlePresetSelect = (presetId: string) => {
@@ -381,7 +381,7 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
     setEditCharacterRefUrl(preset.character_ref_url || "");
     setEditUserDirectives(preset.custom_prompt || "");
     setEditSystemPrompt(preset.system_prompt || DEFAULT_THUMBNAIL_PROMPT);
-    setEditImageModel(preset.image_model || "ai33-gemini-image");
+    setEditImageModel(preset.image_model || "ai33-seedream-4.5");
     setIsEditDialogOpen(true);
   };
 
@@ -840,8 +840,9 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="gemini-3-pro-image-preview">Gemini 3 Pro Image (Recommandé)</SelectItem>
+              <SelectContent>
+                  <SelectItem value="ai33-seedream-4.5">Seedream 4.5 via AI33 Pro (Recommandé)</SelectItem>
+                  <SelectItem value="gemini-3-pro-image-preview">Gemini 3 Pro Image</SelectItem>
                   <SelectItem value="ai33-gemini-image">Gemini Pro Image via AI33 Pro</SelectItem>
                   <SelectItem value="seedream-4.5">SeedDream 4.5 via Replicate</SelectItem>
                   <SelectItem value="seedream-5-lite">SeedDream 5.0 Lite via Replicate</SelectItem>
@@ -1109,6 +1110,7 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="ai33-seedream-4.5">Seedream 4.5 via AI33 Pro (Recommandé)</SelectItem>
                   <SelectItem value="gemini-3-pro-image-preview">Gemini 3 Pro Image</SelectItem>
                   <SelectItem value="ai33-gemini-image">Gemini Pro Image via AI33 Pro</SelectItem>
                   <SelectItem value="seedream-4.5">SeedDream 4.5 via Replicate</SelectItem>
