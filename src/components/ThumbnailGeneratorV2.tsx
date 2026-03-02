@@ -6,7 +6,8 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Upload, X, Loader2, Image as ImageIcon, Download, Youtube, Save, Trash2, Edit, Copy } from "lucide-react";
+import { Upload, X, Loader2, Image as ImageIcon, Download, Youtube, Save, Trash2, Edit, Copy, ChevronDown } from "lucide-react";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useGenerationJobs, GenerationJob } from "@/hooks/useGenerationJobs";
@@ -92,6 +93,7 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
   const [imageModel, setImageModel] = useState("ai33-seedream-4.5");
   const [numThumbnails, setNumThumbnails] = useState(5);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [configOpen, setConfigOpen] = useState(false);
   const [generatedThumbnails, setGeneratedThumbnails] = useState<string[]>([]);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
 
@@ -643,6 +645,14 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
       </div>
 
       <div className="space-y-6">
+        <Collapsible open={configOpen} onOpenChange={setConfigOpen}>
+          <CollapsibleTrigger asChild>
+            <Button variant="outline" className="w-full flex items-center justify-between py-3">
+              <span className="text-sm font-medium">Paramètres de génération</span>
+              <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${configOpen ? 'rotate-180' : ''}`} />
+            </Button>
+          </CollapsibleTrigger>
+          <CollapsibleContent className="space-y-6 pt-4">
           {/* Preset management */}
           <Card className="p-4 bg-muted/30 space-y-3">
             <Label className="text-sm font-medium">Presets</Label>
@@ -874,6 +884,8 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
               </Select>
             </div>
           </div>
+          </CollapsibleContent>
+        </Collapsible>
 
           {/* Generate button */}
           <Button
