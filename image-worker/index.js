@@ -1250,8 +1250,8 @@ async function processThumbnailsPipeline(job) {
       replicateClient = new Replicate({ auth: replicateKey });
     }
 
-    // ---- STEP 2: Generate 3 prompts via Edge Function ----
-    log('  Thumbnails: generating 3 prompts...');
+    // ---- STEP 2: Generate 5 prompts via Edge Function ----
+    log('  Thumbnails: generating 5 prompts...');
     const promptsResponse = await fetch(`${SUPABASE_URL}/functions/v1/generate-thumbnail-prompts`, {
       method: 'POST',
       headers: {
@@ -1270,8 +1270,8 @@ async function processThumbnailsPipeline(job) {
     }
 
     const promptsData = await promptsResponse.json();
-    if (promptsData.error || !promptsData.prompts || promptsData.prompts.length !== 3) {
-      throw new Error(promptsData.error || 'Failed to generate 3 thumbnail prompts');
+    if (promptsData.error || !promptsData.prompts || promptsData.prompts.length < 3) {
+      throw new Error(promptsData.error || 'Failed to generate thumbnail prompts');
     }
 
     const creativePrompts = promptsData.prompts;
@@ -1415,7 +1415,7 @@ async function processThumbnailsPipeline(job) {
       })
       .eq('id', jobId);
 
-    log(`  Thumbnails complete: ${generatedThumbnails.length}/3 generated`);
+    log(`  Thumbnails complete: ${generatedThumbnails.length}/${creativePrompts.length} generated`);
 
   } catch (error) {
     logError(`Thumbnails (job ${jobId.substring(0, 8)}...) FAILED:`, error.message);

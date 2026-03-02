@@ -5,7 +5,6 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Upload, X, Loader2, Image as ImageIcon, Download, Youtube, Save, Trash2, Edit, Copy } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
@@ -91,7 +90,7 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
   const [userDirectives, setUserDirectives] = useState("");
   const [systemPrompt, setSystemPrompt] = useState(DEFAULT_THUMBNAIL_PROMPT);
   const [imageModel, setImageModel] = useState("ai33-seedream-4.5");
-  const [numThumbnails, setNumThumbnails] = useState(3);
+  const [numThumbnails, setNumThumbnails] = useState(5);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedThumbnails, setGeneratedThumbnails] = useState<string[]>([]);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
@@ -643,13 +642,7 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
         </p>
       </div>
 
-      <Tabs defaultValue="generate" className="w-full">
-        <TabsList className="grid w-full grid-cols-2">
-          <TabsTrigger value="generate">Générer</TabsTrigger>
-          <TabsTrigger value="history">Historique ({history.length})</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="generate" className="space-y-6">
+      <div className="space-y-6">
           {/* Preset management */}
           <Card className="p-4 bg-muted/30 space-y-3">
             <Label className="text-sm font-medium">Presets</Label>
@@ -934,60 +927,60 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
               </div>
             </div>
           )}
-        </TabsContent>
+      </div>
 
-        <TabsContent value="history" className="space-y-4">
-          {history.length === 0 ? (
-            <Card className="p-8 text-center">
-              <p className="text-muted-foreground">Aucune génération précédente</p>
-            </Card>
-          ) : (
-            history.map((item) => (
-              <Card key={item.id} className="p-4">
-                <div className="flex justify-between items-start mb-4">
-                  <p className="text-sm text-muted-foreground">
-                    {new Date(item.created_at).toLocaleDateString('fr-FR', {
-                      year: 'numeric',
-                      month: 'long',
-                      day: 'numeric',
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
-                  </p>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => deleteHistoryItem(item.id)}
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </Button>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {item.thumbnail_urls.map((url, index) => (
-                    <div key={index} className="space-y-2">
-                      <img
-                        src={url}
-                        alt={`History ${index + 1}`}
-                        className="w-full aspect-video object-cover rounded-lg border cursor-pointer hover:opacity-80 transition-opacity"
-                        onClick={() => setPreviewImage(url)}
-                      />
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="w-full"
-                        onClick={() => downloadThumbnail(url, index)}
-                      >
-                        <Download className="w-4 h-4 mr-2" />
-                        Télécharger
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              </Card>
-            ))
-          )}
-        </TabsContent>
-      </Tabs>
+      {/* History section - displayed below */}
+      {history.length > 0 && (
+        <div className="space-y-4 mt-8">
+          <h4 className="text-base font-semibold">Historique ({history.length})</h4>
+          {history.map((item) => (
+            <div key={item.id} className="space-y-2">
+              <div className="flex justify-between items-center">
+                <p className="text-xs text-muted-foreground">
+                  {new Date(item.created_at).toLocaleDateString('fr-FR', {
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}
+                </p>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  onClick={() => deleteHistoryItem(item.id)}
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </Button>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                {item.thumbnail_urls.map((url, index) => (
+                  <div key={index} className="relative group">
+                    <img
+                      src={url}
+                      alt={`History ${index + 1}`}
+                      className="w-full aspect-video object-cover rounded-lg border cursor-pointer hover:opacity-80 transition-opacity"
+                      onClick={() => setPreviewImage(url)}
+                    />
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      className="absolute top-1.5 right-1.5 h-7 px-2 text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        downloadThumbnail(url, index);
+                      }}
+                    >
+                      <Download className="h-3 w-3" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Image preview dialog */}
       <Dialog open={!!previewImage} onOpenChange={() => setPreviewImage(null)}>

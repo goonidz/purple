@@ -191,7 +191,7 @@ serve(async (req) => {
     // Use custom prompt if provided, otherwise use default
     let systemPrompt = customPrompt || `Tu es un expert en création de miniatures YouTube accrocheuses et performantes.
 
-Ton rôle est de créer 3 prompts de miniatures YouTube BASÉS SUR LE CONTENU DU SCRIPT/TITRE fourni, en utilisant le STYLE VISUEL des exemples comme référence.
+Ton rôle est de créer 5 prompts de miniatures YouTube BASÉS SUR LE CONTENU DU SCRIPT/TITRE fourni, en utilisant le STYLE VISUEL des exemples comme référence.
 
 DISTINCTION CRUCIALE - STYLE vs CONTENU:
 - Les images d'exemples = RÉFÉRENCE DE STYLE UNIQUEMENT (couleurs, composition, typographie, effets visuels, mise en page)
@@ -261,21 +261,21 @@ Think: "What aspects of the script have NOT been explored yet?"`;
       systemPrompt += `
 
 💡 USER'S IDEA - MANDATORY DIRECTION:
-The user wants ALL 3 thumbnails to be variations of this specific idea: "${userIdea.trim()}"
+The user wants ALL 5 thumbnails to be variations of this specific idea: "${userIdea.trim()}"
 
 CRITICAL REQUIREMENT:
-- ALL 3 prompts MUST be variations/interpretations of the user's idea above
+- ALL 5 prompts MUST be variations/interpretations of the user's idea above
 - Each prompt should explore a different angle or visual approach to the same concept
 - The user's idea is the PRIMARY direction - adapt it to fit the video script content
 - Still follow ALL the rules above (style from examples, content from script, simplicity, etc.)
-- Create 3 distinct variations that all relate to the user's idea but with different visual compositions, angles, or emphasis`;
+- Create 5 distinct variations that all relate to the user's idea but with different visual compositions, angles, or emphasis`;
     }
 
     // Always append the JSON format instruction
-    const variationInstruction = userIdea && userIdea.trim() 
-      ? " (tous les 3 doivent être des variations de l'idée de l'utilisateur)"
+    const variationInstruction = userIdea && userIdea.trim()
+      ? " (tous les 5 doivent être des variations de l'idée de l'utilisateur)"
       : "";
-    
+
     systemPrompt += `
 
 Retourne UNIQUEMENT un JSON avec ce format exact:
@@ -283,7 +283,9 @@ Retourne UNIQUEMENT un JSON avec ce format exact:
   "prompts": [
     "premier prompt détaillé reprenant le style des exemples${variationInstruction}...",
     "deuxième prompt avec même style mais variation différente${variationInstruction}...",
-    "troisième prompt toujours dans le même style, autre variation${variationInstruction}..."
+    "troisième prompt toujours dans le même style, autre variation${variationInstruction}...",
+    "quatrième prompt dans le même style, nouvelle variation${variationInstruction}...",
+    "cinquième prompt dans le même style, dernière variation${variationInstruction}..."
   ]
 }`;
 
@@ -513,7 +515,7 @@ Crée des designs SIMPLES (3-4 éléments max) mais PERTINENTS au script.`;
       );
     }
 
-    if (!parsedResponse.prompts || !Array.isArray(parsedResponse.prompts) || parsedResponse.prompts.length !== 3) {
+    if (!parsedResponse.prompts || !Array.isArray(parsedResponse.prompts) || parsedResponse.prompts.length !== 5) {
       console.error("Invalid prompts format:", parsedResponse);
       return new Response(
         JSON.stringify({ error: "Format de prompts invalide" }),
@@ -521,7 +523,7 @@ Crée des designs SIMPLES (3-4 éléments max) mais PERTINENTS au script.`;
       );
     }
 
-    console.log("Successfully generated 3 thumbnail prompts");
+    console.log("Successfully generated 5 thumbnail prompts");
 
     return new Response(
       JSON.stringify({ prompts: parsedResponse.prompts }),

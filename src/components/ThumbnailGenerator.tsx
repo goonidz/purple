@@ -5,7 +5,6 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Upload, X, Loader2, Image as ImageIcon, Save, Download, Trash2, Edit, Copy, GripVertical } from "lucide-react";
@@ -1150,13 +1149,7 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
 
       <SourceVideoCard />
       
-      <Tabs defaultValue="generate" className="w-full">
-        <TabsList className="grid w-full grid-cols-2">
-          <TabsTrigger value="generate">Générer</TabsTrigger>
-          <TabsTrigger value="history">Historique ({thumbnailHistory.length})</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="generate" className="space-y-6">
+      <div className="space-y-6">
           {/* Gestion des presets */}
           <Card className="p-4 bg-muted/30">
             <Label className="text-sm font-medium mb-2 block">Presets</Label>
@@ -1438,7 +1431,7 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
                 Génération en cours...
               </>
             ) : (
-              "Générer 3 miniatures"
+              "Générer 5 miniatures"
             )}
           </Button>
 
@@ -1480,111 +1473,108 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
               </div>
             </div>
           )}
-        </TabsContent>
+      </div>
 
-        <TabsContent value="history" className="space-y-4">
-          <div className="flex justify-end">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={isUploadingThumbnail}
-              onClick={() => document.getElementById('thumbnail-upload-input')?.click()}
-            >
-              {isUploadingThumbnail ? (
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-              ) : (
-                <Upload className="h-4 w-4 mr-2" />
-              )}
-              Importer des miniatures
-            </Button>
-            <input
-              id="thumbnail-upload-input"
-              type="file"
-              accept="image/*"
-              multiple
-              className="hidden"
-              onChange={(e) => e.target.files && handleThumbnailUpload(e.target.files)}
-            />
+      {/* History section - displayed below */}
+      {thumbnailHistory.length > 0 && (
+        <div className="space-y-4 mt-8">
+          <div className="flex items-center justify-between">
+            <h4 className="text-base font-semibold">Historique ({thumbnailHistory.length})</h4>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={isUploadingThumbnail}
+                onClick={() => document.getElementById('thumbnail-upload-input')?.click()}
+              >
+                {isUploadingThumbnail ? (
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                ) : (
+                  <Upload className="h-4 w-4 mr-2" />
+                )}
+                Importer
+              </Button>
+              <input
+                id="thumbnail-upload-input"
+                type="file"
+                accept="image/*"
+                multiple
+                className="hidden"
+                onChange={(e) => e.target.files && handleThumbnailUpload(e.target.files)}
+              />
+            </div>
           </div>
-          {thumbnailHistory.length === 0 ? (
-            <Card className="p-8 text-center">
-              <p className="text-muted-foreground">Aucune génération précédente</p>
-            </Card>
-          ) : (
-            thumbnailHistory.map((item) => (
-              <Card key={item.id} className="p-4">
-                <div className="flex justify-between items-start mb-4">
-                  <div className="space-y-1">
-                    <p className="text-sm text-muted-foreground">
-                      {new Date(item.created_at).toLocaleDateString('fr-FR', {
-                        year: 'numeric',
-                        month: 'long',
-                        day: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
-                    </p>
-                    {item.preset_name && (
-                      <p className="text-xs font-medium text-primary">
-                        Preset: {item.preset_name}
-                      </p>
-                    )}
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => deleteHistoryItem(item.id)}
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </Button>
+          {thumbnailHistory.map((item) => (
+            <div key={item.id} className="space-y-2">
+              <div className="flex justify-between items-center">
+                <div className="flex items-center gap-2">
+                  <p className="text-xs text-muted-foreground">
+                    {new Date(item.created_at).toLocaleDateString('fr-FR', {
+                      year: 'numeric',
+                      month: 'long',
+                      day: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </p>
+                  {item.preset_name && (
+                    <span className="text-xs font-medium text-primary">
+                      {item.preset_name}
+                    </span>
+                  )}
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {item.thumbnail_urls.map((url, index) => (
-                    <div key={index} className="space-y-2">
-                      <div className="relative group">
-                        <img
-                          src={url}
-                          alt={`History ${index + 1}`}
-                          className="w-full aspect-video object-cover rounded-lg border cursor-pointer hover:opacity-80 transition-opacity"
-                          onClick={() => setPreviewImage(url)}
-                        />
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  onClick={() => deleteHistoryItem(item.id)}
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </Button>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                {item.thumbnail_urls.map((url, index) => (
+                  <div key={index} className="space-y-1.5">
+                    <div className="relative group">
+                      <img
+                        src={url}
+                        alt={`History ${index + 1}`}
+                        className="w-full aspect-video object-cover rounded-lg border cursor-pointer hover:opacity-80 transition-opacity"
+                        onClick={() => setPreviewImage(url)}
+                      />
+                      <div className="absolute top-1.5 right-1.5 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                         <Button
                           size="sm"
                           variant="secondary"
-                          className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity"
+                          className="h-7 px-2 text-xs"
                           onClick={(e) => {
                             e.stopPropagation();
                             openEditImageDialog(url);
                           }}
                         >
-                          <Edit className="h-4 w-4 mr-1" />
+                          <Edit className="h-3 w-3 mr-1" />
                           Modifier
                         </Button>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          className="h-7 px-2 text-xs"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            downloadThumbnail(url, index);
+                          }}
+                        >
+                          <Download className="h-3 w-3" />
+                        </Button>
                       </div>
-                      {/* Afficher le prompt utilisé */}
-                      {item.prompts[index] && (
-                        <div className="p-2 bg-muted rounded text-xs text-muted-foreground max-h-24 overflow-y-auto">
-                          <p className="font-medium text-foreground mb-1">Prompt:</p>
-                          {item.prompts[index]}
-                        </div>
-                      )}
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="w-full"
-                        onClick={() => downloadThumbnail(url, index)}
-                      >
-                        <Download className="w-4 h-4 mr-2" />
-                        Télécharger
-                      </Button>
                     </div>
-                  ))}
-                </div>
-              </Card>
-            ))
-          )}
-        </TabsContent>
-      </Tabs>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Dialog pour prévisualiser l'image en grand */}
       <Dialog open={previewImage !== null} onOpenChange={() => setPreviewImage(null)}>
