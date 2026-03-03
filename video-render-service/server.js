@@ -1175,17 +1175,35 @@ RÈGLE CRITIQUE SUR LA LONGUEUR:
         // Poll for batch completion (every 30s, up to 24h)
         const BATCH_POLL_INTERVAL = 30000;
         const BATCH_MAX_WAIT = 24 * 60 * 60 * 1000;
+        const BATCH_MAX_POLL_ERRORS = 10;
         const batchStart = Date.now();
         let batchStatus = null;
         let resultsUrl = null;
+        let consecutivePollErrors = 0;
 
         while (Date.now() - batchStart < BATCH_MAX_WAIT) {
           await new Promise(r => setTimeout(r, BATCH_POLL_INTERVAL));
 
-          const pollResp = await axios.get(`https://api.anthropic.com/v1/messages/batches/${batchId}`, {
-            headers: { 'x-api-key': anthropicApiKey, 'anthropic-version': '2023-06-01' },
-            timeout: 30000,
-          });
+          let pollResp;
+          try {
+            pollResp = await axios.get(`https://api.anthropic.com/v1/messages/batches/${batchId}`, {
+              headers: { 'x-api-key': anthropicApiKey, 'anthropic-version': '2023-06-01' },
+              timeout: 30000,
+            });
+            consecutivePollErrors = 0;
+          } catch (pollErr) {
+            consecutivePollErrors++;
+            const elapsed = Math.round((Date.now() - batchStart) / 1000);
+            console.warn(`[generate-script] [${jobId}] Batch poll error (${consecutivePollErrors}/${BATCH_MAX_POLL_ERRORS}): ${pollErr.message} (${elapsed}s elapsed)`);
+            jobs.set(jobId, {
+              ...jobs.get(jobId),
+              currentStep: `Batch en attente (erreur réseau temporaire, retry ${consecutivePollErrors})...`,
+            });
+            if (consecutivePollErrors >= BATCH_MAX_POLL_ERRORS) {
+              throw new Error(`Batch ${batchId} polling failed after ${BATCH_MAX_POLL_ERRORS} consecutive errors: ${pollErr.message}`);
+            }
+            continue;
+          }
 
           batchStatus = pollResp.data?.processing_status;
           const elapsed = Math.round((Date.now() - batchStart) / 1000);

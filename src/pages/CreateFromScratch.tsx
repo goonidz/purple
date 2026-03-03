@@ -574,6 +574,18 @@ const CreateFromScratch = () => {
         setEstimatedDuration(Math.round(recoveredScript.split(/\s+/).length / 2.5));
         setStep("script");
         toast.success("Script récupéré ! Continuez avec la génération audio.");
+      } else {
+        // No script yet — check for an ongoing VPS job (batch or normal)
+        try {
+          const savedJobId = localStorage.getItem(`vps_script_job_${data.id}`);
+          if (savedJobId) {
+            setIsGeneratingScript(true);
+            setGenerationProgress(10);
+            setGenerationMessage("Reprise de la génération du script...");
+            setVpsScriptJobId(savedJobId);
+            setStep("script");
+          }
+        } catch (_) {}
       }
     } catch (error) {
       console.error("Error loading existing project:", error);
