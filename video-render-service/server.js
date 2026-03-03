@@ -356,7 +356,7 @@ async function completeBatchJob(jobId, status, resultOrError) {
 }
 
 async function pollBatchUntilDone({ batchId, anthropicApiKey, jobId, projectId, userId, model }) {
-  const BATCH_POLL_INTERVAL = 30000;
+  const BATCH_POLL_INTERVAL = 120000;
   const BATCH_MAX_WAIT = 24 * 60 * 60 * 1000;
   const BATCH_MAX_POLL_ERRORS = 10;
   const batchStart = Date.now();
