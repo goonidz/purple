@@ -3547,6 +3547,36 @@ app.get('/generate-script/status/:jobId', (req, res) => {
   });
 });
 
+// Find active script job for a project (used by frontend on page load instead of localStorage)
+app.get('/generate-script/active-job/:projectId', async (req, res) => {
+  const { projectId } = req.params;
+
+  // 1. Check in-memory Map first (fastest)
+  for (const [jobId, job] of jobs.entries()) {
+    if (job.projectId === projectId && job.type === 'script' && (job.status === 'processing' || job.status === 'pending')) {
+      return res.json({ success: true, jobId, status: job.status, progress: job.progress, currentStep: job.currentStep });
+    }
+  }
+
+  // 2. Fallback: check vps_jobs DB (in case Map wasn't populated yet after restart)
+  if (supabase) {
+    try {
+      const { data } = await supabase
+        .from('vps_jobs')
+        .select('id, status, progress, current_step')
+        .eq('project_id', projectId)
+        .eq('status', 'processing')
+        .limit(1)
+        .single();
+      if (data) {
+        return res.json({ success: true, jobId: data.id, status: data.status, progress: data.progress, currentStep: data.current_step });
+      }
+    } catch (_) {}
+  }
+
+  res.json({ success: false });
+});
+
 // Cleanup endpoint - manually trigger cleanup of old files
 app.post('/cleanup', async (req, res) => {
   const { maxAgeDays = 4 } = req.body;

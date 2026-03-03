@@ -581,15 +581,19 @@ const CreateFromScratch = () => {
         setStep("script");
         toast.success("Script récupéré ! Continuez avec la génération audio.");
       } else {
-        // No script yet — check for an ongoing VPS job (batch or normal)
+        // No script yet — check VPS for an active job on this project (survives restarts, no localStorage)
         try {
-          const savedJobId = localStorage.getItem(`vps_script_job_${data.id}`);
-          if (savedJobId) {
-            setIsGeneratingScript(true);
-            setGenerationProgress(10);
-            setGenerationMessage("Reprise de la génération du script...");
-            setVpsScriptJobId(savedJobId);
-            setStep("script");
+          const VPS_URL = import.meta.env.VITE_VPS_URL || "https://purpleai.duckdns.org/api/render";
+          const activeResp = await fetch(`${VPS_URL}/generate-script/active-job/${data.id}`);
+          if (activeResp.ok) {
+            const activeData = await activeResp.json();
+            if (activeData.success && activeData.jobId) {
+              setIsGeneratingScript(true);
+              setGenerationProgress(activeData.progress || 10);
+              setGenerationMessage(activeData.currentStep || "Reprise de la génération du script...");
+              setVpsScriptJobId(activeData.jobId);
+              setStep("script");
+            }
           }
         } catch (_) {}
       }
@@ -1204,7 +1208,7 @@ const CreateFromScratch = () => {
               setIsGeneratingScript(false);
               toast.error("La génération a été interrompue (redémarrage serveur). Veuillez relancer.");
             }
-            localStorage.removeItem(`vps_script_job_${projectId}`);
+            try { localStorage.removeItem(`vps_script_job_${projectId}`); } catch (_) {}
           } else {
             setIsGeneratingScript(false);
             toast.error("La génération a été interrompue. Veuillez relancer.");
