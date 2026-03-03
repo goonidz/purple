@@ -3106,6 +3106,7 @@ app.post('/generate-script', async (req, res) => {
     projectId,
     userId,
     webSearch,
+    batch,
   } = req.body;
 
   const isOpenRouter = provider === 'openrouter';
@@ -3120,6 +3121,7 @@ app.post('/generate-script', async (req, res) => {
     promptLength: customPrompt?.length || 0,
     model,
     asyncMode,
+    batch: !!batch,
     projectId,
     userId,
     webSearchEnabled: webSearch?.enabled
@@ -3165,6 +3167,7 @@ app.post('/generate-script', async (req, res) => {
       projectId,
       userId,
       webSearch,
+      batch,
     }).catch((e) => {
       console.error(`[generate-script] Background job error for ${jobId}:`, e.message || e);
       jobs.set(jobId, {
