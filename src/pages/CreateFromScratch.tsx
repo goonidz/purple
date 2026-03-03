@@ -565,6 +565,24 @@ const CreateFromScratch = () => {
       setProjectId(data.id);
       setProjectName(data.name || "");
 
+      // Load channel info from content_calendar
+      try {
+        const { data: calEntry } = await supabase
+          .from("content_calendar")
+          .select("id, channel:channels(name, color)")
+          .eq("project_id", projectIdToLoad)
+          .limit(1)
+          .single();
+        if (calEntry) {
+          setCalendarEntryId(calEntry.id);
+          const ch = calEntry.channel as any;
+          if (ch?.name) {
+            setCalendarChannelName(ch.name);
+            setCalendarChannelColor(ch.color || null);
+          }
+        }
+      } catch (_) {}
+
       // If the project already has audio (or transcript), it's past the create-from-scratch stage
       if (data.audio_url || data.transcript_json) {
         try { localStorage.removeItem(`vps_script_job_${data.id}`); } catch (_) {}
