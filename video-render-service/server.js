@@ -1106,7 +1106,8 @@ RÈGLE CRITIQUE SUR LA LONGUEUR:
       const parsedThinkingBudget = Number(thinkingBudgetTokens);
       const useLegacyThinking = !useAdaptiveThinking && Number.isFinite(parsedThinkingBudget) && parsedThinkingBudget > 0;
 
-      const desiredOutputMaxTokens = Number.isFinite(Number(maxTokens)) && Number(maxTokens) > 0 ? Number(maxTokens) : 16000;
+      const defaultMaxTokens = /claude-sonnet-4-6/i.test(resolvedModel) ? 64000 : 16000;
+      const desiredOutputMaxTokens = Number.isFinite(Number(maxTokens)) && Number(maxTokens) > 0 ? Number(maxTokens) : defaultMaxTokens;
       const totalMaxTokens = useLegacyThinking ? desiredOutputMaxTokens + parsedThinkingBudget : desiredOutputMaxTokens;
 
       jobs.set(jobId, {
@@ -1244,13 +1245,20 @@ RÈGLE CRITIQUE SUR LA LONGUEUR:
         });
 
         if (anthropicResponse.data.content && anthropicResponse.data.content.length > 0) {
-          script = anthropicResponse.data.content
+          const blocks = anthropicResponse.data.content;
+          const blockTypes = blocks.map(b => b.type);
+          console.log(`[generate-script] [${jobId}] Response: ${blocks.length} blocks, types=[${blockTypes.join(',')}], stop_reason=${anthropicResponse.data.stop_reason}`);
+          script = blocks
             .filter((block) => block.type === 'text')
             .map((block) => block.text)
             .join('\n\n');
         }
 
-        if (!script) throw new Error('No script content returned from Anthropic API');
+        if (!script) {
+          const stopReason = anthropicResponse.data?.stop_reason || 'unknown';
+          const blockCount = anthropicResponse.data?.content?.length || 0;
+          throw new Error(`No text content from Anthropic API (stop_reason=${stopReason}, blocks=${blockCount}, max_tokens=${totalMaxTokens})`);
+        }
       }
     }
 
@@ -3255,7 +3263,8 @@ RÈGLE CRITIQUE SUR LA LONGUEUR:
       const parsedThinkingBudget = Number(thinkingBudgetTokens);
       const useLegacyThinking = !useAdaptiveThinking && Number.isFinite(parsedThinkingBudget) && parsedThinkingBudget > 0;
 
-      const desiredOutputMaxTokens = Number.isFinite(Number(maxTokens)) && Number(maxTokens) > 0 ? Number(maxTokens) : 16000;
+      const defaultMaxTokens = /claude-sonnet-4-6/i.test(resolvedModel) ? 64000 : 16000;
+      const desiredOutputMaxTokens = Number.isFinite(Number(maxTokens)) && Number(maxTokens) > 0 ? Number(maxTokens) : defaultMaxTokens;
       const totalMaxTokens = useLegacyThinking ? desiredOutputMaxTokens + parsedThinkingBudget : desiredOutputMaxTokens;
 
       const webSearchTool = buildAnthropicWebSearchTool(webSearch);
