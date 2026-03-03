@@ -565,11 +565,11 @@ const CreateFromScratch = () => {
       setProjectId(data.id);
       setProjectName(data.name || "");
 
-      // Load channel info from content_calendar
+      // Load channel info + presets from content_calendar
       try {
         const { data: calEntry } = await supabase
           .from("content_calendar")
-          .select("id, channel:channels(name, color)")
+          .select("id, channel:channels(name, color, script_preset_id, tts_preset_id, project_preset_id, thumbnail_preset_id, thumbnail_preset_enabled)")
           .eq("project_id", projectIdToLoad)
           .limit(1)
           .single();
@@ -580,6 +580,12 @@ const CreateFromScratch = () => {
             setCalendarChannelName(ch.name);
             setCalendarChannelColor(ch.color || null);
           }
+          // Inject channel presets into sessionStorage so the existing useEffect applies them
+          if (ch?.script_preset_id) sessionStorage.setItem("calendar_script_preset_id", ch.script_preset_id);
+          if (ch?.tts_preset_id) sessionStorage.setItem("calendar_tts_preset_id", ch.tts_preset_id);
+          if (ch?.project_preset_id) sessionStorage.setItem("auto_load_project_preset_id", ch.project_preset_id);
+          if (ch?.thumbnail_preset_id) sessionStorage.setItem("auto_load_thumbnail_preset_id", ch.thumbnail_preset_id);
+          if (ch?.thumbnail_preset_enabled) sessionStorage.setItem("auto_thumbnail_chain_enabled", "true");
         }
       } catch (_) {}
 
