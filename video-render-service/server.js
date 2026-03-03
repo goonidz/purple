@@ -925,7 +925,12 @@ RÈGLE CRITIQUE SUR LA LONGUEUR:
     // ── Multi-step detection ──
     jobs.set(jobId, { ...jobs.get(jobId), progress: 5, currentStep: 'Analyse du prompt...' });
     const targetWords = await detectTargetWordCount(customPrompt, userId);
-    const useMultiStep = targetWords && targetWords > 4000;
+    const isSonnet46 = /claude-sonnet-4-6/i.test(model);
+    const useMultiStep = targetWords && targetWords > 4000 && !isSonnet46;
+
+    if (isSonnet46 && targetWords && targetWords > 4000) {
+      console.log(`[generate-script] [${jobId}] Skipping multi-step for Sonnet 4.6 (${targetWords} words — single call capable)`);
+    }
 
     // Batch mode is incompatible with multi-step — disable silently
     const batchEnabled = useBatchMode && !useMultiStep && !isOpenRouter && !isGlm5;
