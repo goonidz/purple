@@ -892,6 +892,7 @@ async function processGenerateScriptJob(jobId, payload) {
     projectId,
     userId,
     webSearch,
+    batch: useBatchMode,
   } = payload || {};
 
   const isOpenRouter = provider === 'openrouter';
@@ -925,6 +926,12 @@ RÈGLE CRITIQUE SUR LA LONGUEUR:
     jobs.set(jobId, { ...jobs.get(jobId), progress: 5, currentStep: 'Analyse du prompt...' });
     const targetWords = await detectTargetWordCount(customPrompt, userId);
     const useMultiStep = targetWords && targetWords > 4000;
+
+    // Batch mode is incompatible with multi-step — disable silently
+    const batchEnabled = useBatchMode && !useMultiStep && !isOpenRouter && !isGlm5;
+    if (useBatchMode && useMultiStep) {
+      console.log(`[generate-script] [${jobId}] Batch mode disabled: multi-step detected (${targetWords} words)`);
+    }
 
     if (useMultiStep) {
       console.log(`[generate-script] [${jobId}] Multi-step mode: ${targetWords} words requested`);
@@ -1129,24 +1136,117 @@ RÈGLE CRITIQUE SUR LA LONGUEUR:
         requestBody.tools = [webSearchTool];
       }
 
-      const anthropicResponse = await axios.post('https://api.anthropic.com/v1/messages', requestBody, {
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': anthropicApiKey,
-          'anthropic-version': '2023-06-01',
-          ...(useLegacyThinking ? { 'anthropic-beta': 'interleaved-thinking-2025-05-14' } : {}),
-        },
-        timeout: 600000,
-      });
+      const anthropicHeaders = {
+        'Content-Type': 'application/json',
+        'x-api-key': anthropicApiKey,
+        'anthropic-version': '2023-06-01',
+        ...(useLegacyThinking ? { 'anthropic-beta': 'interleaved-thinking-2025-05-14' } : {}),
+      };
 
-      if (anthropicResponse.data.content && anthropicResponse.data.content.length > 0) {
-        script = anthropicResponse.data.content
-          .filter((block) => block.type === 'text')
-          .map((block) => block.text)
-          .join('\n\n');
+      if (batchEnabled) {
+        // ── Batch path ──
+        console.log(`[generate-script] [${jobId}] Batch mode enabled — submitting to /v1/messages/batches`);
+        jobs.set(jobId, { ...jobs.get(jobId), progress: 15, currentStep: 'Soumission du batch (-50%)...' });
+
+        const batchBody = {
+          requests: [{
+            custom_id: jobId,
+            params: { ...requestBody },
+          }],
+        };
+
+        const batchSubmit = await axios.post('https://api.anthropic.com/v1/messages/batches', batchBody, {
+          headers: anthropicHeaders,
+          timeout: 60000,
+        });
+
+        const batchId = batchSubmit.data?.id;
+        if (!batchId) throw new Error('No batch_id returned from Anthropic Batches API');
+
+        console.log(`[generate-script] [${jobId}] Batch submitted: ${batchId}`);
+        jobs.set(jobId, { ...jobs.get(jobId), progress: 20, currentStep: 'Batch en attente de traitement...', batchId });
+
+        // Poll for batch completion (every 30s, up to 24h)
+        const BATCH_POLL_INTERVAL = 30000;
+        const BATCH_MAX_WAIT = 24 * 60 * 60 * 1000;
+        const batchStart = Date.now();
+        let batchStatus = null;
+        let resultsUrl = null;
+
+        while (Date.now() - batchStart < BATCH_MAX_WAIT) {
+          await new Promise(r => setTimeout(r, BATCH_POLL_INTERVAL));
+
+          const pollResp = await axios.get(`https://api.anthropic.com/v1/messages/batches/${batchId}`, {
+            headers: { 'x-api-key': anthropicApiKey, 'anthropic-version': '2023-06-01' },
+            timeout: 30000,
+          });
+
+          batchStatus = pollResp.data?.processing_status;
+          const elapsed = Math.round((Date.now() - batchStart) / 1000);
+          const progressPct = Math.min(80, 20 + Math.floor((elapsed / 300) * 60));
+
+          console.log(`[generate-script] [${jobId}] Batch ${batchId} status: ${batchStatus} (${elapsed}s elapsed)`);
+          jobs.set(jobId, {
+            ...jobs.get(jobId),
+            progress: progressPct,
+            currentStep: `Batch en cours de traitement... (${elapsed}s)`,
+          });
+
+          if (batchStatus === 'ended') {
+            resultsUrl = pollResp.data?.results_url;
+            break;
+          }
+
+          if (batchStatus === 'canceled' || batchStatus === 'expired') {
+            throw new Error(`Batch ${batchId} ${batchStatus}`);
+          }
+        }
+
+        if (batchStatus !== 'ended') {
+          throw new Error(`Batch ${batchId} timed out after 24h (last status: ${batchStatus})`);
+        }
+
+        // Fetch results JSONL
+        jobs.set(jobId, { ...jobs.get(jobId), progress: 90, currentStep: 'Récupération du résultat...' });
+        console.log(`[generate-script] [${jobId}] Fetching batch results from: ${resultsUrl}`);
+
+        const resultsResp = await axios.get(resultsUrl, {
+          headers: { 'x-api-key': anthropicApiKey, 'anthropic-version': '2023-06-01' },
+          timeout: 60000,
+          responseType: 'text',
+        });
+
+        const lines = resultsResp.data.split('\n').filter(l => l.trim());
+        for (const line of lines) {
+          const entry = JSON.parse(line);
+          if (entry.custom_id === jobId && entry.result?.type === 'succeeded') {
+            const content = entry.result.message?.content;
+            if (content && Array.isArray(content)) {
+              script = content.filter(b => b.type === 'text').map(b => b.text).join('\n\n');
+            }
+            break;
+          }
+        }
+
+        if (!script) throw new Error(`No script found in batch ${batchId} results`);
+        console.log(`[generate-script] [${jobId}] Batch result parsed successfully`);
+
+      } else {
+        // ── Standard synchronous path ──
+        const anthropicResponse = await axios.post('https://api.anthropic.com/v1/messages', requestBody, {
+          headers: anthropicHeaders,
+          timeout: 600000,
+        });
+
+        if (anthropicResponse.data.content && anthropicResponse.data.content.length > 0) {
+          script = anthropicResponse.data.content
+            .filter((block) => block.type === 'text')
+            .map((block) => block.text)
+            .join('\n\n');
+        }
+
+        if (!script) throw new Error('No script content returned from Anthropic API');
       }
-
-      if (!script) throw new Error('No script content returned from Anthropic API');
     }
 
     const duration = ((Date.now() - startTime) / 1000).toFixed(2);

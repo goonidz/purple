@@ -243,6 +243,7 @@ const CreateFromScratch = () => {
   const [customScriptText, setCustomScriptText] = useState("");
   const [vpsScriptJobId, setVpsScriptJobId] = useState<string | null>(null);
   const [useWebSearch, setUseWebSearch] = useState(false);
+  const [useBatch, setUseBatch] = useState(false);
   
   // Audio step
   const [ttsProvider, setTtsProvider] = useState<"minimax" | "inworld" | "genaipro" | "ai33" | "edgetts">("genaipro");
@@ -1425,6 +1426,7 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
               customPrompt: finalPrompt,
               model: vpsModel,
               ...(effort ? { effort } : {}),
+              ...(useBatch ? { batch: true } : {}),
               async: true,
               projectId: tempProject.id,
               userId: user!.id,
@@ -1449,7 +1451,9 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
               localStorage.setItem(`vps_script_job_${tempProject.id}`, result.jobId);
             } catch (_) {}
             setStep("script");
-            toast.info("Génération du script en cours... Vous pouvez quitter cette page, le script sera sauvegardé.");
+            toast.info(useBatch
+              ? "Script soumis en mode Batch (-50%). Le résultat arrivera d'ici quelques minutes à 24h."
+              : "Génération du script en cours... Vous pouvez quitter cette page, le script sera sauvegardé.");
             return;
           }
 
@@ -1700,6 +1704,7 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
               customPrompt: finalPrompt,
               model: vpsModel,
               ...(effort ? { effort } : {}),
+              ...(useBatch ? { batch: true } : {}),
               async: true,
               projectId,
               userId: user!.id,
@@ -1721,7 +1726,9 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
             try {
               localStorage.setItem(`vps_script_job_${projectId}`, result.jobId);
             } catch (_) {}
-            toast.info("Régénération du script en cours... Vous pouvez quitter cette page, le script sera sauvegardé.");
+            toast.info(useBatch
+              ? "Script soumis en mode Batch (-50%). Le résultat arrivera d'ici quelques minutes à 24h."
+              : "Régénération du script en cours... Vous pouvez quitter cette page, le script sera sauvegardé.");
             return;
           }
 
@@ -2534,6 +2541,26 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                         {scriptModel === "glm5"
                           ? "Si activé, GLM-5 peut effectuer des recherches web pour enrichir le script avec des informations récentes."
                           : `Si activé, Claude peut utiliser l’outil \"web_search\" natif d’Anthropic et ajouter des citations automatiquement (nécessite activation dans la Console Anthropic).`}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Batch mode toggle (Claude only) */}
+                  {(scriptModel === "claude" || scriptModel === "claude-thinking") && (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <Label>Mode Batch (-50% coût)</Label>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-muted-foreground">Off/On</span>
+                          <Checkbox
+                            id="useBatch"
+                            checked={useBatch}
+                            onCheckedChange={(checked) => setUseBatch(!!checked)}
+                          />
+                        </div>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Le script sera généré via l'API Batch d'Anthropic à moitié prix. Le résultat arrive généralement en quelques minutes mais peut prendre jusqu'à 24h. Non compatible avec les scripts longs (multi-step).
                       </p>
                     </div>
                   )}
