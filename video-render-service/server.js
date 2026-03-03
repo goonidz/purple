@@ -18,7 +18,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Version identifier - update this when making pan/zoom changes
-const SERVICE_VERSION = 'v2.18-fix-async-logic';
+const SERVICE_VERSION = 'v2.19-batch-persistence';
 
 // Path to FFmpeg fork with subpixel zoom support
 // Install with: ./install-ffmpeg-subpixel.sh
@@ -301,6 +301,251 @@ function scheduleJobEviction(jobId, ms) {
       }
     }, ms);
   } catch (_) {}
+}
+
+// ============================================================================
+// BATCH JOB PERSISTENCE & RESUME
+// ============================================================================
+
+async function persistBatchJob({ jobId, batchId, projectId, userId, anthropicApiKey, model, progress, currentStep }) {
+  if (!supabase) return;
+  try {
+    await supabase.from('vps_jobs').upsert({
+      id: jobId,
+      job_type: 'script_batch',
+      status: 'processing',
+      project_id: projectId,
+      user_id: userId,
+      progress: progress || 20,
+      current_step: currentStep || 'Batch soumis, polling...',
+      metadata: { batchId, anthropicApiKey, model },
+      started_at: new Date().toISOString(),
+    });
+  } catch (e) {
+    console.warn(`[batch-persist] Failed to persist batch job ${jobId}:`, e.message);
+  }
+}
+
+async function updateBatchJobProgress(jobId, progress, currentStep) {
+  if (!supabase) return;
+  try {
+    await supabase.from('vps_jobs').update({ progress, current_step: currentStep }).eq('id', jobId);
+  } catch (_) {}
+}
+
+async function completeBatchJob(jobId, status, resultOrError) {
+  if (!supabase) return;
+  try {
+    const update = {
+      status,
+      progress: 100,
+      completed_at: new Date().toISOString(),
+      metadata: {},
+    };
+    if (status === 'completed') {
+      update.current_step = 'Terminé';
+      update.result = resultOrError;
+    } else {
+      update.current_step = 'Erreur';
+      update.error = typeof resultOrError === 'string' ? resultOrError : resultOrError?.message || 'Unknown error';
+    }
+    await supabase.from('vps_jobs').update(update).eq('id', jobId);
+  } catch (e) {
+    console.warn(`[batch-persist] Failed to complete batch job ${jobId}:`, e.message);
+  }
+}
+
+async function pollBatchUntilDone({ batchId, anthropicApiKey, jobId, projectId, userId, model }) {
+  const BATCH_POLL_INTERVAL = 30000;
+  const BATCH_MAX_WAIT = 24 * 60 * 60 * 1000;
+  const BATCH_MAX_POLL_ERRORS = 10;
+  const batchStart = Date.now();
+  let batchStatus = null;
+  let resultsUrl = null;
+  let consecutivePollErrors = 0;
+
+  // Ensure the in-memory job entry exists for frontend polling
+  if (!jobs.has(jobId)) {
+    jobs.set(jobId, {
+      status: 'processing',
+      progress: 20,
+      createdAt: new Date().toISOString(),
+      startedAt: new Date().toISOString(),
+      projectId,
+      userId,
+      currentStep: 'Batch en cours de traitement...',
+      type: 'script',
+      batchId,
+    });
+  }
+
+  while (Date.now() - batchStart < BATCH_MAX_WAIT) {
+    await new Promise(r => setTimeout(r, BATCH_POLL_INTERVAL));
+
+    let pollResp;
+    try {
+      pollResp = await axios.get(`https://api.anthropic.com/v1/messages/batches/${batchId}`, {
+        headers: { 'x-api-key': anthropicApiKey, 'anthropic-version': '2023-06-01' },
+        timeout: 30000,
+      });
+      consecutivePollErrors = 0;
+    } catch (pollErr) {
+      consecutivePollErrors++;
+      const elapsed = Math.round((Date.now() - batchStart) / 1000);
+      console.warn(`[batch-poll] [${jobId}] Poll error (${consecutivePollErrors}/${BATCH_MAX_POLL_ERRORS}): ${pollErr.message} (${elapsed}s)`);
+      jobs.set(jobId, {
+        ...jobs.get(jobId),
+        currentStep: `Batch en attente (erreur réseau temporaire, retry ${consecutivePollErrors})...`,
+      });
+      if (consecutivePollErrors >= BATCH_MAX_POLL_ERRORS) {
+        throw new Error(`Batch ${batchId} polling failed after ${BATCH_MAX_POLL_ERRORS} consecutive errors: ${pollErr.message}`);
+      }
+      continue;
+    }
+
+    batchStatus = pollResp.data?.processing_status;
+    const elapsed = Math.round((Date.now() - batchStart) / 1000);
+    const progressPct = Math.min(80, 20 + Math.floor((elapsed / 300) * 60));
+
+    console.log(`[batch-poll] [${jobId}] Batch ${batchId} status: ${batchStatus} (${elapsed}s elapsed)`);
+    jobs.set(jobId, {
+      ...jobs.get(jobId),
+      progress: progressPct,
+      currentStep: `Batch en cours de traitement... (${elapsed}s)`,
+    });
+
+    // Periodically sync progress to DB (every ~5 polls = ~2.5min)
+    if (elapsed % 150 < 30) {
+      updateBatchJobProgress(jobId, progressPct, `Batch en cours... (${elapsed}s)`);
+    }
+
+    if (batchStatus === 'ended') {
+      resultsUrl = pollResp.data?.results_url;
+      break;
+    }
+
+    if (batchStatus === 'canceled' || batchStatus === 'expired') {
+      throw new Error(`Batch ${batchId} ${batchStatus}`);
+    }
+  }
+
+  if (batchStatus !== 'ended') {
+    throw new Error(`Batch ${batchId} timed out after 24h (last status: ${batchStatus})`);
+  }
+
+  // Fetch results JSONL
+  jobs.set(jobId, { ...jobs.get(jobId), progress: 90, currentStep: 'Récupération du résultat...' });
+  console.log(`[batch-poll] [${jobId}] Fetching batch results from: ${resultsUrl}`);
+
+  const resultsResp = await axios.get(resultsUrl, {
+    headers: { 'x-api-key': anthropicApiKey, 'anthropic-version': '2023-06-01' },
+    timeout: 60000,
+    responseType: 'text',
+  });
+
+  let script = '';
+  const lines = resultsResp.data.split('\n').filter(l => l.trim());
+  for (const line of lines) {
+    const entry = JSON.parse(line);
+    if (entry.custom_id === jobId && entry.result?.type === 'succeeded') {
+      const content = entry.result.message?.content;
+      if (content && Array.isArray(content)) {
+        script = content.filter(b => b.type === 'text').map(b => b.text).join('\n\n');
+      }
+      break;
+    }
+  }
+
+  if (!script) throw new Error(`No script found in batch ${batchId} results`);
+  console.log(`[batch-poll] [${jobId}] Batch result parsed: ${script.split(/\s+/).length} words`);
+
+  // Save to Supabase
+  const wordCount = script.split(/\s+/).filter(w => w.length > 0).length;
+  const estimatedDuration = Math.round(wordCount / 2.5);
+
+  await saveScriptToSupabase({
+    projectId,
+    script,
+    model: model || 'claude-sonnet-4-6',
+    generationTime: Math.round((Date.now() - batchStart) / 1000),
+    wordCount,
+    estimatedDuration,
+  });
+
+  // Mark completed in memory
+  jobs.set(jobId, {
+    ...jobs.get(jobId),
+    status: 'completed',
+    progress: 100,
+    currentStep: 'Terminé',
+    completedAt: new Date().toISOString(),
+    result: { script, wordCount, estimatedDuration, model: model || 'claude-sonnet-4-6' },
+  });
+  scheduleJobEviction(jobId, 2 * 60 * 60 * 1000);
+
+  // Mark completed in DB + clear sensitive metadata
+  await completeBatchJob(jobId, 'completed', { wordCount, estimatedDuration });
+
+  return script;
+}
+
+async function resumePendingBatches() {
+  if (!supabase) {
+    console.log('[startup] No Supabase client — skipping batch resume');
+    return;
+  }
+  try {
+    const { data, error } = await supabase
+      .from('vps_jobs')
+      .select('*')
+      .eq('job_type', 'script_batch')
+      .eq('status', 'processing');
+
+    if (error) {
+      console.warn('[startup] Failed to query pending batches:', error.message);
+      return;
+    }
+
+    if (!data || data.length === 0) {
+      console.log('[startup] No pending batch jobs to resume');
+      return;
+    }
+
+    console.log(`[startup] Found ${data.length} pending batch job(s) to resume`);
+
+    for (const job of data) {
+      const { batchId, anthropicApiKey, model } = job.metadata || {};
+      if (!batchId || !anthropicApiKey) {
+        console.warn(`[startup] Skipping batch job ${job.id} — missing batchId or API key`);
+        await completeBatchJob(job.id, 'failed', 'Missing batch metadata after restart');
+        continue;
+      }
+
+      console.log(`[startup] Resuming batch ${batchId} for job ${job.id} (project ${job.project_id})`);
+
+      pollBatchUntilDone({
+        batchId,
+        anthropicApiKey,
+        jobId: job.id,
+        projectId: job.project_id,
+        userId: job.user_id,
+        model,
+      }).catch(err => {
+        console.error(`[startup] Failed to resume batch ${batchId}:`, err.message);
+        completeBatchJob(job.id, 'failed', err.message);
+        jobs.set(job.id, {
+          ...jobs.get(job.id),
+          status: 'failed',
+          progress: 100,
+          currentStep: 'Erreur',
+          error: err.message,
+        });
+        scheduleJobEviction(job.id, 2 * 60 * 60 * 1000);
+      });
+    }
+  } catch (e) {
+    console.error('[startup] Error resuming pending batches:', e.message);
+  }
 }
 
 // ============================================================================
@@ -1150,7 +1395,7 @@ RÈGLE CRITIQUE SUR LA LONGUEUR:
       };
 
       if (batchEnabled) {
-        // ── Batch path ──
+        // ── Batch path (persisted to DB for restart resilience) ──
         console.log(`[generate-script] [${jobId}] Batch mode enabled — submitting to /v1/messages/batches`);
         jobs.set(jobId, { ...jobs.get(jobId), progress: 15, currentStep: 'Soumission du batch (-50%)...' });
 
@@ -1170,90 +1415,15 @@ RÈGLE CRITIQUE SUR LA LONGUEUR:
         if (!batchId) throw new Error('No batch_id returned from Anthropic Batches API');
 
         console.log(`[generate-script] [${jobId}] Batch submitted: ${batchId}`);
-        jobs.set(jobId, { ...jobs.get(jobId), progress: 20, currentStep: 'Batch en attente de traitement...', batchId });
 
-        // Poll for batch completion (every 30s, up to 24h)
-        const BATCH_POLL_INTERVAL = 30000;
-        const BATCH_MAX_WAIT = 24 * 60 * 60 * 1000;
-        const BATCH_MAX_POLL_ERRORS = 10;
-        const batchStart = Date.now();
-        let batchStatus = null;
-        let resultsUrl = null;
-        let consecutivePollErrors = 0;
+        // Persist to DB so the batch survives restarts
+        await persistBatchJob({ jobId, batchId, projectId, userId, anthropicApiKey, model: resolvedModel });
 
-        while (Date.now() - batchStart < BATCH_MAX_WAIT) {
-          await new Promise(r => setTimeout(r, BATCH_POLL_INTERVAL));
+        // Poll, fetch results, save script — all handled by the helper
+        script = await pollBatchUntilDone({ batchId, anthropicApiKey, jobId, projectId, userId, model: resolvedModel });
 
-          let pollResp;
-          try {
-            pollResp = await axios.get(`https://api.anthropic.com/v1/messages/batches/${batchId}`, {
-              headers: { 'x-api-key': anthropicApiKey, 'anthropic-version': '2023-06-01' },
-              timeout: 30000,
-            });
-            consecutivePollErrors = 0;
-          } catch (pollErr) {
-            consecutivePollErrors++;
-            const elapsed = Math.round((Date.now() - batchStart) / 1000);
-            console.warn(`[generate-script] [${jobId}] Batch poll error (${consecutivePollErrors}/${BATCH_MAX_POLL_ERRORS}): ${pollErr.message} (${elapsed}s elapsed)`);
-            jobs.set(jobId, {
-              ...jobs.get(jobId),
-              currentStep: `Batch en attente (erreur réseau temporaire, retry ${consecutivePollErrors})...`,
-            });
-            if (consecutivePollErrors >= BATCH_MAX_POLL_ERRORS) {
-              throw new Error(`Batch ${batchId} polling failed after ${BATCH_MAX_POLL_ERRORS} consecutive errors: ${pollErr.message}`);
-            }
-            continue;
-          }
-
-          batchStatus = pollResp.data?.processing_status;
-          const elapsed = Math.round((Date.now() - batchStart) / 1000);
-          const progressPct = Math.min(80, 20 + Math.floor((elapsed / 300) * 60));
-
-          console.log(`[generate-script] [${jobId}] Batch ${batchId} status: ${batchStatus} (${elapsed}s elapsed)`);
-          jobs.set(jobId, {
-            ...jobs.get(jobId),
-            progress: progressPct,
-            currentStep: `Batch en cours de traitement... (${elapsed}s)`,
-          });
-
-          if (batchStatus === 'ended') {
-            resultsUrl = pollResp.data?.results_url;
-            break;
-          }
-
-          if (batchStatus === 'canceled' || batchStatus === 'expired') {
-            throw new Error(`Batch ${batchId} ${batchStatus}`);
-          }
-        }
-
-        if (batchStatus !== 'ended') {
-          throw new Error(`Batch ${batchId} timed out after 24h (last status: ${batchStatus})`);
-        }
-
-        // Fetch results JSONL
-        jobs.set(jobId, { ...jobs.get(jobId), progress: 90, currentStep: 'Récupération du résultat...' });
-        console.log(`[generate-script] [${jobId}] Fetching batch results from: ${resultsUrl}`);
-
-        const resultsResp = await axios.get(resultsUrl, {
-          headers: { 'x-api-key': anthropicApiKey, 'anthropic-version': '2023-06-01' },
-          timeout: 60000,
-          responseType: 'text',
-        });
-
-        const lines = resultsResp.data.split('\n').filter(l => l.trim());
-        for (const line of lines) {
-          const entry = JSON.parse(line);
-          if (entry.custom_id === jobId && entry.result?.type === 'succeeded') {
-            const content = entry.result.message?.content;
-            if (content && Array.isArray(content)) {
-              script = content.filter(b => b.type === 'text').map(b => b.text).join('\n\n');
-            }
-            break;
-          }
-        }
-
-        if (!script) throw new Error(`No script found in batch ${batchId} results`);
-        console.log(`[generate-script] [${jobId}] Batch result parsed successfully`);
+        // Script already saved to Supabase by pollBatchUntilDone — skip the save below
+        return;
 
       } else {
         // ── Standard synchronous path ──
@@ -1319,15 +1489,18 @@ RÈGLE CRITIQUE SUR LA LONGUEUR:
     console.error('[generate-script] Error:', error.response?.data || error.message);
     const errorMessage = error.response?.data?.error?.message || error.message;
     const prefix = isOpenRouter ? 'OpenRouter API error' : isGlm5 ? 'Z.AI API error' : 'Anthropic API error';
+    const fullError = `${prefix}: ${errorMessage}`;
     jobs.set(jobId, {
       ...jobs.get(jobId),
       status: 'failed',
       progress: 100,
       currentStep: 'Erreur',
-      error: `${prefix}: ${errorMessage}`,
+      error: fullError,
       failedAt: new Date().toISOString(),
     });
     scheduleJobEviction(jobId, 2 * 60 * 60 * 1000);
+    // Also mark failed in DB if this was a batch job
+    completeBatchJob(jobId, 'failed', fullError).catch(() => {});
   }
 }
 
@@ -3599,4 +3772,7 @@ app.listen(PORT, '0.0.0.0', () => {
   
   // Start the queue processor
   startQueueProcessor();
+
+  // Resume any batch jobs that were in progress before a restart
+  resumePendingBatches();
 });
