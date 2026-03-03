@@ -43,6 +43,8 @@ interface ScriptPreset {
   duration: string;
   style: string;
   language: string;
+  script_model: string | null;
+  use_batch: boolean | null;
 }
 
 interface TtsPreset {
@@ -227,6 +229,8 @@ const CreateFromScratch = () => {
   const [newPresetName, setNewPresetName] = useState("");
   const [editPresetName, setEditPresetName] = useState("");
   const [editPresetPrompt, setEditPresetPrompt] = useState("");
+  const [editPresetModel, setEditPresetModel] = useState<string>("claude");
+  const [editPresetBatch, setEditPresetBatch] = useState(false);
   const [editingPresetId, setEditingPresetId] = useState<string | null>(null);
   const [isSavingPreset, setIsSavingPreset] = useState(false);
   const [presetPopoverOpen, setPresetPopoverOpen] = useState(false);
@@ -527,6 +531,8 @@ const CreateFromScratch = () => {
       const preset = presets.find(p => p.id === scriptPresetId);
       if (preset) {
         setCustomPrompt(preset.custom_prompt || "");
+        if (preset.script_model) setScriptModel(preset.script_model as any);
+        setUseBatch(preset.use_batch || false);
         setSelectedPresetId(scriptPresetId);
         toast.success(`Preset de script "${preset.name}" chargé automatiquement`);
         // Clean up after applying
@@ -614,6 +620,10 @@ const CreateFromScratch = () => {
     const preset = presets.find(p => p.id === presetId);
     if (preset) {
       setCustomPrompt(preset.custom_prompt || DEFAULT_PROMPT);
+      if (preset.script_model) {
+        setScriptModel(preset.script_model as any);
+      }
+      setUseBatch(preset.use_batch || false);
       setSelectedPresetId(presetId);
       toast.success(`Preset "${preset.name}" chargé`);
     }
@@ -632,7 +642,9 @@ const CreateFromScratch = () => {
         .insert([{
           user_id: user!.id,
           name: newPresetName.trim(),
-          custom_prompt: customPrompt
+          custom_prompt: customPrompt,
+          script_model: scriptModel,
+          use_batch: useBatch,
         }]);
 
       if (error) throw error;
@@ -680,6 +692,8 @@ const CreateFromScratch = () => {
     setEditingPresetId(presetId);
     setEditPresetName(preset.name);
     setEditPresetPrompt(preset.custom_prompt || DEFAULT_PROMPT);
+    setEditPresetModel(preset.script_model || "claude");
+    setEditPresetBatch(preset.use_batch || false);
     setEditPresetDialogOpen(true);
   };
 
@@ -695,7 +709,9 @@ const CreateFromScratch = () => {
         .from("script_presets")
         .update({
           name: editPresetName.trim(),
-          custom_prompt: editPresetPrompt
+          custom_prompt: editPresetPrompt,
+          script_model: editPresetModel,
+          use_batch: editPresetBatch,
         })
         .eq("id", editingPresetId);
 
@@ -706,9 +722,11 @@ const CreateFromScratch = () => {
       setEditingPresetId(null);
       loadPresets();
       
-      // Reload current prompt if this preset is selected
+      // Reload current values if this preset is selected
       if (selectedPresetId === editingPresetId) {
         setCustomPrompt(editPresetPrompt);
+        setScriptModel(editPresetModel as any);
+        setUseBatch(editPresetBatch);
       }
     } catch (error: any) {
       console.error("Error updating preset:", error);
@@ -742,7 +760,9 @@ const CreateFromScratch = () => {
         .insert([{
           user_id: user!.id,
           name: newPresetName.trim(),
-          custom_prompt: preset.custom_prompt
+          custom_prompt: preset.custom_prompt,
+          script_model: preset.script_model,
+          use_batch: preset.use_batch,
         }]);
 
       if (error) throw error;
@@ -3834,6 +3854,34 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                 placeholder="Instructions pour Claude IA..."
               />
             </div>
+            <div className="space-y-2">
+              <Label>Modèle pour le script</Label>
+              <Select value={editPresetModel} onValueChange={setEditPresetModel}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="glm5-openrouter">GLM-5 (OpenRouter)</SelectItem>
+                  <SelectItem value="qwen3.5">Qwen 3.5 397B (OpenRouter)</SelectItem>
+                  <SelectItem value="glm5">GLM-5 (Z.AI)</SelectItem>
+                  <SelectItem value="claude">Claude Sonnet 4.6</SelectItem>
+                  <SelectItem value="claude-thinking">Claude Opus 4.5</SelectItem>
+                  <SelectItem value="gpt5">GPT-5.1 (via Replicate)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {(editPresetModel === "claude" || editPresetModel === "claude-thinking") && (
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label>Mode Batch (-50% coût)</Label>
+                  <p className="text-xs text-muted-foreground">Résultat en quelques minutes à 24h, moitié prix.</p>
+                </div>
+                <Checkbox
+                  checked={editPresetBatch}
+                  onCheckedChange={(checked) => setEditPresetBatch(!!checked)}
+                />
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditPresetDialogOpen(false)}>
