@@ -2560,7 +2560,7 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                         </div>
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        Le script sera généré via l'API Batch d'Anthropic à moitié prix. Le résultat arrive généralement en quelques minutes mais peut prendre jusqu'à 24h. Non compatible avec les scripts longs (multi-step).
+                        Le script sera généré via l'API Batch d'Anthropic à moitié prix. Le résultat arrive généralement en quelques minutes mais peut prendre jusqu'à 24h.
                       </p>
                     </div>
                   )}
