@@ -115,21 +115,35 @@ async function stepGenerateScript(pipeline) {
   }
 
   const scriptConfig = config.script || {};
-  const model = scriptConfig.model || 'glm5-openrouter';
-  const keyName = getRequiredKeyName(model);
+  const rawModel = scriptConfig.model || 'glm5-openrouter';
+
+  // Map frontend short names to actual API model IDs (same mapping as CreateFromScratch.tsx)
+  const MODEL_MAP = {
+    'claude': 'claude-sonnet-4-6',
+    'claude-thinking': 'claude-opus-4-5-20251101',
+  };
+  const model = MODEL_MAP[rawModel] || rawModel;
+  const effort = rawModel === 'claude' ? 'high' : undefined;
+
+  const keyName = getRequiredKeyName(rawModel);
   const apiKey = await getUserApiKey(user_id, keyName);
 
-  // Get card title for prompt variable replacement
-  const { data: card } = await supabase.from('content_calendar').select('title').eq('id', pipeline.calendar_entry_id).single();
+  // Get card title + source transcript for prompt variable replacement
+  const { data: card } = await supabase.from('content_calendar').select('title, source_transcript').eq('id', pipeline.calendar_entry_id).single();
+
+  let prompt = (scriptConfig.custom_prompt || '');
+  prompt = prompt.replace(/\{\{projectName\}\}/gi, card?.title || '');
+  prompt = prompt.replace(/\{\{sourceTranscript\}\}/gi, card?.source_transcript || '');
 
   const body = {
-    customPrompt: (scriptConfig.custom_prompt || '').replace(/\{title\}/gi, card?.title || ''),
+    customPrompt: prompt,
     model,
     projectId: project_id,
     userId: user_id,
     asyncMode: true,
     batch: scriptConfig.use_batch || false,
   };
+  if (effort) body.effort = effort;
 
   // Set the right API key field
   const provider = getProvider(model);
