@@ -2923,7 +2923,7 @@ async function processGenaiproAudioPipeline(job) {
 
 const AI33_TTS_BASE = 'https://api.ai33.pro';
 const AI33_TTS_POLL_INTERVAL_MS = 5000;
-const AI33_TTS_MAX_POLL_ATTEMPTS = 120;
+const AI33_TTS_MAX_POLL_ATTEMPTS = 240; // ~20 min for long scripts
 
 async function processAi33AudioPipeline(job) {
   const startTime = Date.now();
@@ -2986,7 +2986,7 @@ async function processAi33AudioPipeline(job) {
       }
     }
 
-    if (!audioUrl) throw new Error('AI33 TTS timed out after 10 minutes');
+    if (!audioUrl) throw new Error('AI33 TTS timed out after 20 minutes');
     log(`[AI33 TTS ${jobId}] Audio ready: ${audioUrl.substring(0, 80)}...`);
 
     // Step 3: Download and upload to Supabase Storage
