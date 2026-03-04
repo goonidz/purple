@@ -123,7 +123,11 @@ export default function PipelineDashboard({ isOpen, onClose }: PipelineDashboard
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent className="max-w-xl w-[90vw] max-h-[80vh] flex flex-col overflow-hidden">
+      <DialogContent
+        className="max-w-xl w-[90vw] max-h-[80vh] flex flex-col overflow-hidden"
+        onPointerDownOutside={(e) => e.preventDefault()}
+        onInteractOutside={(e) => e.preventDefault()}
+      >
         <DialogHeader>
           <DialogTitle>Pipelines auto-génération</DialogTitle>
         </DialogHeader>
@@ -208,12 +212,22 @@ function PipelineCard({ pipeline }: { pipeline: PipelineRow }) {
         )}>
           {getStepText(pipeline.current_step)}
         </p>
-        <span className="text-[10px] text-muted-foreground whitespace-nowrap flex-shrink-0">
-          {(isCompleted || isFailed)
-            ? formatDate(pipeline.updated_at || pipeline.created_at)
-            : `Début: ${formatDate(pipeline.created_at)}`
-          }
-        </span>
+        <div className="flex flex-col items-end flex-shrink-0">
+          {(isCompleted || isFailed) ? (
+            <>
+              <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+                Début: {formatDate(pipeline.created_at)}
+              </span>
+              <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+                Fin: {formatDate(pipeline.updated_at || pipeline.created_at)}
+              </span>
+            </>
+          ) : (
+            <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+              Début: {formatDate(pipeline.created_at)}
+            </span>
+          )}
+        </div>
       </div>
 
       {isFailed && pipeline.error && (
