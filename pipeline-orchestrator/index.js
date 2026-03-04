@@ -565,20 +565,38 @@ async function stepGenerateImages(pipeline) {
 
 async function stepWaitImages(pipeline) {
   const { id, metadata, project_id, calendar_entry_id } = pipeline;
-  const jobId = metadata?.imagesJobId;
-  if (!jobId) throw new Error('No imagesJobId in metadata');
 
-  const { data: job } = await supabase.from('generation_jobs').select('status, metadata, error_message').eq('id', jobId).single();
-  if (!job) return;
+  // Check if all scenes have images (works even if job was cancelled/done manually)
+  const { data: sceneRows } = await supabase
+    .from('project_scenes')
+    .select('id, image_url')
+    .eq('project_id', project_id);
 
-  if (job.status === 'completed') {
-    console.log(`[orchestrator] [${id}] All images completed`);
+  if (sceneRows && sceneRows.length > 0 && sceneRows.every(s => s.image_url)) {
+    console.log(`[orchestrator] [${id}] All ${sceneRows.length} images present — completing`);
     await updateCalendarStatus(calendar_entry_id, 'generating');
     await advancePipeline(id, 'completed', { step_status: 'completed' });
     console.log(`[orchestrator] [${id}] Pipeline COMPLETED - project fully ready`);
-  } else if (job.status === 'failed') {
-    throw new Error(`Image generation failed: ${job.error_message || 'unknown'}`);
+    return;
   }
+
+  // Check if any image jobs are still active
+  const { data: activeJobs } = await supabase
+    .from('generation_jobs')
+    .select('id, status')
+    .eq('project_id', project_id)
+    .in('job_type', ['images', 'single_image'])
+    .in('status', ['pending', 'processing'])
+    .limit(1);
+
+  if (activeJobs && activeJobs.length > 0) return; // still running
+
+  // Images incomplete & no active jobs — re-launch to fill the gaps
+  const withImage = sceneRows?.filter(s => s.image_url).length || 0;
+  const total = sceneRows?.length || 0;
+  console.log(`[orchestrator] [${id}] Images incomplete (${withImage}/${total}), no active jobs — re-launching`);
+  await updatePipelineMetadata(id, { imagesJobId: null });
+  await advancePipeline(id, 'generate_images');
 }
 
 // ============================================================================
