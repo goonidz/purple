@@ -3628,6 +3628,296 @@ async function processIdeaGenerationPipeline(job) {
 }
 
 // ============================================================================
+// STALE JOB RECOVERY (runs once at startup)
+// ============================================================================
+
+const STALE_THRESHOLD_MS = 5 * 60 * 1000;
+
+async function recoverStaleJobs() {
+  log('[recovery] Checking for stale processing jobs...');
+  try {
+    const cutoff = new Date(Date.now() - STALE_THRESHOLD_MS).toISOString();
+    const { data: staleJobs, error } = await supabase
+      .from('generation_jobs')
+      .select('*')
+      .eq('status', 'processing')
+      .in('job_type', ['single_image', 'thumbnails', 'thumbnails_v2', 'single_prompt', 'audio_generation', 'idea_generation'])
+      .lt('updated_at', cutoff)
+      .limit(200);
+
+    if (error) { logError('[recovery] Query failed:', error.message); return; }
+    if (!staleJobs || staleJobs.length === 0) { log('[recovery] No stale jobs found'); return; }
+
+    log(`[recovery] Found ${staleJobs.length} stale job(s)`);
+
+    for (const job of staleJobs) {
+      const meta = job.metadata || {};
+      const jobId = job.id;
+      const tag = `[recovery ${jobId.substring(0, 8)}]`;
+
+      try {
+        // --- AI33 TTS with task_id: resume polling ---
+        if (job.job_type === 'audio_generation' && meta.ai33_task_id) {
+          log(`${tag} Resuming AI33 TTS (task: ${meta.ai33_task_id})`);
+          processingJobIds.add(jobId);
+          activeJobs++;
+          resumeAi33TtsPoll(job, meta.ai33_task_id)
+            .catch(err => {
+              logError(`${tag} AI33 resume failed:`, err.message);
+              supabase.from('generation_jobs').update({ status: 'pending', error_message: null }).eq('id', jobId);
+            })
+            .finally(() => { activeJobs--; processingJobIds.delete(jobId); });
+          continue;
+        }
+
+        // --- GenAIPro TTS with task_id: resume polling ---
+        if (job.job_type === 'audio_generation' && meta.genaipro_task_id) {
+          log(`${tag} Resuming GenAIPro TTS (task: ${meta.genaipro_task_id})`);
+          processingJobIds.add(jobId);
+          activeJobs++;
+          resumeGenaiproTtsPoll(job, meta.genaipro_task_id)
+            .catch(err => {
+              logError(`${tag} GenAIPro resume failed:`, err.message);
+              supabase.from('generation_jobs').update({ status: 'pending', error_message: null }).eq('id', jobId);
+            })
+            .finally(() => { activeJobs--; processingJobIds.delete(jobId); });
+          continue;
+        }
+
+        // --- RVC in progress with RunPod job: resume polling ---
+        if (meta.runpodJobId && meta.step === 'rvc_processing') {
+          log(`${tag} Resuming RVC poll (RunPod: ${meta.runpodJobId})`);
+          processingJobIds.add(jobId);
+          activeJobs++;
+          resumeRvcPoll(job, meta.runpodJobId)
+            .catch(err => {
+              logError(`${tag} RVC resume failed:`, err.message);
+              supabase.from('generation_jobs').update({ status: 'pending', error_message: null }).eq('id', jobId);
+            })
+            .finally(() => { activeJobs--; processingJobIds.delete(jobId); });
+          continue;
+        }
+
+        // --- single_image: check if scene already has image ---
+        if (job.job_type === 'single_image' && job.scene_index != null && job.project_id) {
+          const { data: scenes } = await supabase
+            .from('project_scenes')
+            .select('image_url')
+            .eq('project_id', job.project_id)
+            .eq('scene_index', job.scene_index)
+            .limit(1);
+          if (scenes && scenes.length > 0 && scenes[0].image_url) {
+            log(`${tag} Image already exists for scene ${job.scene_index}, completing`);
+            await supabase.from('generation_jobs').update({
+              status: 'completed', completed_at: new Date().toISOString(),
+            }).eq('id', jobId);
+            continue;
+          }
+        }
+
+        // --- Default: reset to pending ---
+        log(`${tag} Resetting ${job.job_type} to pending`);
+        await supabase.from('generation_jobs').update({
+          status: 'pending', error_message: null,
+        }).eq('id', jobId);
+
+      } catch (err) {
+        logError(`${tag} Recovery error:`, err.message);
+        await supabase.from('generation_jobs').update({
+          status: 'pending', error_message: null,
+        }).eq('id', jobId);
+      }
+    }
+
+    log('[recovery] Stale job recovery complete');
+  } catch (err) {
+    logError('[recovery] Fatal recovery error:', err.message);
+  }
+}
+
+async function resumeAi33TtsPoll(job, taskId) {
+  const { id: jobId, project_id: projectId, user_id: userId, metadata: meta } = job;
+  const startTime = Date.now();
+  const apiKey = await getUserApiKey(userId, 'ai33');
+
+  log(`[recovery AI33 ${jobId.substring(0, 8)}] Polling task ${taskId}...`);
+
+  let audioUrl = null;
+  for (let attempt = 0; attempt < AI33_TTS_MAX_POLL_ATTEMPTS; attempt++) {
+    await sleep(AI33_TTS_POLL_INTERVAL_MS);
+    if (attempt % 6 === 0) log(`[recovery AI33 ${jobId.substring(0, 8)}] Poll ${attempt + 1}/${AI33_TTS_MAX_POLL_ATTEMPTS}`);
+
+    const pollRes = await fetch(`${AI33_TTS_BASE}/v1/task/${taskId}`, {
+      headers: { 'xi-api-key': apiKey },
+    });
+    if (!pollRes.ok) { logError(`[recovery AI33] Poll error: ${pollRes.status}`); continue; }
+
+    const taskData = await pollRes.json();
+    if (taskData.status === 'done') {
+      audioUrl = taskData.metadata?.audio_url;
+      if (!audioUrl) throw new Error('AI33 TTS done but no audio_url');
+      break;
+    }
+    if (taskData.status === 'failed' || taskData.status === 'error') {
+      throw new Error(`AI33 TTS failed: ${taskData.error_message || 'Unknown'}`);
+    }
+  }
+
+  if (!audioUrl) throw new Error('AI33 TTS poll timed out');
+  log(`[recovery AI33 ${jobId.substring(0, 8)}] Audio ready: ${audioUrl.substring(0, 80)}...`);
+
+  const audioRes = await fetch(audioUrl);
+  if (!audioRes.ok) throw new Error(`Failed to download AI33 audio: ${audioRes.status}`);
+  const audioBytes = Buffer.from(await audioRes.arrayBuffer());
+
+  const filename = `${userId}/${projectId || 'temp'}/${Date.now()}_ai33_generated.mp3`;
+  const { error: uploadError } = await supabase.storage
+    .from('audio-files')
+    .upload(filename, audioBytes, { contentType: 'audio/mpeg', upsert: true });
+  if (uploadError) throw new Error(`Upload failed: ${uploadError.message}`);
+
+  const { data: { publicUrl } } = supabase.storage.from('audio-files').getPublicUrl(filename);
+  let finalAudioUrl = publicUrl;
+
+  if (meta.rvcEnabled && meta.rvcModelUrl) {
+    finalAudioUrl = await applyRVCConversion(jobId, publicUrl, {
+      rvcModelUrl: meta.rvcModelUrl, rvcIndexUrl: meta.rvcIndexUrl || '',
+      rvcPitch: typeof meta.rvcPitch === 'number' ? meta.rvcPitch : 0,
+      rvcIndexRate: typeof meta.rvcIndexRate === 'number' ? meta.rvcIndexRate : 0.75,
+      userId, projectId,
+    }, meta);
+  }
+
+  if (projectId) {
+    await supabase.from('projects')
+      .update({ audio_url: finalAudioUrl, updated_at: new Date().toISOString() })
+      .eq('id', projectId);
+  }
+
+  await supabase.from('generation_jobs').update({
+    status: 'completed', progress: 1, current_step: 'Terminé !',
+    completed_at: new Date().toISOString(),
+    metadata: { ...meta, ai33_task_id: taskId, audioUrl: finalAudioUrl, durationMs: Date.now() - startTime },
+  }).eq('id', jobId);
+
+  log(`[recovery AI33 ${jobId.substring(0, 8)}] Completed`);
+}
+
+async function resumeGenaiproTtsPoll(job, taskId) {
+  const { id: jobId, project_id: projectId, user_id: userId, metadata: meta } = job;
+  const startTime = Date.now();
+  const apiKey = await getUserApiKey(userId, 'genaipro');
+
+  log(`[recovery GenAIPro ${jobId.substring(0, 8)}] Polling task ${taskId}...`);
+
+  let audioBytes = null;
+  for (let attempt = 0; attempt < GENAIPRO_MAX_POLL_ATTEMPTS; attempt++) {
+    await sleep(GENAIPRO_POLL_INTERVAL_MS);
+    if (attempt % 6 === 0) log(`[recovery GenAIPro ${jobId.substring(0, 8)}] Poll ${attempt + 1}/${GENAIPRO_MAX_POLL_ATTEMPTS}`);
+
+    const pollRes = await fetch(`${GENAIPRO_BASE}/labs/task/${taskId}`, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+    if (!pollRes.ok) { logError(`[recovery GenAIPro] Poll error: ${pollRes.status}`); continue; }
+
+    const taskData = await pollRes.json();
+    if (taskData.status === 'completed') {
+      const audioUrl = taskData.result;
+      if (!audioUrl) throw new Error('GenAIPro done but no result URL');
+      const audioRes = await fetch(audioUrl);
+      if (!audioRes.ok) throw new Error(`Failed to download audio: ${audioRes.status}`);
+      audioBytes = Buffer.from(await audioRes.arrayBuffer());
+      break;
+    }
+    if (taskData.status === 'failed') {
+      throw new Error(`GenAIPro failed: ${taskData.error || 'Unknown'}`);
+    }
+  }
+
+  if (!audioBytes) throw new Error('GenAIPro poll timed out');
+
+  const filename = `${userId}/${projectId || 'temp'}/${Date.now()}_genaipro_generated.mp3`;
+  const { error: uploadError } = await supabase.storage
+    .from('audio-files')
+    .upload(filename, audioBytes, { contentType: 'audio/mpeg', upsert: true });
+  if (uploadError) throw new Error(`Upload failed: ${uploadError.message}`);
+
+  const { data: { publicUrl } } = supabase.storage.from('audio-files').getPublicUrl(filename);
+  let finalAudioUrl = publicUrl;
+
+  if (meta.rvcEnabled && meta.rvcModelUrl) {
+    finalAudioUrl = await applyRVCConversion(jobId, publicUrl, {
+      rvcModelUrl: meta.rvcModelUrl, rvcIndexUrl: meta.rvcIndexUrl || '',
+      rvcPitch: typeof meta.rvcPitch === 'number' ? meta.rvcPitch : 0,
+      rvcIndexRate: typeof meta.rvcIndexRate === 'number' ? meta.rvcIndexRate : 0.75,
+      userId, projectId,
+    }, meta);
+  }
+
+  if (projectId) {
+    await supabase.from('projects')
+      .update({ audio_url: finalAudioUrl, updated_at: new Date().toISOString() })
+      .eq('id', projectId);
+  }
+
+  await supabase.from('generation_jobs').update({
+    status: 'completed', progress: 1, current_step: 'Terminé !',
+    completed_at: new Date().toISOString(),
+    metadata: { ...meta, genaipro_task_id: taskId, audioUrl: finalAudioUrl, durationMs: Date.now() - startTime },
+  }).eq('id', jobId);
+
+  log(`[recovery GenAIPro ${jobId.substring(0, 8)}] Completed`);
+}
+
+async function resumeRvcPoll(job, runpodJobId) {
+  const { id: jobId, project_id: projectId, user_id: userId, metadata: meta } = job;
+  const runpodRvcEndpointId = process.env.RUNPOD_RVC_ENDPOINT_ID;
+  const runpodApiKey = process.env.RUNPOD_API_KEY;
+  if (!runpodRvcEndpointId || !runpodApiKey) throw new Error('RUNPOD env missing for RVC');
+
+  log(`[recovery RVC ${jobId.substring(0, 8)}] Polling RunPod job ${runpodJobId}...`);
+
+  for (let attempt = 0; attempt < 120; attempt++) {
+    await sleep(5000);
+    if (attempt % 6 === 0) log(`[recovery RVC ${jobId.substring(0, 8)}] Poll ${attempt + 1}/120`);
+
+    const statusRes = await fetch(`https://api.runpod.ai/v2/${runpodRvcEndpointId}/status/${runpodJobId}`, {
+      headers: { 'Authorization': `Bearer ${runpodApiKey}` },
+    });
+    if (!statusRes.ok) { logError(`[recovery RVC] Poll error: ${statusRes.status}`); continue; }
+
+    const statusData = await statusRes.json();
+
+    if (statusData.status === 'COMPLETED') {
+      const finalUrl = statusData.output?.audioUrl;
+      if (!finalUrl) throw new Error('RunPod RVC completed but no audioUrl');
+      log(`[recovery RVC ${jobId.substring(0, 8)}] RVC done: ${finalUrl}`);
+
+      if (projectId) {
+        await supabase.from('projects')
+          .update({ audio_url: finalUrl, updated_at: new Date().toISOString() })
+          .eq('id', projectId);
+      }
+
+      await supabase.from('generation_jobs').update({
+        status: 'completed', progress: 1, current_step: 'Terminé !',
+        completed_at: new Date().toISOString(),
+        metadata: { ...meta, audioUrl: finalUrl },
+      }).eq('id', jobId);
+
+      log(`[recovery RVC ${jobId.substring(0, 8)}] Completed`);
+      return;
+    }
+
+    if (statusData.status === 'FAILED') {
+      throw new Error(`RunPod RVC failed: ${statusData.error || JSON.stringify(statusData.output || {})}`);
+    }
+  }
+
+  throw new Error('RunPod RVC poll timed out');
+}
+
+// ============================================================================
 // MAIN LOOP
 // ============================================================================
 
@@ -3635,6 +3925,8 @@ async function mainLoop() {
   log(`Image Worker started (MAX_CONCURRENT=${MAX_CONCURRENT_DEFAULT}/${MAX_CONCURRENT_AI33} ai33, POLL=${POLL_INTERVAL_MS}ms)`);
   log(`Supabase: ${SUPABASE_URL}`);
   log(`Job types: single_image, thumbnails, single_prompt, audio_generation (gemini/genaipro/ai33/edgetts), idea_generation`);
+
+  await recoverStaleJobs();
 
   while (true) {
     try {
