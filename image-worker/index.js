@@ -3936,9 +3936,16 @@ async function mainLoop() {
   log(`Job types: single_image, thumbnails, single_prompt, audio_generation (gemini/genaipro/ai33/edgetts), idea_generation`);
 
   await recoverStaleJobs();
+  let lastRecoveryRun = Date.now();
 
   while (true) {
     try {
+      // Re-run stale recovery every 5 minutes to catch jobs stuck mid-processing
+      if (Date.now() - lastRecoveryRun > 5 * 60 * 1000) {
+        await recoverStaleJobs();
+        lastRecoveryRun = Date.now();
+      }
+
       await checkDiskUsage();
       await cleanupStuckParents();
       const prelimSlots = MAX_CONCURRENT_AI33 - activeJobs;
