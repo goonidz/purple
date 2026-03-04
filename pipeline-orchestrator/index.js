@@ -517,8 +517,9 @@ async function stepWaitPrompts(pipeline) {
   }
 
   // Edge case: no active jobs, no failures, but prompts not complete — re-launch
-  if (prompts.length < scenes.length) {
-    console.log(`[orchestrator] [${id}] Prompts incomplete (${prompts.length}/${scenes.length}), no active jobs — re-launching`);
+  const completedPrompts = prompts.filter(p => p?.text).length;
+  if (prompts.length < scenes.length || completedPrompts < scenes.length) {
+    console.log(`[orchestrator] [${id}] Prompts incomplete (${completedPrompts}/${scenes.length} with text), no active jobs — re-launching`);
     await updatePipelineMetadata(id, { promptsJobId: null });
     await advancePipeline(id, 'generate_prompts');
   }
