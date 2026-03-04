@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
-import { Plus, Link2, Link2Off, Youtube, Check, Zap, Loader2 } from "lucide-react";
+import { Plus, Link2, Link2Off, Youtube, Check, Zap, Loader2, MoreHorizontal } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 interface Channel {
   id: string;
@@ -30,6 +31,15 @@ interface ContentCalendarEntry {
   updated_at: string;
 }
 
+interface FullChannel {
+  id: string;
+  name: string;
+  color: string;
+  script_preset_id?: string | null;
+  tts_preset_id?: string | null;
+  project_preset_id?: string | null;
+}
+
 interface CalendarDayCellProps {
   date: Date;
   entries: ContentCalendarEntry[];
@@ -37,9 +47,11 @@ interface CalendarDayCellProps {
   isCurrentMonth?: boolean;
   maxPerDay?: number | null;
   blurTitles?: boolean;
+  channels?: FullChannel[];
   onDayClick: (date: Date) => void;
   onEntryClick: (entry: ContentCalendarEntry) => void;
   onEntryDrop: (entryId: string, newDate: Date) => void;
+  onAutoGenerateEntries?: (entries: ContentCalendarEntry[]) => void;
 }
 
 // Default colors when no channel is set (based on completion status)
@@ -72,12 +84,22 @@ export default function CalendarDayCell({
   isCurrentMonth = true,
   maxPerDay = null,
   blurTitles = false,
+  channels = [],
   onDayClick,
   onEntryClick,
   onEntryDrop,
+  onAutoGenerateEntries,
 }: CalendarDayCellProps) {
   const [isDragOver, setIsDragOver] = useState(false);
   const [showAllEntriesDialog, setShowAllEntriesDialog] = useState(false);
+
+  const eligibleEntries = entries.filter(e => {
+    if (e.project_id) return false;
+    if (e.status?.startsWith('auto_')) return false;
+    if (!e.channel_id) return false;
+    const ch = channels.find(c => c.id === e.channel_id);
+    return ch?.script_preset_id && ch?.tts_preset_id;
+  });
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -124,15 +146,41 @@ export default function CalendarDayCell({
         >
           {format(date, "d")}
         </span>
-        <button
-          className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-muted rounded"
-          onClick={(e) => {
-            e.stopPropagation();
-            onDayClick(date);
-          }}
-        >
-          <Plus className="h-4 w-4 text-muted-foreground" />
-        </button>
+        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+          {eligibleEntries.length > 0 && onAutoGenerateEntries && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  className="p-1 hover:bg-muted rounded"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <MoreHorizontal className="h-4 w-4 text-muted-foreground" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="min-w-[200px]">
+                <DropdownMenuItem
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onAutoGenerateEntries(eligibleEntries);
+                  }}
+                  className="gap-2"
+                >
+                  <Zap className="h-4 w-4 text-primary" />
+                  Auto-générer {eligibleEntries.length} carte{eligibleEntries.length > 1 ? 's' : ''}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+          <button
+            className="p-1 hover:bg-muted rounded"
+            onClick={(e) => {
+              e.stopPropagation();
+              onDayClick(date);
+            }}
+          >
+            <Plus className="h-4 w-4 text-muted-foreground" />
+          </button>
+        </div>
       </div>
 
       <div className="space-y-1">

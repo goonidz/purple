@@ -19,6 +19,11 @@ interface Channel {
   id: string;
   name: string;
   color: string;
+  script_preset_id?: string | null;
+  tts_preset_id?: string | null;
+  project_preset_id?: string | null;
+  thumbnail_preset_id?: string | null;
+  thumbnail_preset_enabled?: boolean | null;
 }
 
 interface ContentCalendarEntry {
@@ -500,6 +505,79 @@ export default function Calendar() {
     }
   };
 
+  const handleAutoGenerateEntries = async (entriesToGenerate: ContentCalendarEntry[]) => {
+    if (!user) return;
+    let launched = 0;
+    for (const entry of entriesToGenerate) {
+      try {
+        const ch = channels.find(c => c.id === entry.channel_id);
+        if (!ch?.script_preset_id || !ch?.tts_preset_id) continue;
+
+        const [scriptPresetRes, ttsPresetRes, projectPresetRes] = await Promise.all([
+          supabase.from("script_presets").select("*").eq("id", ch.script_preset_id).single(),
+          supabase.from("tts_presets").select("*").eq("id", ch.tts_preset_id).single(),
+          ch.project_preset_id
+            ? supabase.from("presets").select("*").eq("id", ch.project_preset_id).single()
+            : Promise.resolve({ data: null }),
+        ]);
+        const scriptPreset = scriptPresetRes.data;
+        const ttsPreset = ttsPresetRes.data;
+        const projectPreset = projectPresetRes.data;
+        if (!scriptPreset || !ttsPreset) continue;
+
+        let ttsConfig: Record<string, any> = {
+          provider: ttsPreset.provider, voice_id: ttsPreset.voice_id, model: ttsPreset.model,
+          speed: ttsPreset.speed, pitch: ttsPreset.pitch, volume: ttsPreset.volume,
+          languageBoost: ttsPreset.language_boost, englishNormalization: ttsPreset.english_normalization,
+        };
+        try {
+          const extras = ttsPreset.emotion ? JSON.parse(ttsPreset.emotion) : {};
+          if (extras.rvcEnabled) { ttsConfig.rvcEnabled = true; ttsConfig.rvcModelUrl = extras.rvcModelUrl; ttsConfig.rvcIndexUrl = extras.rvcIndexUrl; ttsConfig.rvcPitch = extras.rvcPitch; ttsConfig.rvcIndexRate = extras.rvcIndexRate; }
+          if (extras.audioTagsEnabled) { ttsConfig.audioTagsEnabled = true; ttsConfig.audioTagsText = extras.audioTagsText; }
+          if (typeof extras.style === "number") ttsConfig.style = extras.style;
+          if (typeof extras.speakerBoost === "boolean") ttsConfig.useSpeakerBoost = extras.speakerBoost;
+          if (extras.edgeTTSSpeed) ttsConfig.speed = extras.edgeTTSSpeed;
+        } catch { /* not JSON */ }
+
+        const projectConfig: Record<string, any> = {};
+        if (projectPreset) {
+          projectConfig.image_model = (projectPreset as any).image_model || "seedream-4.5";
+          projectConfig.image_width = projectPreset.image_width || 1920;
+          projectConfig.image_height = projectPreset.image_height || 1080;
+          projectConfig.aspect_ratio = projectPreset.aspect_ratio || "16:9";
+          projectConfig.duration_ranges = (projectPreset as any).duration_ranges || undefined;
+          projectConfig.lora_url = (projectPreset as any).lora_url || undefined;
+          projectConfig.lora_steps = (projectPreset as any).lora_steps || undefined;
+          projectConfig.example_prompts = projectPreset.example_prompts || undefined;
+          projectConfig.prompt_system_message = (projectPreset as any).prompt_system_message || undefined;
+          projectConfig.style_reference_url = projectPreset.style_reference_url || undefined;
+        }
+
+        await supabase.from("auto_pipelines" as any).insert({
+          calendar_entry_id: entry.id,
+          channel_id: entry.channel_id,
+          user_id: user.id,
+          current_step: "create_project",
+          step_status: "pending",
+          config: {
+            script: { model: (scriptPreset as any).script_model || "glm5-openrouter", custom_prompt: scriptPreset.custom_prompt || "", use_batch: (scriptPreset as any).use_batch || false },
+            tts: ttsConfig,
+            project: projectConfig,
+          },
+        });
+        launched++;
+      } catch (err) {
+        console.error(`Auto-generate failed for entry ${entry.id}:`, err);
+      }
+    }
+    if (launched > 0) {
+      toast.success(`Auto-génération lancée pour ${launched} carte${launched > 1 ? 's' : ''}`);
+      fetchEntries();
+    } else {
+      toast.error("Aucune carte éligible");
+    }
+  };
+
   const daysInMonth = eachDayOfInterval({
     start: startOfMonth(currentMonth),
     end: endOfMonth(currentMonth),
@@ -671,6 +749,7 @@ export default function Calendar() {
                     key={day.toISOString()}
                     date={day}
                     entries={getEntriesForDay(day)}
+                    channels={channels}
                     isToday={isSameDay(day, new Date())}
                     isCurrentMonth={false}
                     maxPerDay={compactMode ? 5 : null}
@@ -678,6 +757,7 @@ export default function Calendar() {
                     onDayClick={handleDayClick}
                     onEntryClick={handleEntryClick}
                     onEntryDrop={handleEntryDrop}
+                    onAutoGenerateEntries={handleAutoGenerateEntries}
                   />
                 ))}
 
@@ -687,6 +767,7 @@ export default function Calendar() {
                     key={day.toISOString()}
                     date={day}
                     entries={getEntriesForDay(day)}
+                    channels={channels}
                     isToday={isSameDay(day, new Date())}
                     isCurrentMonth={true}
                     maxPerDay={compactMode ? 5 : null}
@@ -694,6 +775,7 @@ export default function Calendar() {
                     onDayClick={handleDayClick}
                     onEntryClick={handleEntryClick}
                     onEntryDrop={handleEntryDrop}
+                    onAutoGenerateEntries={handleAutoGenerateEntries}
                   />
                 ))}
 
@@ -703,6 +785,7 @@ export default function Calendar() {
                     key={day.toISOString()}
                     date={day}
                     entries={getEntriesForDay(day)}
+                    channels={channels}
                     isToday={isSameDay(day, new Date())}
                     isCurrentMonth={false}
                     maxPerDay={compactMode ? 5 : null}
@@ -710,6 +793,7 @@ export default function Calendar() {
                     onDayClick={handleDayClick}
                     onEntryClick={handleEntryClick}
                     onEntryDrop={handleEntryDrop}
+                    onAutoGenerateEntries={handleAutoGenerateEntries}
                   />
                 ))}
               </div>
