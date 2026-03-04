@@ -78,6 +78,8 @@ const statusOptions = [
   { value: "auto_audio", label: "Auto: Audio...", color: "bg-primary/20" },
   { value: "auto_transcribe", label: "Auto: Transcription...", color: "bg-primary/20" },
   { value: "auto_scenes", label: "Auto: Scènes...", color: "bg-primary/20" },
+  { value: "auto_prompts", label: "Auto: Prompts...", color: "bg-primary/20" },
+  { value: "auto_images", label: "Auto: Images...", color: "bg-primary/20" },
   { value: "thumbnail", label: "Miniature", color: "bg-pink-500/20" },
   { value: "completed", label: "Terminé", color: "bg-green-500/20" },
 ];
@@ -1345,12 +1347,12 @@ export default function CalendarVideoModal({
               <span className="text-sm font-medium">Auto-génération en cours</span>
             </div>
             <div className="flex gap-1">
-              {['create_project', 'generate_script', 'wait_script', 'generate_audio', 'wait_audio', 'transcribe', 'wait_transcription', 'create_scenes'].map((step, i) => {
-                const steps = ['create_project', 'generate_script', 'wait_script', 'generate_audio', 'wait_audio', 'transcribe', 'wait_transcription', 'create_scenes'];
+              {['create_project', 'generate_script', 'wait_script', 'generate_audio', 'wait_audio', 'transcribe', 'wait_transcription', 'create_scenes', 'generate_prompts', 'wait_prompts', 'generate_images', 'wait_images'].map((step, i) => {
+                const steps = ['create_project', 'generate_script', 'wait_script', 'generate_audio', 'wait_audio', 'transcribe', 'wait_transcription', 'create_scenes', 'generate_prompts', 'wait_prompts', 'generate_images', 'wait_images'];
                 const currentIdx = steps.indexOf(pipelineStatus.current_step);
                 const isDone = i < currentIdx;
                 const isCurrent = i === currentIdx;
-                const labels = ['Projet', 'Script', 'Script...', 'Audio', 'Audio...', 'Transcription', 'Transcription...', 'Scènes'];
+                const labels = ['Projet', 'Script', 'Script...', 'Audio', 'Audio...', 'Transcription', 'Transcription...', 'Scènes', 'Prompts', 'Prompts...', 'Images', 'Images...'];
                 return (
                   <div key={step} className="flex-1" title={labels[i]}>
                     <div className={cn(
@@ -1367,6 +1369,8 @@ export default function CalendarVideoModal({
               {(pipelineStatus.current_step === 'generate_audio' || pipelineStatus.current_step === 'wait_audio') && 'Génération audio...'}
               {(pipelineStatus.current_step === 'transcribe' || pipelineStatus.current_step === 'wait_transcription') && 'Transcription en cours...'}
               {pipelineStatus.current_step === 'create_scenes' && 'Création des scènes...'}
+              {(pipelineStatus.current_step === 'generate_prompts' || pipelineStatus.current_step === 'wait_prompts') && 'Génération des prompts...'}
+              {(pipelineStatus.current_step === 'generate_images' || pipelineStatus.current_step === 'wait_images') && 'Génération des images...'}
             </p>
           </div>
         )}

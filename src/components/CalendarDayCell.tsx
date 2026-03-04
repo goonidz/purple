@@ -224,7 +224,7 @@ export default function CalendarDayCell({
                     <Loader2 className="h-3 w-3 flex-shrink-0 text-primary animate-spin" />
                   </TooltipTrigger>
                   <TooltipContent>
-                    <p>{entry.status === 'auto_script' ? 'Script en cours...' : entry.status === 'auto_audio' ? 'Audio en cours...' : entry.status === 'auto_transcribe' ? 'Transcription...' : entry.status === 'auto_scenes' ? 'Scènes...' : 'Auto-génération...'}</p>
+                    <p>{entry.status === 'auto_script' ? 'Script en cours...' : entry.status === 'auto_audio' ? 'Audio en cours...' : entry.status === 'auto_transcribe' ? 'Transcription...' : entry.status === 'auto_scenes' ? 'Scènes...' : entry.status === 'auto_prompts' ? 'Prompts en cours...' : entry.status === 'auto_images' ? 'Images en cours...' : 'Auto-génération...'}</p>
                   </TooltipContent>
                 </Tooltip>
               )}

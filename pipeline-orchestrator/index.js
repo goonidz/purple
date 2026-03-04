@@ -393,8 +393,8 @@ async function stepCreateScenes(pipeline) {
 
   // Check if scenes already exist (idempotent)
   if (project.scenes && Array.isArray(project.scenes) && project.scenes.length > 0) {
-    console.log(`[orchestrator] [${id}] Scenes already exist (${project.scenes.length}), completing`);
-    await advancePipeline(id, 'completed', { step_status: 'completed' });
+    console.log(`[orchestrator] [${id}] Scenes already exist (${project.scenes.length}), advancing to prompts`);
+    await advancePipeline(id, 'generate_prompts');
     return;
   }
 
@@ -422,10 +422,178 @@ async function stepCreateScenes(pipeline) {
   const { error } = await supabase.from('projects').update(updatePayload).eq('id', project_id);
   if (error) throw new Error(`Failed to save scenes: ${error.message}`);
 
-  await updateCalendarStatus(calendar_entry_id, 'generating');
-  await advancePipeline(id, 'completed', { step_status: 'completed' });
+  console.log(`[orchestrator] [${id}] Created ${scenes.length} scenes, advancing to prompts`);
+  await advancePipeline(id, 'generate_prompts');
+}
 
-  console.log(`[orchestrator] [${id}] Pipeline COMPLETED - ${scenes.length} scenes, project ready`);
+// ---------- PROMPTS ----------
+
+async function stepGeneratePrompts(pipeline) {
+  const { id, project_id, user_id, metadata, calendar_entry_id } = pipeline;
+
+  if (metadata?.promptsJobId) {
+    console.log(`[orchestrator] [${id}] Prompts job already launched: ${metadata.promptsJobId}`);
+    await advancePipeline(id, 'wait_prompts');
+    return;
+  }
+
+  // Idempotent: check if all scenes already have prompts
+  const { data: project } = await supabase.from('projects').select('scenes, prompts').eq('id', project_id).single();
+  const scenes = project?.scenes || [];
+  const prompts = project?.prompts || [];
+  if (scenes.length > 0 && prompts.length >= scenes.length && prompts.every(p => p?.text)) {
+    console.log(`[orchestrator] [${id}] All ${prompts.length} prompts already exist, advancing to images`);
+    await advancePipeline(id, 'generate_images');
+    return;
+  }
+
+  const resp = await fetch(`${SUPABASE_URL}/functions/v1/start-generation-job`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      projectId: project_id,
+      jobType: 'prompts',
+      metadata: { skipExisting: true },
+      userId: user_id,
+    }),
+  });
+
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`start-generation-job prompts failed (${resp.status}): ${text}`);
+  }
+
+  const result = await resp.json();
+  const promptsJobId = result.jobId;
+  if (!promptsJobId) throw new Error('No jobId returned for prompts');
+
+  await updatePipelineMetadata(id, { promptsJobId });
+  await updateCalendarStatus(calendar_entry_id, 'auto_prompts');
+
+  console.log(`[orchestrator] [${id}] Prompts job launched: ${promptsJobId}`);
+  await advancePipeline(id, 'wait_prompts');
+}
+
+async function stepWaitPrompts(pipeline) {
+  const { id, project_id } = pipeline;
+
+  // Check if all scenes have prompts (works regardless of chunking/job IDs)
+  const { data: project } = await supabase.from('projects').select('scenes, prompts').eq('id', project_id).single();
+  const scenes = project?.scenes || [];
+  const prompts = project?.prompts || [];
+
+  if (scenes.length > 0 && prompts.length >= scenes.length && prompts.every(p => p?.text)) {
+    console.log(`[orchestrator] [${id}] All ${prompts.length} prompts completed`);
+    await advancePipeline(id, 'generate_images');
+    return;
+  }
+
+  // Check if any prompt/single_prompt jobs are still active for this project
+  const { data: activeJobs } = await supabase
+    .from('generation_jobs')
+    .select('id, status')
+    .eq('project_id', project_id)
+    .in('job_type', ['prompts', 'single_prompt'])
+    .in('status', ['pending', 'processing'])
+    .limit(1);
+
+  if (activeJobs && activeJobs.length > 0) return; // still running
+
+  // No active jobs and prompts incomplete — check if any failed
+  const { data: failedJobs } = await supabase
+    .from('generation_jobs')
+    .select('id, error_message')
+    .eq('project_id', project_id)
+    .in('job_type', ['prompts', 'single_prompt'])
+    .eq('status', 'failed')
+    .order('created_at', { ascending: false })
+    .limit(1);
+
+  if (failedJobs && failedJobs.length > 0) {
+    throw new Error(`Prompt generation failed: ${failedJobs[0].error_message || 'unknown'}`);
+  }
+
+  // Edge case: no active jobs, no failures, but prompts not complete — re-launch
+  if (prompts.length < scenes.length) {
+    console.log(`[orchestrator] [${id}] Prompts incomplete (${prompts.length}/${scenes.length}), no active jobs — re-launching`);
+    await updatePipelineMetadata(id, { promptsJobId: null });
+    await advancePipeline(id, 'generate_prompts');
+  }
+}
+
+// ---------- IMAGES ----------
+
+async function stepGenerateImages(pipeline) {
+  const { id, project_id, user_id, metadata, calendar_entry_id } = pipeline;
+
+  if (metadata?.imagesJobId) {
+    console.log(`[orchestrator] [${id}] Images job already launched: ${metadata.imagesJobId}`);
+    await advancePipeline(id, 'wait_images');
+    return;
+  }
+
+  // Idempotent: check if all scenes already have images
+  const { data: sceneRows } = await supabase
+    .from('project_scenes')
+    .select('id, image_url')
+    .eq('project_id', project_id);
+
+  if (sceneRows && sceneRows.length > 0 && sceneRows.every(s => s.image_url)) {
+    console.log(`[orchestrator] [${id}] All ${sceneRows.length} images already exist, completing`);
+    await updateCalendarStatus(calendar_entry_id, 'generating');
+    await advancePipeline(id, 'completed', { step_status: 'completed' });
+    return;
+  }
+
+  const resp = await fetch(`${SUPABASE_URL}/functions/v1/start-generation-job`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      projectId: project_id,
+      jobType: 'images',
+      metadata: { skipExisting: true },
+      userId: user_id,
+    }),
+  });
+
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`start-generation-job images failed (${resp.status}): ${text}`);
+  }
+
+  const result = await resp.json();
+  const imagesJobId = result.jobId;
+  if (!imagesJobId) throw new Error('No jobId returned for images');
+
+  await updatePipelineMetadata(id, { imagesJobId });
+  await updateCalendarStatus(calendar_entry_id, 'auto_images');
+
+  console.log(`[orchestrator] [${id}] Images job launched: ${imagesJobId}`);
+  await advancePipeline(id, 'wait_images');
+}
+
+async function stepWaitImages(pipeline) {
+  const { id, metadata, project_id, calendar_entry_id } = pipeline;
+  const jobId = metadata?.imagesJobId;
+  if (!jobId) throw new Error('No imagesJobId in metadata');
+
+  const { data: job } = await supabase.from('generation_jobs').select('status, metadata, error_message').eq('id', jobId).single();
+  if (!job) return;
+
+  if (job.status === 'completed') {
+    console.log(`[orchestrator] [${id}] All images completed`);
+    await updateCalendarStatus(calendar_entry_id, 'generating');
+    await advancePipeline(id, 'completed', { step_status: 'completed' });
+    console.log(`[orchestrator] [${id}] Pipeline COMPLETED - project fully ready`);
+  } else if (job.status === 'failed') {
+    throw new Error(`Image generation failed: ${job.error_message || 'unknown'}`);
+  }
 }
 
 // ============================================================================
@@ -441,6 +609,10 @@ const STEP_HANDLERS = {
   transcribe: stepTranscribe,
   wait_transcription: stepWaitTranscription,
   create_scenes: stepCreateScenes,
+  generate_prompts: stepGeneratePrompts,
+  wait_prompts: stepWaitPrompts,
+  generate_images: stepGenerateImages,
+  wait_images: stepWaitImages,
 };
 
 // ============================================================================
