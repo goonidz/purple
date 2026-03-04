@@ -1396,13 +1396,21 @@ RÈGLE CRITIQUE SUR LA LONGUEUR:
 
       if (batchEnabled) {
         // ── Batch path (persisted to DB for restart resilience) ──
+        // Cap effort to 'medium' for batch: with 64K max_tokens, 'high' can exhaust
+        // the entire budget on thinking, leaving nothing for text output.
+        const batchRequestBody = { ...requestBody };
+        if (batchRequestBody.output_config?.effort === 'high') {
+          batchRequestBody.output_config = { effort: 'medium' };
+          console.log(`[generate-script] [${jobId}] Batch mode: capping effort from high → medium (64K limit)`);
+        }
+
         console.log(`[generate-script] [${jobId}] Batch mode enabled — submitting to /v1/messages/batches`);
         jobs.set(jobId, { ...jobs.get(jobId), progress: 15, currentStep: 'Soumission du batch (-50%)...' });
 
         const batchBody = {
           requests: [{
             custom_id: jobId,
-            params: { ...requestBody },
+            params: batchRequestBody,
           }],
         };
 
