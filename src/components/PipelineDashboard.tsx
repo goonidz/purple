@@ -11,6 +11,7 @@ interface PipelineRow {
   step_status: string;
   error: string | null;
   created_at: string;
+  updated_at: string;
   calendar_entry_id: string;
   card_title: string;
   channel_name: string | null;
@@ -66,7 +67,7 @@ export default function PipelineDashboard({ isOpen, onClose }: PipelineDashboard
 
       const { data } = await supabase
         .from("auto_pipelines" as any)
-        .select("id, current_step, step_status, error, created_at, calendar_entry_id")
+        .select("id, current_step, step_status, error, created_at, updated_at, calendar_entry_id")
         .or(`current_step.not.in.(completed,failed),updated_at.gte.${twentyFourHoursAgo}`)
         .order("created_at", { ascending: false })
         .limit(50);
@@ -102,6 +103,7 @@ export default function PipelineDashboard({ isOpen, onClose }: PipelineDashboard
         step_status: r.step_status,
         error: r.error,
         created_at: r.created_at,
+        updated_at: r.updated_at,
         calendar_entry_id: r.calendar_entry_id,
         card_title: cardMap[r.calendar_entry_id]?.title || "Sans titre",
         channel_name: cardMap[r.calendar_entry_id]?.channel_name || null,
@@ -199,14 +201,23 @@ function PipelineCard({ pipeline }: { pipeline: PipelineRow }) {
         </div>
       )}
 
-      <p className={cn(
-        "text-xs",
-        isCompleted && "text-green-700 dark:text-green-400",
-        isFailed && "text-red-600",
-        !isCompleted && !isFailed && "text-muted-foreground",
-      )}>
-        {getStepText(pipeline.current_step)}
-      </p>
+      <div className="flex items-center justify-between gap-2">
+        <p className={cn(
+          "text-xs",
+          isCompleted && "text-green-700 dark:text-green-400",
+          isFailed && "text-red-600",
+          !isCompleted && !isFailed && "text-muted-foreground",
+        )}>
+          {getStepText(pipeline.current_step)}
+        </p>
+        {(isCompleted || isFailed) && pipeline.updated_at && (
+          <p className="text-xs text-muted-foreground whitespace-nowrap">
+            {new Date(pipeline.updated_at).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" })}
+            {" "}
+            {new Date(pipeline.updated_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}
+          </p>
+        )}
+      </div>
 
       {isFailed && pipeline.error && (
         <p className="text-xs text-red-500/80 mt-1 truncate">{pipeline.error}</p>
