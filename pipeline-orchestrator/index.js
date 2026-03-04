@@ -32,6 +32,8 @@ async function advancePipeline(pipelineId, nextStep, extraUpdates = {}) {
   await supabase.from('auto_pipelines').update({
     current_step: nextStep,
     step_status: 'pending',
+    retry_count: 0,
+    error: null,
     updated_at: new Date().toISOString(),
     ...extraUpdates,
   }).eq('id', pipelineId);

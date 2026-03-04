@@ -1351,7 +1351,7 @@ export default function CalendarVideoModal({
 
     {/* Launch Options Dialog */}
     <AlertDialog open={showLaunchDialog} onOpenChange={setShowLaunchDialog}>
-      <AlertDialogContent>
+      <AlertDialogContent className="max-w-md w-[95vw] overflow-hidden">
         <AlertDialogHeader>
           <AlertDialogTitle>Comment voulez-vous créer le projet ?</AlertDialogTitle>
           <AlertDialogDescription>
@@ -1362,32 +1362,32 @@ export default function CalendarVideoModal({
           {channelId && channels.find(c => c.id === channelId)?.script_preset_id && channels.find(c => c.id === channelId)?.tts_preset_id && (
             <Button
               variant="outline"
-              className="h-auto py-4 justify-start gap-4 border-primary/30 bg-primary/5 hover:bg-primary/10"
+              className="h-auto py-3 justify-start gap-3 border-primary/30 bg-primary/5 hover:bg-primary/10 w-full whitespace-normal"
               onClick={handleAutoGenerate}
               disabled={isAutoGenerating}
             >
               {isAutoGenerating ? (
-                <Loader2 className="h-6 w-6 text-primary animate-spin" />
+                <Loader2 className="h-5 w-5 text-primary animate-spin flex-shrink-0" />
               ) : (
-                <Zap className="h-6 w-6 text-primary" />
+                <Zap className="h-5 w-5 text-primary flex-shrink-0" />
               )}
-              <div className="text-left">
-                <div className="font-semibold">Auto-génération complète</div>
-                <div className="text-sm text-muted-foreground">
-                  Script + Audio + Scènes générés automatiquement avec les presets de la chaîne
+              <div className="text-left min-w-0">
+                <div className="font-semibold text-sm">Auto-génération complète</div>
+                <div className="text-xs text-muted-foreground">
+                  Script + Audio + Scènes avec les presets de la chaîne
                 </div>
               </div>
             </Button>
           )}
           <Button
             variant="outline"
-            className="h-auto py-4 justify-start gap-4"
+            className="h-auto py-3 justify-start gap-3 w-full whitespace-normal"
             onClick={handleLaunchFromScratch}
           >
-            <PenTool className="h-6 w-6 text-primary" />
-            <div className="text-left">
-              <div className="font-semibold">Créer de zéro</div>
-              <div className="text-sm text-muted-foreground">
+            <PenTool className="h-5 w-5 text-primary flex-shrink-0" />
+            <div className="text-left min-w-0">
+              <div className="font-semibold text-sm">Créer de zéro</div>
+              <div className="text-xs text-muted-foreground">
                 Écrire le script manuellement ou avec l'IA
               </div>
             </div>
@@ -1395,15 +1395,15 @@ export default function CalendarVideoModal({
           <Button
             variant="outline"
             className={cn(
-              "h-auto py-4 justify-start gap-4",
+              "h-auto py-3 justify-start gap-3 w-full whitespace-normal",
               !audioUrl && "opacity-50"
             )}
             onClick={handleLaunchWithAudio}
           >
-            <Mic className="h-6 w-6 text-primary" />
-            <div className="text-left">
-              <div className="font-semibold">À partir d'un audio</div>
-              <div className="text-sm text-muted-foreground">
+            <Mic className="h-5 w-5 text-primary flex-shrink-0" />
+            <div className="text-left min-w-0">
+              <div className="font-semibold text-sm">À partir d'un audio</div>
+              <div className="text-xs text-muted-foreground">
                 {audioUrl 
                   ? "Transcrire l'audio et générer les scènes"
                   : "Ajoutez d'abord un audio dans l'onglet Audio"
