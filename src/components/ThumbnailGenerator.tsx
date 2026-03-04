@@ -97,7 +97,7 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
   const [customPrompt, setCustomPrompt] = useState(DEFAULT_THUMBNAIL_PROMPT);
   const [generatedPrompts, setGeneratedPrompts] = useState<string[]>([]);
   const [imageModel, setImageModel] = useState<string>("ai33-seedream-4.5");
-  const [textModel, setTextModel] = useState<string>("claude-sonnet-4");
+  const [textModel, setTextModel] = useState<string>("claude-sonnet-4-6");
   const [userIdea, setUserIdea] = useState<string>("");
   const [isDescribingThumbnail, setIsDescribingThumbnail] = useState(false);
   const [isUploadingThumbnail, setIsUploadingThumbnail] = useState(false);
@@ -1383,10 +1383,10 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="gemini-2.0-flash">Gemini 2.0 Flash (Rapide)</SelectItem>
-                <SelectItem value="claude-sonnet-4">Claude Sonnet 4 (Qualité)</SelectItem>
+                <SelectItem value="claude-sonnet-4-6">Claude Sonnet 4.6 (Qualité)</SelectItem>
               </SelectContent>
             </Select>
-            {textModel === "claude-sonnet-4" && (
+            {textModel === "claude-sonnet-4-6" && (
               <p className="text-xs text-muted-foreground mt-2 italic px-1">
                 ⚠️ Avec Claude, seule la première image sera envoyée en exemple pour générer les prompts des miniatures. La qualité est par contre bien supérieure.
               </p>

@@ -127,7 +127,7 @@ serve(async (req) => {
     }
 
     // Check which model to use
-    const useClaudeModel = textModel === 'claude-sonnet-4';
+    const useClaudeModel = textModel === 'claude-sonnet-4-6' || textModel === 'claude-sonnet-4';
     
     const GOOGLE_AI_API_KEY = Deno.env.get("GOOGLE_AI_API_KEY");
     
@@ -416,7 +416,7 @@ Crée des designs SIMPLES (3-4 éléments max) mais PERTINENTS au script.`;
         const primaryImageUrl = exampleUrls[0];
         
         const output = await replicate.run(
-          "anthropic/claude-4.5-sonnet",
+          "anthropic/claude-sonnet-4-6",
           {
             input: {
               prompt: userPrompt,
