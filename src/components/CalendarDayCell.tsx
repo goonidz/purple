@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
-import { Plus, Link2, Link2Off, Youtube, Check } from "lucide-react";
+import { Plus, Link2, Link2Off, Youtube, Check, Zap, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -18,7 +18,7 @@ interface ContentCalendarEntry {
   user_id: string;
   title: string;
   scheduled_date: string;
-  status: 'planned' | 'scripted' | 'audio_ready' | 'generating' | 'completed';
+  status: string;
   script: string | null;
   audio_url: string | null;
   notes: string | null;
@@ -169,8 +169,19 @@ export default function CalendarDayCell({
               }}
               title={entry.title}
             >
+              {/* Auto-pipeline indicator */}
+              {entry.status?.startsWith('auto_') && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Loader2 className="h-3 w-3 flex-shrink-0 text-primary animate-spin" />
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>{entry.status === 'auto_script' ? 'Script en cours...' : entry.status === 'auto_audio' ? 'Audio en cours...' : entry.status === 'auto_transcribe' ? 'Transcription...' : entry.status === 'auto_scenes' ? 'Scènes...' : 'Auto-génération...'}</p>
+                  </TooltipContent>
+                </Tooltip>
+              )}
               {/* Completed indicator */}
-              {isCompleted && (
+              {isCompleted && !entry.status?.startsWith('auto_') && (
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Check className="h-3 w-3 flex-shrink-0 text-green-600" />

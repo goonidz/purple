@@ -26,7 +26,7 @@ interface ContentCalendarEntry {
   user_id: string;
   title: string;
   scheduled_date: string;
-  status: 'planned' | 'scripted' | 'audio_ready' | 'generating' | 'thumbnail' | 'completed';
+  status: string;
   script: string | null;
   audio_url: string | null;
   notes: string | null;

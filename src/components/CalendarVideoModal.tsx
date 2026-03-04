@@ -15,7 +15,7 @@ import { toast } from "sonner";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
 import { cn } from "@/lib/utils";
-import { CalendarIcon, Upload, Trash2, Loader2, Play, Pause, Rocket, ExternalLink, FolderOpen, Link2, Mic, PenTool, Plus, Copy, Check, Settings } from "lucide-react";
+import { CalendarIcon, Upload, Trash2, Loader2, Play, Pause, Rocket, ExternalLink, FolderOpen, Link2, Mic, PenTool, Plus, Copy, Check, Settings, Zap } from "lucide-react";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import ChannelManager from "@/components/ChannelManager";
 
@@ -36,7 +36,7 @@ interface ContentCalendarEntry {
   user_id: string;
   title: string;
   scheduled_date: string;
-  status: 'planned' | 'scripted' | 'audio_ready' | 'generating' | 'completed';
+  status: string;
   script: string | null;
   audio_url: string | null;
   notes: string | null;
@@ -74,6 +74,10 @@ const statusOptions = [
   { value: "scripted", label: "Script prêt", color: "bg-blue-500/20" },
   { value: "audio_ready", label: "Audio prêt", color: "bg-yellow-500/20" },
   { value: "generating", label: "En génération", color: "bg-purple-500/20" },
+  { value: "auto_script", label: "Auto: Script...", color: "bg-primary/20" },
+  { value: "auto_audio", label: "Auto: Audio...", color: "bg-primary/20" },
+  { value: "auto_transcribe", label: "Auto: Transcription...", color: "bg-primary/20" },
+  { value: "auto_scenes", label: "Auto: Scènes...", color: "bg-primary/20" },
   { value: "thumbnail", label: "Miniature", color: "bg-pink-500/20" },
   { value: "completed", label: "Terminé", color: "bg-green-500/20" },
 ];
@@ -115,6 +119,7 @@ export default function CalendarVideoModal({
   const [isUploading, setIsUploading] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [showLaunchDialog, setShowLaunchDialog] = useState(false);
+  const [isAutoGenerating, setIsAutoGenerating] = useState(false);
   const [tempCreatedEntryId, setTempCreatedEntryId] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -774,6 +779,119 @@ export default function CalendarVideoModal({
     }
   };
 
+  const handleAutoGenerate = async () => {
+    if (!channelId) {
+      toast.error("Sélectionnez une chaîne pour l'auto-génération");
+      return;
+    }
+    const selectedChannel = channels.find(c => c.id === channelId);
+    if (!selectedChannel) {
+      toast.error("Chaîne introuvable");
+      return;
+    }
+    if (!selectedChannel.script_preset_id || !selectedChannel.tts_preset_id) {
+      toast.error("La chaîne doit avoir un preset de script et un preset TTS configurés");
+      return;
+    }
+
+    setIsAutoGenerating(true);
+    try {
+      // Fetch presets in parallel
+      const [scriptPresetRes, ttsPresetRes, projectPresetRes] = await Promise.all([
+        supabase.from("script_presets").select("*").eq("id", selectedChannel.script_preset_id).single(),
+        supabase.from("tts_presets").select("*").eq("id", selectedChannel.tts_preset_id).single(),
+        selectedChannel.project_preset_id
+          ? supabase.from("presets").select("*").eq("id", selectedChannel.project_preset_id).single()
+          : Promise.resolve({ data: null }),
+      ]);
+
+      const scriptPreset = scriptPresetRes.data;
+      const ttsPreset = ttsPresetRes.data;
+      const projectPreset = projectPresetRes.data;
+
+      if (!scriptPreset) throw new Error("Preset de script introuvable");
+      if (!ttsPreset) throw new Error("Preset TTS introuvable");
+
+      // Build TTS config from preset
+      let ttsConfig: Record<string, any> = {
+        provider: ttsPreset.provider,
+        voice_id: ttsPreset.voice_id,
+        model: ttsPreset.model,
+        speed: ttsPreset.speed,
+        pitch: ttsPreset.pitch,
+        volume: ttsPreset.volume,
+        languageBoost: ttsPreset.language_boost,
+        englishNormalization: ttsPreset.english_normalization,
+      };
+      // Decode emotion JSON for RVC, audio tags, and provider-specific fields
+      try {
+        const extras = ttsPreset.emotion ? JSON.parse(ttsPreset.emotion) : {};
+        if (extras.rvcEnabled) {
+          ttsConfig.rvcEnabled = true;
+          ttsConfig.rvcModelUrl = extras.rvcModelUrl;
+          ttsConfig.rvcIndexUrl = extras.rvcIndexUrl;
+          ttsConfig.rvcPitch = extras.rvcPitch;
+          ttsConfig.rvcIndexRate = extras.rvcIndexRate;
+        }
+        if (extras.audioTagsEnabled) {
+          ttsConfig.audioTagsEnabled = true;
+          ttsConfig.audioTagsText = extras.audioTagsText;
+        }
+        if (typeof extras.style === "number") ttsConfig.style = extras.style;
+        if (typeof extras.speakerBoost === "boolean") ttsConfig.useSpeakerBoost = extras.speakerBoost;
+        if (extras.edgeTTSSpeed) ttsConfig.speed = extras.edgeTTSSpeed;
+      } catch { /* not JSON */ }
+
+      // Build project config from preset
+      const projectConfig: Record<string, any> = {};
+      if (projectPreset) {
+        projectConfig.image_model = (projectPreset as any).image_model || "seedream-4.5";
+        projectConfig.image_width = projectPreset.image_width || 1920;
+        projectConfig.image_height = projectPreset.image_height || 1080;
+        projectConfig.aspect_ratio = projectPreset.aspect_ratio || "16:9";
+        projectConfig.duration_ranges = (projectPreset as any).duration_ranges || undefined;
+        projectConfig.lora_url = (projectPreset as any).lora_url || undefined;
+        projectConfig.lora_steps = (projectPreset as any).lora_steps || undefined;
+        projectConfig.example_prompts = projectPreset.example_prompts || undefined;
+        projectConfig.prompt_system_message = (projectPreset as any).prompt_system_message || undefined;
+        projectConfig.style_reference_url = projectPreset.style_reference_url || undefined;
+      }
+
+      const entryId = entry?.id;
+      if (!entryId) throw new Error("Carte calendrier non sauvegardée");
+
+      // Insert pipeline
+      const { error: insertError } = await supabase.from("auto_pipelines" as any).insert({
+        calendar_entry_id: entryId,
+        channel_id: channelId,
+        user_id: userId,
+        current_step: "create_project",
+        step_status: "pending",
+        config: {
+          script: {
+            model: (scriptPreset as any).script_model || "glm5-openrouter",
+            custom_prompt: scriptPreset.custom_prompt || "",
+            use_batch: (scriptPreset as any).use_batch || false,
+          },
+          tts: ttsConfig,
+          project: projectConfig,
+        },
+      });
+
+      if (insertError) throw new Error(insertError.message);
+
+      toast.success("Auto-génération lancée ! Le script, l'audio et les scènes seront créés automatiquement.");
+      setShowLaunchDialog(false);
+      onClose();
+      onSaved();
+    } catch (err: any) {
+      console.error("Auto-generate error:", err);
+      toast.error(`Erreur: ${err.message}`);
+    } finally {
+      setIsAutoGenerating(false);
+    }
+  };
+
   return (
     <>
     <Dialog open={isOpen} onOpenChange={(open) => !open && handleClose()}>
@@ -1241,6 +1359,26 @@ export default function CalendarVideoModal({
           </AlertDialogDescription>
         </AlertDialogHeader>
         <div className="flex flex-col gap-3 py-4">
+          {channelId && channels.find(c => c.id === channelId)?.script_preset_id && channels.find(c => c.id === channelId)?.tts_preset_id && (
+            <Button
+              variant="outline"
+              className="h-auto py-4 justify-start gap-4 border-primary/30 bg-primary/5 hover:bg-primary/10"
+              onClick={handleAutoGenerate}
+              disabled={isAutoGenerating}
+            >
+              {isAutoGenerating ? (
+                <Loader2 className="h-6 w-6 text-primary animate-spin" />
+              ) : (
+                <Zap className="h-6 w-6 text-primary" />
+              )}
+              <div className="text-left">
+                <div className="font-semibold">Auto-génération complète</div>
+                <div className="text-sm text-muted-foreground">
+                  Script + Audio + Scènes générés automatiquement avec les presets de la chaîne
+                </div>
+              </div>
+            </Button>
+          )}
           <Button
             variant="outline"
             className="h-auto py-4 justify-start gap-4"
