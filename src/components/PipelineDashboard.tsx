@@ -137,7 +137,7 @@ export default function PipelineDashboard({ isOpen, onClose }: PipelineDashboard
           ) : pipelines.length === 0 ? (
             <p className="text-sm text-muted-foreground text-center py-12">Aucun pipeline récent</p>
           ) : (
-            <div className="space-y-2 pb-2">
+            <div className="space-y-2 pb-2 w-full overflow-hidden">
               {active.length > 0 && (
                 <>
                   <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider px-1">En cours ({active.length})</p>
@@ -185,19 +185,21 @@ function PipelineCard({ pipeline }: { pipeline: PipelineRow }) {
       )}
 
       {!isCompleted && !isFailed && (
-        <div className="flex gap-0.5 mb-1 min-w-0">
-          {STEPS.map((step, i) => {
-            const isDone = i < currentIdx;
-            const isCurrent = i === currentIdx;
-            return (
-              <div key={step} className="flex-1" title={STEP_LABELS[i]}>
-                <div className={cn(
-                  "h-1.5 rounded-full transition-all",
-                  isDone ? "bg-primary" : isCurrent ? "bg-primary/50 animate-pulse" : "bg-muted",
-                )} />
-              </div>
-            );
-          })}
+        <div className="w-full overflow-hidden mb-1">
+          <div className="flex gap-0.5">
+            {STEPS.map((step, i) => {
+              const isDone = i < currentIdx;
+              const isCurrent = i === currentIdx;
+              return (
+                <div key={step} className="flex-1 min-w-0" title={STEP_LABELS[i]}>
+                  <div className={cn(
+                    "h-1.5 rounded-full transition-all",
+                    isDone ? "bg-primary" : isCurrent ? "bg-primary/50 animate-pulse" : "bg-muted",
+                  )} />
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 
@@ -210,13 +212,16 @@ function PipelineCard({ pipeline }: { pipeline: PipelineRow }) {
         )}>
           {getStepText(pipeline.current_step)}
         </p>
-        {(isCompleted || isFailed) && pipeline.updated_at && (
-          <p className="text-xs text-muted-foreground whitespace-nowrap">
-            {new Date(pipeline.updated_at).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" })}
-            {" "}
-            {new Date(pipeline.updated_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}
-          </p>
-        )}
+        {(isCompleted || isFailed) && (() => {
+          const ts = pipeline.updated_at || pipeline.created_at;
+          if (!ts) return null;
+          const d = new Date(ts);
+          return (
+            <p className="text-xs text-muted-foreground whitespace-nowrap">
+              {d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" })} à {d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}
+            </p>
+          );
+        })()}
       </div>
 
       {isFailed && pipeline.error && (
