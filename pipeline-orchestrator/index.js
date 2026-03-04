@@ -395,7 +395,6 @@ async function stepCreateScenes(pipeline) {
   if (project.scenes && Array.isArray(project.scenes) && project.scenes.length > 0) {
     console.log(`[orchestrator] [${id}] Scenes already exist (${project.scenes.length}), completing`);
     await advancePipeline(id, 'completed', { step_status: 'completed' });
-    await updateCalendarStatus(calendar_entry_id, 'completed');
     return;
   }
 
@@ -423,7 +422,7 @@ async function stepCreateScenes(pipeline) {
   const { error } = await supabase.from('projects').update(updatePayload).eq('id', project_id);
   if (error) throw new Error(`Failed to save scenes: ${error.message}`);
 
-  await updateCalendarStatus(calendar_entry_id, 'completed');
+  await updateCalendarStatus(calendar_entry_id, 'generating');
   await advancePipeline(id, 'completed', { step_status: 'completed' });
 
   console.log(`[orchestrator] [${id}] Pipeline COMPLETED - ${scenes.length} scenes, project ready`);

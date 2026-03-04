@@ -2822,13 +2822,14 @@ async function processTranscriptionJob(
     throw new Error("Audio URL is required for transcription");
   }
 
+  const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
   const response = await fetch(`${supabaseUrl}/functions/v1/transcribe-audio`, {
     method: 'POST',
     headers: {
-      'Authorization': authHeader,
+      'Authorization': `Bearer ${supabaseServiceKey}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ audioUrl }),
+    body: JSON.stringify({ audioUrl, userId }),
   });
 
   if (!response.ok) {
