@@ -3662,9 +3662,10 @@ async function recoverStaleJobs() {
           processingJobIds.add(jobId);
           activeJobs++;
           resumeAi33TtsPoll(job, meta.ai33_task_id)
-            .catch(err => {
+            .catch(async (err) => {
               logError(`${tag} AI33 resume failed:`, err.message);
-              supabase.from('generation_jobs').update({ status: 'pending', error_message: null }).eq('id', jobId);
+              await supabase.from('generation_jobs').update({ status: 'pending', error_message: null, metadata: { ...meta, step: null, runpodJobId: null } }).eq('id', jobId);
+              log(`${tag} Reset to pending after AI33 resume failure`);
             })
             .finally(() => { activeJobs--; processingJobIds.delete(jobId); });
           continue;
@@ -3676,9 +3677,10 @@ async function recoverStaleJobs() {
           processingJobIds.add(jobId);
           activeJobs++;
           resumeGenaiproTtsPoll(job, meta.genaipro_task_id)
-            .catch(err => {
+            .catch(async (err) => {
               logError(`${tag} GenAIPro resume failed:`, err.message);
-              supabase.from('generation_jobs').update({ status: 'pending', error_message: null }).eq('id', jobId);
+              await supabase.from('generation_jobs').update({ status: 'pending', error_message: null, metadata: { ...meta, step: null, runpodJobId: null } }).eq('id', jobId);
+              log(`${tag} Reset to pending after GenAIPro resume failure`);
             })
             .finally(() => { activeJobs--; processingJobIds.delete(jobId); });
           continue;
@@ -3690,9 +3692,10 @@ async function recoverStaleJobs() {
           processingJobIds.add(jobId);
           activeJobs++;
           resumeRvcPoll(job, meta.runpodJobId)
-            .catch(err => {
+            .catch(async (err) => {
               logError(`${tag} RVC resume failed:`, err.message);
-              supabase.from('generation_jobs').update({ status: 'pending', error_message: null }).eq('id', jobId);
+              await supabase.from('generation_jobs').update({ status: 'pending', error_message: null, metadata: { ...meta, step: null, runpodJobId: null } }).eq('id', jobId);
+              log(`${tag} Reset to pending after RVC resume failure`);
             })
             .finally(() => { activeJobs--; processingJobIds.delete(jobId); });
           continue;
