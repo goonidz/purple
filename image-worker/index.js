@@ -3877,6 +3877,7 @@ async function resumeRvcPoll(job, runpodJobId) {
 
   log(`[recovery RVC ${jobId.substring(0, 8)}] Polling RunPod job ${runpodJobId}...`);
 
+  let consecutive404 = 0;
   for (let attempt = 0; attempt < 120; attempt++) {
     await sleep(5000);
     if (attempt % 6 === 0) log(`[recovery RVC ${jobId.substring(0, 8)}] Poll ${attempt + 1}/120`);
@@ -3884,7 +3885,12 @@ async function resumeRvcPoll(job, runpodJobId) {
     const statusRes = await fetch(`https://api.runpod.ai/v2/${runpodRvcEndpointId}/status/${runpodJobId}`, {
       headers: { 'Authorization': `Bearer ${runpodApiKey}` },
     });
-    if (!statusRes.ok) { logError(`[recovery RVC] Poll error: ${statusRes.status}`); continue; }
+    if (!statusRes.ok) {
+      logError(`[recovery RVC] Poll error: ${statusRes.status}`);
+      if (statusRes.status === 404) { consecutive404++; if (consecutive404 >= 3) throw new Error('RunPod job not found (404 x3)'); }
+      continue;
+    }
+    consecutive404 = 0;
 
     const statusData = await statusRes.json();
 
