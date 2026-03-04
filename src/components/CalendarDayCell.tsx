@@ -127,6 +127,7 @@ export default function CalendarDayCell({
   };
 
   return (
+    <>
     <div 
       className={cn(
         "min-h-[120px] border-b border-r p-2 group cursor-pointer hover:bg-muted/50 transition-colors",
@@ -316,11 +317,12 @@ export default function CalendarDayCell({
           </button>
         )}
       </div>
+    </div>
 
-      <PipelineDashboard isOpen={showDashboard} onClose={() => setShowDashboard(false)} />
+    <PipelineDashboard isOpen={showDashboard} onClose={() => setShowDashboard(false)} />
 
-      {/* Dialog to show all entries */}
-      <Dialog open={showAllEntriesDialog} onOpenChange={setShowAllEntriesDialog}>
+    {/* Dialog to show all entries */}
+    <Dialog open={showAllEntriesDialog} onOpenChange={setShowAllEntriesDialog}>
         <DialogContent className="max-w-2xl max-h-[80vh]">
           <DialogHeader>
             <DialogTitle>
@@ -429,6 +431,6 @@ export default function CalendarDayCell({
           </ScrollArea>
         </DialogContent>
       </Dialog>
-    </div>
+    </>
   );
 }
