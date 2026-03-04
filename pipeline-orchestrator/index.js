@@ -640,7 +640,7 @@ async function pollLoop() {
       .in('step_status', ['pending', 'running'])
       .not('current_step', 'in', '("completed","failed")')
       .order('created_at', { ascending: true })
-      .limit(5);
+      .limit(20);
 
     if (error) {
       console.error('[orchestrator] Poll query error:', error.message);
