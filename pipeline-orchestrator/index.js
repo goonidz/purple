@@ -502,27 +502,11 @@ async function stepWaitPrompts(pipeline) {
 
   if (activeJobs && activeJobs.length > 0) return; // still running
 
-  // No active jobs and prompts incomplete — check if any failed
-  const { data: failedJobs } = await supabase
-    .from('generation_jobs')
-    .select('id, error_message')
-    .eq('project_id', project_id)
-    .in('job_type', ['prompts', 'single_prompt'])
-    .eq('status', 'failed')
-    .order('created_at', { ascending: false })
-    .limit(1);
-
-  if (failedJobs && failedJobs.length > 0) {
-    throw new Error(`Prompt generation failed: ${failedJobs[0].error_message || 'unknown'}`);
-  }
-
-  // Edge case: no active jobs, no failures, but prompts not complete — re-launch
+  // Prompts incomplete & no active jobs — re-launch to fill the gaps
   const completedPrompts = prompts.filter(p => p?.text).length;
-  if (prompts.length < scenes.length || completedPrompts < scenes.length) {
-    console.log(`[orchestrator] [${id}] Prompts incomplete (${completedPrompts}/${scenes.length} with text), no active jobs — re-launching`);
-    await updatePipelineMetadata(id, { promptsJobId: null });
-    await advancePipeline(id, 'generate_prompts');
-  }
+  console.log(`[orchestrator] [${id}] Prompts incomplete (${completedPrompts}/${scenes.length} with text), no active jobs — re-launching`);
+  await updatePipelineMetadata(id, { promptsJobId: null });
+  await advancePipeline(id, 'generate_prompts');
 }
 
 // ---------- IMAGES ----------
