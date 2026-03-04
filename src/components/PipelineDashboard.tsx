@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 import { Loader2, Check, AlertTriangle } from "lucide-react";
@@ -25,12 +24,6 @@ const STEPS = [
   "wait_prompts", "generate_images", "wait_images",
 ];
 
-const STEP_LABELS = [
-  "Projet", "Script", "Script...", "Audio", "Audio...",
-  "Transcription", "Transcription...", "Scènes",
-  "Prompts", "Prompts...", "Images", "Images...",
-];
-
 function getStepText(step: string): string {
   if (step === "create_project") return "Création du projet...";
   if (step === "generate_script" || step === "wait_script") return "Génération du script...";
@@ -42,6 +35,12 @@ function getStepText(step: string): string {
   if (step === "completed") return "Terminé";
   if (step === "failed") return "Échoué";
   return step;
+}
+
+function formatDate(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return `${d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" })} à ${d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}`;
 }
 
 interface PipelineDashboardProps {
@@ -129,7 +128,7 @@ export default function PipelineDashboard({ isOpen, onClose }: PipelineDashboard
           <DialogTitle>Pipelines auto-génération</DialogTitle>
         </DialogHeader>
 
-        <ScrollArea className="flex-1 overflow-y-auto -mx-2 px-2">
+        <div className="flex-1 overflow-y-auto overflow-x-hidden">
           {loading ? (
             <div className="flex items-center justify-center py-12">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -137,22 +136,22 @@ export default function PipelineDashboard({ isOpen, onClose }: PipelineDashboard
           ) : pipelines.length === 0 ? (
             <p className="text-sm text-muted-foreground text-center py-12">Aucun pipeline récent</p>
           ) : (
-            <div className="space-y-2 pb-2 w-full overflow-hidden">
+            <div className="space-y-2 pb-2">
               {active.length > 0 && (
                 <>
-                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider px-1">En cours ({active.length})</p>
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">En cours ({active.length})</p>
                   {active.map(p => <PipelineCard key={p.id} pipeline={p} />)}
                 </>
               )}
               {recent.length > 0 && (
                 <>
-                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider px-1 mt-4">Récents</p>
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mt-4">Récents</p>
                   {recent.map(p => <PipelineCard key={p.id} pipeline={p} />)}
                 </>
               )}
             </div>
           )}
-        </ScrollArea>
+        </div>
       </DialogContent>
     </Dialog>
   );
@@ -162,66 +161,59 @@ function PipelineCard({ pipeline }: { pipeline: PipelineRow }) {
   const isCompleted = pipeline.current_step === "completed";
   const isFailed = pipeline.step_status === "failed";
   const currentIdx = STEPS.indexOf(pipeline.current_step);
+  const progressPct = isCompleted ? 100 : isFailed ? 0 : Math.round(((currentIdx >= 0 ? currentIdx : 0) / STEPS.length) * 100);
 
   return (
     <div className={cn(
-      "p-3 rounded-lg border min-w-0 overflow-hidden",
+      "p-3 rounded-lg border",
       isCompleted && "border-green-500/20 bg-green-500/5",
       isFailed && "border-red-500/20 bg-red-500/5",
       !isCompleted && !isFailed && "border-primary/20 bg-primary/5",
     )}>
-      <div className="flex items-center gap-2 mb-1.5">
+      {/* Title row */}
+      <div className="flex items-center gap-2 mb-1">
         {pipeline.channel_color && (
           <div className="h-2.5 w-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: pipeline.channel_color }} />
         )}
-        <span className="text-sm font-medium truncate flex-1">{pipeline.card_title}</span>
-        {isCompleted && <Check className="h-4 w-4 text-green-600 flex-shrink-0" />}
-        {isFailed && <AlertTriangle className="h-4 w-4 text-red-500 flex-shrink-0" />}
-        {!isCompleted && !isFailed && <Loader2 className="h-4 w-4 text-primary animate-spin flex-shrink-0" />}
+        <span className="text-sm font-medium truncate">{pipeline.card_title}</span>
+        <div className="flex-shrink-0 ml-auto">
+          {isCompleted && <Check className="h-4 w-4 text-green-600" />}
+          {isFailed && <AlertTriangle className="h-4 w-4 text-red-500" />}
+          {!isCompleted && !isFailed && <Loader2 className="h-4 w-4 text-primary animate-spin" />}
+        </div>
       </div>
 
+      {/* Channel name */}
       {pipeline.channel_name && (
         <p className="text-xs text-muted-foreground mb-2">{pipeline.channel_name}</p>
       )}
 
+      {/* Single progress bar */}
       {!isCompleted && !isFailed && (
-        <div className="w-full overflow-hidden mb-1">
-          <div className="flex gap-0.5">
-            {STEPS.map((step, i) => {
-              const isDone = i < currentIdx;
-              const isCurrent = i === currentIdx;
-              return (
-                <div key={step} className="flex-1 min-w-0" title={STEP_LABELS[i]}>
-                  <div className={cn(
-                    "h-1.5 rounded-full transition-all",
-                    isDone ? "bg-primary" : isCurrent ? "bg-primary/50 animate-pulse" : "bg-muted",
-                  )} />
-                </div>
-              );
-            })}
-          </div>
+        <div className="h-1.5 w-full rounded-full bg-muted mb-1.5">
+          <div
+            className="h-full rounded-full bg-primary transition-all"
+            style={{ width: `${progressPct}%` }}
+          />
         </div>
       )}
 
+      {/* Status + dates */}
       <div className="flex items-center justify-between gap-2">
         <p className={cn(
-          "text-xs",
+          "text-xs truncate",
           isCompleted && "text-green-700 dark:text-green-400",
           isFailed && "text-red-600",
           !isCompleted && !isFailed && "text-muted-foreground",
         )}>
           {getStepText(pipeline.current_step)}
         </p>
-        {(isCompleted || isFailed) && (() => {
-          const ts = pipeline.updated_at || pipeline.created_at;
-          if (!ts) return null;
-          const d = new Date(ts);
-          return (
-            <p className="text-xs text-muted-foreground whitespace-nowrap">
-              {d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" })} à {d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}
-            </p>
-          );
-        })()}
+        <span className="text-[10px] text-muted-foreground whitespace-nowrap flex-shrink-0">
+          {(isCompleted || isFailed)
+            ? formatDate(pipeline.updated_at || pipeline.created_at)
+            : `Début: ${formatDate(pipeline.created_at)}`
+          }
+        </span>
       </div>
 
       {isFailed && pipeline.error && (
