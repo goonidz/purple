@@ -122,7 +122,8 @@ export default function CalendarVideoModal({
   const [isPlaying, setIsPlaying] = useState(false);
   const [showLaunchDialog, setShowLaunchDialog] = useState(false);
   const [isAutoGenerating, setIsAutoGenerating] = useState(false);
-  const [pipelineStatus, setPipelineStatus] = useState<{ current_step: string; step_status: string; error: string | null; project_id: string | null } | null>(null);
+  const [pipelineStatus, setPipelineStatus] = useState<{ id: string; current_step: string; step_status: string; error: string | null; project_id: string | null } | null>(null);
+  const [isRetryingPipeline, setIsRetryingPipeline] = useState(false);
   const [tempCreatedEntryId, setTempCreatedEntryId] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -275,7 +276,7 @@ export default function CalendarVideoModal({
     const fetchPipelineStatus = async () => {
       const { data } = await supabase
         .from("auto_pipelines" as any)
-        .select("current_step, step_status, error, project_id")
+        .select("id, current_step, step_status, error, project_id")
         .eq("calendar_entry_id", entry.id)
         .order("created_at", { ascending: false })
         .limit(1)
@@ -927,6 +928,24 @@ export default function CalendarVideoModal({
     }
   };
 
+  const handleRetryPipeline = async () => {
+    if (!pipelineStatus?.id) return;
+    setIsRetryingPipeline(true);
+    try {
+      const { error } = await supabase
+        .from("auto_pipelines" as any)
+        .update({ step_status: "pending", error: null } as any)
+        .eq("id", pipelineStatus.id);
+      if (error) throw new Error(error.message);
+      setPipelineStatus({ ...pipelineStatus, step_status: "pending", error: null });
+      toast.success("Pipeline relancé !");
+    } catch (err: any) {
+      toast.error(`Erreur: ${err.message}`);
+    } finally {
+      setIsRetryingPipeline(false);
+    }
+  };
+
   return (
     <>
     <Dialog open={isOpen} onOpenChange={(open) => !open && handleClose()}>
@@ -1384,9 +1403,20 @@ export default function CalendarVideoModal({
         )}
         {pipelineStatus?.step_status === 'failed' && (
           <div className="mx-4 mb-2 p-3 rounded-lg border border-red-500/20 bg-red-500/5">
-            <div className="flex items-center gap-2">
-              <Trash2 className="h-4 w-4 text-red-600 flex-shrink-0" />
-              <span className="text-sm font-medium text-red-700 dark:text-red-400">Auto-génération échouée</span>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 min-w-0">
+                <Trash2 className="h-4 w-4 text-red-600 flex-shrink-0" />
+                <span className="text-sm font-medium text-red-700 dark:text-red-400">Auto-génération échouée</span>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs border-red-500/30 hover:bg-red-500/10 flex-shrink-0"
+                onClick={handleRetryPipeline}
+                disabled={isRetryingPipeline}
+              >
+                {isRetryingPipeline ? <Loader2 className="h-3 w-3 animate-spin" /> : "Réessayer"}
+              </Button>
             </div>
             {pipelineStatus.error && <p className="text-xs text-red-600 mt-1 truncate">{pipelineStatus.error}</p>}
           </div>
