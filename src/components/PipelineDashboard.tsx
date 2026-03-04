@@ -122,7 +122,7 @@ export default function PipelineDashboard({ isOpen, onClose }: PipelineDashboard
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent className="max-w-2xl w-[95vw] max-h-[80vh] flex flex-col overflow-hidden">
+      <DialogContent className="max-w-xl w-[90vw] max-h-[80vh] flex flex-col overflow-hidden">
         <DialogHeader>
           <DialogTitle>Pipelines auto-génération</DialogTitle>
         </DialogHeader>
@@ -163,7 +163,7 @@ function PipelineCard({ pipeline }: { pipeline: PipelineRow }) {
 
   return (
     <div className={cn(
-      "p-3 rounded-lg border",
+      "p-3 rounded-lg border min-w-0 overflow-hidden",
       isCompleted && "border-green-500/20 bg-green-500/5",
       isFailed && "border-red-500/20 bg-red-500/5",
       !isCompleted && !isFailed && "border-primary/20 bg-primary/5",
@@ -183,7 +183,7 @@ function PipelineCard({ pipeline }: { pipeline: PipelineRow }) {
       )}
 
       {!isCompleted && !isFailed && (
-        <div className="flex gap-0.5 mb-1">
+        <div className="flex gap-0.5 mb-1 min-w-0">
           {STEPS.map((step, i) => {
             const isDone = i < currentIdx;
             const isCurrent = i === currentIdx;
