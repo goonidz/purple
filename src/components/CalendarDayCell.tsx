@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
-import { Plus, Link2, Link2Off, Youtube, Check, Zap, Loader2, MoreHorizontal, Activity } from "lucide-react";
+import { Plus, Link2, Link2Off, Youtube, Check, Zap, Loader2, MoreHorizontal, Activity, Eye } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -267,10 +267,14 @@ export default function CalendarDayCell({
               {entry.project_id ? (
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Link2 className="h-3 w-3 flex-shrink-0 text-blue-500" />
+                    {entry.status === 'generating' ? (
+                      <Eye className="h-3 w-3 flex-shrink-0 text-green-500" />
+                    ) : (
+                      <Link2 className="h-3 w-3 flex-shrink-0 text-blue-500" />
+                    )}
                   </TooltipTrigger>
                   <TooltipContent>
-                    <p>Lié à un projet</p>
+                    <p>{entry.status === 'generating' ? 'Auto-génération terminée — voir le projet' : 'Lié à un projet'}</p>
                   </TooltipContent>
                 </Tooltip>
               ) : (
@@ -384,10 +388,14 @@ export default function CalendarDayCell({
                       {entry.project_id ? (
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            <Link2 className="h-4 w-4 flex-shrink-0 text-blue-500" />
+                            {entry.status === 'generating' ? (
+                              <Eye className="h-4 w-4 flex-shrink-0 text-green-500" />
+                            ) : (
+                              <Link2 className="h-4 w-4 flex-shrink-0 text-blue-500" />
+                            )}
                           </TooltipTrigger>
                           <TooltipContent>
-                            <p>Lié à un projet</p>
+                            <p>{entry.status === 'generating' ? 'Auto-génération terminée — voir le projet' : 'Lié à un projet'}</p>
                           </TooltipContent>
                         </Tooltip>
                       ) : (

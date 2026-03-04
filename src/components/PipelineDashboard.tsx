@@ -122,7 +122,7 @@ export default function PipelineDashboard({ isOpen, onClose }: PipelineDashboard
   const recent = pipelines.filter(p => p.current_step === "completed" || p.step_status === "failed");
 
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
+    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }} modal>
       <DialogContent
         className="max-w-xl w-[90vw] max-h-[80vh] flex flex-col overflow-hidden"
         onPointerDownOutside={(e) => e.preventDefault()}
