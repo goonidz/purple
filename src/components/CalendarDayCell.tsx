@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
-import { Plus, Link2, Link2Off, Youtube, Check, Zap, Loader2, MoreHorizontal } from "lucide-react";
+import { Plus, Link2, Link2Off, Youtube, Check, Zap, Loader2, MoreHorizontal, Activity } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import PipelineDashboard from "@/components/PipelineDashboard";
 
 interface Channel {
   id: string;
@@ -92,6 +93,7 @@ export default function CalendarDayCell({
 }: CalendarDayCellProps) {
   const [isDragOver, setIsDragOver] = useState(false);
   const [showAllEntriesDialog, setShowAllEntriesDialog] = useState(false);
+  const [showDashboard, setShowDashboard] = useState(false);
 
   const eligibleEntries = entries.filter(e => {
     if (e.project_id) return false;
@@ -147,30 +149,43 @@ export default function CalendarDayCell({
           {format(date, "d")}
         </span>
         <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-          {eligibleEntries.length > 0 && onAutoGenerateEntries && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  className="p-1 hover:bg-muted rounded"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <MoreHorizontal className="h-4 w-4 text-muted-foreground" />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="min-w-[200px]">
-                <DropdownMenuItem
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onAutoGenerateEntries(eligibleEntries);
-                  }}
-                  className="gap-2"
-                >
-                  <Zap className="h-4 w-4 text-primary" />
-                  Auto-générer {eligibleEntries.length} carte{eligibleEntries.length > 1 ? 's' : ''}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                className="p-1 hover:bg-muted rounded"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <MoreHorizontal className="h-4 w-4 text-muted-foreground" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="min-w-[200px]">
+              {eligibleEntries.length > 0 && onAutoGenerateEntries && (
+                <>
+                  <DropdownMenuItem
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onAutoGenerateEntries(eligibleEntries);
+                    }}
+                    className="gap-2"
+                  >
+                    <Zap className="h-4 w-4 text-primary" />
+                    Auto-générer {eligibleEntries.length} carte{eligibleEntries.length > 1 ? 's' : ''}
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                </>
+              )}
+              <DropdownMenuItem
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowDashboard(true);
+                }}
+                className="gap-2"
+              >
+                <Activity className="h-4 w-4 text-muted-foreground" />
+                Pipelines en cours
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <button
             className="p-1 hover:bg-muted rounded"
             onClick={(e) => {
@@ -297,6 +312,8 @@ export default function CalendarDayCell({
           </button>
         )}
       </div>
+
+      <PipelineDashboard isOpen={showDashboard} onClose={() => setShowDashboard(false)} />
 
       {/* Dialog to show all entries */}
       <Dialog open={showAllEntriesDialog} onOpenChange={setShowAllEntriesDialog}>
