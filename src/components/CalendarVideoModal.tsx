@@ -120,6 +120,7 @@ export default function CalendarVideoModal({
   const [isPlaying, setIsPlaying] = useState(false);
   const [showLaunchDialog, setShowLaunchDialog] = useState(false);
   const [isAutoGenerating, setIsAutoGenerating] = useState(false);
+  const [pipelineStatus, setPipelineStatus] = useState<{ current_step: string; step_status: string; error: string | null; project_id: string | null } | null>(null);
   const [tempCreatedEntryId, setTempCreatedEntryId] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -259,6 +260,38 @@ export default function CalendarVideoModal({
     };
 
     loadFullEntry();
+  }, [isOpen, entry?.id]);
+
+  // Poll auto_pipelines status for this calendar entry
+  useEffect(() => {
+    if (!isOpen || !entry?.id) {
+      setPipelineStatus(null);
+      return;
+    }
+
+    let cancelled = false;
+    const fetchPipelineStatus = async () => {
+      const { data } = await supabase
+        .from("auto_pipelines" as any)
+        .select("current_step, step_status, error, project_id")
+        .eq("calendar_entry_id", entry.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .single();
+
+      if (!cancelled && data) {
+        setPipelineStatus(data as any);
+        if (data.project_id && !projectId) {
+          setProjectId(data.project_id as string);
+        }
+      } else if (!cancelled) {
+        setPipelineStatus(null);
+      }
+    };
+
+    fetchPipelineStatus();
+    const interval = setInterval(fetchPipelineStatus, 10_000);
+    return () => { cancelled = true; clearInterval(interval); };
   }, [isOpen, entry?.id]);
 
   const handleProjectSelect = (selectedProjectId: string) => {
@@ -1301,6 +1334,57 @@ export default function CalendarVideoModal({
                 Utilisez {`{{sourceTranscript}}`} dans le prompt de génération.
               </p>
             </div>
+          </div>
+        )}
+
+        {/* Auto-pipeline status banner */}
+        {pipelineStatus && pipelineStatus.current_step !== 'completed' && pipelineStatus.step_status !== 'failed' && (
+          <div className="mx-4 mb-2 p-3 rounded-lg border border-primary/20 bg-primary/5">
+            <div className="flex items-center gap-2 mb-2">
+              <Loader2 className="h-4 w-4 text-primary animate-spin flex-shrink-0" />
+              <span className="text-sm font-medium">Auto-génération en cours</span>
+            </div>
+            <div className="flex gap-1">
+              {['create_project', 'generate_script', 'wait_script', 'generate_audio', 'wait_audio', 'transcribe', 'wait_transcription', 'create_scenes'].map((step, i) => {
+                const steps = ['create_project', 'generate_script', 'wait_script', 'generate_audio', 'wait_audio', 'transcribe', 'wait_transcription', 'create_scenes'];
+                const currentIdx = steps.indexOf(pipelineStatus.current_step);
+                const isDone = i < currentIdx;
+                const isCurrent = i === currentIdx;
+                const labels = ['Projet', 'Script', 'Script...', 'Audio', 'Audio...', 'Transcription', 'Transcription...', 'Scènes'];
+                return (
+                  <div key={step} className="flex-1" title={labels[i]}>
+                    <div className={cn(
+                      "h-1.5 rounded-full transition-all",
+                      isDone ? "bg-primary" : isCurrent ? "bg-primary/50 animate-pulse" : "bg-muted"
+                    )} />
+                  </div>
+                );
+              })}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              {pipelineStatus.current_step === 'create_project' && 'Création du projet...'}
+              {(pipelineStatus.current_step === 'generate_script' || pipelineStatus.current_step === 'wait_script') && 'Génération du script...'}
+              {(pipelineStatus.current_step === 'generate_audio' || pipelineStatus.current_step === 'wait_audio') && 'Génération audio...'}
+              {(pipelineStatus.current_step === 'transcribe' || pipelineStatus.current_step === 'wait_transcription') && 'Transcription en cours...'}
+              {pipelineStatus.current_step === 'create_scenes' && 'Création des scènes...'}
+            </p>
+          </div>
+        )}
+        {pipelineStatus?.current_step === 'completed' && (
+          <div className="mx-4 mb-2 p-3 rounded-lg border border-green-500/20 bg-green-500/5">
+            <div className="flex items-center gap-2">
+              <Check className="h-4 w-4 text-green-600 flex-shrink-0" />
+              <span className="text-sm font-medium text-green-700 dark:text-green-400">Auto-génération terminée</span>
+            </div>
+          </div>
+        )}
+        {pipelineStatus?.step_status === 'failed' && (
+          <div className="mx-4 mb-2 p-3 rounded-lg border border-red-500/20 bg-red-500/5">
+            <div className="flex items-center gap-2">
+              <Trash2 className="h-4 w-4 text-red-600 flex-shrink-0" />
+              <span className="text-sm font-medium text-red-700 dark:text-red-400">Auto-génération échouée</span>
+            </div>
+            {pipelineStatus.error && <p className="text-xs text-red-600 mt-1 truncate">{pipelineStatus.error}</p>}
           </div>
         )}
 
