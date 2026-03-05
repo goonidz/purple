@@ -1,6 +1,6 @@
 import { Link, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Calendar, FolderOpen, User, Sparkles, Users } from "lucide-react";
+import { Calendar, FolderOpen, User, Sparkles, Users, SlidersHorizontal } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface AppHeaderProps {
@@ -62,6 +62,16 @@ export default function AppHeader({ title, children }: AppHeaderProps) {
               >
                 <FolderOpen className="h-4 w-4 sm:mr-2" />
                 <span className="hidden sm:inline">Projets</span>
+              </Button>
+            </Link>
+            <Link to="/presets">
+              <Button 
+                variant={isActive("/presets") ? "secondary" : "ghost"} 
+                size="sm"
+                className={cn(isActive("/presets") && "bg-primary/10")}
+              >
+                <SlidersHorizontal className="h-4 w-4 sm:mr-2" />
+                <span className="hidden sm:inline">Presets</span>
               </Button>
             </Link>
             <Link to="/profile">

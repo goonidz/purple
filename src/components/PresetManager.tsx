@@ -187,9 +187,43 @@ interface PresetManagerProps {
   onLoadPreset: (preset: Preset) => void;
   autoLoadPresetId?: string; // Optional: preset ID to auto-load from sessionStorage
   currentPresetId?: string; // Optional: preset ID to pre-select in dropdown
+  /** When set, fetch this preset and open the edit dialog (for standalone use e.g. Presets page) */
+  presetIdToEdit?: string;
+  /** Called when the edit dialog is closed (so parent can clear presetIdToEdit) */
+  onEditDialogClose?: () => void;
 }
 
-export const PresetManager = ({ currentConfig, onLoadPreset, autoLoadPresetId, currentPresetId }: PresetManagerProps) => {
+function mapRowToPreset(preset: any): Preset {
+  const presetData = preset as any;
+  let durationRanges: DurationRange[] | undefined;
+  if (presetData.duration_ranges && Array.isArray(presetData.duration_ranges)) {
+    durationRanges = presetData.duration_ranges;
+  }
+  return {
+    id: preset.id,
+    name: preset.name,
+    scene_duration_0to1: preset.scene_duration_0to1 || 4,
+    scene_duration_1to3: preset.scene_duration_1to3 || 6,
+    scene_duration_3plus: preset.scene_duration_3plus || 8,
+    range_end_1: presetData.range_end_1 || 60,
+    range_end_2: presetData.range_end_2 || 180,
+    duration_ranges: durationRanges,
+    example_prompts: Array.isArray(preset.example_prompts)
+      ? preset.example_prompts.filter((p: unknown): p is string => typeof p === "string")
+      : [],
+    image_width: preset.image_width,
+    image_height: preset.image_height,
+    aspect_ratio: preset.aspect_ratio,
+    style_reference_url: preset.style_reference_url,
+    image_model: presetData.image_model || "seedream-4.5",
+    prompt_system_message: presetData.prompt_system_message || null,
+    lora_url: presetData.lora_url || null,
+    lora_steps: presetData.lora_steps || 10,
+    qa_prompt: presetData.qa_prompt || null,
+  };
+}
+
+export const PresetManager = ({ currentConfig, onLoadPreset, autoLoadPresetId, currentPresetId, presetIdToEdit, onEditDialogClose }: PresetManagerProps) => {
   const [presets, setPresets] = useState<Preset[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -261,6 +295,55 @@ export const PresetManager = ({ currentConfig, onLoadPreset, autoLoadPresetId, c
     }
   }, [autoLoadPresetId, presets, onLoadPreset]);
 
+  // When presetIdToEdit is set (e.g. from Presets page), fetch that preset and open edit dialog
+  useEffect(() => {
+    if (!presetIdToEdit) return;
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase.from("presets").select("*").eq("id", presetIdToEdit).single();
+      if (cancelled) return;
+      if (error || !data) {
+        toast.error("Preset introuvable");
+        onEditDialogClose?.();
+        return;
+      }
+      const preset = mapRowToPreset(data);
+      setSelectedPresetId(preset.id);
+      setPresets(prev => {
+        if (prev.some(p => p.id === preset.id)) return prev;
+        return [...prev, preset];
+      });
+      setEditFormData({
+        name: preset.name,
+        durationRanges: preset.duration_ranges || convertLegacyToRanges(
+          preset.scene_duration_0to1,
+          preset.scene_duration_1to3,
+          preset.scene_duration_3plus,
+          preset.range_end_1,
+          preset.range_end_2
+        ),
+        examplePrompts: preset.example_prompts,
+        imageWidth: preset.image_width,
+        imageHeight: preset.image_height,
+        aspectRatio: preset.aspect_ratio,
+        styleReferenceUrls: parseStyleReferenceUrls(preset.style_reference_url),
+        imageModel: preset.image_model,
+        promptSystemMessage: preset.prompt_system_message || DEFAULT_PROMPT_SYSTEM_MESSAGE,
+        loraUrl: preset.lora_url || "",
+        loraSteps: preset.lora_steps || 10,
+        qaPrompt: preset.qa_prompt || DEFAULT_QA_PROMPT,
+      });
+      setIsEditDialogOpen(true);
+    })();
+    return () => { cancelled = true; };
+  }, [presetIdToEdit]);
+
+  // Notify parent when edit dialog closes (for standalone mode)
+  const handleEditDialogOpenChange = (open: boolean) => {
+    setIsEditDialogOpen(open);
+    if (!open) onEditDialogClose?.();
+  };
+
   const loadLoraPresets = async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -291,38 +374,7 @@ export const PresetManager = ({ currentConfig, onLoadPreset, autoLoadPresetId, c
 
       if (error) throw error;
       
-      const mappedPresets: Preset[] = (data || []).map(preset => {
-        const presetData = preset as any;
-        // Load duration_ranges if available, otherwise convert from legacy
-        let durationRanges: DurationRange[] | undefined;
-        if (presetData.duration_ranges && Array.isArray(presetData.duration_ranges)) {
-          durationRanges = presetData.duration_ranges;
-        }
-        
-        return {
-          id: preset.id,
-          name: preset.name,
-          scene_duration_0to1: preset.scene_duration_0to1 || 4,
-          scene_duration_1to3: preset.scene_duration_1to3 || 6,
-          scene_duration_3plus: preset.scene_duration_3plus || 8,
-          range_end_1: presetData.range_end_1 || 60,
-          range_end_2: presetData.range_end_2 || 180,
-          duration_ranges: durationRanges,
-          example_prompts: Array.isArray(preset.example_prompts) 
-            ? preset.example_prompts.filter((p): p is string => typeof p === 'string')
-            : [],
-          image_width: preset.image_width,
-          image_height: preset.image_height,
-          aspect_ratio: preset.aspect_ratio,
-          style_reference_url: preset.style_reference_url,
-          image_model: presetData.image_model || 'seedream-4.5',
-          prompt_system_message: presetData.prompt_system_message || null,
-          lora_url: presetData.lora_url || null,
-          lora_steps: presetData.lora_steps || 10,
-          qa_prompt: presetData.qa_prompt || null,
-        };
-      });
-      
+      const mappedPresets: Preset[] = (data || []).map((row: any) => mapRowToPreset(row));
       setPresets(mappedPresets);
     } catch (error: any) {
       console.error("Error loading presets:", error);
@@ -729,6 +781,7 @@ export const PresetManager = ({ currentConfig, onLoadPreset, autoLoadPresetId, c
           scene_duration_3plus: sourcePreset.scene_duration_3plus,
           range_end_1: sourcePreset.range_end_1,
           range_end_2: sourcePreset.range_end_2,
+          duration_ranges: sourcePreset.duration_ranges as any,
           example_prompts: sourcePreset.example_prompts,
           image_width: sourcePreset.image_width,
           image_height: sourcePreset.image_height,
@@ -738,6 +791,7 @@ export const PresetManager = ({ currentConfig, onLoadPreset, autoLoadPresetId, c
           lora_steps: sourcePreset.lora_steps,
           style_reference_url: sourcePreset.style_reference_url,
           prompt_system_message: sourcePreset.prompt_system_message,
+          qa_prompt: sourcePreset.qa_prompt,
         },
       ]);
 
@@ -936,7 +990,7 @@ export const PresetManager = ({ currentConfig, onLoadPreset, autoLoadPresetId, c
           </div>
         )}
 
-        <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <Dialog open={isEditDialogOpen} onOpenChange={handleEditDialogOpenChange}>
           <DialogContent className="max-w-4xl max-h-[90vh] w-[95vw] sm:w-full flex flex-col p-6">
             <div className="overflow-y-auto flex-1 min-h-0">
             <DialogHeader className="border-b pb-4">

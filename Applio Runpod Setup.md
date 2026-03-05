@@ -18,13 +18,13 @@
 Colle cette commande en une seule fois :
 
 ```bash
-apt-get update && apt-get install -y ffmpeg && cd /tmp && wget http://files.portaudio.com/archives/pa_stable_v190700_20210406.tgz && tar -xzf pa_stable_v190700_20210406.tgz && cd portaudio && ./configure && make && make install && ldconfig && cd /workspace && git clone https://github.com/IAHispano/Applio.git && cd Applio && pip install --no-cache-dir torch==2.7.1+cu128 torchaudio==2.7.1+cu128 torchvision==0.22.1+cu128 --index-url https://download.pytorch.org/whl/cu128 && pip install --no-cache-dir -r requirements.txt && MPLBACKEND=Agg python app.py --server-name 0.0.0.0 --port 6969
+apt-get update && apt-get install -y ffmpeg && cd /tmp && wget --no-check-certificate https://files.portaudio.com/archives/pa_stable_v190700_20210406.tgz && tar -xzf pa_stable_v190700_20210406.tgz && cd portaudio && ./configure && make && make install && ldconfig && cd /workspace && git clone https://github.com/IAHispano/Applio.git && cd Applio && pip install --no-cache-dir torch==2.7.1+cu128 torchaudio==2.7.1+cu128 torchvision==0.22.1+cu128 --index-url https://download.pytorch.org/whl/cu128 && pip install --no-cache-dir -r requirements.txt && MPLBACKEND=Agg python app.py --server-name 0.0.0.0 --port 6969
 ```
 
 ### Jupyter Lab (cellule)
 ```python
 %%bash
-apt-get update && apt-get install -y ffmpeg && cd /tmp && wget http://files.portaudio.com/archives/pa_stable_v190700_20210406.tgz && tar -xzf pa_stable_v190700_20210406.tgz && cd portaudio && ./configure && make && make install && ldconfig && cd /workspace && git clone https://github.com/IAHispano/Applio.git && cd Applio && pip install --no-cache-dir torch==2.7.1+cu128 torchaudio==2.7.1+cu128 torchvision==0.22.1+cu128 --index-url https://download.pytorch.org/whl/cu128 && pip install --no-cache-dir -r requirements.txt && MPLBACKEND=Agg python app.py --server-name 0.0.0.0 --port 6969
+apt-get update && apt-get install -y ffmpeg && cd /tmp && wget --no-check-certificate https://files.portaudio.com/archives/pa_stable_v190700_20210406.tgz && tar -xzf pa_stable_v190700_20210406.tgz && cd portaudio && ./configure && make && make install && ldconfig && cd /workspace && git clone https://github.com/IAHispano/Applio.git && cd Applio && pip install --no-cache-dir torch==2.7.1+cu128 torchaudio==2.7.1+cu128 torchvision==0.22.1+cu128 --index-url https://download.pytorch.org/whl/cu128 && pip install --no-cache-dir -r requirements.txt && MPLBACKEND=Agg python app.py --server-name 0.0.0.0 --port 6969
 ```
 
 > ⏱️ Durée : ~10-15 min

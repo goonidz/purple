@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -533,6 +534,13 @@ function PresetConfigDialog({
           <DialogDescription>
             Sélectionnez les presets par défaut pour cette chaîne. Ils seront automatiquement appliqués lors du lancement d'une génération depuis le calendrier.
           </DialogDescription>
+          <Link
+            to="/presets"
+            className="text-sm text-primary hover:underline mt-1 inline-block"
+            onClick={() => onClose()}
+          >
+            Gérer mes presets
+          </Link>
         </DialogHeader>
 
         {isLoadingPresets ? (

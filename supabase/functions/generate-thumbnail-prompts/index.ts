@@ -1,7 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { encode as base64Encode } from "https://deno.land/std@0.168.0/encoding/base64.ts";
-import Replicate from "https://esm.sh/replicate@0.25.2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -139,14 +138,13 @@ serve(async (req) => {
       );
     }
     
-    // For Claude, we need to get user's Replicate API key
-    let replicateApiKey: string | null = null;
+    // For Claude, we need to get user's Anthropic API key
+    let anthropicApiKey: string | null = null;
     if (useClaudeModel) {
       const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
       const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
       const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
       
-      // Get user from token or from body (for internal calls)
       const authHeader = req.headers.get('Authorization');
       const token = authHeader?.replace('Bearer ', '');
       const isServiceRoleCall = token === supabaseServiceKey;
@@ -154,11 +152,9 @@ serve(async (req) => {
       let targetUserId: string | null = null;
       
       if (isServiceRoleCall && bodyUserId) {
-        // Internal call from start-generation-job - use userId from body
         targetUserId = bodyUserId;
         console.log(`Using userId from body for internal call: ${targetUserId}`);
       } else if (!isServiceRoleCall) {
-        // Direct user call - get user from auth
         const supabaseClient = createClient(
           supabaseUrl,
           Deno.env.get('SUPABASE_ANON_KEY') ?? '',
@@ -173,14 +169,14 @@ serve(async (req) => {
       if (targetUserId) {
         const { data: apiKeyData } = await supabaseAdmin.rpc(
           'get_user_api_key_for_service',
-          { target_user_id: targetUserId, key_name: 'replicate' }
+          { target_user_id: targetUserId, key_name: 'anthropic' }
         );
-        replicateApiKey = apiKeyData;
+        anthropicApiKey = apiKeyData;
       }
       
-      if (!replicateApiKey) {
+      if (!anthropicApiKey) {
         return new Response(
-          JSON.stringify({ error: "Clé API Replicate non configurée. Ajoutez-la dans votre profil." }),
+          JSON.stringify({ error: "Clé API Anthropic non configurée. Ajoutez-la dans votre profil." }),
           { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
@@ -360,23 +356,40 @@ Le CONTENU des miniatures vient UNIQUEMENT du script ci-dessus.
 Crée des designs SIMPLES (3-4 éléments max) mais PERTINENTS au script.`
     });
 
-    console.log(`Generating thumbnail prompts with ${useClaudeModel ? 'Claude Sonnet 4' : 'Gemini 2.0 Flash'}...`);
+    console.log(`Generating thumbnail prompts with ${useClaudeModel ? 'Claude Sonnet 4.6 (Anthropic)' : 'Gemini 2.0 Flash'}...`);
     console.log(`Processed ${exampleUrls.length} example images and ${characterRefUrl ? '1' : '0'} character image`);
 
     let generatedContent: string;
 
     if (useClaudeModel) {
-      // Use Claude via Replicate
-      const replicate = new Replicate({ auth: replicateApiKey! });
-      
-      // Build the user prompt
-      const userPrompt = `EXEMPLES DE MINIATURES À REPRODUIRE (analyse le style, la composition, les couleurs):
-Les images d'exemples sont fournies ci-jointes. Analyse leur STYLE VISUEL (couleurs, composition, typographie, effets).
-${exampleUrls.length > 1 ? `Note: ${exampleUrls.length} images d'exemple sont fournies.` : ''}
+      // Build multimodal content blocks for Anthropic Messages API
+      const userContent: any[] = [];
 
-${characterRefUrl ? `PERSONNAGE À UTILISER (celui-ci uniquement, pas les autres personnages des exemples):
-Une image de personnage est également fournie.` : ''}
+      userContent.push({ type: "text", text: "EXEMPLES DE MINIATURES À REPRODUIRE (analyse le style, la composition, les couleurs):" });
 
+      // Add ALL example images as base64 image blocks
+      for (const url of exampleUrls) {
+        const imageData = await imageUrlToBase64(url);
+        if (imageData) {
+          userContent.push({
+            type: "image",
+            source: { type: "base64", media_type: imageData.mimeType, data: imageData.data }
+          });
+        }
+      }
+
+      if (characterRefUrl) {
+        userContent.push({ type: "text", text: "PERSONNAGE À UTILISER (celui-ci uniquement, pas les autres personnages des exemples):" });
+        const charImageData = await imageUrlToBase64(characterRefUrl);
+        if (charImageData) {
+          userContent.push({
+            type: "image",
+            source: { type: "base64", media_type: charImageData.mimeType, data: charImageData.data }
+          });
+        }
+      }
+
+      userContent.push({ type: "text", text: `
 === TITRE DE LA VIDÉO ===
 "${videoTitle}"
 
@@ -407,45 +420,51 @@ GÉNÈRE des miniatures qui représentent VRAIMENT le contenu spécifique de CET
 RAPPEL: Les images d'exemples = STYLE VISUEL uniquement (couleurs, composition, typographie).
 Le CONTENU des miniatures vient UNIQUEMENT du script ci-dessus.
 
-Crée des designs SIMPLES (3-4 éléments max) mais PERTINENTS au script.`;
+Crée des designs SIMPLES (3-4 éléments max) mais PERTINENTS au script.` });
 
       try {
-        // Send images one by one and combine results, or use first image
-        // Replicate's Claude accepts one image at a time via the 'image' field
-        // We'll use the first example image as the main style reference
-        const primaryImageUrl = exampleUrls[0];
-        
-        const output = await replicate.run(
-          "anthropic/claude-sonnet-4-6",
-          {
-            input: {
-              prompt: userPrompt,
-              system_prompt: systemPrompt,
-              image: primaryImageUrl,
-              max_tokens: 2048,
-              temperature: previousPrompts && previousPrompts.length > 0 ? 0.95 : 0.7,
-            }
+        const anthropicResponse = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': anthropicApiKey!,
+            'anthropic-version': '2023-06-01',
+          },
+          body: JSON.stringify({
+            model: 'claude-sonnet-4-6',
+            max_tokens: 2048,
+            temperature: previousPrompts && previousPrompts.length > 0 ? 0.95 : 0.7,
+            system: systemPrompt,
+            messages: [{ role: 'user', content: userContent }]
+          }),
+        });
+
+        if (!anthropicResponse.ok) {
+          const errorText = await anthropicResponse.text();
+          console.error("Anthropic API error:", anthropicResponse.status, errorText);
+
+          if (anthropicResponse.status === 429) {
+            return new Response(
+              JSON.stringify({ error: "Limite de requêtes dépassée, veuillez réessayer plus tard" }),
+              { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+            );
           }
-        );
-        
-        // Replicate returns an array of strings or a single string
-        if (Array.isArray(output)) {
-          generatedContent = output.join('');
-        } else {
-          generatedContent = String(output);
-        }
-      } catch (replicateError: any) {
-        console.error("Replicate Claude error:", replicateError);
-        
-        if (replicateError.message?.includes('rate limit')) {
+
           return new Response(
-            JSON.stringify({ error: "Limite de requêtes dépassée, veuillez réessayer plus tard" }),
-            { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+            JSON.stringify({ error: `Erreur Claude: ${anthropicResponse.status} - ${errorText}` }),
+            { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
           );
         }
 
+        const anthropicData = await anthropicResponse.json();
+        generatedContent = (anthropicData.content || [])
+          .filter((b: any) => b.type === 'text')
+          .map((b: any) => b.text)
+          .join('');
+      } catch (claudeError: any) {
+        console.error("Anthropic Claude error:", claudeError);
         return new Response(
-          JSON.stringify({ error: `Erreur lors de la génération des prompts avec Claude: ${replicateError.message}` }),
+          JSON.stringify({ error: `Erreur lors de la génération des prompts avec Claude: ${claudeError.message}` }),
           { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
