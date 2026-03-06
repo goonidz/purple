@@ -13,26 +13,28 @@ import { toast } from "sonner";
 type TtsMode = "custom_voice" | "voice_clone" | "voice_design";
 
 const SPEAKERS = [
-  { id: "Serena", label: "Serena (female, warm)" },
-  { id: "Ethan", label: "Ethan (male, neutral)" },
-  { id: "Aria", label: "Aria (female, expressive)" },
-  { id: "Benjamin", label: "Benjamin (male, deep)" },
-  { id: "Clara", label: "Clara (female, bright)" },
-  { id: "Daniel", label: "Daniel (male, calm)" },
+  { id: "Aiden", label: "Aiden — Sunny American male, clear midrange (EN)" },
+  { id: "Ryan", label: "Ryan — Dynamic male, strong rhythmic drive (EN)" },
+  { id: "Vivian", label: "Vivian — Bright, slightly edgy young female (ZH)" },
+  { id: "Serena", label: "Serena — Warm, gentle young female (ZH)" },
+  { id: "Uncle_Fu", label: "Uncle Fu — Seasoned male, low mellow timbre (ZH)" },
+  { id: "Dylan", label: "Dylan — Youthful Beijing male, clear natural (ZH-Beijing)" },
+  { id: "Eric", label: "Eric — Lively Chengdu male, slightly husky (ZH-Sichuan)" },
+  { id: "Ono_Anna", label: "Ono Anna — Playful Japanese female, light nimble (JA)" },
+  { id: "Sohee", label: "Sohee — Warm Korean female, rich emotion (KO)" },
 ];
 
 const LANGUAGES = [
   { id: "auto", label: "Auto-detect" },
-  { id: "en", label: "English" },
-  { id: "fr", label: "Français" },
-  { id: "es", label: "Español" },
-  { id: "de", label: "Deutsch" },
-  { id: "it", label: "Italiano" },
-  { id: "pt", label: "Português" },
-  { id: "ja", label: "日本語" },
-  { id: "ko", label: "한국어" },
-  { id: "zh", label: "中文" },
-  { id: "ru", label: "Русский" },
+  { id: "English", label: "English" },
+  { id: "French", label: "Français" },
+  { id: "Spanish", label: "Español" },
+  { id: "German", label: "Deutsch" },
+  { id: "Portuguese", label: "Português" },
+  { id: "Japanese", label: "日本語" },
+  { id: "Korean", label: "한국어" },
+  { id: "Chinese", label: "中文" },
+  { id: "Russian", label: "Русский" },
 ];
 
 interface HistoryJob {
@@ -52,7 +54,7 @@ interface Qwen3TTSGeneratorProps {
 export function Qwen3TTSGenerator({ initialText }: Qwen3TTSGeneratorProps) {
   const [text, setText] = useState(initialText || "");
   const [mode, setMode] = useState<TtsMode>("custom_voice");
-  const [speaker, setSpeaker] = useState("Serena");
+  const [speaker, setSpeaker] = useState("Aiden");
   const [language, setLanguage] = useState("auto");
   const [styleInstruction, setStyleInstruction] = useState("");
   const [voiceDescription, setVoiceDescription] = useState("");
