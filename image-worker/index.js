@@ -3088,8 +3088,8 @@ async function processQwen3TtsPipeline(job) {
     const latestVersion = modelInfo.latest_version?.id;
     if (!latestVersion) throw new Error('Could not find latest version for qwen/qwen3-tts');
 
-    const chunks = chunkTextBySentences(text);
-    log(`[Qwen3 TTS ${jobId}] Split into ${chunks.length} chunks`);
+    const chunks = chunkTextByChars(text, 200);
+    log(`[Qwen3 TTS ${jobId}] Split into ${chunks.length} chunks (~200 chars/chunk)`);
 
     await supabase.from('generation_jobs')
       .update({ status: 'processing', total: chunks.length, progress: 0, metadata: { ...meta, totalChunks: chunks.length } })
