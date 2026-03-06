@@ -439,6 +439,7 @@ export function AudioTTSGenerator({ initialText }: AudioTTSGeneratorProps) {
       case "genaipro": return "ElevenLabs";
       case "ai33": return "AI33";
       case "edgetts": return "EdgeTTS";
+      case "qwen3_tts": return "Qwen3 TTS";
       default: return provider;
     }
   };

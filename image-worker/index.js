@@ -3041,6 +3041,129 @@ async function processAi33AudioPipeline(job) {
 }
 
 // ============================================================================
+// QWEN3 TTS PIPELINE (via Replicate)
+// ============================================================================
+
+const QWEN3_TTS_TIMEOUT_MS = 10 * 60 * 1000;
+
+async function processQwen3TtsPipeline(job) {
+  const startTime = Date.now();
+  const { id: jobId, project_id: projectId, user_id: userId, metadata: meta } = job;
+
+  try {
+    const text = meta.text || meta.script;
+    if (!text || text.trim().length < 5) throw new Error('No text provided for Qwen3 TTS');
+
+    const mode = meta.mode || 'custom_voice';
+    const language = meta.language || 'auto';
+    const speaker = meta.speaker || 'Serena';
+
+    log(`[Qwen3 TTS ${jobId}] Starting (mode=${mode}, lang=${language}, text=${text.length} chars)`);
+
+    await supabase.from('generation_jobs')
+      .update({ status: 'processing', progress: 0, total: 1, current_step: 'Génération audio Qwen3...' })
+      .eq('id', jobId);
+
+    const replicateKey = await getUserApiKey(userId, 'replicate');
+    const replicateClient = new Replicate({ auth: replicateKey });
+
+    const input = { text: text.trim(), mode, language };
+
+    if (meta.styleInstruction) input.style_instruction = meta.styleInstruction;
+
+    if (mode === 'custom_voice') {
+      input.speaker = speaker;
+    } else if (mode === 'voice_clone') {
+      if (!meta.referenceAudioUrl) throw new Error('Reference audio URL required for voice cloning');
+      input.reference_audio = meta.referenceAudioUrl;
+      if (meta.referenceText) input.reference_text = meta.referenceText;
+    } else if (mode === 'voice_design') {
+      if (!meta.voiceDescription) throw new Error('Voice description required for voice design mode');
+      input.voice_description = meta.voiceDescription;
+    }
+
+    log(`[Qwen3 TTS ${jobId}] Calling Replicate qwen/qwen3-tts (mode=${mode})...`);
+
+    const [owner, name] = 'qwen/qwen3-tts'.split('/');
+    const modelInfo = await replicateClient.models.get(owner, name);
+    const latestVersion = modelInfo.latest_version?.id;
+    if (!latestVersion) throw new Error('Could not find latest version for qwen/qwen3-tts');
+
+    const prediction = await replicateClient.predictions.create({ version: latestVersion, input });
+    log(`[Qwen3 TTS ${jobId}] Prediction ${prediction.id} created`);
+
+    let result = prediction;
+    while (result.status !== 'succeeded' && result.status !== 'failed' && result.status !== 'canceled') {
+      if (Date.now() - startTime > QWEN3_TTS_TIMEOUT_MS) {
+        throw new Error(`Qwen3 TTS timed out after ${QWEN3_TTS_TIMEOUT_MS / 1000}s`);
+      }
+      await sleep(REPLICATE_POLL_MS);
+      result = await replicateClient.predictions.get(prediction.id);
+    }
+
+    if (result.status !== 'succeeded') {
+      throw new Error(`Qwen3 TTS prediction ${result.status}: ${result.error || 'unknown error'}`);
+    }
+
+    const audioOutput = typeof result.output === 'string' ? result.output : (Array.isArray(result.output) ? result.output[0] : null);
+    if (!audioOutput) throw new Error('Qwen3 TTS returned no audio output');
+
+    log(`[Qwen3 TTS ${jobId}] Audio ready, downloading...`);
+
+    const audioRes = await fetch(audioOutput);
+    if (!audioRes.ok) throw new Error(`Failed to download Qwen3 audio: ${audioRes.status}`);
+    const audioBytes = Buffer.from(await audioRes.arrayBuffer());
+
+    const ext = audioOutput.includes('.wav') ? 'wav' : 'mp3';
+    const filename = `${userId}/${projectId || 'standalone'}/${Date.now()}_qwen3_tts.${ext}`;
+    const contentType = ext === 'wav' ? 'audio/wav' : 'audio/mpeg';
+
+    const { error: uploadError } = await supabase.storage
+      .from('audio-files')
+      .upload(filename, audioBytes, { contentType, upsert: true });
+    if (uploadError) throw new Error(`Failed to upload audio: ${uploadError.message}`);
+
+    const { data: { publicUrl } } = supabase.storage.from('audio-files').getPublicUrl(filename);
+    log(`[Qwen3 TTS ${jobId}] Uploaded: ${publicUrl.substring(0, 80)}...`);
+
+    let finalAudioUrl = publicUrl;
+
+    if (meta.rvcEnabled && meta.rvcModelUrl) {
+      log(`[Qwen3 TTS ${jobId}] Applying RVC conversion...`);
+      finalAudioUrl = await applyRVCConversion(jobId, publicUrl, {
+        rvcModelUrl: meta.rvcModelUrl, rvcIndexUrl: meta.rvcIndexUrl || '',
+        rvcPitch: typeof meta.rvcPitch === 'number' ? meta.rvcPitch : 0,
+        rvcIndexRate: typeof meta.rvcIndexRate === 'number' ? meta.rvcIndexRate : 0.75,
+        userId, projectId,
+      }, meta);
+      log(`[Qwen3 TTS ${jobId}] RVC done: ${finalAudioUrl.substring(0, 80)}...`);
+    }
+
+    if (projectId) {
+      await supabase.from('projects')
+        .update({ audio_url: finalAudioUrl, updated_at: new Date().toISOString() })
+        .eq('id', projectId);
+    }
+
+    await supabase.from('generation_jobs')
+      .update({
+        status: 'completed', progress: 1, current_step: 'Terminé !',
+        completed_at: new Date().toISOString(),
+        metadata: { ...meta, audioUrl: finalAudioUrl, durationMs: Date.now() - startTime },
+      })
+      .eq('id', jobId);
+
+    log(`[Qwen3 TTS ${jobId}] Done in ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
+
+  } catch (err) {
+    logError(`[Qwen3 TTS ${jobId}] Pipeline failed:`, err.message);
+    await supabase.from('generation_jobs')
+      .update({ status: 'failed', error_message: err.message, completed_at: new Date().toISOString() })
+      .eq('id', jobId);
+  }
+}
+
+// ============================================================================
 // EDGETTS PIPELINE (with optional RVC)
 // ============================================================================
 
@@ -4053,6 +4176,7 @@ async function mainLoop() {
               if (job.metadata?.provider === 'genaipro') pipeline = processGenaiproAudioPipeline(job);
               else if (job.metadata?.provider === 'ai33') pipeline = processAi33AudioPipeline(job);
               else if (job.metadata?.provider === 'edgetts') pipeline = processEdgeTTSPipeline(job);
+              else if (job.metadata?.provider === 'qwen3_tts') pipeline = processQwen3TtsPipeline(job);
               else if ((job.metadata?.provider === 'minimax' || job.metadata?.provider === 'inworld') && job.metadata?.rvcEnabled) pipeline = processEdgeFunctionWithRVC(job);
               else pipeline = processAudioTTSPipeline(job);
             } else if (job.job_type === 'idea_generation') {

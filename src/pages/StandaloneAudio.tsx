@@ -3,8 +3,10 @@ import { useNavigate } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import AppHeader from "@/components/AppHeader";
 import { AudioTTSGenerator } from "@/components/AudioTTSGenerator";
+import { Qwen3TTSGenerator } from "@/components/Qwen3TTSGenerator";
 import { supabase } from "@/integrations/supabase/client";
 
 const StandaloneAudio = () => {
@@ -34,7 +36,18 @@ const StandaloneAudio = () => {
             </Link>
           </Button>
         </div>
-        <AudioTTSGenerator />
+        <Tabs defaultValue="gemini" className="w-full">
+          <TabsList className="grid w-full grid-cols-2 mb-6">
+            <TabsTrigger value="gemini">Gemini TTS</TabsTrigger>
+            <TabsTrigger value="qwen3">Qwen3 TTS</TabsTrigger>
+          </TabsList>
+          <TabsContent value="gemini">
+            <AudioTTSGenerator />
+          </TabsContent>
+          <TabsContent value="qwen3">
+            <Qwen3TTSGenerator />
+          </TabsContent>
+        </Tabs>
       </div>
     </div>
   );
