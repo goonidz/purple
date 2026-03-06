@@ -3045,7 +3045,7 @@ async function processAi33AudioPipeline(job) {
 // ============================================================================
 
 const QWEN3_TTS_TIMEOUT_MS = 10 * 60 * 1000;
-const QWEN3_TTS_CONCURRENCY = 3;
+const QWEN3_TTS_CONCURRENCY = 7;
 
 async function runQwen3Prediction(replicateClient, latestVersion, input) {
   const prediction = await replicateClient.predictions.create({ version: latestVersion, input });
