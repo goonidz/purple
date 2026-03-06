@@ -41,8 +41,8 @@ async function advancePipeline(pipelineId, nextStep, extraUpdates = {}) {
 
 async function failPipeline(pipelineId, error) {
   console.error(`[orchestrator] Pipeline ${pipelineId} FAILED: ${error}`);
+  // Keep current_step unchanged so retry can resume from the failed step
   await supabase.from('auto_pipelines').update({
-    current_step: 'failed',
     step_status: 'failed',
     error: String(error).slice(0, 500),
     updated_at: new Date().toISOString(),
@@ -656,7 +656,7 @@ async function pollLoop() {
       .from('auto_pipelines')
       .select('*')
       .in('step_status', ['pending', 'running'])
-      .not('current_step', 'in', '("completed","failed")')
+      .neq('current_step', 'completed')
       .order('created_at', { ascending: true })
       .limit(20);
 

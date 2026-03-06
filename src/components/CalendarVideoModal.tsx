@@ -934,7 +934,7 @@ export default function CalendarVideoModal({
     try {
       const { error } = await supabase
         .from("auto_pipelines" as any)
-        .update({ step_status: "pending", error: null } as any)
+        .update({ step_status: "pending", error: null, retry_count: 0 } as any)
         .eq("id", pipelineStatus.id);
       if (error) throw new Error(error.message);
       setPipelineStatus({ ...pipelineStatus, step_status: "pending", error: null });
