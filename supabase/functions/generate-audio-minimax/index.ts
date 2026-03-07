@@ -33,7 +33,7 @@ serve(async (req) => {
     const { 
       script, 
       voice = 'English_expressive_narrator', 
-      model = 'speech-2.6-hd', 
+      model = 'speech-2.8-turbo', 
       speed = 1.0,
       pitch = 0,
       volume = 1.0,

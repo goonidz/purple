@@ -194,8 +194,9 @@ const MINIMAX_VOICE_OPTIONS = [
 ];
 
 const MINIMAX_MODEL_OPTIONS = [
-  { id: "speech-2.6-hd", name: "HD (Haute qualité)", description: "Meilleure qualité audio" },
-  { id: "speech-2.6-turbo", name: "Turbo (Rapide)", description: "Génération plus rapide" },
+  { id: "speech-2.8-turbo", name: "2.8 Turbo (Recommandé)", description: "Dernière version, rapide et haute qualité" },
+  { id: "speech-2.6-hd", name: "2.6 HD (Haute qualité)", description: "Meilleure qualité audio" },
+  { id: "speech-2.6-turbo", name: "2.6 Turbo (Rapide)", description: "Génération rapide" },
 ];
 
 
@@ -255,7 +256,7 @@ const CreateFromScratch = () => {
   const [inworldVoiceId, setInworldVoiceId] = useState("Dennis");
   const [inworldSpeakingRate, setInworldSpeakingRate] = useState(0.9);
   const [forceElevenLabsTranscription, setForceElevenLabsTranscription] = useState(true);
-  const [minimaxModel, setMinimaxModel] = useState("speech-2.6-hd");
+  const [minimaxModel, setMinimaxModel] = useState("speech-2.8-turbo");
   // GenAIPro settings
   const [genaiproVoiceId, setGenaiproVoiceId] = useState("uju3wxzG5OhpWcoi3SMy");
   const [genaiproModel, setGenaiproModel] = useState("eleven_multilingual_v2");
