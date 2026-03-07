@@ -553,6 +553,17 @@ export default function Calendar() {
           projectConfig.style_reference_url = projectPreset.style_reference_url || undefined;
         }
 
+        // Check for existing active pipeline on this calendar entry
+        const { data: existingPipelines } = await supabase.from("auto_pipelines" as any)
+          .select("id")
+          .eq("calendar_entry_id", entry.id)
+          .in("step_status", ["pending", "running"])
+          .neq("current_step", "completed");
+        if (existingPipelines && existingPipelines.length > 0) {
+          console.warn(`Skipping entry ${entry.id}: already has an active pipeline`);
+          continue;
+        }
+
         await supabase.from("auto_pipelines" as any).insert({
           calendar_entry_id: entry.id,
           channel_id: entry.channel_id,

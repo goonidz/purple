@@ -896,6 +896,17 @@ export default function CalendarVideoModal({
       const entryId = entry?.id;
       if (!entryId) throw new Error("Carte calendrier non sauvegardée");
 
+      // Block duplicate: check for existing active pipeline
+      const { data: existingPipelines } = await supabase.from("auto_pipelines" as any)
+        .select("id")
+        .eq("calendar_entry_id", entryId)
+        .in("step_status", ["pending", "running"])
+        .neq("current_step", "completed");
+      if (existingPipelines && existingPipelines.length > 0) {
+        toast.error("Une auto-génération est déjà en cours pour cette carte.");
+        return;
+      }
+
       // Insert pipeline
       const { error: insertError } = await supabase.from("auto_pipelines" as any).insert({
         calendar_entry_id: entryId,
