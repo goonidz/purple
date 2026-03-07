@@ -984,8 +984,9 @@ const Index = () => {
         return;
       }
       
-      if (hasAudio && !hasTranscript) {
-        console.log("[loadProjectData] Project has audio but no transcript - loading page anyway");
+      if (hasAudio && !hasTranscript && !hasScenes) {
+        navigate(`/create-from-scratch?continue=${projectId}`);
+        return;
       }
 
       setProjectName(data.name || "");
