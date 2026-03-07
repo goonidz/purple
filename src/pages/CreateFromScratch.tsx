@@ -1898,6 +1898,11 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
       return;
     }
 
+    if (ttsProvider === "minimax" && generatedScript.length > 50000) {
+      toast.error(`Le script fait ${generatedScript.length.toLocaleString()} caractères. MiniMax supporte maximum 50 000 caractères.`);
+      return;
+    }
+
     let currentProjectId = projectId;
     
     // Create project if it doesn't exist yet (e.g., manual script without AI generation)
