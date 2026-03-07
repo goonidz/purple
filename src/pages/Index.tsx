@@ -3747,9 +3747,21 @@ const Index = () => {
                   </Card>
                 ) : currentProjectId && audioUrl ? (
                   <Card className="p-4 bg-amber-500/10 border-amber-500/30">
-                    <div className="flex flex-wrap items-center gap-2 text-sm">
-                      <AlertTriangle className="h-4 w-4 text-amber-500 flex-shrink-0" />
-                      <span className="text-muted-foreground">Audio chargé mais pas de transcription. Importez un fichier JSON ci-dessous pour continuer.</span>
+                    <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
+                      <div className="flex items-center gap-2">
+                        <AlertTriangle className="h-4 w-4 text-amber-500 flex-shrink-0" />
+                        <span className="text-muted-foreground">Audio chargé mais pas de transcription.</span>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => navigate(`/projects?from_scratch=true&project=${currentProjectId}&needs_transcription=true`)}
+                        >
+                          <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+                          Lancer la transcription
+                        </Button>
+                      </div>
                     </div>
                   </Card>
                 ) : currentProjectId ? (
