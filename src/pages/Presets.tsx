@@ -70,8 +70,81 @@ interface TtsPresetRow {
   pitch?: number;
   volume?: number;
   language_boost?: string;
+  english_normalization?: boolean;
   emotion?: string;
 }
+
+const MINIMAX_VOICE_OPTIONS = [
+  { id: "English_Expressive_Narrator", name: "Expressive Narrator", language: "en" },
+  { id: "English_Insightful_Speaker", name: "Insightful Speaker", language: "en" },
+  { id: "English_Wise_Woman", name: "Wise Woman", language: "en" },
+  { id: "English_radiant_girl", name: "Radiant Girl", language: "en" },
+  { id: "English_magnetic_voiced_man", name: "Magnetic-voiced Male", language: "en" },
+  { id: "English_compelling_lady1", name: "Compelling Lady", language: "en" },
+  { id: "English_Aussie_Bloke", name: "Aussie Bloke", language: "en" },
+  { id: "English_captivating_female1", name: "Captivating Female", language: "en" },
+  { id: "English_Upbeat_Woman", name: "Upbeat Woman", language: "en" },
+  { id: "English_Trustworth_Man", name: "Trustworthy Man", language: "en" },
+  { id: "English_CalmWoman", name: "Calm Woman", language: "en" },
+  { id: "English_UpsetGirl", name: "Upset Girl", language: "en" },
+  { id: "English_Gentle-voiced_man", name: "Gentle-voiced Man", language: "en" },
+  { id: "English_Whispering_girl", name: "Whispering Girl", language: "en" },
+  { id: "English_Diligent_Man", name: "Diligent Man", language: "en" },
+  { id: "English_Graceful_Lady", name: "Graceful Lady", language: "en" },
+  { id: "English_ReservedYoungMan", name: "Reserved Young Man", language: "en" },
+  { id: "English_PlayfulGirl", name: "Playful Girl", language: "en" },
+  { id: "English_ManWithDeepVoice", name: "Man With Deep Voice", language: "en" },
+  { id: "English_MaturePartner", name: "Mature Partner", language: "en" },
+  { id: "English_FriendlyPerson", name: "Friendly Guy", language: "en" },
+  { id: "English_MatureBoss", name: "Bossy Lady", language: "en" },
+  { id: "English_Debator", name: "Male Debater", language: "en" },
+  { id: "English_LovelyGirl", name: "Lovely Girl", language: "en" },
+  { id: "English_Steadymentor", name: "Reliable Man", language: "en" },
+  { id: "English_Deep-VoicedGentleman", name: "Deep-voiced Gentleman", language: "en" },
+  { id: "English_Wiselady", name: "Wise Lady", language: "en" },
+  { id: "English_CaptivatingStoryteller", name: "Captivating Storyteller", language: "en" },
+  { id: "English_DecentYoungMan", name: "Decent Young Man", language: "en" },
+  { id: "English_SentimentalLady", name: "Sentimental Lady", language: "en" },
+  { id: "English_ImposingManner", name: "Imposing Queen", language: "en" },
+  { id: "English_PassionateWarrior", name: "Passionate Warrior", language: "en" },
+  { id: "English_WiseScholar", name: "Wise Scholar", language: "en" },
+  { id: "English_Soft-spokenGirl", name: "Soft-Spoken Girl", language: "en" },
+  { id: "English_SereneWoman", name: "Serene Woman", language: "en" },
+  { id: "English_ConfidentWoman", name: "Confident Woman", language: "en" },
+  { id: "English_PatientMan", name: "Patient Man", language: "en" },
+  { id: "English_Comedian", name: "Comedian", language: "en" },
+  { id: "English_BossyLeader", name: "Bossy Leader", language: "en" },
+  { id: "English_Jovialman", name: "Jovial Man", language: "en" },
+  { id: "English_WhimsicalGirl", name: "Whimsical Girl", language: "en" },
+  { id: "English_Kind-heartedGirl", name: "Kind-Hearted Girl", language: "en" },
+  { id: "English_AnimeCharacter", name: "Female Narrator", language: "en" },
+  { id: "French_Male_Speech_New", name: "Level-Headed Man", language: "fr" },
+  { id: "French_Female_News Anchor", name: "Patient Female Presenter", language: "fr" },
+  { id: "French_CasualMan", name: "Casual Man", language: "fr" },
+  { id: "French_MovieLeadFemale", name: "Movie Lead Female", language: "fr" },
+  { id: "French_FemaleAnchor", name: "Female Anchor", language: "fr" },
+  { id: "French_MaleNarrator", name: "Male Narrator", language: "fr" },
+  { id: "Spanish_SereneWoman", name: "Serene Woman", language: "es" },
+  { id: "Spanish_MaturePartner", name: "Mature Partner", language: "es" },
+  { id: "Spanish_CaptivatingStoryteller", name: "Captivating Storyteller", language: "es" },
+  { id: "Spanish_Narrator", name: "Narrator", language: "es" },
+];
+
+const MINIMAX_MODEL_OPTIONS = [
+  { id: "speech-2.8-turbo", name: "2.8 Turbo (Recommandé)" },
+  { id: "speech-2.6-hd", name: "2.6 HD (Haute qualité)" },
+  { id: "speech-2.6-turbo", name: "2.6 Turbo (Rapide)" },
+];
+
+const MINIMAX_EMOTIONS = [
+  { id: "neutral", name: "Neutre" },
+  { id: "happy", name: "Joyeux" },
+  { id: "sad", name: "Triste" },
+  { id: "angry", name: "En colère" },
+  { id: "fearful", name: "Effrayé" },
+  { id: "disgusted", name: "Dégoûté" },
+  { id: "surprised", name: "Surpris" },
+];
 
 // Project preset (from PresetManager)
 interface ProjectPresetRow {
@@ -142,6 +215,12 @@ export default function Presets() {
   const [ttsSpeed, setTtsSpeed] = useState(1);
   const [ttsEmotion, setTtsEmotion] = useState("{}");
   const [ttsSaving, setTtsSaving] = useState(false);
+  // MiniMax-specific
+  const [ttsPitch, setTtsPitch] = useState(0);
+  const [ttsVolume, setTtsVolume] = useState(1.0);
+  const [ttsLanguageBoost, setTtsLanguageBoost] = useState("auto");
+  const [ttsEnglishNorm, setTtsEnglishNorm] = useState(true);
+  const [ttsMinimaxEmotion, setTtsMinimaxEmotion] = useState("neutral");
 
   // Project
   const [projectPresets, setProjectPresets] = useState<ProjectPresetRow[]>([]);
@@ -385,6 +464,11 @@ export default function Presets() {
     setTtsModel("");
     setTtsSpeed(1);
     setTtsEmotion("{}");
+    setTtsPitch(0);
+    setTtsVolume(1.0);
+    setTtsLanguageBoost("auto");
+    setTtsEnglishNorm(true);
+    setTtsMinimaxEmotion("neutral");
     setTtsDialogOpen(true);
   };
 
@@ -396,6 +480,14 @@ export default function Presets() {
     setTtsModel(p.model || "");
     setTtsSpeed(typeof p.speed === "number" ? p.speed : 1);
     setTtsEmotion(p.emotion || "{}");
+    setTtsPitch(typeof p.pitch === "number" ? p.pitch : 0);
+    setTtsVolume(typeof p.volume === "number" ? p.volume : 1.0);
+    setTtsLanguageBoost(p.language_boost || "auto");
+    setTtsEnglishNorm(p.english_normalization !== false);
+    try {
+      const emData = p.emotion ? JSON.parse(p.emotion) : {};
+      setTtsMinimaxEmotion(emData.minimaxEmotion || "neutral");
+    } catch { setTtsMinimaxEmotion("neutral"); }
     setTtsDialogOpen(true);
   };
 
@@ -416,6 +508,13 @@ export default function Presets() {
         speed: ttsSpeed,
         emotion: ttsEmotion.trim() || "{}",
       };
+      if (ttsProvider === "minimax") {
+        row.pitch = ttsPitch;
+        row.volume = ttsVolume;
+        row.language_boost = ttsLanguageBoost;
+        row.english_normalization = ttsEnglishNorm;
+        row.emotion = JSON.stringify({ minimaxEmotion: ttsMinimaxEmotion });
+      }
       if (ttsEditId) {
         const { error } = await supabase.from("tts_presets").update(row).eq("id", ttsEditId);
         if (error) throw error;
@@ -988,22 +1087,112 @@ export default function Presets() {
                 </SelectContent>
               </Select>
             </div>
-            <div>
-              <Label>Voice ID</Label>
-              <Input value={ttsVoiceId} onChange={(e) => setTtsVoiceId(e.target.value)} placeholder="ID de la voix" />
-            </div>
-            <div>
-              <Label>Modèle (optionnel)</Label>
-              <Input value={ttsModel} onChange={(e) => setTtsModel(e.target.value)} placeholder="Modèle" />
-            </div>
-            <div>
-              <Label>Vitesse</Label>
-              <Input type="number" step={0.1} min={0.5} max={2} value={ttsSpeed} onChange={(e) => setTtsSpeed(parseFloat(e.target.value) || 1)} />
-            </div>
-            <div>
-              <Label>Emotion / extras (JSON)</Label>
-              <Textarea value={ttsEmotion} onChange={(e) => setTtsEmotion(e.target.value)} rows={3} className="font-mono text-xs resize-none" placeholder='{"style":0,"speakerBoost":false}' />
-            </div>
+            {ttsProvider === "minimax" ? (
+              <>
+                <div>
+                  <Label>Voix</Label>
+                  <Select value={ttsVoiceId} onValueChange={setTtsVoiceId}>
+                    <SelectTrigger><SelectValue placeholder="Choisir une voix" /></SelectTrigger>
+                    <SelectContent className="max-h-60">
+                      {MINIMAX_VOICE_OPTIONS.map((v) => (
+                        <SelectItem key={v.id} value={v.id}>{v.name} ({v.language.toUpperCase()})</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label>Modèle</Label>
+                    <Select value={ttsModel || "speech-2.8-turbo"} onValueChange={setTtsModel}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {MINIMAX_MODEL_OPTIONS.map((m) => (
+                          <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>Émotion</Label>
+                    <Select value={ttsMinimaxEmotion} onValueChange={setTtsMinimaxEmotion}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {MINIMAX_EMOTIONS.map((e) => (
+                          <SelectItem key={e.id} value={e.id}>{e.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div>
+                  <Label>Language Boost</Label>
+                  <Select value={ttsLanguageBoost} onValueChange={setTtsLanguageBoost}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="auto">Auto</SelectItem>
+                      <SelectItem value="English">English</SelectItem>
+                      <SelectItem value="French">French</SelectItem>
+                      <SelectItem value="Spanish">Spanish</SelectItem>
+                      <SelectItem value="German">German</SelectItem>
+                      <SelectItem value="Italian">Italian</SelectItem>
+                      <SelectItem value="Portuguese">Portuguese</SelectItem>
+                      <SelectItem value="Japanese">Japanese</SelectItem>
+                      <SelectItem value="Korean">Korean</SelectItem>
+                      <SelectItem value="Chinese">Chinese</SelectItem>
+                      <SelectItem value="Arabic">Arabic</SelectItem>
+                      <SelectItem value="Russian">Russian</SelectItem>
+                      <SelectItem value="Hindi">Hindi</SelectItem>
+                      <SelectItem value="Indonesian">Indonesian</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid grid-cols-3 gap-4">
+                  <div>
+                    <Label>Vitesse ({ttsSpeed.toFixed(1)}x)</Label>
+                    <input type="range" min={0.5} max={2} step={0.1} value={ttsSpeed}
+                      onChange={(e) => setTtsSpeed(parseFloat(e.target.value))}
+                      className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary" />
+                  </div>
+                  <div>
+                    <Label>Pitch ({ttsPitch > 0 ? "+" : ""}{ttsPitch})</Label>
+                    <input type="range" min={-12} max={12} step={1} value={ttsPitch}
+                      onChange={(e) => setTtsPitch(parseInt(e.target.value))}
+                      className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary" />
+                  </div>
+                  <div>
+                    <Label>Volume ({Math.round(ttsVolume * 100)}%)</Label>
+                    <input type="range" min={10} max={200} step={5} value={Math.round(ttsVolume * 100)}
+                      onChange={(e) => setTtsVolume(parseInt(e.target.value) / 100)}
+                      className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary" />
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input type="checkbox" id="mm-en-norm" checked={ttsEnglishNorm}
+                    onChange={(e) => setTtsEnglishNorm(e.target.checked)}
+                    className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary" />
+                  <Label htmlFor="mm-en-norm">English Normalization</Label>
+                </div>
+              </>
+            ) : (
+              <>
+                <div>
+                  <Label>Voice ID</Label>
+                  <Input value={ttsVoiceId} onChange={(e) => setTtsVoiceId(e.target.value)} placeholder="ID de la voix" />
+                </div>
+                <div>
+                  <Label>Modèle (optionnel)</Label>
+                  <Input value={ttsModel} onChange={(e) => setTtsModel(e.target.value)} placeholder="Modèle" />
+                </div>
+                <div>
+                  <Label>Vitesse</Label>
+                  <Input type="number" step={0.1} min={0.5} max={2} value={ttsSpeed} onChange={(e) => setTtsSpeed(parseFloat(e.target.value) || 1)} />
+                </div>
+                <div>
+                  <Label>Emotion / extras (JSON)</Label>
+                  <Textarea value={ttsEmotion} onChange={(e) => setTtsEmotion(e.target.value)} rows={3} className="font-mono text-xs resize-none" placeholder='{"style":0,"speakerBoost":false}' />
+                </div>
+              </>
+            )}
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setTtsDialogOpen(false)}>Annuler</Button>
               <Button onClick={saveTtsPreset} disabled={ttsSaving}>
