@@ -221,6 +221,14 @@ export default function Presets() {
   const [ttsLanguageBoost, setTtsLanguageBoost] = useState("auto");
   const [ttsEnglishNorm, setTtsEnglishNorm] = useState(true);
   const [ttsMinimaxEmotion, setTtsMinimaxEmotion] = useState("neutral");
+  // RVC + Audio Tags (stored in emotion JSON, works with all providers)
+  const [ttsRvcEnabled, setTtsRvcEnabled] = useState(false);
+  const [ttsRvcModelUrl, setTtsRvcModelUrl] = useState("");
+  const [ttsRvcIndexUrl, setTtsRvcIndexUrl] = useState("");
+  const [ttsRvcPitch, setTtsRvcPitch] = useState(0);
+  const [ttsRvcIndexRate, setTtsRvcIndexRate] = useState(0.75);
+  const [ttsAudioTagsEnabled, setTtsAudioTagsEnabled] = useState(false);
+  const [ttsAudioTagsText, setTtsAudioTagsText] = useState("");
 
   // Project
   const [projectPresets, setProjectPresets] = useState<ProjectPresetRow[]>([]);
@@ -469,6 +477,13 @@ export default function Presets() {
     setTtsLanguageBoost("auto");
     setTtsEnglishNorm(true);
     setTtsMinimaxEmotion("neutral");
+    setTtsRvcEnabled(false);
+    setTtsRvcModelUrl("");
+    setTtsRvcIndexUrl("");
+    setTtsRvcPitch(0);
+    setTtsRvcIndexRate(0.75);
+    setTtsAudioTagsEnabled(false);
+    setTtsAudioTagsText("");
     setTtsDialogOpen(true);
   };
 
@@ -487,7 +502,23 @@ export default function Presets() {
     try {
       const emData = p.emotion ? JSON.parse(p.emotion) : {};
       setTtsMinimaxEmotion(emData.minimaxEmotion || "neutral");
-    } catch { setTtsMinimaxEmotion("neutral"); }
+      setTtsRvcEnabled(!!emData.rvcEnabled);
+      setTtsRvcModelUrl(emData.rvcModelUrl || "");
+      setTtsRvcIndexUrl(emData.rvcIndexUrl || "");
+      setTtsRvcPitch(typeof emData.rvcPitch === "number" ? emData.rvcPitch : 0);
+      setTtsRvcIndexRate(typeof emData.rvcIndexRate === "number" ? emData.rvcIndexRate : 0.75);
+      setTtsAudioTagsEnabled(!!emData.audioTagsEnabled);
+      setTtsAudioTagsText(emData.audioTagsText || "");
+    } catch {
+      setTtsMinimaxEmotion("neutral");
+      setTtsRvcEnabled(false);
+      setTtsRvcModelUrl("");
+      setTtsRvcIndexUrl("");
+      setTtsRvcPitch(0);
+      setTtsRvcIndexRate(0.75);
+      setTtsAudioTagsEnabled(false);
+      setTtsAudioTagsText("");
+    }
     setTtsDialogOpen(true);
   };
 
@@ -500,20 +531,37 @@ export default function Presets() {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Non connecté");
+      const rvcData = {
+        rvcEnabled: ttsRvcEnabled, rvcModelUrl: ttsRvcModelUrl,
+        rvcIndexUrl: ttsRvcIndexUrl, rvcPitch: ttsRvcPitch, rvcIndexRate: ttsRvcIndexRate,
+      };
+      const audioTagsData = { audioTagsEnabled: ttsAudioTagsEnabled, audioTagsText: ttsAudioTagsText };
+
+      let emotionJson: string;
+      if (ttsProvider === "minimax") {
+        emotionJson = JSON.stringify({ minimaxEmotion: ttsMinimaxEmotion, ...rvcData, ...audioTagsData });
+      } else {
+        try {
+          const existing = JSON.parse(ttsEmotion.trim() || "{}");
+          emotionJson = JSON.stringify({ ...existing, ...rvcData, ...audioTagsData });
+        } catch {
+          emotionJson = JSON.stringify({ ...rvcData, ...audioTagsData });
+        }
+      }
+
       const row: Record<string, unknown> = {
         name: ttsName.trim(),
         provider: ttsProvider,
         voice_id: ttsVoiceId.trim() || null,
         model: ttsModel.trim() || null,
         speed: ttsSpeed,
-        emotion: ttsEmotion.trim() || "{}",
+        emotion: emotionJson,
       };
       if (ttsProvider === "minimax") {
         row.pitch = ttsPitch;
         row.volume = ttsVolume;
         row.language_boost = ttsLanguageBoost;
         row.english_normalization = ttsEnglishNorm;
-        row.emotion = JSON.stringify({ minimaxEmotion: ttsMinimaxEmotion });
       }
       if (ttsEditId) {
         const { error } = await supabase.from("tts_presets").update(row).eq("id", ttsEditId);
@@ -1193,6 +1241,121 @@ export default function Presets() {
                 </div>
               </>
             )}
+
+            {/* RVC Voice Conversion */}
+            <div className="space-y-3 border-t pt-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label className="text-sm font-medium">Conversion de voix (RVC)</Label>
+                  <p className="text-xs text-muted-foreground">Convertir l'audio avec un modèle RVC via GPU (RunPod).</p>
+                </div>
+                <input type="checkbox" checked={ttsRvcEnabled} onChange={(e) => setTtsRvcEnabled(e.target.checked)}
+                  className="h-5 w-5 rounded border-gray-300 text-primary focus:ring-primary" />
+              </div>
+              {ttsRvcEnabled && (
+                <div className="space-y-3 p-3 bg-muted/50 rounded-lg border border-primary/20">
+                  <div>
+                    <Label className="text-xs">URL du modèle RVC (.pth)</Label>
+                    <Input value={ttsRvcModelUrl} onChange={(e) => setTtsRvcModelUrl(e.target.value)}
+                      placeholder="https://huggingface.co/.../model.pth" className="text-xs" />
+                  </div>
+                  <div>
+                    <Label className="text-xs">URL de l'index (.index) — optionnel</Label>
+                    <Input value={ttsRvcIndexUrl} onChange={(e) => setTtsRvcIndexUrl(e.target.value)}
+                      placeholder="https://huggingface.co/.../model.index" className="text-xs" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label className="text-xs">Pitch ({ttsRvcPitch > 0 ? "+" : ""}{ttsRvcPitch} demi-tons)</Label>
+                      <input type="range" min={-24} max={24} step={1} value={ttsRvcPitch}
+                        onChange={(e) => setTtsRvcPitch(parseInt(e.target.value))}
+                        className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary" />
+                    </div>
+                    <div>
+                      <Label className="text-xs">Index Rate ({ttsRvcIndexRate.toFixed(2)})</Label>
+                      <input type="range" min={0} max={1} step={0.05} value={ttsRvcIndexRate}
+                        onChange={(e) => setTtsRvcIndexRate(parseFloat(e.target.value))}
+                        className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary" />
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Audio Tags */}
+            <div className="space-y-3 border-t pt-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label className="text-sm font-medium">Audio Tags</Label>
+                  <p className="text-xs text-muted-foreground">Ajouter des tags SSML au script.</p>
+                </div>
+                <input type="checkbox" checked={ttsAudioTagsEnabled} onChange={(e) => setTtsAudioTagsEnabled(e.target.checked)}
+                  className="h-5 w-5 rounded border-gray-300 text-primary focus:ring-primary" />
+              </div>
+              {ttsAudioTagsEnabled && (
+                <Textarea value={ttsAudioTagsText} onChange={(e) => setTtsAudioTagsText(e.target.value)}
+                  rows={2} className="font-mono text-xs resize-none" placeholder="Tags audio à insérer..." />
+              )}
+            </div>
+
+            {/* RVC Voice Conversion */}
+            <div className="space-y-3 border-t pt-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label className="text-sm font-medium">Conversion de voix (RVC)</Label>
+                  <p className="text-xs text-muted-foreground">Convertir l'audio avec un modèle RVC via GPU.</p>
+                </div>
+                <input type="checkbox" checked={ttsRvcEnabled} onChange={(e) => setTtsRvcEnabled(e.target.checked)}
+                  className="h-5 w-5 rounded border-gray-300 text-primary focus:ring-primary" />
+              </div>
+              {ttsRvcEnabled && (
+                <div className="space-y-3 p-3 bg-muted/50 rounded-lg border border-primary/20">
+                  <div>
+                    <Label className="text-xs">URL du modèle RVC (.pth)</Label>
+                    <Input value={ttsRvcModelUrl} onChange={(e) => setTtsRvcModelUrl(e.target.value)}
+                      placeholder="https://huggingface.co/.../model.pth" className="text-xs" />
+                  </div>
+                  <div>
+                    <Label className="text-xs">URL de l'index (.index) — optionnel</Label>
+                    <Input value={ttsRvcIndexUrl} onChange={(e) => setTtsRvcIndexUrl(e.target.value)}
+                      placeholder="https://huggingface.co/.../model.index" className="text-xs" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label className="text-xs">Pitch ({ttsRvcPitch > 0 ? "+" : ""}{ttsRvcPitch})</Label>
+                      <input type="range" min={-24} max={24} step={1} value={ttsRvcPitch}
+                        onChange={(e) => setTtsRvcPitch(parseInt(e.target.value))}
+                        className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary" />
+                    </div>
+                    <div>
+                      <Label className="text-xs">Index Rate ({ttsRvcIndexRate.toFixed(2)})</Label>
+                      <input type="range" min={0} max={1} step={0.05} value={ttsRvcIndexRate}
+                        onChange={(e) => setTtsRvcIndexRate(parseFloat(e.target.value))}
+                        className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary" />
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Audio Tags */}
+            <div className="space-y-3 border-t pt-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label className="text-sm font-medium">Audio Tags</Label>
+                  <p className="text-xs text-muted-foreground">Ajouter des tags audio (musique de fond, effets).</p>
+                </div>
+                <input type="checkbox" checked={ttsAudioTagsEnabled} onChange={(e) => setTtsAudioTagsEnabled(e.target.checked)}
+                  className="h-5 w-5 rounded border-gray-300 text-primary focus:ring-primary" />
+              </div>
+              {ttsAudioTagsEnabled && (
+                <div className="p-3 bg-muted/50 rounded-lg border border-primary/20">
+                  <Textarea value={ttsAudioTagsText} onChange={(e) => setTtsAudioTagsText(e.target.value)}
+                    rows={3} className="text-xs resize-none" placeholder="[bgm: lofi hip hop, calm]&#10;[sfx: whoosh]" />
+                </div>
+              )}
+            </div>
+
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setTtsDialogOpen(false)}>Annuler</Button>
               <Button onClick={saveTtsPreset} disabled={ttsSaving}>
