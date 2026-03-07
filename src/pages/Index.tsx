@@ -33,7 +33,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Upload, X, Loader2, Image as ImageIcon, RefreshCw, Settings, Download, Video, Type, Check, Copy, FolderOpen, Pencil, AlertCircle, FileText, ArrowUp, MonitorPlay, Cloud, Trash2, Play, Sparkles, User as UserIcon, CheckCircle2, Clock, Maximize2, Calendar, ChevronDown, ChevronUp, Minimize2, Zap, RotateCcw } from "lucide-react";
+import { Upload, X, Loader2, Image as ImageIcon, RefreshCw, Settings, Download, Video, Type, Check, Copy, FolderOpen, Pencil, AlertCircle, AlertTriangle, FileText, ArrowUp, MonitorPlay, Cloud, Trash2, Play, Sparkles, User as UserIcon, CheckCircle2, Clock, Maximize2, Calendar, ChevronDown, ChevronUp, Minimize2, Zap, RotateCcw } from "lucide-react";
 import AppHeader from "@/components/AppHeader";
 import { ProjectConfigurationModal } from "@/components/ProjectConfigurationModal";
 import { toast } from "sonner";
@@ -985,8 +985,7 @@ const Index = () => {
       }
       
       if (hasAudio && !hasTranscript && !hasScenes) {
-        navigate(`/create-from-scratch?continue=${projectId}`);
-        return;
+        console.log("[loadProjectData] Project has audio but no transcript - needs transcription");
       }
 
       setProjectName(data.name || "");
@@ -3744,6 +3743,13 @@ const Index = () => {
                           </span>
                         </>
                       )}
+                    </div>
+                  </Card>
+                ) : currentProjectId && audioUrl ? (
+                  <Card className="p-4 bg-amber-500/10 border-amber-500/30">
+                    <div className="flex flex-wrap items-center gap-2 text-sm">
+                      <AlertTriangle className="h-4 w-4 text-amber-500 flex-shrink-0" />
+                      <span className="text-muted-foreground">Audio chargé mais pas de transcription. Importez un fichier JSON ci-dessous pour continuer.</span>
                     </div>
                   </Card>
                 ) : currentProjectId ? (

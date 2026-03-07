@@ -592,7 +592,7 @@ const CreateFromScratch = () => {
       // If the project already has audio (or transcript), it's past the create-from-scratch stage
       if (data.audio_url || data.transcript_json) {
         try { localStorage.removeItem(`vps_script_job_${data.id}`); } catch (_) {}
-        navigate(`/project/${data.id}`);
+        navigate(`/project?project=${data.id}`);
         return;
       }
 
