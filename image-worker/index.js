@@ -3552,8 +3552,13 @@ async function processEdgeFunctionWithRVC(job) {
       taggedMeta.script = applyAudioTags(meta.script, meta);
     }
 
-    // Step 1: Invoke the Supabase Edge Function to generate audio
+    // Step 1: Invoke the Supabase Edge Function to generate audio (synchronous mode)
+    // DO NOT pass jobId — it triggers EdgeRuntime.waitUntil which times out at 30s.
+    // Instead, call synchronously and handle the result here in the worker.
     const edgeFnUrl = `${SUPABASE_URL}/functions/v1/${functionName}`;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20 * 60 * 1000); // 20 min timeout
+
     const response = await fetch(edgeFnUrl, {
       method: 'POST',
       headers: {
@@ -3561,55 +3566,35 @@ async function processEdgeFunctionWithRVC(job) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        jobId,
         projectId,
         userId,
         ...taggedMeta,
       }),
+      signal: controller.signal,
     });
+    clearTimeout(timeout);
 
     if (!response.ok) {
       const errText = await response.text();
       throw new Error(`Edge Function ${functionName} failed (${response.status}): ${errText.substring(0, 300)}`);
     }
 
-    log(`[${provider}+RVC ${jobId}] Edge Function returned OK, checking for audio_url...`);
+    const result = await response.json();
+    log(`[${provider} ${jobId}] Edge Function returned: ${JSON.stringify(result).substring(0, 200)}`);
 
-    // Step 2: Poll for the project's audio_url (Edge Function updates it directly)
-    // Also check job status — if the Edge Function set it to 'failed', stop immediately
-    const POLL_MAX = 400; // 400 x 3s = 20 minutes
-    let audioUrl = null;
-    for (let attempt = 0; attempt < POLL_MAX; attempt++) {
-      await sleep(3000);
+    let audioUrl = result.audioUrl;
 
-      const { data: jobStatus } = await supabase
-        .from('generation_jobs')
-        .select('status, error_message')
-        .eq('id', jobId)
-        .single();
-
-      if (jobStatus?.status === 'failed') {
-        throw new Error(jobStatus.error_message || `${provider} Edge Function reported failure`);
-      }
-      if (jobStatus?.status === 'completed') {
-        // Edge Function already marked it complete, grab audio_url from metadata or project
-        const { data: project } = await supabase.from('projects').select('audio_url').eq('id', projectId).single();
-        audioUrl = project?.audio_url;
-        break;
-      }
-
+    // If the Edge Function didn't return audioUrl directly, check the project
+    if (!audioUrl) {
       const { data: project } = await supabase
         .from('projects')
         .select('audio_url')
         .eq('id', projectId)
         .single();
-      if (project?.audio_url) {
-        audioUrl = project.audio_url;
-        break;
-      }
+      audioUrl = project?.audio_url;
     }
 
-    if (!audioUrl) throw new Error(`No audio_url found after ${provider} generation (timed out after 20min)`);
+    if (!audioUrl) throw new Error(`${provider} Edge Function returned no audioUrl`);
     log(`[${provider} ${jobId}] Audio generated: ${audioUrl.substring(0, 80)}...`);
 
     let finalAudioUrl = audioUrl;
