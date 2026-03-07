@@ -3576,9 +3576,28 @@ async function processEdgeFunctionWithRVC(job) {
     log(`[${provider}+RVC ${jobId}] Edge Function returned OK, checking for audio_url...`);
 
     // Step 2: Poll for the project's audio_url (Edge Function updates it directly)
+    // Also check job status — if the Edge Function set it to 'failed', stop immediately
+    const POLL_MAX = 400; // 400 x 3s = 20 minutes
     let audioUrl = null;
-    for (let attempt = 0; attempt < 60; attempt++) {
+    for (let attempt = 0; attempt < POLL_MAX; attempt++) {
       await sleep(3000);
+
+      const { data: jobStatus } = await supabase
+        .from('generation_jobs')
+        .select('status, error_message')
+        .eq('id', jobId)
+        .single();
+
+      if (jobStatus?.status === 'failed') {
+        throw new Error(jobStatus.error_message || `${provider} Edge Function reported failure`);
+      }
+      if (jobStatus?.status === 'completed') {
+        // Edge Function already marked it complete, grab audio_url from metadata or project
+        const { data: project } = await supabase.from('projects').select('audio_url').eq('id', projectId).single();
+        audioUrl = project?.audio_url;
+        break;
+      }
+
       const { data: project } = await supabase
         .from('projects')
         .select('audio_url')
@@ -3590,7 +3609,7 @@ async function processEdgeFunctionWithRVC(job) {
       }
     }
 
-    if (!audioUrl) throw new Error(`No audio_url found after ${provider} generation`);
+    if (!audioUrl) throw new Error(`No audio_url found after ${provider} generation (timed out after 20min)`);
     log(`[${provider} ${jobId}] Audio generated: ${audioUrl.substring(0, 80)}...`);
 
     let finalAudioUrl = audioUrl;
