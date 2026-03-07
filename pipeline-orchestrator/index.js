@@ -207,7 +207,9 @@ async function stepWaitScript(pipeline) {
     console.log(`[orchestrator] [${id}] Script completed`);
     await advancePipeline(id, 'generate_audio');
   } else if (data.status === 'failed') {
-    throw new Error(`Script generation failed: ${data.error || 'unknown'}`);
+    console.log(`[orchestrator] [${id}] Script job failed — clearing jobId and re-launching`);
+    await updatePipelineMetadata(id, { scriptJobId: null });
+    await advancePipeline(id, 'generate_script');
   }
   // else still processing -- do nothing, check next loop
 }
@@ -225,7 +227,48 @@ async function stepGenerateAudio(pipeline) {
   const { data: project } = await supabase.from('projects').select('script').eq('id', project_id).single();
   if (!project?.script) throw new Error('No script found in project');
 
-  const ttsConfig = config.tts || {};
+  // Re-read TTS config from channel preset (picks up preset changes on retry)
+  let ttsConfig = config.tts || {};
+  if (pipeline.channel_id) {
+    try {
+      const { data: ch } = await supabase.from('channels').select('tts_preset_id').eq('id', pipeline.channel_id).single();
+      if (ch?.tts_preset_id) {
+        const { data: preset } = await supabase.from('tts_presets').select('*').eq('id', ch.tts_preset_id).single();
+        if (preset) {
+          ttsConfig = {
+            provider: preset.provider,
+            voice_id: preset.voice_id,
+            model: preset.model,
+            speed: preset.speed,
+            pitch: preset.pitch,
+            volume: preset.volume,
+            languageBoost: preset.language_boost,
+            englishNormalization: preset.english_normalization,
+          };
+          try {
+            const extras = preset.emotion ? JSON.parse(preset.emotion) : {};
+            if (extras.rvcEnabled) {
+              ttsConfig.rvcEnabled = true;
+              ttsConfig.rvcModelUrl = extras.rvcModelUrl;
+              ttsConfig.rvcIndexUrl = extras.rvcIndexUrl;
+              ttsConfig.rvcPitch = extras.rvcPitch;
+              ttsConfig.rvcIndexRate = extras.rvcIndexRate;
+            }
+            if (extras.audioTagsEnabled) {
+              ttsConfig.audioTagsEnabled = true;
+              ttsConfig.audioTagsText = extras.audioTagsText;
+            }
+            if (typeof extras.style === 'number') ttsConfig.style = extras.style;
+            if (typeof extras.speakerBoost === 'boolean') ttsConfig.useSpeakerBoost = extras.speakerBoost;
+            if (extras.edgeTTSSpeed) ttsConfig.speed = extras.edgeTTSSpeed;
+          } catch { /* not JSON */ }
+          console.log(`[orchestrator] [${id}] Refreshed TTS config from preset (provider=${ttsConfig.provider})`);
+        }
+      }
+    } catch (e) {
+      console.warn(`[orchestrator] [${id}] Could not refresh TTS preset, using stored config: ${e.message}`);
+    }
+  }
 
   // Build audioMetadata matching what the frontend sends
   const audioMetadata = {
@@ -306,7 +349,9 @@ async function stepWaitAudio(pipeline) {
     console.log(`[orchestrator] [${id}] Audio completed: ${audioUrl}`);
     await advancePipeline(id, 'transcribe');
   } else if (job.status === 'failed') {
-    throw new Error(`Audio generation failed: ${job.metadata?.error || 'unknown'}`);
+    console.log(`[orchestrator] [${id}] Audio job failed — clearing jobId and re-launching`);
+    await updatePipelineMetadata(id, { audioJobId: null });
+    await advancePipeline(id, 'generate_audio');
   }
 }
 
@@ -380,7 +425,9 @@ async function stepWaitTranscription(pipeline) {
     console.log(`[orchestrator] [${id}] Transcription completed`);
     await advancePipeline(id, 'create_scenes');
   } else if (job.status === 'failed') {
-    throw new Error(`Transcription failed: ${job.metadata?.error || 'unknown'}`);
+    console.log(`[orchestrator] [${id}] Transcription job failed — clearing jobId and re-launching`);
+    await updatePipelineMetadata(id, { transcriptionJobId: null });
+    await advancePipeline(id, 'transcribe');
   }
 }
 
