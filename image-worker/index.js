@@ -3527,7 +3527,7 @@ async function processEdgeTTSPipeline(job) {
 }
 
 // ============================================================================
-// EDGE FUNCTION + RVC PIPELINE (MiniMax/Inworld with voice conversion)
+// EDGE FUNCTION PIPELINE (MiniMax/Inworld, with optional RVC)
 // ============================================================================
 
 async function processEdgeFunctionWithRVC(job) {
@@ -3540,7 +3540,7 @@ async function processEdgeFunctionWithRVC(job) {
     if (provider === 'inworld') functionName = 'generate-audio-inworld';
     else functionName = 'generate-audio-minimax';
 
-    log(`[${provider}+RVC ${jobId}] Starting: invoke ${functionName} then apply RVC`);
+    log(`[${provider} ${jobId}] Starting: invoke ${functionName}${meta.rvcEnabled ? ' + RVC' : ''}`);
 
     await supabase.from('generation_jobs')
       .update({ current_step: `Génération audio (${provider})...`, metadata: { ...meta, step: 'tts_generation' } })
@@ -3591,22 +3591,26 @@ async function processEdgeFunctionWithRVC(job) {
     }
 
     if (!audioUrl) throw new Error(`No audio_url found after ${provider} generation`);
-    log(`[${provider}+RVC ${jobId}] Audio generated: ${audioUrl.substring(0, 80)}...`);
+    log(`[${provider} ${jobId}] Audio generated: ${audioUrl.substring(0, 80)}...`);
 
-    // Step 3: Apply RVC conversion
-    const finalAudioUrl = await applyRVCConversion(jobId, audioUrl, {
-      rvcModelUrl: meta.rvcModelUrl,
-      rvcIndexUrl: meta.rvcIndexUrl || '',
-      rvcPitch: typeof meta.rvcPitch === 'number' ? meta.rvcPitch : 0,
-      rvcIndexRate: typeof meta.rvcIndexRate === 'number' ? meta.rvcIndexRate : 0.75,
-      userId, projectId,
-    }, meta);
+    let finalAudioUrl = audioUrl;
 
-    // Step 4: Update project with RVC audio
-    if (projectId) {
-      await supabase.from('projects')
-        .update({ audio_url: finalAudioUrl, updated_at: new Date().toISOString() })
-        .eq('id', projectId);
+    // Step 3: Apply RVC conversion (only if enabled)
+    if (meta.rvcEnabled && meta.rvcModelUrl) {
+      log(`[${provider}+RVC ${jobId}] Applying RVC conversion...`);
+      finalAudioUrl = await applyRVCConversion(jobId, audioUrl, {
+        rvcModelUrl: meta.rvcModelUrl,
+        rvcIndexUrl: meta.rvcIndexUrl || '',
+        rvcPitch: typeof meta.rvcPitch === 'number' ? meta.rvcPitch : 0,
+        rvcIndexRate: typeof meta.rvcIndexRate === 'number' ? meta.rvcIndexRate : 0.75,
+        userId, projectId,
+      }, meta);
+
+      if (projectId) {
+        await supabase.from('projects')
+          .update({ audio_url: finalAudioUrl, updated_at: new Date().toISOString() })
+          .eq('id', projectId);
+      }
     }
 
     await supabase.from('generation_jobs')
@@ -4255,7 +4259,7 @@ async function mainLoop() {
               else if (job.metadata?.provider === 'ai33') pipeline = processAi33AudioPipeline(job);
               else if (job.metadata?.provider === 'edgetts') pipeline = processEdgeTTSPipeline(job);
               else if (job.metadata?.provider === 'qwen3_tts') pipeline = processQwen3TtsPipeline(job);
-              else if ((job.metadata?.provider === 'minimax' || job.metadata?.provider === 'inworld') && job.metadata?.rvcEnabled) pipeline = processEdgeFunctionWithRVC(job);
+              else if (job.metadata?.provider === 'minimax' || job.metadata?.provider === 'inworld') pipeline = processEdgeFunctionWithRVC(job);
               else pipeline = processAudioTTSPipeline(job);
             } else if (job.job_type === 'idea_generation') {
               pipeline = processIdeaGenerationPipeline(job);
