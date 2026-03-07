@@ -3615,14 +3615,26 @@ async function processMinimaxTtsPipeline(job) {
         throw new Error(`MiniMax poll error: ${sr.base_resp?.status_msg || 'Unknown'}`);
       }
 
-      const st = sr.status;
-      if (st === 2 || st === 'Success') {
-        audioDownloadUrl = sr.file_url || sr.audio_file?.download_url;
+      const st = String(sr.status).toLowerCase();
+      if (st === '2' || st === 'success') {
+        const fileId = sr.file_id;
         audioDuration = sr.extra_info?.audio_length ? Math.round(sr.extra_info.audio_length / 1000) : 0;
-        log(`[MiniMax TTS ${jobId}] Task complete after ${attempt + 1} polls`);
+        log(`[MiniMax TTS ${jobId}] Task complete after ${attempt + 1} polls (file_id=${fileId})`);
+
+        // Retrieve download URL via File Retrieve API
+        const fileRes = await fetch(`https://api.minimax.io/v1/files/retrieve?file_id=${fileId}`, {
+          headers: { 'Authorization': `Bearer ${apiKey}` },
+        });
+        if (!fileRes.ok) throw new Error(`File retrieve failed: HTTP ${fileRes.status}`);
+        const fileData = await fileRes.json();
+        audioDownloadUrl = fileData.file?.download_url || fileData.download_url;
+        if (!audioDownloadUrl) {
+          log(`[MiniMax TTS ${jobId}] File retrieve response: ${JSON.stringify(fileData).substring(0, 300)}`);
+          throw new Error('No download_url in file retrieve response');
+        }
         break;
       }
-      if (st === 3 || st === 'Failed') {
+      if (st === '3' || st === 'failed') {
         throw new Error(`MiniMax task failed: ${sr.error_message || 'Unknown error'}`);
       }
 
@@ -3634,7 +3646,7 @@ async function processMinimaxTtsPipeline(job) {
     if (!audioDownloadUrl) throw new Error(`MiniMax task timed out after ${(MINIMAX_MAX_POLL_ATTEMPTS * MINIMAX_POLL_INTERVAL_MS / 60000).toFixed(0)}min`);
 
     // Step 3: Download audio
-    log(`[MiniMax TTS ${jobId}] Downloading audio...`);
+    log(`[MiniMax TTS ${jobId}] Downloading audio from ${audioDownloadUrl.substring(0, 80)}...`);
     const audioRes = await fetch(audioDownloadUrl);
     if (!audioRes.ok) throw new Error(`Failed to download MiniMax audio: HTTP ${audioRes.status}`);
     const audioBytes = Buffer.from(await audioRes.arrayBuffer());
