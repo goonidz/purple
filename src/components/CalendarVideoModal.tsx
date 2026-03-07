@@ -471,17 +471,11 @@ export default function CalendarVideoModal({
     
     setIsDeleting(true);
     try {
-      // Delete associated pipelines first (foreign key constraint)
-      await supabase
-        .from("auto_pipelines" as any)
-        .delete()
-        .eq("calendar_entry_id", entry.id);
-
-      const { error } = await supabase
-        .from("content_calendar")
-        .delete()
-        .eq("id", entry.id);
+      const { data, error } = await supabase.functions.invoke("delete-calendar-entry", {
+        body: { entryId: entry.id },
+      });
       if (error) throw error;
+      if (data?.error) throw new Error(data.error);
       toast.success("Vidéo supprimée");
       onSaved();
     } catch (error) {
