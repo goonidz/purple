@@ -3527,110 +3527,233 @@ async function processEdgeTTSPipeline(job) {
 }
 
 // ============================================================================
-// EDGE FUNCTION PIPELINE (MiniMax/Inworld, with optional RVC)
+// MINIMAX TTS PIPELINE (direct API calls, no Edge Function)
 // ============================================================================
 
-async function processEdgeFunctionWithRVC(job) {
+const MINIMAX_MAX_CHARS = 50000;
+const MINIMAX_POLL_INTERVAL_MS = 5000;
+const MINIMAX_MAX_POLL_ATTEMPTS = 180; // 15 minutes
+
+async function processMinimaxTtsPipeline(job) {
   const startTime = Date.now();
   const { id: jobId, project_id: projectId, user_id: userId, metadata: meta } = job;
 
   try {
-    const provider = meta.provider;
-    let functionName;
-    if (provider === 'inworld') functionName = 'generate-audio-inworld';
-    else functionName = 'generate-audio-minimax';
+    const script = applyAudioTags(meta.script, meta);
+    if (!script || script.trim().length < 5) throw new Error('No text provided for MiniMax TTS');
+    if (script.length > MINIMAX_MAX_CHARS) throw new Error(`Text too long: ${script.length} chars (max ${MINIMAX_MAX_CHARS})`);
 
-    log(`[${provider} ${jobId}] Starting: invoke ${functionName}${meta.rvcEnabled ? ' + RVC' : ''}`);
+    const model = meta.model || 'speech-2.8-turbo';
+    const voiceId = meta.voice || 'English_expressive_narrator';
+    const speed = meta.speed ?? 1.0;
+    const vol = meta.volume ?? 1.0;
+    const pitch = meta.pitch ?? 0;
+    const languageBoost = meta.languageBoost || 'auto';
+    const englishNormalization = meta.englishNormalization !== false;
+    const emotion = meta.emotion && meta.emotion !== 'neutral' ? meta.emotion : undefined;
+
+    log(`[MiniMax TTS ${jobId}] Starting (model=${model}, voice=${voiceId}, ${script.length} chars)`);
 
     await supabase.from('generation_jobs')
-      .update({ current_step: `Génération audio (${provider})...`, metadata: { ...meta, step: 'tts_generation' } })
+      .update({ current_step: 'Génération audio MiniMax...', metadata: { ...meta, step: 'tts_generation' } })
       .eq('id', jobId);
 
-    // Apply audio tags to script before sending to Edge Function
+    const apiKey = await getUserApiKey(userId, 'minimax');
+
+    // Step 1: Create async v2 task
+    const body = {
+      model,
+      text: script,
+      language_boost: languageBoost,
+      voice_setting: { voice_id: voiceId, speed, vol, pitch, english_normalization: englishNormalization },
+      audio_setting: { audio_sample_rate: 32000, bitrate: 128000, format: 'mp3', channel: 1 },
+    };
+    if (emotion) body.voice_setting.emotion = emotion;
+
+    log(`[MiniMax TTS ${jobId}] Creating async v2 task...`);
+    const createRes = await fetch('https://api.minimax.io/v1/t2a_async_v2', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+    if (!createRes.ok) {
+      const errText = await createRes.text();
+      throw new Error(`MiniMax API error ${createRes.status}: ${errText.substring(0, 300)}`);
+    }
+
+    const createResult = await createRes.json();
+    if (createResult.base_resp?.status_code !== 0) {
+      throw new Error(`MiniMax API error: ${createResult.base_resp?.status_msg || 'Unknown'} (code ${createResult.base_resp?.status_code})`);
+    }
+
+    const taskId = createResult.task_id;
+    if (!taskId) throw new Error('No task_id in MiniMax response');
+    log(`[MiniMax TTS ${jobId}] Task ${taskId} created, polling...`);
+
+    await supabase.from('generation_jobs')
+      .update({ current_step: 'MiniMax traite le texte...', metadata: { ...meta, step: 'minimax_polling', minimax_task_id: taskId } })
+      .eq('id', jobId);
+
+    // Step 2: Poll for completion
+    let audioDownloadUrl = null;
+    let audioDuration = 0;
+    for (let attempt = 0; attempt < MINIMAX_MAX_POLL_ATTEMPTS; attempt++) {
+      await sleep(MINIMAX_POLL_INTERVAL_MS);
+
+      const statusRes = await fetch(`https://api.minimax.io/v1/query/t2a_async_v2?task_id=${taskId}`, {
+        headers: { 'Authorization': `Bearer ${apiKey}` },
+      });
+
+      if (!statusRes.ok) {
+        logError(`[MiniMax TTS ${jobId}] Poll HTTP ${statusRes.status} (attempt ${attempt + 1})`);
+        continue;
+      }
+
+      const sr = await statusRes.json();
+      if (sr.base_resp?.status_code !== 0) {
+        throw new Error(`MiniMax poll error: ${sr.base_resp?.status_msg || 'Unknown'}`);
+      }
+
+      // Status: 0=preparing, 1=running, 2=success, 3=failed
+      if (sr.status === 2) {
+        audioDownloadUrl = sr.file_url || sr.audio_file?.download_url;
+        audioDuration = sr.extra_info?.audio_length ? Math.round(sr.extra_info.audio_length / 1000) : 0;
+        log(`[MiniMax TTS ${jobId}] Task complete after ${attempt + 1} polls`);
+        break;
+      }
+      if (sr.status === 3) {
+        throw new Error(`MiniMax task failed: ${sr.error_message || 'Unknown error'}`);
+      }
+
+      if (attempt % 12 === 11) {
+        log(`[MiniMax TTS ${jobId}] Still polling (attempt ${attempt + 1}, status=${sr.status})`);
+      }
+    }
+
+    if (!audioDownloadUrl) throw new Error(`MiniMax task timed out after ${(MINIMAX_MAX_POLL_ATTEMPTS * MINIMAX_POLL_INTERVAL_MS / 60000).toFixed(0)}min`);
+
+    // Step 3: Download audio
+    log(`[MiniMax TTS ${jobId}] Downloading audio...`);
+    const audioRes = await fetch(audioDownloadUrl);
+    if (!audioRes.ok) throw new Error(`Failed to download MiniMax audio: HTTP ${audioRes.status}`);
+    const audioBytes = Buffer.from(await audioRes.arrayBuffer());
+    log(`[MiniMax TTS ${jobId}] Downloaded ${audioBytes.length} bytes (~${audioDuration}s)`);
+
+    // Step 4: Upload to Supabase Storage
+    const storagePath = `tts/${userId}/${projectId || 'temp'}/${Date.now()}_minimax.mp3`;
+    const { error: uploadError } = await supabase.storage
+      .from('audio-files')
+      .upload(storagePath, audioBytes, { contentType: 'audio/mpeg', upsert: true });
+    if (uploadError) throw new Error(`Upload failed: ${uploadError.message}`);
+
+    const { data: { publicUrl } } = supabase.storage.from('audio-files').getPublicUrl(storagePath);
+    log(`[MiniMax TTS ${jobId}] Uploaded: ${publicUrl.substring(0, 80)}...`);
+
+    let finalAudioUrl = publicUrl;
+
+    // Step 5: RVC conversion (optional)
+    if (meta.rvcEnabled && meta.rvcModelUrl) {
+      log(`[MiniMax TTS ${jobId}] Applying RVC...`);
+      finalAudioUrl = await applyRVCConversion(jobId, publicUrl, {
+        rvcModelUrl: meta.rvcModelUrl, rvcIndexUrl: meta.rvcIndexUrl || '',
+        rvcPitch: typeof meta.rvcPitch === 'number' ? meta.rvcPitch : 0,
+        rvcIndexRate: typeof meta.rvcIndexRate === 'number' ? meta.rvcIndexRate : 0.75,
+        userId, projectId,
+      }, meta);
+      log(`[MiniMax TTS ${jobId}] RVC done`);
+    }
+
+    // Step 6: Update project + job
+    if (projectId) {
+      await supabase.from('projects')
+        .update({ audio_url: finalAudioUrl, updated_at: new Date().toISOString() })
+        .eq('id', projectId);
+    }
+
+    await supabase.from('generation_jobs')
+      .update({
+        status: 'completed', progress: 1, current_step: 'Terminé !',
+        completed_at: new Date().toISOString(),
+        metadata: { ...meta, audioUrl: finalAudioUrl, duration: audioDuration, durationMs: Date.now() - startTime },
+      })
+      .eq('id', jobId);
+
+    log(`[MiniMax TTS ${jobId}] Done in ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
+
+  } catch (err) {
+    logError(`[MiniMax TTS ${jobId}] Pipeline failed:`, err.message);
+    await supabase.from('generation_jobs')
+      .update({ status: 'failed', error_message: err.message, completed_at: new Date().toISOString() })
+      .eq('id', jobId);
+  }
+}
+
+// ============================================================================
+// INWORLD EDGE FUNCTION PIPELINE (with optional RVC)
+// ============================================================================
+
+async function processInworldEdgeFunctionPipeline(job) {
+  const startTime = Date.now();
+  const { id: jobId, project_id: projectId, user_id: userId, metadata: meta } = job;
+
+  try {
+    log(`[inworld ${jobId}] Starting: invoke generate-audio-inworld${meta.rvcEnabled ? ' + RVC' : ''}`);
+
+    await supabase.from('generation_jobs')
+      .update({ current_step: 'Génération audio (inworld)...', metadata: { ...meta, step: 'tts_generation' } })
+      .eq('id', jobId);
+
     const taggedMeta = { ...meta };
     if (meta.audioTagsEnabled && meta.audioTagsText && meta.script) {
       taggedMeta.script = applyAudioTags(meta.script, meta);
     }
 
-    // Step 1: Invoke the Supabase Edge Function to generate audio (synchronous mode)
-    // DO NOT pass jobId — it triggers EdgeRuntime.waitUntil which times out at 30s.
-    // Instead, call synchronously and handle the result here in the worker.
-    const edgeFnUrl = `${SUPABASE_URL}/functions/v1/${functionName}`;
+    const edgeFnUrl = `${SUPABASE_URL}/functions/v1/generate-audio-inworld`;
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 20 * 60 * 1000); // 20 min timeout
+    const timeout = setTimeout(() => controller.abort(), 5 * 60 * 1000);
 
     const response = await fetch(edgeFnUrl, {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        projectId,
-        userId,
-        ...taggedMeta,
-      }),
+      headers: { 'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectId, userId, ...taggedMeta }),
       signal: controller.signal,
     });
     clearTimeout(timeout);
 
     if (!response.ok) {
       const errText = await response.text();
-      throw new Error(`Edge Function ${functionName} failed (${response.status}): ${errText.substring(0, 300)}`);
+      throw new Error(`Inworld Edge Function failed (${response.status}): ${errText.substring(0, 300)}`);
     }
 
     const result = await response.json();
-    log(`[${provider} ${jobId}] Edge Function returned: ${JSON.stringify(result).substring(0, 200)}`);
-
     let audioUrl = result.audioUrl;
-
-    // If the Edge Function didn't return audioUrl directly, check the project
     if (!audioUrl) {
-      const { data: project } = await supabase
-        .from('projects')
-        .select('audio_url')
-        .eq('id', projectId)
-        .single();
+      const { data: project } = await supabase.from('projects').select('audio_url').eq('id', projectId).single();
       audioUrl = project?.audio_url;
     }
-
-    if (!audioUrl) throw new Error(`${provider} Edge Function returned no audioUrl`);
-    log(`[${provider} ${jobId}] Audio generated: ${audioUrl.substring(0, 80)}...`);
+    if (!audioUrl) throw new Error('Inworld returned no audioUrl');
 
     let finalAudioUrl = audioUrl;
-
-    // Step 3: Apply RVC conversion (only if enabled)
     if (meta.rvcEnabled && meta.rvcModelUrl) {
-      log(`[${provider}+RVC ${jobId}] Applying RVC conversion...`);
       finalAudioUrl = await applyRVCConversion(jobId, audioUrl, {
-        rvcModelUrl: meta.rvcModelUrl,
-        rvcIndexUrl: meta.rvcIndexUrl || '',
+        rvcModelUrl: meta.rvcModelUrl, rvcIndexUrl: meta.rvcIndexUrl || '',
         rvcPitch: typeof meta.rvcPitch === 'number' ? meta.rvcPitch : 0,
         rvcIndexRate: typeof meta.rvcIndexRate === 'number' ? meta.rvcIndexRate : 0.75,
         userId, projectId,
       }, meta);
-
       if (projectId) {
-        await supabase.from('projects')
-          .update({ audio_url: finalAudioUrl, updated_at: new Date().toISOString() })
-          .eq('id', projectId);
+        await supabase.from('projects').update({ audio_url: finalAudioUrl, updated_at: new Date().toISOString() }).eq('id', projectId);
       }
     }
 
     await supabase.from('generation_jobs')
-      .update({
-        status: 'completed',
-        progress: 1,
-        current_step: 'Terminé !',
-        completed_at: new Date().toISOString(),
-        metadata: { ...meta, audioUrl: finalAudioUrl, durationMs: Date.now() - startTime },
-      })
+      .update({ status: 'completed', progress: 1, current_step: 'Terminé !', completed_at: new Date().toISOString(), metadata: { ...meta, audioUrl: finalAudioUrl, durationMs: Date.now() - startTime } })
       .eq('id', jobId);
 
-    log(`[${provider}+RVC ${jobId}] Done in ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
-
+    log(`[inworld ${jobId}] Done in ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
   } catch (err) {
-    logError(`[EdgeFn+RVC ${jobId}] Pipeline failed:`, err.message);
+    logError(`[inworld ${jobId}] Pipeline failed:`, err.message);
     await supabase.from('generation_jobs')
       .update({ status: 'failed', error_message: err.message, completed_at: new Date().toISOString() })
       .eq('id', jobId);
@@ -4263,7 +4386,8 @@ async function mainLoop() {
               else if (job.metadata?.provider === 'ai33') pipeline = processAi33AudioPipeline(job);
               else if (job.metadata?.provider === 'edgetts') pipeline = processEdgeTTSPipeline(job);
               else if (job.metadata?.provider === 'qwen3_tts') pipeline = processQwen3TtsPipeline(job);
-              else if (job.metadata?.provider === 'minimax' || job.metadata?.provider === 'inworld') pipeline = processEdgeFunctionWithRVC(job);
+              else if (job.metadata?.provider === 'minimax') pipeline = processMinimaxTtsPipeline(job);
+              else if (job.metadata?.provider === 'inworld') pipeline = processInworldEdgeFunctionPipeline(job);
               else pipeline = processAudioTTSPipeline(job);
             } else if (job.job_type === 'idea_generation') {
               pipeline = processIdeaGenerationPipeline(job);
