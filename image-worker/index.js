@@ -3547,7 +3547,7 @@ async function processMinimaxTtsPipeline(job) {
     const voiceId = meta.voice || 'English_expressive_narrator';
     const speed = meta.speed ?? 1.0;
     const vol = meta.volume ?? 1.0;
-    const pitch = meta.pitch ?? 0;
+    const pitch = Math.max(-12, Math.min(12, meta.pitch ?? 0));
     const languageBoost = meta.languageBoost || 'auto';
     const englishNormalization = meta.englishNormalization !== false;
     const emotion = meta.emotion && meta.emotion !== 'neutral' ? meta.emotion : undefined;
