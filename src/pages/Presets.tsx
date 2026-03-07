@@ -494,7 +494,6 @@ export default function Presets() {
     setTtsVoiceId(p.voice_id || "");
     setTtsModel(p.model || "");
     setTtsSpeed(typeof p.speed === "number" ? p.speed : 1);
-    setTtsEmotion(p.emotion || "{}");
     setTtsPitch(typeof p.pitch === "number" ? p.pitch : 0);
     setTtsVolume(typeof p.volume === "number" ? p.volume : 1.0);
     setTtsLanguageBoost(p.language_boost || "auto");
@@ -509,7 +508,12 @@ export default function Presets() {
       setTtsRvcIndexRate(typeof emData.rvcIndexRate === "number" ? emData.rvcIndexRate : 0.75);
       setTtsAudioTagsEnabled(!!emData.audioTagsEnabled);
       setTtsAudioTagsText(emData.audioTagsText || "");
+      // Strip RVC/audioTags/minimax keys from the raw JSON textarea
+      const { rvcEnabled: _a, rvcModelUrl: _b, rvcIndexUrl: _c, rvcPitch: _d, rvcIndexRate: _e,
+              audioTagsEnabled: _f, audioTagsText: _g, minimaxEmotion: _h, ...cleanData } = emData;
+      setTtsEmotion(Object.keys(cleanData).length > 0 ? JSON.stringify(cleanData, null, 2) : "{}");
     } catch {
+      setTtsEmotion(p.emotion || "{}");
       setTtsMinimaxEmotion("neutral");
       setTtsRvcEnabled(false);
       setTtsRvcModelUrl("");
