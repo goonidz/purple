@@ -207,9 +207,7 @@ async function stepWaitScript(pipeline) {
     console.log(`[orchestrator] [${id}] Script completed`);
     await advancePipeline(id, 'generate_audio');
   } else if (data.status === 'failed') {
-    console.log(`[orchestrator] [${id}] Script job failed — clearing jobId and re-launching`);
-    await updatePipelineMetadata(id, { scriptJobId: null });
-    await advancePipeline(id, 'generate_script');
+    throw new Error(`Script generation failed: ${data.error || 'unknown'}`);
   }
   // else still processing -- do nothing, check next loop
 }
@@ -349,9 +347,7 @@ async function stepWaitAudio(pipeline) {
     console.log(`[orchestrator] [${id}] Audio completed: ${audioUrl}`);
     await advancePipeline(id, 'transcribe');
   } else if (job.status === 'failed') {
-    console.log(`[orchestrator] [${id}] Audio job failed — clearing jobId and re-launching`);
-    await updatePipelineMetadata(id, { audioJobId: null });
-    await advancePipeline(id, 'generate_audio');
+    throw new Error(`Audio generation failed: ${job.metadata?.error || 'unknown'}`);
   }
 }
 
@@ -425,9 +421,7 @@ async function stepWaitTranscription(pipeline) {
     console.log(`[orchestrator] [${id}] Transcription completed`);
     await advancePipeline(id, 'create_scenes');
   } else if (job.status === 'failed') {
-    console.log(`[orchestrator] [${id}] Transcription job failed — clearing jobId and re-launching`);
-    await updatePipelineMetadata(id, { transcriptionJobId: null });
-    await advancePipeline(id, 'transcribe');
+    throw new Error(`Transcription failed: ${job.metadata?.error || 'unknown'}`);
   }
 }
 
