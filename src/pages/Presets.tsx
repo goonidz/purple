@@ -1110,10 +1110,10 @@ export default function Presets() {
 
       {/* TTS dialog */}
       <Dialog open={ttsDialogOpen} onOpenChange={setTtsDialogOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{ttsEditId ? "Modifier le preset TTS" : "Nouveau preset TTS"}</DialogTitle>
-            <DialogDescription>Provider, voix et paramètres. Pour une édition avancée, utilisez la page De zéro.</DialogDescription>
+            <DialogDescription>Provider, voix et paramètres.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 pt-2">
             <div>
@@ -1241,62 +1241,6 @@ export default function Presets() {
                 </div>
               </>
             )}
-
-            {/* RVC Voice Conversion */}
-            <div className="space-y-3 border-t pt-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label className="text-sm font-medium">Conversion de voix (RVC)</Label>
-                  <p className="text-xs text-muted-foreground">Convertir l'audio avec un modèle RVC via GPU (RunPod).</p>
-                </div>
-                <input type="checkbox" checked={ttsRvcEnabled} onChange={(e) => setTtsRvcEnabled(e.target.checked)}
-                  className="h-5 w-5 rounded border-gray-300 text-primary focus:ring-primary" />
-              </div>
-              {ttsRvcEnabled && (
-                <div className="space-y-3 p-3 bg-muted/50 rounded-lg border border-primary/20">
-                  <div>
-                    <Label className="text-xs">URL du modèle RVC (.pth)</Label>
-                    <Input value={ttsRvcModelUrl} onChange={(e) => setTtsRvcModelUrl(e.target.value)}
-                      placeholder="https://huggingface.co/.../model.pth" className="text-xs" />
-                  </div>
-                  <div>
-                    <Label className="text-xs">URL de l'index (.index) — optionnel</Label>
-                    <Input value={ttsRvcIndexUrl} onChange={(e) => setTtsRvcIndexUrl(e.target.value)}
-                      placeholder="https://huggingface.co/.../model.index" className="text-xs" />
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <Label className="text-xs">Pitch ({ttsRvcPitch > 0 ? "+" : ""}{ttsRvcPitch} demi-tons)</Label>
-                      <input type="range" min={-24} max={24} step={1} value={ttsRvcPitch}
-                        onChange={(e) => setTtsRvcPitch(parseInt(e.target.value))}
-                        className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary" />
-                    </div>
-                    <div>
-                      <Label className="text-xs">Index Rate ({ttsRvcIndexRate.toFixed(2)})</Label>
-                      <input type="range" min={0} max={1} step={0.05} value={ttsRvcIndexRate}
-                        onChange={(e) => setTtsRvcIndexRate(parseFloat(e.target.value))}
-                        className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary" />
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Audio Tags */}
-            <div className="space-y-3 border-t pt-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label className="text-sm font-medium">Audio Tags</Label>
-                  <p className="text-xs text-muted-foreground">Ajouter des tags SSML au script.</p>
-                </div>
-                <input type="checkbox" checked={ttsAudioTagsEnabled} onChange={(e) => setTtsAudioTagsEnabled(e.target.checked)}
-                  className="h-5 w-5 rounded border-gray-300 text-primary focus:ring-primary" />
-              </div>
-              {ttsAudioTagsEnabled && (
-                <Textarea value={ttsAudioTagsText} onChange={(e) => setTtsAudioTagsText(e.target.value)}
-                  rows={2} className="font-mono text-xs resize-none" placeholder="Tags audio à insérer..." />
-              )}
-            </div>
 
             {/* RVC Voice Conversion */}
             <div className="space-y-3 border-t pt-4">
