@@ -471,6 +471,12 @@ export default function CalendarVideoModal({
     
     setIsDeleting(true);
     try {
+      // Delete associated pipelines first (foreign key constraint)
+      await supabase
+        .from("auto_pipelines" as any)
+        .delete()
+        .eq("calendar_entry_id", entry.id);
+
       const { error } = await supabase
         .from("content_calendar")
         .delete()
