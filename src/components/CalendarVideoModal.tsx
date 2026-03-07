@@ -274,13 +274,26 @@ export default function CalendarVideoModal({
 
     let cancelled = false;
     const fetchPipelineStatus = async () => {
-      const { data } = await supabase
+      // Prefer the most recent non-cancelled pipeline; fall back to latest overall
+      let { data } = await supabase
         .from("auto_pipelines" as any)
         .select("id, current_step, step_status, error, project_id")
         .eq("calendar_entry_id", entry.id)
+        .neq("current_step", "cancelled")
         .order("created_at", { ascending: false })
         .limit(1)
         .single();
+
+      if (!data) {
+        const fallback = await supabase
+          .from("auto_pipelines" as any)
+          .select("id, current_step, step_status, error, project_id")
+          .eq("calendar_entry_id", entry.id)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .single();
+        data = fallback.data;
+      }
 
       if (!cancelled && data) {
         setPipelineStatus(data as any);
