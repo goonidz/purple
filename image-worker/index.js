@@ -3601,7 +3601,7 @@ async function processMinimaxTtsPipeline(job) {
     for (let attempt = 0; attempt < MINIMAX_MAX_POLL_ATTEMPTS; attempt++) {
       await sleep(MINIMAX_POLL_INTERVAL_MS);
 
-      const statusRes = await fetch(`https://api.minimax.io/v1/query/t2a_async_v2?task_id=${taskId}`, {
+      const statusRes = await fetch(`https://api.minimax.io/v1/query/t2a_async_query_v2?task_id=${taskId}`, {
         headers: { 'Authorization': `Bearer ${apiKey}` },
       });
 

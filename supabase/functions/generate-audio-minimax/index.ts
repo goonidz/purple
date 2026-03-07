@@ -205,7 +205,7 @@ async function generateAudioAsyncV2(
     await new Promise(resolve => setTimeout(resolve, POLL_MS));
 
     const statusResponse = await fetch(
-      `https://api.minimax.io/v1/query/t2a_async_v2?task_id=${taskId}`,
+      `https://api.minimax.io/v1/query/t2a_async_query_v2?task_id=${taskId}`,
       { headers: { 'Authorization': `Bearer ${apiKey}` } }
     );
 
