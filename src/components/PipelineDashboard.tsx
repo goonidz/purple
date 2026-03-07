@@ -118,8 +118,8 @@ export default function PipelineDashboard({ isOpen, onClose }: PipelineDashboard
     return () => { cancelled = true; clearInterval(interval); };
   }, [isOpen]);
 
-  const active = pipelines.filter(p => p.current_step !== "completed" && p.step_status !== "failed");
-  const recent = pipelines.filter(p => p.current_step === "completed" || p.step_status === "failed");
+  const active = pipelines.filter(p => p.current_step !== "completed" && p.current_step !== "cancelled" && p.step_status !== "failed" && p.step_status !== "cancelled");
+  const recent = pipelines.filter(p => p.current_step === "completed" || p.current_step === "cancelled" || p.step_status === "failed" || p.step_status === "cancelled");
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }} modal>
@@ -163,7 +163,8 @@ export default function PipelineDashboard({ isOpen, onClose }: PipelineDashboard
 
 function PipelineCard({ pipeline }: { pipeline: PipelineRow }) {
   const isCompleted = pipeline.current_step === "completed";
-  const isFailed = pipeline.step_status === "failed";
+  const isCancelled = pipeline.current_step === "cancelled" || pipeline.step_status === "cancelled";
+  const isFailed = pipeline.step_status === "failed" || isCancelled;
   const currentIdx = STEPS.indexOf(pipeline.current_step);
   const progressPct = isCompleted ? 100 : isFailed ? 0 : Math.round(((currentIdx >= 0 ? currentIdx : 0) / STEPS.length) * 100);
 
