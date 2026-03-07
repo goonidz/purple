@@ -3615,14 +3615,14 @@ async function processMinimaxTtsPipeline(job) {
         throw new Error(`MiniMax poll error: ${sr.base_resp?.status_msg || 'Unknown'}`);
       }
 
-      // Status: 0=preparing, 1=running, 2=success, 3=failed
-      if (sr.status === 2) {
+      const st = sr.status;
+      if (st === 2 || st === 'Success') {
         audioDownloadUrl = sr.file_url || sr.audio_file?.download_url;
         audioDuration = sr.extra_info?.audio_length ? Math.round(sr.extra_info.audio_length / 1000) : 0;
         log(`[MiniMax TTS ${jobId}] Task complete after ${attempt + 1} polls`);
         break;
       }
-      if (sr.status === 3) {
+      if (st === 3 || st === 'Failed') {
         throw new Error(`MiniMax task failed: ${sr.error_message || 'Unknown error'}`);
       }
 
