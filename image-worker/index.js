@@ -3566,7 +3566,7 @@ async function processMinimaxTtsPipeline(job) {
       text: script,
       language_boost: languageBoost,
       voice_setting: { voice_id: voiceId, speed, vol, pitch, english_normalization: englishNormalization },
-      audio_setting: { audio_sample_rate: 32000, bitrate: 128000, format: 'mp3', channel: 1 },
+      audio_setting: { audio_sample_rate: 44100, bitrate: 128000, format: 'mp3', channel: 1 },
     };
     if (emotion) body.voice_setting.emotion = emotion;
 
@@ -4292,15 +4292,83 @@ async function mainLoop() {
 
       await checkDiskUsage();
       await cleanupStuckParents();
+      // ── PRIORITY PASS: audio, prompt, idea, thumbnail jobs run outside image concurrency ──
+      const PRIORITY_TYPES = ['audio_generation', 'single_prompt', 'idea_generation', 'thumbnails', 'thumbnails_v2'];
+      {
+        const { data: priorityJobs } = await supabase
+          .from('generation_jobs')
+          .select('*')
+          .eq('status', 'pending')
+          .in('job_type', PRIORITY_TYPES)
+          .order('created_at', { ascending: true })
+          .limit(10);
+
+        if (priorityJobs && priorityJobs.length > 0) {
+          const pParentIds = [...new Set(priorityJobs.map(j => j.parent_job_id).filter(Boolean))];
+          const pCancelledParents = new Set();
+          if (pParentIds.length > 0) {
+            const { data: pp } = await supabase.from('generation_jobs').select('id, status').in('id', pParentIds).eq('status', 'cancelled');
+            if (pp) pp.forEach(p => pCancelledParents.add(p.id));
+          }
+          if (pCancelledParents.size > 0) {
+            const orphaned = priorityJobs.filter(j => j.parent_job_id && pCancelledParents.has(j.parent_job_id));
+            if (orphaned.length > 0) {
+              await supabase.from('generation_jobs').update({ status: 'cancelled' }).in('id', orphaned.map(j => j.id));
+            }
+          }
+          const validPriority = priorityJobs
+            .filter(j => !processingJobIds.has(j.id))
+            .filter(j => !j.parent_job_id || !pCancelledParents.has(j.parent_job_id));
+          for (const job of validPriority) {
+            const { data: claimed, error: claimError } = await supabase
+              .from('generation_jobs')
+              .update({ status: 'processing', updated_at: new Date().toISOString() })
+              .eq('id', job.id)
+              .eq('status', 'pending')
+              .select('id')
+              .single();
+            if (claimError || !claimed) continue;
+
+            processingJobIds.add(job.id);
+            log(`[priority] Claimed ${job.job_type} job ${job.id.substring(0,8)}`);
+
+            let pipeline;
+            if (job.job_type === 'thumbnails') pipeline = processThumbnailsPipeline(job);
+            else if (job.job_type === 'thumbnails_v2') pipeline = processThumbnailsV2Pipeline(job);
+            else if (job.job_type === 'single_prompt') pipeline = processPromptJob(job);
+            else if (job.job_type === 'audio_generation') {
+              if (job.metadata?.provider === 'genaipro') pipeline = processGenaiproAudioPipeline(job);
+              else if (job.metadata?.provider === 'ai33') pipeline = processAi33AudioPipeline(job);
+              else if (job.metadata?.provider === 'edgetts') pipeline = processEdgeTTSPipeline(job);
+              else if (job.metadata?.provider === 'minimax') pipeline = processMinimaxTtsPipeline(job);
+              else if (job.metadata?.provider === 'inworld') pipeline = processInworldEdgeFunctionPipeline(job);
+              else if (job.metadata?.provider === 'qwen3_tts') pipeline = processQwen3TtsPipeline(job);
+              else pipeline = processAudioTTSPipeline(job);
+            } else if (job.job_type === 'idea_generation') pipeline = processIdeaGenerationPipeline(job);
+
+            if (pipeline) {
+              pipeline
+                .catch(async (err) => {
+                  logError(`[priority] Job ${job.id.substring(0,8)} failed:`, err.message);
+                  await supabase.from('generation_jobs').update({ status: 'failed', error_message: err.message, completed_at: new Date().toISOString() }).eq('id', job.id);
+                })
+                .finally(() => { processingJobIds.delete(job.id); });
+            } else {
+              processingJobIds.delete(job.id);
+            }
+          }
+        }
+      }
+
+      // ── IMAGE PASS: limited by concurrency pool ──
       const prelimSlots = MAX_CONCURRENT_AI33 - activeJobs;
 
       if (prelimSlots > 0) {
-        // Fair round-robin: fetch more jobs than needed, then pick evenly across projects
         const { data: pendingJobs, error } = await supabase
           .from('generation_jobs')
           .select('*')
           .eq('status', 'pending')
-          .in('job_type', ['single_image', 'thumbnails', 'thumbnails_v2', 'single_prompt', 'audio_generation', 'idea_generation'])
+          .eq('job_type', 'single_image')
           .order('created_at', { ascending: true })
           .limit(100);
 
@@ -4344,8 +4412,7 @@ async function mainLoop() {
           }
 
           // Dynamic concurrency: 40 if all pending image jobs use AI33, otherwise 20
-          const pendingImageJobs = validJobs.filter(j => j.job_type === 'single_image');
-          const allAI33 = pendingImageJobs.length > 0 && pendingImageJobs.every(j => j.metadata?.model === 'ai33-seedream-4.5');
+          const allAI33 = validJobs.length > 0 && validJobs.every(j => j.metadata?.model === 'ai33-seedream-4.5');
           const effectiveMax = allAI33 ? MAX_CONCURRENT_AI33 : MAX_CONCURRENT_DEFAULT;
           const availableSlots = Math.max(0, effectiveMax - activeJobs);
 
@@ -4361,10 +4428,9 @@ async function mainLoop() {
             idx++;
           }
 
-          log(`Found ${validJobs.length} pending jobs from ${byProject.size} project(s), picking ${fairJobs.length} (active: ${activeJobs}/${effectiveMax}${allAI33 ? ' AI33' : ''})`);
+          log(`Found ${validJobs.length} pending images from ${byProject.size} project(s), picking ${fairJobs.length} (active: ${activeJobs}/${effectiveMax}${allAI33 ? ' AI33' : ''})`);
 
           for (const job of fairJobs) {
-            // In-memory guard: skip jobs already being processed by this worker
             if (processingJobIds.has(job.id)) continue;
 
             // Atomically claim by setting to processing
@@ -4383,28 +4449,7 @@ async function mainLoop() {
             processingJobIds.add(job.id);
             activeJobs++;
 
-            // Route to the correct pipeline
-            let pipeline;
-            if (job.job_type === 'single_image') {
-              pipeline = processImagePipeline(job);
-            } else if (job.job_type === 'thumbnails') {
-              pipeline = processThumbnailsPipeline(job);
-            } else if (job.job_type === 'thumbnails_v2') {
-              pipeline = processThumbnailsV2Pipeline(job);
-            } else if (job.job_type === 'single_prompt') {
-              pipeline = processPromptJob(job);
-            } else if (job.job_type === 'audio_generation') {
-              if (job.metadata?.provider === 'genaipro') pipeline = processGenaiproAudioPipeline(job);
-              else if (job.metadata?.provider === 'ai33') pipeline = processAi33AudioPipeline(job);
-              else if (job.metadata?.provider === 'edgetts') pipeline = processEdgeTTSPipeline(job);
-              else if (job.metadata?.provider === 'qwen3_tts') pipeline = processQwen3TtsPipeline(job);
-              else if (job.metadata?.provider === 'minimax') pipeline = processMinimaxTtsPipeline(job);
-              else if (job.metadata?.provider === 'inworld') pipeline = processInworldEdgeFunctionPipeline(job);
-              else pipeline = processAudioTTSPipeline(job);
-            } else if (job.job_type === 'idea_generation') {
-              pipeline = processIdeaGenerationPipeline(job);
-            }
-
+            const pipeline = processImagePipeline(job);
             pipeline.finally(() => { activeJobs--; processingJobIds.delete(job.id); });
           }
         }
