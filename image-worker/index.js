@@ -3282,6 +3282,10 @@ async function processKokoroTtsPipeline(job) {
 
     log(`[Kokoro TTS ${jobId}] Starting (voice=${voice}, speed=${speed}, text=${text.length} chars)`);
 
+    await supabase.from('generation_jobs')
+      .update({ status: 'processing', total: 1, progress: 0 })
+      .eq('id', jobId);
+
     const replicateKey = await getUserApiKey(userId, 'replicate');
     const replicateClient = new Replicate({ auth: replicateKey });
 
@@ -3290,108 +3294,37 @@ async function processKokoroTtsPipeline(job) {
     const latestVersion = modelInfo.latest_version?.id;
     if (!latestVersion) throw new Error('Could not find latest version for jaaari/kokoro-82m');
 
-    const chunks = chunkTextByChars(text, 200);
-    log(`[Kokoro TTS ${jobId}] Split into ${chunks.length} chunks (~200 chars/chunk)`);
-
-    await supabase.from('generation_jobs')
-      .update({ status: 'processing', total: chunks.length, progress: 0, metadata: { ...meta, totalChunks: chunks.length } })
-      .eq('id', jobId);
-
-    const chunkUrls = new Array(chunks.length);
-    let completedCount = 0;
-    const chunkQueue = chunks.map((_, i) => i);
-
-    async function processOneChunk(index) {
-      const CHUNK_MAX_RETRIES = 3;
-      let audioOutput;
-
-      for (let attempt = 1; attempt <= CHUNK_MAX_RETRIES; attempt++) {
-        try {
-          log(`[Kokoro TTS ${jobId}] Chunk ${index + 1}/${chunks.length} (${chunks[index].length} chars)${attempt > 1 ? ` [retry ${attempt}]` : ''}...`);
-
-          const input = { text: chunks[index], voice, speed };
-          audioOutput = await runKokoroPrediction(replicateClient, latestVersion, input);
-          break;
-        } catch (genErr) {
-          logError(`[Kokoro TTS ${jobId}] Chunk ${index + 1} attempt ${attempt}/${CHUNK_MAX_RETRIES} failed:`, genErr.message);
-          if (attempt === CHUNK_MAX_RETRIES) throw genErr;
-          await sleep(3000 * attempt);
-        }
-      }
-
-      const audioRes = await fetch(audioOutput);
-      if (!audioRes.ok) throw new Error(`Failed to download Kokoro chunk ${index}: ${audioRes.status}`);
-      const audioBytes = Buffer.from(await audioRes.arrayBuffer());
-
-      const ext = audioOutput.includes('.wav') ? 'wav' : 'mp3';
-      const contentType = ext === 'wav' ? 'audio/wav' : 'audio/mpeg';
-      const storagePath = `tts/${jobId}/chunk_${String(index).padStart(3, '0')}.${ext}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from('audio-files')
-        .upload(storagePath, audioBytes, { contentType, upsert: true });
-      if (uploadError) throw new Error(`Failed to upload chunk ${index}: ${uploadError.message}`);
-
-      const { data: urlData, error: urlError } = await supabase.storage
-        .from('audio-files')
-        .createSignedUrl(storagePath, 3600);
-      if (urlError || !urlData?.signedUrl) throw new Error(`Failed to get signed URL for chunk ${index}: ${urlError?.message || 'no URL'}`);
-
-      chunkUrls[index] = urlData.signedUrl;
-      completedCount++;
-      log(`[Kokoro TTS ${jobId}] Chunk ${index + 1} done (${audioBytes.length} bytes)`);
-
-      await supabase.from('generation_jobs')
-        .update({ progress: completedCount, metadata: { ...meta, totalChunks: chunks.length, completedChunks: completedCount } })
-        .eq('id', jobId);
-    }
-
-    const workers = [];
-    for (let w = 0; w < Math.min(KOKORO_TTS_CONCURRENCY, chunks.length); w++) {
-      workers.push((async () => {
-        while (chunkQueue.length > 0) {
-          const idx = chunkQueue.shift();
-          if (idx === undefined) break;
-          await processOneChunk(idx);
-        }
-      })());
-    }
-    await Promise.all(workers);
-
-    log(`[Kokoro TTS ${jobId}] All ${chunks.length} chunks generated. Merging via concat-audio...`);
-
-    const CONCAT_MAX_RETRIES = 3;
-    let concatResult;
-    for (let attempt = 1; attempt <= CONCAT_MAX_RETRIES; attempt++) {
+    const MAX_RETRIES = 3;
+    let audioOutput;
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 120000);
-        const concatResponse = await fetch('http://localhost:3000/concat-audio', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ audioUrls: chunkUrls, userId, projectId }),
-          signal: controller.signal
-        });
-        clearTimeout(timeout);
-        if (!concatResponse.ok) {
-          const errText = await concatResponse.text();
-          throw new Error(`concat-audio HTTP ${concatResponse.status}: ${errText.substring(0, 300)}`);
-        }
-        concatResult = await concatResponse.json();
+        log(`[Kokoro TTS ${jobId}] Generating audio (${text.length} chars)${attempt > 1 ? ` [retry ${attempt}]` : ''}...`);
+        audioOutput = await runKokoroPrediction(replicateClient, latestVersion, { text, voice, speed });
         break;
-      } catch (concatErr) {
-        logError(`[Kokoro TTS ${jobId}] concat-audio attempt ${attempt}/${CONCAT_MAX_RETRIES} failed:`, concatErr.message);
-        if (attempt === CONCAT_MAX_RETRIES) throw concatErr;
-        await sleep(5000 * attempt);
+      } catch (genErr) {
+        logError(`[Kokoro TTS ${jobId}] Attempt ${attempt}/${MAX_RETRIES} failed:`, genErr.message);
+        if (attempt === MAX_RETRIES) throw genErr;
+        await sleep(3000 * attempt);
       }
     }
 
-    let finalAudioUrl = concatResult.audioUrl;
-    if (finalAudioUrl && finalAudioUrl.includes('localhost')) {
-      finalAudioUrl = finalAudioUrl.replace(/http:\/\/localhost:\d+/, 'https://purpleai.duckdns.org/api/render');
-    }
+    const audioRes = await fetch(audioOutput);
+    if (!audioRes.ok) throw new Error(`Failed to download Kokoro audio: ${audioRes.status}`);
+    const audioBytes = Buffer.from(await audioRes.arrayBuffer());
 
-    log(`[Kokoro TTS ${jobId}] Merge complete: ${finalAudioUrl} (${concatResult.totalDuration?.toFixed(1)}s)`);
+    const ext = audioOutput.includes('.wav') ? 'wav' : 'mp3';
+    const contentType = ext === 'wav' ? 'audio/wav' : 'audio/mpeg';
+    const storagePath = `tts/${userId}/${projectId || 'temp'}/${Date.now()}_kokoro.${ext}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from('audio-files')
+      .upload(storagePath, audioBytes, { contentType, upsert: true });
+    if (uploadError) throw new Error(`Upload failed: ${uploadError.message}`);
+
+    const { data: { publicUrl } } = supabase.storage.from('audio-files').getPublicUrl(storagePath);
+    log(`[Kokoro TTS ${jobId}] Uploaded: ${publicUrl.substring(0, 80)}... (${audioBytes.length} bytes)`);
+
+    let finalAudioUrl = publicUrl;
 
     if (meta.rvcEnabled && meta.rvcModelUrl) {
       log(`[Kokoro TTS ${jobId}] Applying RVC conversion...`);
@@ -3412,12 +3345,9 @@ async function processKokoroTtsPipeline(job) {
 
     await supabase.from('generation_jobs')
       .update({
-        status: 'completed', progress: chunks.length,
+        status: 'completed', progress: 1,
         completed_at: new Date().toISOString(),
-        metadata: {
-          ...meta, totalChunks: chunks.length, completedChunks: chunks.length,
-          audioUrl: finalAudioUrl, totalDuration: concatResult.totalDuration, durationMs: Date.now() - startTime,
-        },
+        metadata: { ...meta, audioUrl: finalAudioUrl, durationMs: Date.now() - startTime },
       })
       .eq('id', jobId);
 
