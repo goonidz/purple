@@ -27,6 +27,8 @@ import {
 import { Loader2, Sparkles, FileText, Mic, ArrowRight, ArrowLeft, Check, RefreshCw, ChevronDown, Save, Trash2, FolderOpen, Pencil, Copy, Upload, X, ClipboardCopy, ExternalLink } from "lucide-react";
 import AppHeader from "@/components/AppHeader";
 import { toast } from "sonner";
+import { KOKORO_VOICE_GROUPS, ALL_KOKORO_VOICES, DEFAULT_KOKORO_VOICE } from "@/lib/kokoroVoices";
+import { SelectGroup, SelectLabel } from "@/components/ui/select";
 
 type WorkflowStep = "topic" | "axes" | "script" | "audio" | "complete";
 
@@ -251,8 +253,10 @@ const CreateFromScratch = () => {
   const [useBatch, setUseBatch] = useState(false);
   
   // Audio step
-  const [ttsProvider, setTtsProvider] = useState<"minimax" | "inworld" | "genaipro" | "ai33" | "edgetts">("genaipro");
+  const [ttsProvider, setTtsProvider] = useState<"minimax" | "inworld" | "genaipro" | "ai33" | "edgetts" | "kokoro">("genaipro");
   const [selectedVoice, setSelectedVoice] = useState("English_expressive_narrator");
+  const [kokoroVoice, setKokoroVoice] = useState("af_bella");
+  const [kokoroSpeed, setKokoroSpeed] = useState(1.0);
   const [inworldVoiceId, setInworldVoiceId] = useState("Dennis");
   const [inworldSpeakingRate, setInworldSpeakingRate] = useState(0.9);
   const [forceElevenLabsTranscription, setForceElevenLabsTranscription] = useState(true);
@@ -839,8 +843,8 @@ const CreateFromScratch = () => {
 
   const applyTtsPreset = (preset: TtsPreset, opts?: { silent?: boolean }) => {
     // Load provider
-    if (preset.provider === "minimax" || preset.provider === "inworld" || preset.provider === "genaipro" || preset.provider === "ai33" || preset.provider === "edgetts") {
-      setTtsProvider(preset.provider as "minimax" | "inworld" | "genaipro" | "ai33" | "edgetts");
+    if (preset.provider === "minimax" || preset.provider === "inworld" || preset.provider === "genaipro" || preset.provider === "ai33" || preset.provider === "edgetts" || preset.provider === "kokoro") {
+      setTtsProvider(preset.provider as "minimax" | "inworld" | "genaipro" | "ai33" | "edgetts" | "kokoro");
     } else {
       toast.error("Ce preset utilise un fournisseur non supporté");
       return;
@@ -870,6 +874,9 @@ const CreateFromScratch = () => {
         const edgeData = preset.emotion ? JSON.parse(preset.emotion) : {};
         if (typeof edgeData.edgeTTSSpeed === "number") setEdgeTTSSpeed(edgeData.edgeTTSSpeed);
       } catch { /* not JSON, ignore */ }
+    } else if (preset.provider === "kokoro") {
+      setKokoroVoice(preset.voice_id || "af_bella");
+      setKokoroSpeed(typeof preset.speed === "number" ? preset.speed : 1.0);
     } else {
       setSelectedVoice(preset.voice_id);
       if (preset.model) setMinimaxModel(preset.model);
@@ -940,6 +947,10 @@ const CreateFromScratch = () => {
       } else if (ttsProvider === "inworld") {
         presetData.voice_id = inworldVoiceId;
         presetData.speed = inworldSpeakingRate;
+        presetData.emotion = JSON.stringify({ ...rvcData, ...audioTagsData });
+      } else if (ttsProvider === "kokoro") {
+        presetData.voice_id = kokoroVoice;
+        presetData.speed = kokoroSpeed;
         presetData.emotion = JSON.stringify({ ...rvcData, ...audioTagsData });
       } else {
         presetData.voice_id = selectedVoice;
@@ -1032,6 +1043,10 @@ const CreateFromScratch = () => {
       } else if (ttsProvider === "inworld") {
         updateData.voice_id = inworldVoiceId;
         updateData.speed = inworldSpeakingRate;
+        updateData.emotion = JSON.stringify({ ...rvcData, ...audioTagsData });
+      } else if (ttsProvider === "kokoro") {
+        updateData.voice_id = kokoroVoice;
+        updateData.speed = kokoroSpeed;
         updateData.emotion = JSON.stringify({ ...rvcData, ...audioTagsData });
       } else {
         updateData.voice_id = selectedVoice;
@@ -1989,6 +2004,9 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
         audioMetadata.voice = inworldVoiceId;
         audioMetadata.speed = inworldSpeakingRate;
         audioMetadata.forceElevenLabsTranscription = forceElevenLabsTranscription;
+      } else if (ttsProvider === "kokoro") {
+        audioMetadata.voice = kokoroVoice;
+        audioMetadata.speed = kokoroSpeed;
       } else {
         audioMetadata.voice = selectedVoice;
         audioMetadata.model = minimaxModel;
@@ -3023,7 +3041,7 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
 
                       <div className="space-y-4">
                         <Label>Fournisseur TTS</Label>
-                        <Select value={ttsProvider} onValueChange={(value: "minimax" | "inworld" | "genaipro" | "ai33" | "edgetts") => setTtsProvider(value)}>
+                        <Select value={ttsProvider} onValueChange={(value: "minimax" | "inworld" | "genaipro" | "ai33" | "edgetts" | "kokoro") => setTtsProvider(value)}>
                           <SelectTrigger>
                             <SelectValue />
                           </SelectTrigger>
@@ -3033,6 +3051,7 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                             <SelectItem value="edgetts">EdgeTTS (Microsoft Neural)</SelectItem>
                             <SelectItem value="minimax">MiniMax (API Officielle)</SelectItem>
                             <SelectItem value="inworld">Inworld AI (TTS 1 Max)</SelectItem>
+                            <SelectItem value="kokoro">Kokoro (Replicate)</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
@@ -3635,6 +3654,47 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                         </>
                       )}
 
+                      {ttsProvider === "kokoro" && (
+                        <div className="space-y-4 p-4 bg-muted/50 rounded-lg">
+                          <div className="space-y-2">
+                            <Label>Voix Kokoro</Label>
+                            <Select value={kokoroVoice} onValueChange={setKokoroVoice}>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Sélectionner une voix..." />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {KOKORO_VOICE_GROUPS.map((group) => (
+                                  <SelectGroup key={group.langCode}>
+                                    <SelectLabel>{group.language}</SelectLabel>
+                                    {group.voices.map((v) => (
+                                      <SelectItem key={v.id} value={v.id}>
+                                        {v.label} ({v.gender === "female" ? "F" : "M"}) — {v.grade}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectGroup>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Vitesse ({kokoroSpeed.toFixed(1)}x)</Label>
+                            <input
+                              type="range"
+                              min="0.5"
+                              max="2.0"
+                              step="0.1"
+                              value={kokoroSpeed}
+                              onChange={(e) => setKokoroSpeed(parseFloat(e.target.value))}
+                              className="w-full accent-primary"
+                            />
+                            <div className="flex justify-between text-xs text-muted-foreground">
+                              <span>0.5x</span>
+                              <span>2.0x</span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
                       {isGeneratingAudio && audioJobProgress ? (
                         <Card className="p-4 border-primary/20 bg-primary/5 space-y-3">
                           <div className="flex items-center gap-2">
@@ -3977,8 +4037,8 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
             <div className="p-4 bg-muted rounded-lg text-sm">
               <p className="font-medium mb-2">Configuration actuelle :</p>
               <ul className="space-y-1 text-muted-foreground">
-                <li>Fournisseur : {ttsProvider === "minimax" ? "MiniMax" : ttsProvider === "inworld" ? "Inworld AI" : ttsProvider === "edgetts" ? "EdgeTTS" : ttsProvider === "ai33" ? "AI33.pro" : "ElevenLabs"}{rvcEnabled ? " + RVC" : ""}</li>
-                <li>Voix : {ttsProvider === "inworld" ? inworldVoiceId : ttsProvider === "edgetts" ? edgeTTSVoice : selectedVoice}</li>
+                <li>Fournisseur : {ttsProvider === "minimax" ? "MiniMax" : ttsProvider === "inworld" ? "Inworld AI" : ttsProvider === "edgetts" ? "EdgeTTS" : ttsProvider === "ai33" ? "AI33.pro" : ttsProvider === "kokoro" ? "Kokoro" : "ElevenLabs"}{rvcEnabled ? " + RVC" : ""}</li>
+                <li>Voix : {ttsProvider === "inworld" ? inworldVoiceId : ttsProvider === "edgetts" ? edgeTTSVoice : ttsProvider === "kokoro" ? kokoroVoice : selectedVoice}</li>
                 {ttsProvider === "minimax" && (
                   <>
                     <li>Modèle : {minimaxModel}</li>

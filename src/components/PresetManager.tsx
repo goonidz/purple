@@ -52,6 +52,7 @@ interface Preset {
   lora_url: string | null;
   lora_steps: number;
   qa_prompt: string | null;
+  qa_enabled: boolean;
 }
 
 const DEFAULT_PROMPT_SYSTEM_MESSAGE = `You are an expert at generating prompts for AI image creation (like Midjourney, Stable Diffusion, DALL-E).
@@ -220,6 +221,7 @@ function mapRowToPreset(preset: any): Preset {
     lora_url: presetData.lora_url || null,
     lora_steps: presetData.lora_steps || 10,
     qa_prompt: presetData.qa_prompt || null,
+    qa_enabled: presetData.qa_enabled === true,
   };
 }
 
@@ -248,6 +250,7 @@ export const PresetManager = ({ currentConfig, onLoadPreset, autoLoadPresetId, c
     loraUrl?: string;
     loraSteps?: number;
     qaPrompt?: string;
+    qaEnabled?: boolean;
   } | null>(null);
 
   // LoRA presets
@@ -332,6 +335,7 @@ export const PresetManager = ({ currentConfig, onLoadPreset, autoLoadPresetId, c
         loraUrl: preset.lora_url || "",
         loraSteps: preset.lora_steps || 10,
         qaPrompt: preset.qa_prompt || DEFAULT_QA_PROMPT,
+        qaEnabled: preset.qa_enabled === true,
       });
       setIsEditDialogOpen(true);
     })();
@@ -710,6 +714,7 @@ export const PresetManager = ({ currentConfig, onLoadPreset, autoLoadPresetId, c
           style_reference_url: JSON.stringify(editFormData.styleReferenceUrls),
           prompt_system_message: editFormData.promptSystemMessage || null,
           qa_prompt: editFormData.qaPrompt || null,
+          qa_enabled: editFormData.qaEnabled === true,
         })
         .eq("id", selectedPresetId);
 
@@ -749,6 +754,7 @@ export const PresetManager = ({ currentConfig, onLoadPreset, autoLoadPresetId, c
       loraUrl: preset.lora_url || "",
       loraSteps: preset.lora_steps || 10,
       qaPrompt: preset.qa_prompt || DEFAULT_QA_PROMPT,
+      qaEnabled: preset.qa_enabled === true,
     });
     setIsEditDialogOpen(true);
   };
@@ -792,6 +798,7 @@ export const PresetManager = ({ currentConfig, onLoadPreset, autoLoadPresetId, c
           style_reference_url: sourcePreset.style_reference_url,
           prompt_system_message: sourcePreset.prompt_system_message,
           qa_prompt: sourcePreset.qa_prompt,
+          qa_enabled: sourcePreset.qa_enabled,
         },
       ]);
 
@@ -1493,6 +1500,23 @@ export const PresetManager = ({ currentConfig, onLoadPreset, autoLoadPresetId, c
                   <div className="flex items-center gap-2">
                     <div className="h-1 w-1 rounded-full bg-primary" />
                     <h3 className="text-base font-semibold">Prompt QA (Gemini)</h3>
+                  </div>
+                  <div className="flex items-start gap-3 p-3 border rounded-lg">
+                    <input
+                      type="checkbox"
+                      id="preset-qa-enabled"
+                      checked={editFormData.qaEnabled === true}
+                      onChange={(e) => setEditFormData({ ...editFormData, qaEnabled: e.target.checked })}
+                      className="mt-1 h-4 w-4 rounded border-border text-primary focus:ring-primary"
+                    />
+                    <div className="flex-1">
+                      <label htmlFor="preset-qa-enabled" className="font-medium cursor-pointer block text-sm">
+                        Activer le QA
+                      </label>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Vérifie la qualité des images générées et régénère celles qui ne passent pas le contrôle.
+                      </p>
+                    </div>
                   </div>
                   <div className="space-y-2">
                     <Textarea

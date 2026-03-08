@@ -39,6 +39,7 @@ interface Preset {
   prompt_system_message: string | null;
   lora_url: string | null;
   lora_steps: number;
+  qa_enabled: boolean;
 }
 
 interface ProjectConfigurationModalProps {
@@ -68,6 +69,7 @@ export const ProjectConfigurationModal = ({
   const [isUploading, setIsUploading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [semiAutoMode, setSemiAutoMode] = useState(false);
+  const [qaEnabled, setQaEnabled] = useState(false);
   
   // Preset loading
   const [presets, setPresets] = useState<Preset[]>([]);
@@ -198,6 +200,7 @@ export const ProjectConfigurationModal = ({
           prompt_system_message: presetData.prompt_system_message || null,
           lora_url: presetData.lora_url || null,
           lora_steps: presetData.lora_steps || 10,
+          qa_enabled: presetData.qa_enabled === true,
         };
       });
       
@@ -229,6 +232,7 @@ export const ProjectConfigurationModal = ({
       setImageModel(preset.image_model);
       setLoraUrl(preset.lora_url || "");
       setLoraSteps(preset.lora_steps || 10);
+      setQaEnabled(preset.qa_enabled === true);
       if (preset.style_reference_url) {
         setStyleReferenceUrls(parseStyleReferenceUrls(preset.style_reference_url));
       }
@@ -549,6 +553,7 @@ export const ProjectConfigurationModal = ({
           preset_id: selectedPresetId || null,
           style_reference_url: styleReferenceUrls.length > 0 ? JSON.stringify(styleReferenceUrls) : null,
           thumbnail_preset_id: selectedThumbnailPresetId || null,
+          qa_enabled: qaEnabled,
         } as any)
         .eq("id", currentProjectId);
 
@@ -1043,6 +1048,25 @@ export const ProjectConfigurationModal = ({
             <p className="text-xs text-muted-foreground">
               Requis si le mode semi-automatique est activé pour générer les miniatures
             </p>
+          </div>
+
+          {/* QA toggle */}
+          <div className="flex items-start gap-3 p-4 border rounded-lg">
+            <input
+              type="checkbox"
+              id="qa-enabled"
+              checked={qaEnabled}
+              onChange={(e) => setQaEnabled(e.target.checked)}
+              className="mt-1 h-4 w-4 rounded border-border text-primary focus:ring-primary"
+            />
+            <div className="flex-1">
+              <label htmlFor="qa-enabled" className="font-medium cursor-pointer block">
+                Activer le QA (vérification qualité Gemini)
+              </label>
+              <p className="text-sm text-muted-foreground mt-1">
+                Vérifie automatiquement la qualité des images générées via Gemini et régénère celles qui ne passent pas le contrôle.
+              </p>
+            </div>
           </div>
 
           {/* Semi-automatic mode option */}

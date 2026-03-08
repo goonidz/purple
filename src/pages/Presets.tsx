@@ -18,10 +18,13 @@ import {
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { KOKORO_VOICE_GROUPS } from "@/lib/kokoroVoices";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -1136,10 +1139,42 @@ export default function Presets() {
                   <SelectItem value="genaipro">GenAI Pro</SelectItem>
                   <SelectItem value="ai33">AI33</SelectItem>
                   <SelectItem value="edgetts">Edge TTS</SelectItem>
+                  <SelectItem value="kokoro">Kokoro (Replicate)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-            {ttsProvider === "minimax" ? (
+            {ttsProvider === "kokoro" ? (
+              <>
+                <div>
+                  <Label>Voix Kokoro</Label>
+                  <Select value={ttsVoiceId} onValueChange={setTtsVoiceId}>
+                    <SelectTrigger><SelectValue placeholder="Choisir une voix..." /></SelectTrigger>
+                    <SelectContent className="max-h-60">
+                      {KOKORO_VOICE_GROUPS.map((group) => (
+                        <SelectGroup key={group.langCode}>
+                          <SelectLabel>{group.language}</SelectLabel>
+                          {group.voices.map((v) => (
+                            <SelectItem key={v.id} value={v.id}>
+                              {v.label} ({v.gender === "female" ? "F" : "M"}) — {v.grade}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Vitesse ({ttsSpeed.toFixed(1)}x)</Label>
+                  <input type="range" min={0.5} max={2} step={0.1} value={ttsSpeed}
+                    onChange={(e) => setTtsSpeed(parseFloat(e.target.value))}
+                    className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary" />
+                  <div className="flex justify-between text-xs text-muted-foreground">
+                    <span>0.5x</span>
+                    <span>2.0x</span>
+                  </div>
+                </div>
+              </>
+            ) : ttsProvider === "minimax" ? (
               <>
                 <div>
                   <Label>Voix</Label>

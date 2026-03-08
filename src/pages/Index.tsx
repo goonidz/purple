@@ -201,6 +201,7 @@ const Index = () => {
   const [imageModel, setImageModel] = useState<string>("seedream-4.5");
   const [loraUrl, setLoraUrl] = useState<string>("");
   const [loraSteps, setLoraSteps] = useState<number>(10);
+  const [qaEnabled, setQaEnabled] = useState<boolean>(false);
   const [visualContinuityEnabled, setVisualContinuityEnabled] = useState<boolean>(false);
   const [isGeneratingImages, setIsGeneratingImages] = useState(false);
   const [generatingImageIndices, setGeneratingImageIndices] = useState<Set<number>>(new Set());
@@ -1095,6 +1096,7 @@ const Index = () => {
       if (projectData.image_model) setImageModel(projectData.image_model);
       if (projectData.lora_url) setLoraUrl(projectData.lora_url);
       if (projectData.lora_steps) setLoraSteps(projectData.lora_steps);
+      setQaEnabled((projectData as any).qa_enabled === true);
       if (projectData.visual_continuity_enabled !== undefined) setVisualContinuityEnabled(projectData.visual_continuity_enabled);
       if (projectData.prompt_system_message) {
         setPromptSystemMessage(projectData.prompt_system_message);
@@ -1333,6 +1335,7 @@ const Index = () => {
           image_model: imageModel,
           lora_url: loraUrl || null,
           lora_steps: loraSteps,
+          qa_enabled: qaEnabled,
           style_reference_url: serializeStyleReferenceUrls(styleReferenceUrls),
           ...(audioUrl ? { audio_url: audioUrl } : {}),
           prompt_system_message: promptSystemMessage || null,
@@ -3338,6 +3341,7 @@ const Index = () => {
     setImageModel(preset.image_model);
     setLoraUrl(preset.lora_url || "");
     setLoraSteps(preset.lora_steps || 10);
+    setQaEnabled((preset as any).qa_enabled === true);
     setActivePresetName(preset.name);
     setPromptSystemMessage(preset.prompt_system_message || "");
     setQaPrompt(preset.qa_prompt || "");
@@ -5765,6 +5769,25 @@ Remember: Use temporal context to understand the topic, but the query must be PR
                   </div>
                 </div>
               </div>
+
+              {/* QA toggle */}
+              <div className="flex items-start gap-3 p-4 border rounded-lg">
+                <input
+                  type="checkbox"
+                  id="image-settings-qa-enabled"
+                  checked={qaEnabled}
+                  onChange={(e) => setQaEnabled(e.target.checked)}
+                  className="mt-1 h-4 w-4 rounded border-border text-primary focus:ring-primary"
+                />
+                <div className="flex-1">
+                  <label htmlFor="image-settings-qa-enabled" className="font-medium cursor-pointer block">
+                    Activer le QA (vérification qualité Gemini)
+                  </label>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Vérifie automatiquement la qualité des images générées via Gemini et régénère celles qui ne passent pas le contrôle.
+                  </p>
+                </div>
+              </div>
             </div>
             <DialogFooter className="flex-shrink-0 mt-4">
               <Button variant="outline" onClick={() => setImageSettingsOpen(false)}>
@@ -6184,6 +6207,7 @@ Remember: Use temporal context to understand the topic, but the query must be PR
                   if (data.image_model) setImageModel(data.image_model);
                   if ((data as any).lora_url) setLoraUrl((data as any).lora_url);
                   if ((data as any).lora_steps) setLoraSteps((data as any).lora_steps);
+                  setQaEnabled((data as any).qa_enabled === true);
                   if (data.style_reference_url) {
                     setStyleReferenceUrls(parseStyleReferenceUrls(data.style_reference_url));
                   }

@@ -414,7 +414,7 @@ async function processJob(
       throw new Error('WEBHOOK_MODE_ACTIVE');
     } else if (jobType === 'script_generation') {
       await processScriptGenerationJob(jobId, projectId, userId, metadata, authHeader, adminClient);
-    } else if (jobType === 'audio_generation' && (metadata?.provider === 'gemini_tts' || metadata?.provider === 'genaipro' || metadata?.provider === 'ai33' || metadata?.provider === 'edgetts' || metadata?.provider === 'minimax' || metadata?.provider === 'inworld' || metadata?.provider === 'qwen3_tts' || metadata?.rvcEnabled)) {
+    } else if (jobType === 'audio_generation' && (metadata?.provider === 'gemini_tts' || metadata?.provider === 'genaipro' || metadata?.provider === 'ai33' || metadata?.provider === 'edgetts' || metadata?.provider === 'minimax' || metadata?.provider === 'inworld' || metadata?.provider === 'qwen3_tts' || metadata?.provider === 'kokoro' || metadata?.rvcEnabled)) {
       await adminClient
         .from('generation_jobs')
         .update({ status: 'pending' })
@@ -724,14 +724,13 @@ async function chainNextJob(
     
     nextJobType = 'images';
   } else if (completedJobType === 'images') {
-    // After images, chain to QA only for LoRA models (higher artifact rate)
-    const projectModel = project.image_model || '';
-    const isLoraModel = projectModel.includes('lora');
-    if (isLoraModel) {
-      console.log(`Model is ${projectModel} (LoRA) -> chaining to QA`);
+    // After images, chain to QA if qa_enabled on project
+    const qaEnabled = (project as any).qa_enabled === true;
+    if (qaEnabled) {
+      console.log(`QA enabled on project -> chaining to QA`);
       nextJobType = 'qa';
     } else {
-      console.log(`Model is ${projectModel} (non-LoRA) -> skipping QA, chaining to upscale`);
+      console.log(`QA disabled on project -> skipping QA, chaining to upscale`);
       nextJobType = 'upscale';
     }
   } else if (completedJobType === 'qa') {
@@ -810,7 +809,7 @@ async function chainNextJob(
     if (presetId) {
       const { data: preset } = await adminClient
         .from('presets')
-        .select('qa_prompt')
+        .select('qa_prompt, qa_enabled')
         .eq('id', presetId)
         .single();
       
@@ -819,6 +818,8 @@ async function chainNextJob(
         console.log(`Loaded qaPrompt from preset (${preset.qa_prompt.length} chars)`);
       }
     }
+    // Pass qa_enabled from project into job metadata
+    jobMetadata.qaEnabled = (project as any).qa_enabled === true;
   } else if (nextJobType === 'upscale') {
     const prompts = (project.prompts as any[]) || [];
     const imageModel = project.image_model || 'seedream-4.5';
@@ -1959,6 +1960,16 @@ async function processImagesJob(
     .single();
 
   if (!project) throw new Error("Project not found");
+
+  // Enrich metadata with qa_enabled from project if not already set
+  if (metadata.qaEnabled === undefined) {
+    metadata.qaEnabled = (project as any).qa_enabled === true;
+    // Update the parent job's metadata in DB so child jobs can read it
+    await adminClient
+      .from('generation_jobs')
+      .update({ metadata: { ...metadata } })
+      .eq('id', jobId);
+  }
 
   // If project is missing settings but has preset_id, copy from preset to project
   if (project.preset_id) {
@@ -4874,6 +4885,7 @@ async function processQAJob(
       imageUrl: prompt.imageUrl,
       sourcePrompt: prompt.prompt || '',
       qaPrompt: qaPrompt,
+      qaEnabled: metadata.qaEnabled === true,
       semiAutoMode: metadata.semiAutoMode || false,
       thumbnailPresetId: metadata.thumbnailPresetId || null
     }
@@ -5768,7 +5780,8 @@ async function updateQAParentProgress(
             metadata: {
               semiAutoMode: true,
               thumbnailPresetId: parentJob?.metadata?.thumbnailPresetId || null,
-              qaPrompt: parentJob?.metadata?.qaPrompt || null
+              qaPrompt: parentJob?.metadata?.qaPrompt || null,
+              qaEnabled: parentJob?.metadata?.qaEnabled === true
             }
           })
           .select()
