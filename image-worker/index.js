@@ -1037,25 +1037,26 @@ async function processImagePipeline(job) {
       return;
     }
 
-    // ---- STEP 7: QA check (only for LoRA models) ----
-    const modelForQA = (metadata.model || 'seedream-4.5').toLowerCase();
-    const isLoraModel = modelForQA.includes('lora');
+    // ---- STEP 7: QA check (if qaEnabled) ----
+    let parentQaEnabled = metadata.qaEnabled;
+    let qaPrompt = null;
+    if (parentJobId) {
+      const { data: parentData } = await supabase
+        .from('generation_jobs')
+        .select('metadata')
+        .eq('id', parentJobId)
+        .single();
+      if (parentQaEnabled === undefined) {
+        parentQaEnabled = parentData?.metadata?.qaEnabled;
+      }
+      qaPrompt = parentData?.metadata?.qaPrompt || null;
+    }
+    const qaEnabled = parentQaEnabled === true;
     let qaResult = { status: 'OK', anomalie_detectee: 'aucune', explication: '', prompt_regeneration: '' };
 
-    if (isLoraModel) {
+    if (qaEnabled) {
       try {
         const geminiKey = await getUserApiKey(userId, 'gemini');
-
-        let qaPrompt = null;
-        if (parentJobId) {
-          const { data: parentData } = await supabase
-            .from('generation_jobs')
-            .select('metadata')
-            .eq('id', parentJobId)
-            .single();
-          qaPrompt = parentData?.metadata?.qaPrompt || null;
-        }
-
         qaResult = await runQACheck(geminiKey, publicUrl, metadata.prompt, qaPrompt);
         log(`  Scene ${sceneIndex + 1}: QA -> ${qaResult.status}${qaResult.anomalie_detectee !== 'aucune' ? ` (${qaResult.anomalie_detectee})` : ''}`);
       } catch (qaError) {
@@ -1063,11 +1064,11 @@ async function processImagePipeline(job) {
         qaResult = { status: 'OK', anomalie_detectee: 'aucune', explication: `QA error: ${qaError.message.substring(0, 100)}`, prompt_regeneration: '' };
       }
     } else {
-      log(`  Scene ${sceneIndex + 1}: QA skipped (model ${modelForQA} is not LoRA)`);
+      log(`  Scene ${sceneIndex + 1}: QA skipped (disabled in project settings)`);
     }
 
     // ---- STEP 8: Update QA result in DB (only if QA was actually run) ----
-    if (isLoraModel) {
+    if (qaEnabled) {
       await updateSceneQA(projectId, sceneIndex, qaResult);
     }
 
@@ -3242,6 +3243,195 @@ async function processQwen3TtsPipeline(job) {
 }
 
 // ============================================================================
+// KOKORO TTS PIPELINE (via Replicate)
+// ============================================================================
+
+const KOKORO_TTS_TIMEOUT_MS = 10 * 60 * 1000;
+const KOKORO_TTS_CONCURRENCY = 7;
+
+async function runKokoroPrediction(replicateClient, latestVersion, input) {
+  const prediction = await replicateClient.predictions.create({ version: latestVersion, input });
+  const startTime = Date.now();
+  let result = prediction;
+  while (result.status !== 'succeeded' && result.status !== 'failed' && result.status !== 'canceled') {
+    if (Date.now() - startTime > KOKORO_TTS_TIMEOUT_MS) {
+      throw new Error(`Kokoro TTS timed out after ${KOKORO_TTS_TIMEOUT_MS / 1000}s`);
+    }
+    await sleep(REPLICATE_POLL_MS);
+    result = await replicateClient.predictions.get(prediction.id);
+  }
+  if (result.status !== 'succeeded') {
+    throw new Error(`Kokoro TTS prediction ${result.status}: ${result.error || 'unknown error'}`);
+  }
+  const audioOutput = typeof result.output === 'string' ? result.output : (Array.isArray(result.output) ? result.output[0] : null);
+  if (!audioOutput) throw new Error('Kokoro TTS returned no audio output');
+  return audioOutput;
+}
+
+async function processKokoroTtsPipeline(job) {
+  const startTime = Date.now();
+  const { id: jobId, project_id: projectId, user_id: userId, metadata: meta } = job;
+
+  try {
+    const text = applyAudioTags(meta.text || meta.script, meta);
+    if (!text || text.trim().length < 5) throw new Error('No text provided for Kokoro TTS');
+    if (text.length > 50000) throw new Error(`Text too long for Kokoro TTS (${text.length} chars, max 50000)`);
+
+    const voice = meta.voice || 'af_bella';
+    const speed = typeof meta.speed === 'number' ? meta.speed : 1.0;
+
+    log(`[Kokoro TTS ${jobId}] Starting (voice=${voice}, speed=${speed}, text=${text.length} chars)`);
+
+    const replicateKey = await getUserApiKey(userId, 'replicate');
+    const replicateClient = new Replicate({ auth: replicateKey });
+
+    const [owner, name] = 'jaaari/kokoro-82m'.split('/');
+    const modelInfo = await replicateClient.models.get(owner, name);
+    const latestVersion = modelInfo.latest_version?.id;
+    if (!latestVersion) throw new Error('Could not find latest version for jaaari/kokoro-82m');
+
+    const chunks = chunkTextByChars(text, 200);
+    log(`[Kokoro TTS ${jobId}] Split into ${chunks.length} chunks (~200 chars/chunk)`);
+
+    await supabase.from('generation_jobs')
+      .update({ status: 'processing', total: chunks.length, progress: 0, metadata: { ...meta, totalChunks: chunks.length } })
+      .eq('id', jobId);
+
+    const chunkUrls = new Array(chunks.length);
+    let completedCount = 0;
+    const chunkQueue = chunks.map((_, i) => i);
+
+    async function processOneChunk(index) {
+      const CHUNK_MAX_RETRIES = 3;
+      let audioOutput;
+
+      for (let attempt = 1; attempt <= CHUNK_MAX_RETRIES; attempt++) {
+        try {
+          log(`[Kokoro TTS ${jobId}] Chunk ${index + 1}/${chunks.length} (${chunks[index].length} chars)${attempt > 1 ? ` [retry ${attempt}]` : ''}...`);
+
+          const input = { text: chunks[index], voice, speed };
+          audioOutput = await runKokoroPrediction(replicateClient, latestVersion, input);
+          break;
+        } catch (genErr) {
+          logError(`[Kokoro TTS ${jobId}] Chunk ${index + 1} attempt ${attempt}/${CHUNK_MAX_RETRIES} failed:`, genErr.message);
+          if (attempt === CHUNK_MAX_RETRIES) throw genErr;
+          await sleep(3000 * attempt);
+        }
+      }
+
+      const audioRes = await fetch(audioOutput);
+      if (!audioRes.ok) throw new Error(`Failed to download Kokoro chunk ${index}: ${audioRes.status}`);
+      const audioBytes = Buffer.from(await audioRes.arrayBuffer());
+
+      const ext = audioOutput.includes('.wav') ? 'wav' : 'mp3';
+      const contentType = ext === 'wav' ? 'audio/wav' : 'audio/mpeg';
+      const storagePath = `tts/${jobId}/chunk_${String(index).padStart(3, '0')}.${ext}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('audio-files')
+        .upload(storagePath, audioBytes, { contentType, upsert: true });
+      if (uploadError) throw new Error(`Failed to upload chunk ${index}: ${uploadError.message}`);
+
+      const { data: urlData, error: urlError } = await supabase.storage
+        .from('audio-files')
+        .createSignedUrl(storagePath, 3600);
+      if (urlError || !urlData?.signedUrl) throw new Error(`Failed to get signed URL for chunk ${index}: ${urlError?.message || 'no URL'}`);
+
+      chunkUrls[index] = urlData.signedUrl;
+      completedCount++;
+      log(`[Kokoro TTS ${jobId}] Chunk ${index + 1} done (${audioBytes.length} bytes)`);
+
+      await supabase.from('generation_jobs')
+        .update({ progress: completedCount, metadata: { ...meta, totalChunks: chunks.length, completedChunks: completedCount } })
+        .eq('id', jobId);
+    }
+
+    const workers = [];
+    for (let w = 0; w < Math.min(KOKORO_TTS_CONCURRENCY, chunks.length); w++) {
+      workers.push((async () => {
+        while (chunkQueue.length > 0) {
+          const idx = chunkQueue.shift();
+          if (idx === undefined) break;
+          await processOneChunk(idx);
+        }
+      })());
+    }
+    await Promise.all(workers);
+
+    log(`[Kokoro TTS ${jobId}] All ${chunks.length} chunks generated. Merging via concat-audio...`);
+
+    const CONCAT_MAX_RETRIES = 3;
+    let concatResult;
+    for (let attempt = 1; attempt <= CONCAT_MAX_RETRIES; attempt++) {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 120000);
+        const concatResponse = await fetch('http://localhost:3000/concat-audio', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ audioUrls: chunkUrls, userId, projectId }),
+          signal: controller.signal
+        });
+        clearTimeout(timeout);
+        if (!concatResponse.ok) {
+          const errText = await concatResponse.text();
+          throw new Error(`concat-audio HTTP ${concatResponse.status}: ${errText.substring(0, 300)}`);
+        }
+        concatResult = await concatResponse.json();
+        break;
+      } catch (concatErr) {
+        logError(`[Kokoro TTS ${jobId}] concat-audio attempt ${attempt}/${CONCAT_MAX_RETRIES} failed:`, concatErr.message);
+        if (attempt === CONCAT_MAX_RETRIES) throw concatErr;
+        await sleep(5000 * attempt);
+      }
+    }
+
+    let finalAudioUrl = concatResult.audioUrl;
+    if (finalAudioUrl && finalAudioUrl.includes('localhost')) {
+      finalAudioUrl = finalAudioUrl.replace(/http:\/\/localhost:\d+/, 'https://purpleai.duckdns.org/api/render');
+    }
+
+    log(`[Kokoro TTS ${jobId}] Merge complete: ${finalAudioUrl} (${concatResult.totalDuration?.toFixed(1)}s)`);
+
+    if (meta.rvcEnabled && meta.rvcModelUrl) {
+      log(`[Kokoro TTS ${jobId}] Applying RVC conversion...`);
+      finalAudioUrl = await applyRVCConversion(jobId, finalAudioUrl, {
+        rvcModelUrl: meta.rvcModelUrl, rvcIndexUrl: meta.rvcIndexUrl || '',
+        rvcPitch: typeof meta.rvcPitch === 'number' ? meta.rvcPitch : 0,
+        rvcIndexRate: typeof meta.rvcIndexRate === 'number' ? meta.rvcIndexRate : 0.75,
+        userId, projectId,
+      }, meta);
+      log(`[Kokoro TTS ${jobId}] RVC done: ${finalAudioUrl.substring(0, 80)}...`);
+    }
+
+    if (projectId) {
+      await supabase.from('projects')
+        .update({ audio_url: finalAudioUrl, updated_at: new Date().toISOString() })
+        .eq('id', projectId);
+    }
+
+    await supabase.from('generation_jobs')
+      .update({
+        status: 'completed', progress: chunks.length,
+        completed_at: new Date().toISOString(),
+        metadata: {
+          ...meta, totalChunks: chunks.length, completedChunks: chunks.length,
+          audioUrl: finalAudioUrl, totalDuration: concatResult.totalDuration, durationMs: Date.now() - startTime,
+        },
+      })
+      .eq('id', jobId);
+
+    log(`[Kokoro TTS ${jobId}] Done in ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
+
+  } catch (err) {
+    logError(`[Kokoro TTS ${jobId}] Pipeline failed:`, err.message);
+    await supabase.from('generation_jobs')
+      .update({ status: 'failed', error_message: err.message, completed_at: new Date().toISOString() })
+      .eq('id', jobId);
+  }
+}
+
+// ============================================================================
 // EDGETTS PIPELINE (with optional RVC)
 // ============================================================================
 
@@ -3652,11 +3842,37 @@ async function processMinimaxTtsPipeline(job) {
     const audioBytes = Buffer.from(await audioRes.arrayBuffer());
     log(`[MiniMax TTS ${jobId}] Downloaded ${audioBytes.length} bytes (~${audioDuration}s)`);
 
-    // Step 4: Upload to Supabase Storage
-    const storagePath = `tts/${userId}/${projectId || 'temp'}/${Date.now()}_minimax.mp3`;
+    // Step 4: If RVC is enabled, re-encode with ffmpeg to produce a clean WAV
+    // MiniMax "mp3" files have non-standard headers that libsndfile/libmpg123 can't read
+    let uploadBytes = audioBytes;
+    let uploadContentType = 'audio/mpeg';
+    let uploadExt = 'mp3';
+    if (meta.rvcEnabled && meta.rvcModelUrl) {
+      log(`[MiniMax TTS ${jobId}] Re-encoding to WAV for RVC compatibility...`);
+      const os = require('os');
+      const path = require('path');
+      const fs = require('fs');
+      const { execFileSync } = require('child_process');
+      const tmpIn = path.join(os.tmpdir(), `minimax_${jobId}_in.mp3`);
+      const tmpOut = path.join(os.tmpdir(), `minimax_${jobId}_out.wav`);
+      try {
+        fs.writeFileSync(tmpIn, audioBytes);
+        execFileSync('ffmpeg', ['-y', '-i', tmpIn, '-ar', '44100', '-ac', '1', '-sample_fmt', 's16', tmpOut], { timeout: 120000 });
+        uploadBytes = fs.readFileSync(tmpOut);
+        uploadContentType = 'audio/wav';
+        uploadExt = 'wav';
+        log(`[MiniMax TTS ${jobId}] Re-encoded: ${audioBytes.length} bytes mp3 -> ${uploadBytes.length} bytes wav`);
+      } finally {
+        try { fs.unlinkSync(tmpIn); } catch {}
+        try { fs.unlinkSync(tmpOut); } catch {}
+      }
+    }
+
+    // Step 5: Upload to Supabase Storage
+    const storagePath = `tts/${userId}/${projectId || 'temp'}/${Date.now()}_minimax.${uploadExt}`;
     const { error: uploadError } = await supabase.storage
       .from('audio-files')
-      .upload(storagePath, audioBytes, { contentType: 'audio/mpeg', upsert: true });
+      .upload(storagePath, uploadBytes, { contentType: uploadContentType, upsert: true });
     if (uploadError) throw new Error(`Upload failed: ${uploadError.message}`);
 
     const { data: { publicUrl } } = supabase.storage.from('audio-files').getPublicUrl(storagePath);
@@ -3664,7 +3880,7 @@ async function processMinimaxTtsPipeline(job) {
 
     let finalAudioUrl = publicUrl;
 
-    // Step 5: RVC conversion (optional)
+    // Step 6: RVC conversion (optional)
     if (meta.rvcEnabled && meta.rvcModelUrl) {
       log(`[MiniMax TTS ${jobId}] Applying RVC...`);
       finalAudioUrl = await applyRVCConversion(jobId, publicUrl, {
@@ -3676,7 +3892,7 @@ async function processMinimaxTtsPipeline(job) {
       log(`[MiniMax TTS ${jobId}] RVC done`);
     }
 
-    // Step 6: Update project + job
+    // Step 7: Update project + job
     if (projectId) {
       await supabase.from('projects')
         .update({ audio_url: finalAudioUrl, updated_at: new Date().toISOString() })
@@ -4343,6 +4559,7 @@ async function mainLoop() {
               else if (job.metadata?.provider === 'minimax') pipeline = processMinimaxTtsPipeline(job);
               else if (job.metadata?.provider === 'inworld') pipeline = processInworldEdgeFunctionPipeline(job);
               else if (job.metadata?.provider === 'qwen3_tts') pipeline = processQwen3TtsPipeline(job);
+              else if (job.metadata?.provider === 'kokoro') pipeline = processKokoroTtsPipeline(job);
               else pipeline = processAudioTTSPipeline(job);
             } else if (job.job_type === 'idea_generation') pipeline = processIdeaGenerationPipeline(job);
 
