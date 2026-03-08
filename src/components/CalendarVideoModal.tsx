@@ -956,47 +956,14 @@ export default function CalendarVideoModal({
     if (!pipelineStatus?.id) return;
     setIsRetryingPipeline(true);
     try {
-      // Map wait_* steps back to their generate_* step and clear the jobId
-      const REWIND_MAP: Record<string, { step: string; clearKey: string }> = {
-        wait_script: { step: "generate_script", clearKey: "scriptJobId" },
-        wait_audio: { step: "generate_audio", clearKey: "audioJobId" },
-        wait_transcription: { step: "transcribe", clearKey: "transcriptionJobId" },
-        wait_prompts: { step: "generate_prompts", clearKey: "promptsJobId" },
-        wait_images: { step: "generate_images", clearKey: "imagesJobId" },
-      };
+      const { data, error } = await supabase.functions.invoke("retry-pipeline", {
+        body: { pipelineId: pipelineStatus.id },
+      });
+      if (error) throw new Error(error.message || "Retry failed");
+      if (data?.error) throw new Error(data.error);
 
-      const currentStep = pipelineStatus.current_step;
-      const rewind = REWIND_MAP[currentStep];
-
-      // Fetch current metadata to clear the failed jobId
-      const { data: pipelineData } = await supabase
-        .from("auto_pipelines" as any)
-        .select("metadata")
-        .eq("id", pipelineStatus.id)
-        .single();
-
-      const metadata = (pipelineData as any)?.metadata || {};
-      if (rewind?.clearKey) {
-        delete metadata[rewind.clearKey];
-      }
-
-      const updatePayload: Record<string, any> = {
-        step_status: "pending",
-        error: null,
-        retry_count: 0,
-        metadata,
-      };
-      if (rewind) {
-        updatePayload.current_step = rewind.step;
-      }
-
-      const { error } = await supabase
-        .from("auto_pipelines" as any)
-        .update(updatePayload as any)
-        .eq("id", pipelineStatus.id);
-      if (error) throw new Error(error.message);
       setPipelineStatus({ ...pipelineStatus, step_status: "pending", error: null });
-      toast.success("Pipeline relancé !");
+      toast.success(`Pipeline relancé (tentative ${data.manualRetry}/${data.maxRetries})`);
     } catch (err: any) {
       toast.error(`Erreur: ${err.message}`);
     } finally {
