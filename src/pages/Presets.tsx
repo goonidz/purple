@@ -1164,8 +1164,8 @@ export default function Presets() {
                   </Select>
                 </div>
                 <div>
-                  <Label>Vitesse ({ttsSpeed.toFixed(1)}x)</Label>
-                  <input type="range" min={0.5} max={2} step={0.1} value={ttsSpeed}
+                  <Label>Vitesse ({ttsSpeed.toFixed(2)}x)</Label>
+                  <input type="range" min={0.5} max={2} step={0.01} value={ttsSpeed}
                     onChange={(e) => setTtsSpeed(parseFloat(e.target.value))}
                     className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary" />
                   <div className="flex justify-between text-xs text-muted-foreground">

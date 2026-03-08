@@ -3677,12 +3677,12 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                             </Select>
                           </div>
                           <div className="space-y-2">
-                            <Label>Vitesse ({kokoroSpeed.toFixed(1)}x)</Label>
+                            <Label>Vitesse ({kokoroSpeed.toFixed(2)}x)</Label>
                             <input
                               type="range"
                               min="0.5"
                               max="2.0"
-                              step="0.1"
+                              step="0.01"
                               value={kokoroSpeed}
                               onChange={(e) => setKokoroSpeed(parseFloat(e.target.value))}
                               className="w-full accent-primary"
