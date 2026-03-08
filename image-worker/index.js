@@ -3842,37 +3842,11 @@ async function processMinimaxTtsPipeline(job) {
     const audioBytes = Buffer.from(await audioRes.arrayBuffer());
     log(`[MiniMax TTS ${jobId}] Downloaded ${audioBytes.length} bytes (~${audioDuration}s)`);
 
-    // Step 4: If RVC is enabled, re-encode with ffmpeg to produce a clean WAV
-    // MiniMax "mp3" files have non-standard headers that libsndfile/libmpg123 can't read
-    let uploadBytes = audioBytes;
-    let uploadContentType = 'audio/mpeg';
-    let uploadExt = 'mp3';
-    if (meta.rvcEnabled && meta.rvcModelUrl) {
-      log(`[MiniMax TTS ${jobId}] Re-encoding to WAV for RVC compatibility...`);
-      const os = require('os');
-      const path = require('path');
-      const fs = require('fs');
-      const { execFileSync } = require('child_process');
-      const tmpIn = path.join(os.tmpdir(), `minimax_${jobId}_in.mp3`);
-      const tmpOut = path.join(os.tmpdir(), `minimax_${jobId}_out.wav`);
-      try {
-        fs.writeFileSync(tmpIn, audioBytes);
-        execFileSync('ffmpeg', ['-y', '-i', tmpIn, '-ar', '44100', '-ac', '1', '-sample_fmt', 's16', tmpOut], { timeout: 120000 });
-        uploadBytes = fs.readFileSync(tmpOut);
-        uploadContentType = 'audio/wav';
-        uploadExt = 'wav';
-        log(`[MiniMax TTS ${jobId}] Re-encoded: ${audioBytes.length} bytes mp3 -> ${uploadBytes.length} bytes wav`);
-      } finally {
-        try { fs.unlinkSync(tmpIn); } catch {}
-        try { fs.unlinkSync(tmpOut); } catch {}
-      }
-    }
-
-    // Step 5: Upload to Supabase Storage
-    const storagePath = `tts/${userId}/${projectId || 'temp'}/${Date.now()}_minimax.${uploadExt}`;
+    // Step 4: Upload MP3 to Supabase Storage
+    const storagePath = `tts/${userId}/${projectId || 'temp'}/${Date.now()}_minimax.mp3`;
     const { error: uploadError } = await supabase.storage
       .from('audio-files')
-      .upload(storagePath, uploadBytes, { contentType: uploadContentType, upsert: true });
+      .upload(storagePath, audioBytes, { contentType: 'audio/mpeg', upsert: true });
     if (uploadError) throw new Error(`Upload failed: ${uploadError.message}`);
 
     const { data: { publicUrl } } = supabase.storage.from('audio-files').getPublicUrl(storagePath);
@@ -3880,16 +3854,41 @@ async function processMinimaxTtsPipeline(job) {
 
     let finalAudioUrl = publicUrl;
 
-    // Step 6: RVC conversion (optional)
+    // Step 5: RVC conversion (optional)
+    // MiniMax "mp3" has non-standard headers that libsndfile can't read,
+    // so re-encode to clean WAV via ffmpeg and serve it locally for RunPod to download
     if (meta.rvcEnabled && meta.rvcModelUrl) {
-      log(`[MiniMax TTS ${jobId}] Applying RVC...`);
-      finalAudioUrl = await applyRVCConversion(jobId, publicUrl, {
-        rvcModelUrl: meta.rvcModelUrl, rvcIndexUrl: meta.rvcIndexUrl || '',
-        rvcPitch: typeof meta.rvcPitch === 'number' ? meta.rvcPitch : 0,
-        rvcIndexRate: typeof meta.rvcIndexRate === 'number' ? meta.rvcIndexRate : 0.75,
-        userId, projectId,
-      }, meta);
-      log(`[MiniMax TTS ${jobId}] RVC done`);
+      log(`[MiniMax TTS ${jobId}] Re-encoding to WAV for RVC compatibility...`);
+      const os = require('os');
+      const path = require('path');
+      const fs = require('fs');
+      const { execFileSync } = require('child_process');
+      const tmpIn = path.join(os.tmpdir(), `minimax_${jobId}_in.mp3`);
+      const wavFilename = `minimax_${jobId}_rvc.wav`;
+      const videoTmpDir = process.env.VIDEO_TEMP_DIR || '/home/ubuntu/purple/video-render-service/temp';
+      const tmpOut = path.join(videoTmpDir, wavFilename);
+      try {
+        fs.writeFileSync(tmpIn, audioBytes);
+        execFileSync('ffmpeg', ['-y', '-i', tmpIn, '-ar', '44100', '-ac', '1', '-sample_fmt', 's16', tmpOut], { timeout: 120000 });
+        const wavSize = fs.statSync(tmpOut).size;
+        log(`[MiniMax TTS ${jobId}] Re-encoded: ${audioBytes.length} bytes mp3 -> ${wavSize} bytes wav`);
+      } finally {
+        try { fs.unlinkSync(tmpIn); } catch {}
+      }
+
+      const rvcAudioUrl = `https://purpleai.duckdns.org/api/render/videos/${wavFilename}`;
+      log(`[MiniMax TTS ${jobId}] Applying RVC with WAV: ${rvcAudioUrl}`);
+      try {
+        finalAudioUrl = await applyRVCConversion(jobId, rvcAudioUrl, {
+          rvcModelUrl: meta.rvcModelUrl, rvcIndexUrl: meta.rvcIndexUrl || '',
+          rvcPitch: typeof meta.rvcPitch === 'number' ? meta.rvcPitch : 0,
+          rvcIndexRate: typeof meta.rvcIndexRate === 'number' ? meta.rvcIndexRate : 0.75,
+          userId, projectId,
+        }, meta);
+        log(`[MiniMax TTS ${jobId}] RVC done`);
+      } finally {
+        try { fs.unlinkSync(tmpOut); } catch {}
+      }
     }
 
     // Step 7: Update project + job
