@@ -141,6 +141,8 @@ Deno.serve(async (req) => {
     } else if (modelVersion === 'z-image-turbo-lora') {
       // Use latest version (no version hash) - the old hash lacked PEFT backend for LoRA loading
       modelName = 'prunaai/z-image-turbo-lora';
+    } else if (modelVersion === 'grok-imagine') {
+      modelName = 'xai/grok-imagine-image';
     } else {
       modelName = 'bytedance/seedream-4.5';
     }
@@ -234,6 +236,18 @@ Deno.serve(async (req) => {
         console.log(`${modelVersion}: using ${body.image_urls.length} image references`);
       }
       if (body.seed) input.seed = body.seed;
+    } else if (modelVersion === 'grok-imagine') {
+      const ASPECT_RATIOS = ['1:1', '4:3', '3:4', '16:9', '9:16', '3:2', '2:3', '21:9'];
+      const ratio = width / height;
+      let bestAR = '1:1';
+      let bestDiff = Infinity;
+      for (const ar of ASPECT_RATIOS) {
+        const [w, h] = ar.split(':').map(Number);
+        const diff = Math.abs(ratio - w / h);
+        if (diff < bestDiff) { bestDiff = diff; bestAR = ar; }
+      }
+      input.aspect_ratio = bestAR;
+      console.log(`Grok Imagine: using aspect_ratio=${bestAR} (from ${requestedWidth}x${requestedHeight})`);
     } else {
       // SeedDream 4 / 4.5
       input.size = "custom";

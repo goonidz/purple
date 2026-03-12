@@ -81,6 +81,7 @@ const MODEL_MAP = {
   'seedream-5-lite': 'bytedance/seedream-5-lite',
   'z-image-turbo': 'prunaai/z-image-turbo',
   'z-image-turbo-lora': 'prunaai/z-image-turbo-lora',
+  'grok-imagine': 'xai/grok-imagine-image',
 };
 
 const UPSCALE_MODEL = 'daanelson/real-esrgan-a100';
@@ -209,6 +210,8 @@ function buildReplicateInput(metadata) {
     if (metadata.styleRefs && metadata.styleRefs.length > 0) {
       input.image_input = metadata.styleRefs;
     }
+  } else if (modelVersion === 'grok-imagine') {
+    input.aspect_ratio = getSeedream5AspectRatio(width, height);
   } else {
     // SeedDream 4 / 4.5
     input.size = 'custom';

@@ -5379,7 +5379,8 @@ async function createSingleUpscaleJobFromQA(
   // Seedream models are already high-res (1440x816), Z-Image needs upscaling
   const imageModel = project.image_model || 'seedream-4.5';
   const isSeedream = imageModel.toLowerCase().includes('seedream');
-  const needsUpscale = !isSeedream;
+  const isGrokImagine = imageModel === 'grok-imagine';
+  const needsUpscale = !isSeedream && !isGrokImagine;
   
   if (!needsUpscale) {
     console.log(`[createSingleUpscaleJobFromQA] Seedream model, creating completed upscale job for scene ${sceneIndex}`);

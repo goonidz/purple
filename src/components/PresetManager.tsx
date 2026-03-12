@@ -1210,6 +1210,7 @@ export const PresetManager = ({ currentConfig, onLoadPreset, autoLoadPresetId, c
                         <SelectItem value="seedream-4">SeedDream 4.0</SelectItem>
                         <SelectItem value="z-image-turbo">Z-Image Turbo (rapide)</SelectItem>
                         <SelectItem value="z-image-turbo-lora">Z-Image Turbo LoRA</SelectItem>
+                        <SelectItem value="grok-imagine">Grok Imagine (xAI)</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>

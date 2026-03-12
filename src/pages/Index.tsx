@@ -1638,8 +1638,7 @@ const Index = () => {
           break;
       }
       toast.info("Dimensions ajustées pour Z-Image Turbo (upscale x2 automatique)");
-    } else if (model === 'seedream-4' || model === 'seedream-4.5' || model === 'seedream-5-lite') {
-      // SeedDream can handle HD, restore HD resolutions based on aspect ratio
+    } else if (model === 'seedream-4' || model === 'seedream-4.5' || model === 'seedream-5-lite' || model === 'grok-imagine') {
       switch (aspectRatio) {
         case "16:9":
           setImageWidth(1920);
@@ -5638,6 +5637,7 @@ Remember: Use temporal context to understand the topic, but the query must be PR
                       <SelectItem value="seedream-4">SeedDream 4.0</SelectItem>
                       <SelectItem value="z-image-turbo">Z-Image Turbo (Rapide, max 720p)</SelectItem>
                       <SelectItem value="z-image-turbo-lora">Z-Image Turbo LoRA</SelectItem>
+                      <SelectItem value="grok-imagine">Grok Imagine (xAI)</SelectItem>
                     </SelectContent>
                   </Select>
                   <p className="text-xs text-muted-foreground mt-1">

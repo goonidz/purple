@@ -1387,6 +1387,7 @@ export default function Presets() {
                 <SelectContent>
                   <SelectItem value="seedream-4.5">SeedReam 4.5</SelectItem>
                   <SelectItem value="z-image-turbo">Z-Image Turbo</SelectItem>
+                  <SelectItem value="grok-imagine">Grok Imagine (xAI)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
