@@ -1087,7 +1087,8 @@ async function processImagePipeline(job) {
     // ---- STEP 9: Handle QA result ----
     const modelVersion = metadata.model || 'seedream-4.5';
     const isSeedream = modelVersion.toLowerCase().includes('seedream');
-    const needsUpscale = !isSeedream;
+    const isGrokImagine = modelVersion === 'grok-imagine';
+    const needsUpscale = !isSeedream && !isGrokImagine;
 
     if (qaResult.status === 'REJECT' && !isRegen) {
       // First rejection: regenerate
