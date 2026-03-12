@@ -247,6 +247,10 @@ Deno.serve(async (req) => {
         if (diff < bestDiff) { bestDiff = diff; bestAR = ar; }
       }
       input.aspect_ratio = bestAR;
+      if (body.image_urls && body.image_urls.length > 0) {
+        input.image = body.image_urls[0];
+        console.log(`Grok Imagine: using input image for editing: ${body.image_urls[0]}`);
+      }
       console.log(`Grok Imagine: using aspect_ratio=${bestAR} (from ${requestedWidth}x${requestedHeight})`);
     } else {
       // SeedDream 4 / 4.5

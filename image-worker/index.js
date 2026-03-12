@@ -212,6 +212,9 @@ function buildReplicateInput(metadata) {
     }
   } else if (modelVersion === 'grok-imagine') {
     input.aspect_ratio = getSeedream5AspectRatio(width, height);
+    if (metadata.styleRefs && metadata.styleRefs.length > 0) {
+      input.image = metadata.styleRefs[0];
+    }
   } else {
     // SeedDream 4 / 4.5
     input.size = 'custom';
