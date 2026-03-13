@@ -74,6 +74,7 @@ interface ThumbnailV2Preset {
   custom_prompt: string | null;
   system_prompt: string | null;
   image_model: string | null;
+  example_image_urls: string[] | null;
 }
 
 interface HistoryItem {
@@ -114,6 +115,8 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
   const [editUserDirectives, setEditUserDirectives] = useState("");
   const [editSystemPrompt, setEditSystemPrompt] = useState(DEFAULT_THUMBNAIL_PROMPT);
   const [editImageModel, setEditImageModel] = useState("ai33-seedream-4.5");
+  const [editExampleImageUrls, setEditExampleImageUrls] = useState<string[]>([]);
+  const [isUploadingEditExamples, setIsUploadingEditExamples] = useState(false);
   const [isUploadingEdit, setIsUploadingEdit] = useState(false);
   const [duplicateName, setDuplicateName] = useState("");
 
@@ -231,9 +234,8 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
 
       const { data, error } = await supabase
         .from("thumbnail_presets")
-        .select("id, name, channel_handle, character_ref_url, custom_prompt, system_prompt, image_model")
+        .select("id, name, channel_handle, character_ref_url, custom_prompt, system_prompt, image_model, example_image_urls")
         .eq("user_id", user.id)
-        .not("channel_handle", "is", null)
         .order("name");
 
       if (error) throw error;
@@ -298,7 +300,7 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
     setUserDirectives(preset.custom_prompt || "");
     setSystemPrompt(preset.system_prompt || DEFAULT_THUMBNAIL_PROMPT);
     setImageModel(preset.image_model || "ai33-seedream-4.5");
-    setExampleImageUrls([]);
+    setExampleImageUrls(preset.example_image_urls || []);
   };
 
   const handlePresetSelect = (presetId: string) => {
@@ -325,11 +327,12 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
         .insert({
           user_id: user.id,
           name: newPresetName.trim(),
-          channel_handle: channelHandle.trim(),
+          channel_handle: channelHandle.trim() || null,
           character_ref_url: characterRefUrl || null,
           custom_prompt: userDirectives.trim() || null,
           system_prompt: systemPrompt.trim() || null,
           image_model: imageModel,
+          example_image_urls: exampleImageUrls.length > 0 ? exampleImageUrls : null,
         } as any)
         .select("id")
         .single();
@@ -355,11 +358,12 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
       const { error } = await supabase
         .from("thumbnail_presets")
         .update({
-          channel_handle: channelHandle.trim(),
+          channel_handle: channelHandle.trim() || null,
           character_ref_url: characterRefUrl || null,
           custom_prompt: userDirectives.trim() || null,
           system_prompt: systemPrompt.trim() || null,
           image_model: imageModel,
+          example_image_urls: exampleImageUrls.length > 0 ? exampleImageUrls : null,
         } as any)
         .eq("id", selectedPresetId);
 
@@ -382,6 +386,7 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
     setEditUserDirectives(preset.custom_prompt || "");
     setEditSystemPrompt(preset.system_prompt || DEFAULT_THUMBNAIL_PROMPT);
     setEditImageModel(preset.image_model || "ai33-seedream-4.5");
+    setEditExampleImageUrls(preset.example_image_urls || []);
     setIsEditDialogOpen(true);
   };
 
@@ -407,6 +412,38 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
     }
   };
 
+  const handleEditExampleImagesUpload = async (files: File[]) => {
+    const imageFiles = files.filter(f => f.type.startsWith('image/'));
+    if (imageFiles.length === 0) return;
+
+    setIsUploadingEditExamples(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("User not authenticated");
+
+      const uploadedUrls: string[] = [];
+      for (const file of imageFiles) {
+        const compressedFile = await compressImage(file);
+        const fileName = `${user.id}/thumbnails-v2/examples/${Date.now()}_${Math.random().toString(36).slice(2, 8)}_${compressedFile.name}`;
+        const { error: uploadError } = await supabase.storage
+          .from("style-references")
+          .upload(fileName, compressedFile);
+        if (uploadError) throw uploadError;
+        const { data: { publicUrl } } = supabase.storage
+          .from("style-references")
+          .getPublicUrl(fileName);
+        uploadedUrls.push(publicUrl);
+      }
+
+      setEditExampleImageUrls(prev => [...prev, ...uploadedUrls]);
+      toast.success(`${uploadedUrls.length} image${uploadedUrls.length > 1 ? 's' : ''} ajoutée${uploadedUrls.length > 1 ? 's' : ''}`);
+    } catch (error: any) {
+      toast.error("Erreur lors de l'upload");
+    } finally {
+      setIsUploadingEditExamples(false);
+    }
+  };
+
   const saveEditPreset = async () => {
     if (!selectedPresetId || !editName.trim()) return;
 
@@ -420,6 +457,7 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
           custom_prompt: editUserDirectives.trim() || null,
           system_prompt: editSystemPrompt.trim() || null,
           image_model: editImageModel,
+          example_image_urls: editExampleImageUrls.length > 0 ? editExampleImageUrls : null,
         } as any)
         .eq("id", selectedPresetId);
 
@@ -427,12 +465,12 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
 
       toast.success("Preset modifié !");
       setIsEditDialogOpen(false);
-      // Also update the form with the edited values
       setChannelHandle(editChannelHandle);
       setCharacterRefUrl(editCharacterRefUrl);
       setUserDirectives(editUserDirectives);
       setSystemPrompt(editSystemPrompt);
       setImageModel(editImageModel);
+      setExampleImageUrls(editExampleImageUrls);
       await loadPresets();
     } catch (error: any) {
       console.error("Error editing V2 preset:", error);
@@ -467,6 +505,7 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
           custom_prompt: preset.custom_prompt,
           system_prompt: preset.system_prompt,
           image_model: preset.image_model,
+          example_image_urls: preset.example_image_urls,
         } as any)
         .select("id")
         .single();
@@ -1152,7 +1191,67 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
                 value={editChannelHandle}
                 onChange={(e) => setEditChannelHandle(e.target.value)}
                 placeholder="@NomDeLaChaine"
+                disabled={editExampleImageUrls.length > 0}
               />
+              {editExampleImageUrls.length > 0 && (
+                <p className="text-xs text-muted-foreground">Désactivé car des images d'exemple sont importées.</p>
+              )}
+            </div>
+
+            <div className="flex items-center gap-3">
+              <div className="flex-1 h-px bg-border" />
+              <span className="text-xs text-muted-foreground uppercase">ou</span>
+              <div className="flex-1 h-px bg-border" />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Images d'exemple</Label>
+              <div
+                className="border-2 border-dashed rounded-lg p-3 text-center cursor-pointer hover:border-primary/50 transition-colors"
+                onClick={() => document.getElementById('edit-examples-upload')?.click()}
+              >
+                <input
+                  id="edit-examples-upload"
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                  onChange={(e) => {
+                    const files = Array.from(e.target.files || []);
+                    if (files.length > 0) handleEditExampleImagesUpload(files);
+                    e.target.value = '';
+                  }}
+                />
+                {isUploadingEditExamples ? (
+                  <Loader2 className="w-5 h-5 mx-auto animate-spin text-muted-foreground" />
+                ) : (
+                  <>
+                    <Upload className="w-5 h-5 mx-auto mb-1 text-muted-foreground" />
+                    <p className="text-xs text-muted-foreground">Importer des images d'exemple</p>
+                  </>
+                )}
+              </div>
+              {editExampleImageUrls.length > 0 && (
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {editExampleImageUrls.map((url, index) => (
+                    <div key={index} className="relative group inline-block">
+                      <img
+                        src={url}
+                        alt={`Example ${index + 1}`}
+                        className="w-20 h-20 object-cover rounded-lg border"
+                      />
+                      <Button
+                        variant="destructive"
+                        size="icon"
+                        className="absolute top-1 right-1 h-5 w-5 opacity-0 group-hover:opacity-100 transition-opacity"
+                        onClick={() => setEditExampleImageUrls(prev => prev.filter((_, i) => i !== index))}
+                      >
+                        <X className="w-3 h-3" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="space-y-2">
