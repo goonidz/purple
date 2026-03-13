@@ -1389,6 +1389,7 @@ export default function Presets() {
                   <SelectItem value="z-image-turbo">Z-Image Turbo</SelectItem>
                   <SelectItem value="grok-imagine">Grok Imagine (xAI)</SelectItem>
                   <SelectItem value="gemini-3-pro-image-preview">Gemini 3 Pro Image (Google)</SelectItem>
+                  <SelectItem value="gemini-3.1-flash-image-preview">Gemini 3.1 Flash Image (Google)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
