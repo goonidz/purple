@@ -88,6 +88,9 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
   const [characterRefUrl, setCharacterRefUrl] = useState("");
   const [isUploading, setIsUploading] = useState(false);
   const [isDraggingCharacter, setIsDraggingCharacter] = useState(false);
+  const [exampleImageUrls, setExampleImageUrls] = useState<string[]>([]);
+  const [isUploadingExamples, setIsUploadingExamples] = useState(false);
+  const [isDraggingExamples, setIsDraggingExamples] = useState(false);
   const [userDirectives, setUserDirectives] = useState("");
   const [systemPrompt, setSystemPrompt] = useState(DEFAULT_THUMBNAIL_PROMPT);
   const [imageModel, setImageModel] = useState("ai33-seedream-4.5");
@@ -295,6 +298,7 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
     setUserDirectives(preset.custom_prompt || "");
     setSystemPrompt(preset.system_prompt || DEFAULT_THUMBNAIL_PROMPT);
     setImageModel(preset.image_model || "ai33-seedream-4.5");
+    setExampleImageUrls([]);
   };
 
   const handlePresetSelect = (presetId: string) => {
@@ -311,11 +315,6 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
       toast.error("Entre un nom pour le preset");
       return;
     }
-    if (!channelHandle.trim()) {
-      toast.error("Entre un @ de chaîne YouTube");
-      return;
-    }
-
     setIsSavingPreset(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -566,9 +565,49 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
     }
   };
 
+  const handleExampleImagesUpload = async (files: File[]) => {
+    const imageFiles = files.filter(f => f.type.startsWith('image/'));
+    if (imageFiles.length === 0) return;
+
+    setIsUploadingExamples(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("User not authenticated");
+
+      const uploadedUrls: string[] = [];
+      for (const file of imageFiles) {
+        const compressedFile = await compressImage(file);
+        const fileName = `${user.id}/thumbnails-v2/examples/${Date.now()}_${Math.random().toString(36).slice(2, 8)}_${compressedFile.name}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from("style-references")
+          .upload(fileName, compressedFile);
+        if (uploadError) throw uploadError;
+
+        const { data: { publicUrl } } = supabase.storage
+          .from("style-references")
+          .getPublicUrl(fileName);
+
+        uploadedUrls.push(publicUrl);
+      }
+
+      setExampleImageUrls(prev => [...prev, ...uploadedUrls]);
+      toast.success(`${uploadedUrls.length} image${uploadedUrls.length > 1 ? 's' : ''} ajoutée${uploadedUrls.length > 1 ? 's' : ''}`);
+    } catch (error: any) {
+      console.error("Error uploading example images:", error);
+      toast.error("Erreur lors de l'upload");
+    } finally {
+      setIsUploadingExamples(false);
+    }
+  };
+
+  const removeExampleImage = (index: number) => {
+    setExampleImageUrls(prev => prev.filter((_, i) => i !== index));
+  };
+
   const generateThumbnails = async () => {
-    if (!channelHandle.trim()) {
-      toast.error("Entre le @ d'une chaîne YouTube");
+    if (!channelHandle.trim() && exampleImageUrls.length === 0) {
+      toast.error("Entre le @ d'une chaîne YouTube ou importe des images d'exemple");
       return;
     }
 
@@ -581,25 +620,31 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
     setGeneratedThumbnails([]);
 
     try {
-      toast.info("Chargement des miniatures de la chaîne...");
-      const { data, error } = await supabase.functions.invoke('fetch-channel-thumbnails', {
-        body: { channelHandle: channelHandle.trim() }
-      });
+      let finalExampleUrls: string[] = [];
 
-      if (error) throw error;
-      if (data.error) throw new Error(data.error);
+      if (exampleImageUrls.length > 0) {
+        finalExampleUrls = exampleImageUrls;
+        toast.info(`${finalExampleUrls.length} image${finalExampleUrls.length > 1 ? 's' : ''} d'exemple, lancement de la génération...`);
+      } else {
+        toast.info("Chargement des miniatures de la chaîne...");
+        const { data, error } = await supabase.functions.invoke('fetch-channel-thumbnails', {
+          body: { channelHandle: channelHandle.trim() }
+        });
 
-      const thumbnailUrls: string[] = data.thumbnailUrls || [];
-      if (thumbnailUrls.length === 0) {
-        throw new Error("Aucune miniature trouvée sur cette chaîne");
+        if (error) throw error;
+        if (data.error) throw new Error(data.error);
+
+        finalExampleUrls = (data.thumbnailUrls || []) as string[];
+        if (finalExampleUrls.length === 0) {
+          throw new Error("Aucune miniature trouvée sur cette chaîne");
+        }
+        toast.info(`${finalExampleUrls.length} miniatures chargées, lancement de la génération...`);
       }
-
-      toast.info(`${thumbnailUrls.length} miniatures chargées, lancement de la génération...`);
 
       await startJob('thumbnails_v2', {
         videoScript,
         videoTitle,
-        exampleUrls: thumbnailUrls,
+        exampleUrls: finalExampleUrls,
         characterRefUrl: characterRefUrl || undefined,
         userDirectives: userDirectives.trim() || undefined,
         imageModel,
@@ -739,8 +784,82 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
               value={channelHandle}
               onChange={(e) => setChannelHandle(e.target.value)}
               placeholder="@NomDeLaChaine"
+              disabled={exampleImageUrls.length > 0}
               onKeyDown={(e) => e.key === 'Enter' && !isGenerating && generateThumbnails()}
             />
+            {exampleImageUrls.length > 0 && (
+              <p className="text-xs text-muted-foreground">Désactivé car des images d'exemple ont été importées.</p>
+            )}
+          </div>
+
+          <div className="flex items-center gap-3">
+            <div className="flex-1 h-px bg-border" />
+            <span className="text-xs text-muted-foreground uppercase">ou</span>
+            <div className="flex-1 h-px bg-border" />
+          </div>
+
+          {/* Example images upload */}
+          <div className="space-y-2">
+            <Label>Images d'exemple</Label>
+            <div
+              className={`border-2 border-dashed rounded-lg p-4 text-center cursor-pointer transition-colors ${
+                isDraggingExamples ? 'border-primary bg-primary/10' : 'border-muted-foreground/25'
+              }`}
+              onDragOver={(e) => { e.preventDefault(); setIsDraggingExamples(true); }}
+              onDragLeave={() => setIsDraggingExamples(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setIsDraggingExamples(false);
+                const files = Array.from(e.dataTransfer.files);
+                if (files.length > 0) handleExampleImagesUpload(files);
+              }}
+              onClick={() => document.getElementById('v2-examples-upload')?.click()}
+            >
+              <input
+                id="v2-examples-upload"
+                type="file"
+                accept="image/*"
+                multiple
+                className="hidden"
+                onChange={(e) => {
+                  const files = Array.from(e.target.files || []);
+                  if (files.length > 0) handleExampleImagesUpload(files);
+                  e.target.value = '';
+                }}
+              />
+              {isUploadingExamples ? (
+                <Loader2 className="w-6 h-6 mx-auto animate-spin text-muted-foreground" />
+              ) : (
+                <>
+                  <Upload className="w-6 h-6 mx-auto mb-1 text-muted-foreground" />
+                  <p className="text-sm text-muted-foreground">
+                    Glisse ou clique pour importer des images d'exemple
+                  </p>
+                </>
+              )}
+            </div>
+
+            {exampleImageUrls.length > 0 && (
+              <div className="flex flex-wrap gap-2 mt-2">
+                {exampleImageUrls.map((url, index) => (
+                  <div key={index} className="relative group inline-block">
+                    <img
+                      src={url}
+                      alt={`Example ${index + 1}`}
+                      className="w-24 h-24 object-cover rounded-lg border"
+                    />
+                    <Button
+                      variant="destructive"
+                      size="icon"
+                      className="absolute top-1 right-1 h-5 w-5 opacity-0 group-hover:opacity-100 transition-opacity"
+                      onClick={(e) => { e.stopPropagation(); removeExampleImage(index); }}
+                    >
+                      <X className="w-3 h-3" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Character reference */}
@@ -892,7 +1011,7 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
           {/* Generate button */}
           <Button
             onClick={generateThumbnails}
-            disabled={isGenerating || !channelHandle.trim()}
+            disabled={isGenerating || (!channelHandle.trim() && exampleImageUrls.length === 0)}
             className="w-full"
             size="lg"
           >
