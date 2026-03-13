@@ -236,6 +236,7 @@ export const ThumbnailGeneratorV2 = ({ projectId, videoScript, videoTitle }: Thu
         .from("thumbnail_presets")
         .select("id, name, channel_handle, character_ref_url, custom_prompt, system_prompt, image_model, example_image_urls")
         .eq("user_id", user.id)
+        .or("channel_handle.not.is.null,example_image_urls.not.is.null")
         .order("name");
 
       if (error) throw error;
