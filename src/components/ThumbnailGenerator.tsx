@@ -1406,6 +1406,7 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
                 <SelectItem value="seedream-5-lite">SeedDream 5.0 Lite</SelectItem>
                 <SelectItem value="ai33-gemini-flash">Gemini 3.1 Flash Image via AI33 Pro</SelectItem>
                 <SelectItem value="ai33-gemini-image">Gemini Pro Image via AI33 Pro</SelectItem>
+                <SelectItem value="gemini-3-pro-image-preview">Gemini 3 Pro Image (Google)</SelectItem>
                 <SelectItem value="seedream-4">SeedDream 4.0</SelectItem>
                 <SelectItem value="z-image-turbo">Z-Image Turbo (Rapide)</SelectItem>
               </SelectContent>
@@ -1694,6 +1695,7 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
                   <SelectItem value="seedream-4.5">SeedDream 4.5 via Replicate</SelectItem>
                   <SelectItem value="seedream-5-lite">SeedDream 5.0 Lite</SelectItem>
                   <SelectItem value="ai33-gemini-image">Gemini Pro Image via AI33 Pro</SelectItem>
+                  <SelectItem value="gemini-3-pro-image-preview">Gemini 3 Pro Image (Google)</SelectItem>
                   <SelectItem value="seedream-4">SeedDream 4.0</SelectItem>
                   <SelectItem value="z-image-turbo">Z-Image Turbo (Rapide)</SelectItem>
                 </SelectContent>
