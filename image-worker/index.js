@@ -3984,7 +3984,7 @@ async function fetchYouTubeChannelVideos(channelHandle, youtubeApiKey) {
   const uploadsPlaylistId = 'UU' + channelId.substring(2);
   log(`[IDEAS] Channel: ${channelTitle} (${channelId}), fetching uploads...`);
 
-  const playlistUrl = `https://www.googleapis.com/youtube/v3/playlistItems?part=contentDetails&playlistId=${uploadsPlaylistId}&maxResults=20&key=${youtubeApiKey}`;
+  const playlistUrl = `https://www.googleapis.com/youtube/v3/playlistItems?part=contentDetails&playlistId=${uploadsPlaylistId}&maxResults=50&key=${youtubeApiKey}`;
   const playlistRes = await fetch(playlistUrl);
   const playlistData = await playlistRes.json();
 
