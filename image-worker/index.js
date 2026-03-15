@@ -4053,7 +4053,7 @@ Based on this data, give me exactly 10 viral video ideas. For each idea, provide
 
 Format your response as a JSON array of objects with keys: "title", "reasoning", "viralScore". Return ONLY the JSON array, no other text.`;
 
-  log(`[IDEAS] Calling Anthropic claude-sonnet-4-6-20250514...`);
+  log(`[IDEAS] Calling Anthropic claude-sonnet-4-6...`);
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -4062,7 +4062,7 @@ Format your response as a JSON array of objects with keys: "title", "reasoning",
       'content-type': 'application/json',
     },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-6-20250514',
+      model: 'claude-sonnet-4-6',
       max_tokens: 4096,
       system: systemPrompt,
       messages: [{ role: 'user', content: userMessage }],
