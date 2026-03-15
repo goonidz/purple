@@ -1250,11 +1250,15 @@ async function processThumbnailsPipeline(job) {
     const isAI33Thumb = (imageModel || 'seedream-4.5') === 'ai33-gemini-image';
     const isAI33GeminiFlash = (imageModel || 'seedream-4.5') === 'ai33-gemini-flash';
     const isAI33Seedream = (imageModel || 'seedream-4.5') === 'ai33-seedream-4.5';
+    const isGeminiDirect = (imageModel || '').startsWith('gemini-');
     const needsAI33Key = isAI33Thumb || isAI33GeminiFlash || isAI33Seedream;
     let replicateClient = null;
     let ai33ThumbKey = null;
+    let geminiKey = null;
     if (needsAI33Key) {
       ai33ThumbKey = await getUserApiKey(userId, 'ai33');
+    } else if (isGeminiDirect) {
+      geminiKey = await getUserApiKey(userId, 'gemini');
     } else {
       const replicateKey = await getUserApiKey(userId, 'replicate');
       replicateClient = new Replicate({ auth: replicateKey });
@@ -1315,8 +1319,26 @@ async function processThumbnailsPipeline(job) {
         const effectiveProjectId = standalone ? (thumbnailProjectId || 'standalone') : projectId;
         let publicUrl;
 
-        if (isAI33Thumb || isAI33GeminiFlash || isAI33Seedream) {
-          // Keep-alive so stale checker doesn't kill a slow AI33 job
+        if (isGeminiDirect) {
+          let imageBuffer;
+          for (let attempt = 1; attempt <= 3; attempt++) {
+            const keepAliveTimer = setInterval(async () => {
+              await supabase.from('generation_jobs').update({ updated_at: new Date().toISOString() }).eq('id', jobId);
+            }, 60000);
+            try {
+              imageBuffer = await callGeminiViaRelay(geminiKey, prompt, allImageRefs, model);
+              clearInterval(keepAliveTimer);
+              break;
+            } catch (retryErr) {
+              clearInterval(keepAliveTimer);
+              if (attempt === 3) throw retryErr;
+              log(`  Thumbnail ${i + 1}: Gemini attempt ${attempt} failed (${retryErr.message?.substring(0, 80)}), retrying in ${attempt * 5}s...`);
+              await sleep(attempt * 5000);
+            }
+          }
+          const filename = `thumb_v${i + 1}_${timestamp}.png`;
+          publicUrl = await uploadBufferToStorage(imageBuffer, effectiveProjectId, filename, 'image/png');
+        } else if (isAI33Thumb || isAI33GeminiFlash || isAI33Seedream) {
           await supabase.from('generation_jobs').update({ updated_at: new Date().toISOString() }).eq('id', jobId);
           let imageBuffer;
           for (let attempt = 1; attempt <= 3; attempt++) {
