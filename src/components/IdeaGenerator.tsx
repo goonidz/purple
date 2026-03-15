@@ -209,7 +209,7 @@ export function IdeaGenerator() {
             </Button>
           </div>
           <p className="text-xs text-muted-foreground">
-            Scrapes the last 20 videos + stats, then asks Claude Sonnet for 10 viral ideas
+            Scrapes the last 50 videos + stats, then asks Claude Sonnet for 10 viral ideas
           </p>
         </div>
 
