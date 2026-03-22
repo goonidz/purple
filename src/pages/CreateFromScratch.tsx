@@ -234,6 +234,7 @@ const CreateFromScratch = () => {
   const [editPresetPrompt, setEditPresetPrompt] = useState("");
   const [editPresetModel, setEditPresetModel] = useState<string>("claude");
   const [editPresetBatch, setEditPresetBatch] = useState(false);
+  const [editPresetWebSearch, setEditPresetWebSearch] = useState(false);
   const [editingPresetId, setEditingPresetId] = useState<string | null>(null);
   const [isSavingPreset, setIsSavingPreset] = useState(false);
   const [presetPopoverOpen, setPresetPopoverOpen] = useState(false);
@@ -538,6 +539,7 @@ const CreateFromScratch = () => {
         setCustomPrompt(preset.custom_prompt || "");
         if (preset.script_model) setScriptModel(preset.script_model as any);
         setUseBatch(preset.use_batch || false);
+        setUseWebSearch(preset.use_web_search || false);
         setSelectedPresetId(scriptPresetId);
         toast.success(`Preset de script "${preset.name}" chargé automatiquement`);
         // Clean up after applying
@@ -657,6 +659,7 @@ const CreateFromScratch = () => {
         setScriptModel(preset.script_model as any);
       }
       setUseBatch(preset.use_batch || false);
+      setUseWebSearch(preset.use_web_search || false);
       setSelectedPresetId(presetId);
       toast.success(`Preset "${preset.name}" chargé`);
     }
@@ -678,6 +681,7 @@ const CreateFromScratch = () => {
           custom_prompt: customPrompt,
           script_model: scriptModel,
           use_batch: useBatch,
+          use_web_search: useWebSearch,
         }]);
 
       if (error) throw error;
@@ -727,6 +731,7 @@ const CreateFromScratch = () => {
     setEditPresetPrompt(preset.custom_prompt || DEFAULT_PROMPT);
     setEditPresetModel(preset.script_model || "claude");
     setEditPresetBatch(preset.use_batch || false);
+    setEditPresetWebSearch(preset.use_web_search || false);
     setEditPresetDialogOpen(true);
   };
 
@@ -745,6 +750,7 @@ const CreateFromScratch = () => {
           custom_prompt: editPresetPrompt,
           script_model: editPresetModel,
           use_batch: editPresetBatch,
+          use_web_search: editPresetWebSearch,
         })
         .eq("id", editingPresetId);
 
@@ -760,6 +766,7 @@ const CreateFromScratch = () => {
         setCustomPrompt(editPresetPrompt);
         setScriptModel(editPresetModel as any);
         setUseBatch(editPresetBatch);
+        setUseWebSearch(editPresetWebSearch);
       }
     } catch (error: any) {
       console.error("Error updating preset:", error);
@@ -796,6 +803,7 @@ const CreateFromScratch = () => {
           custom_prompt: preset.custom_prompt,
           script_model: preset.script_model,
           use_batch: preset.use_batch,
+          use_web_search: preset.use_web_search,
         }]);
 
       if (error) throw error;
@@ -3976,6 +3984,16 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                 />
               </div>
             )}
+            <div className="flex items-center justify-between">
+              <div>
+                <Label>Recherche Internet</Label>
+                <p className="text-xs text-muted-foreground">Permet au modèle d'effectuer des recherches web pour enrichir le script.</p>
+              </div>
+              <Checkbox
+                checked={editPresetWebSearch}
+                onCheckedChange={(checked) => setEditPresetWebSearch(!!checked)}
+              />
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditPresetDialogOpen(false)}>

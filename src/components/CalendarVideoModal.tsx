@@ -932,6 +932,7 @@ export default function CalendarVideoModal({
             model: (scriptPreset as any).script_model || "glm5-openrouter",
             custom_prompt: scriptPreset.custom_prompt || "",
             use_batch: (scriptPreset as any).use_batch || false,
+            use_web_search: (scriptPreset as any).use_web_search || false,
           },
           tts: ttsConfig,
           project: projectConfig,

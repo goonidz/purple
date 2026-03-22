@@ -60,6 +60,7 @@ interface ScriptPreset {
   custom_prompt: string | null;
   script_model: string | null;
   use_batch: boolean | null;
+  use_web_search: boolean | null;
 }
 
 // TTS presets (minimal for list + edit)
@@ -204,6 +205,7 @@ export default function Presets() {
   const [scriptPrompt, setScriptPrompt] = useState(DEFAULT_SCRIPT_PROMPT);
   const [scriptModel, setScriptModel] = useState("claude");
   const [scriptUseBatch, setScriptUseBatch] = useState(false);
+  const [scriptUseWebSearch, setScriptUseWebSearch] = useState(false);
   const [scriptSaving, setScriptSaving] = useState(false);
 
   // TTS
@@ -273,7 +275,7 @@ export default function Presets() {
       if (!user) return;
       const { data, error } = await supabase
         .from("script_presets")
-        .select("id, name, custom_prompt, script_model, use_batch")
+        .select("id, name, custom_prompt, script_model, use_batch, use_web_search")
         .eq("user_id", user.id)
         .order("name", { ascending: true });
       if (error) throw error;
@@ -381,6 +383,7 @@ export default function Presets() {
     setScriptPrompt(DEFAULT_SCRIPT_PROMPT);
     setScriptModel("claude");
     setScriptUseBatch(false);
+    setScriptUseWebSearch(false);
     setScriptDialogOpen(true);
   };
 
@@ -390,6 +393,7 @@ export default function Presets() {
     setScriptPrompt(p.custom_prompt || DEFAULT_SCRIPT_PROMPT);
     setScriptModel(p.script_model || "claude");
     setScriptUseBatch(p.use_batch ?? false);
+    setScriptUseWebSearch(p.use_web_search ?? false);
     setScriptDialogOpen(true);
   };
 
@@ -410,6 +414,7 @@ export default function Presets() {
             custom_prompt: scriptPrompt,
             script_model: scriptModel,
             use_batch: scriptUseBatch,
+            use_web_search: scriptUseWebSearch,
           })
           .eq("id", scriptEditId);
         if (error) throw error;
@@ -421,6 +426,7 @@ export default function Presets() {
           custom_prompt: scriptPrompt,
           script_model: scriptModel,
           use_batch: scriptUseBatch,
+          use_web_search: scriptUseWebSearch,
         });
         if (error) throw error;
         toast.success("Preset script créé");
@@ -445,6 +451,7 @@ export default function Presets() {
         custom_prompt: p.custom_prompt,
         script_model: p.script_model,
         use_batch: p.use_batch,
+        use_web_search: p.use_web_search,
       });
       if (error) throw error;
       toast.success("Preset dupliqué");
@@ -1103,6 +1110,10 @@ export default function Presets() {
             <div className="flex items-center gap-2">
               <input type="checkbox" id="script-batch" checked={scriptUseBatch} onChange={(e) => setScriptUseBatch(e.target.checked)} />
               <Label htmlFor="script-batch">Utiliser le mode batch</Label>
+            </div>
+            <div className="flex items-center gap-2">
+              <input type="checkbox" id="script-websearch" checked={scriptUseWebSearch} onChange={(e) => setScriptUseWebSearch(e.target.checked)} />
+              <Label htmlFor="script-websearch">Recherche Internet</Label>
             </div>
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setScriptDialogOpen(false)}>Annuler</Button>
