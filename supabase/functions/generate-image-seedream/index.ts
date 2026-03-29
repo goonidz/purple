@@ -254,9 +254,17 @@ Deno.serve(async (req) => {
       console.log(`Grok Imagine: using aspect_ratio=${bestAR} (from ${requestedWidth}x${requestedHeight})`);
     } else {
       // SeedDream 4 / 4.5
-      input.size = "custom";
-      input.width = width;
-      input.height = height;
+      const ASPECT_RATIOS_SD = ['1:1', '4:3', '3:4', '16:9', '9:16', '3:2', '2:3', '21:9'];
+      const ratioSD = width / height;
+      let bestARSD = '1:1';
+      let bestDiffSD = Infinity;
+      for (const ar of ASPECT_RATIOS_SD) {
+        const [w, h] = ar.split(':').map(Number);
+        const diff = Math.abs(ratioSD - w / h);
+        if (diff < bestDiffSD) { bestDiffSD = diff; bestARSD = ar; }
+      }
+      input.size = "2K";
+      input.aspect_ratio = bestARSD;
       
       if (body.image_urls && body.image_urls.length > 0) {
         input.image_input = body.image_urls;

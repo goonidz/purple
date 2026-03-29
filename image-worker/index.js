@@ -217,9 +217,8 @@ function buildReplicateInput(metadata) {
     }
   } else {
     // SeedDream 4 / 4.5
-    input.size = 'custom';
-    input.width = width;
-    input.height = height;
+    input.size = '2K';
+    input.aspect_ratio = getSeedream5AspectRatio(width, height);
     if (metadata.styleRefs && metadata.styleRefs.length > 0) {
       input.image_input = metadata.styleRefs;
     }
