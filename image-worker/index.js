@@ -4032,7 +4032,7 @@ async function fetchYouTubeChannelVideos(channelHandle, youtubeApiKey) {
   return { channelTitle, subscriberCount, videos };
 }
 
-async function callAnthropicForIdeas(anthropicKey, channelData) {
+async function callAnthropicForIdeas(anthropicKey, channelData, customInstructions) {
   const { channelTitle, subscriberCount, videos } = channelData;
 
   const videoSummary = videos.map((v, i) =>
@@ -4041,16 +4041,20 @@ async function callAnthropicForIdeas(anthropicKey, channelData) {
 
   const systemPrompt = `You're a world class copywriter writing the best youtube titles. Analyze those topics and how they went viral or not, and find me some similar topics that I can do to go viral.`;
 
-  const userMessage = `Here are the last ${videos.length} videos from the YouTube channel "${channelTitle}" (${subscriberCount.toLocaleString()} subscribers):
+  let userMessage = `Here are the last ${videos.length} videos from the YouTube channel "${channelTitle}" (${subscriberCount.toLocaleString()} subscribers):
 
 ${videoSummary}
 
 Based on this data, give me exactly 10 viral video ideas. For each idea, provide:
 1. A catchy title
 2. A brief explanation of why this topic could go viral (2-3 sentences)
-3. An estimated viral potential score from 1-10
+3. An estimated viral potential score from 1-10`;
 
-Format your response as a JSON array of objects with keys: "title", "reasoning", "viralScore". Return ONLY the JSON array, no other text.`;
+  if (customInstructions) {
+    userMessage += `\n\nAdditional instructions from the user:\n${customInstructions}`;
+  }
+
+  userMessage += `\n\nFormat your response as a JSON array of objects with keys: "title", "reasoning", "viralScore". Return ONLY the JSON array, no other text.`;
 
   log(`[IDEAS] Calling Anthropic claude-sonnet-4-6...`);
   const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -4106,7 +4110,7 @@ async function processIdeaGenerationPipeline(job) {
       .eq('id', jobId);
 
     const anthropicKey = await getUserApiKey(userId, 'anthropic');
-    const ideas = await callAnthropicForIdeas(anthropicKey, channelData);
+    const ideas = await callAnthropicForIdeas(anthropicKey, channelData, meta?.customInstructions);
 
     await supabase.from('generation_jobs')
       .update({ progress: 2, metadata: { ...meta, step: 'saving_results' } })

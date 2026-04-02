@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { Loader2, Lightbulb, Clock, Trash2, AlertCircle, Sparkles, TrendingUp, RotateCcw } from "lucide-react";
@@ -32,6 +33,7 @@ const STEP_LABELS: Record<string, string> = {
 
 export function IdeaGenerator() {
   const [channelHandle, setChannelHandle] = useState("");
+  const [customInstructions, setCustomInstructions] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [jobId, setJobId] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
@@ -137,6 +139,7 @@ export function IdeaGenerator() {
           metadata: {
             pipeline: "idea_generation",
             channelHandle: channelHandle.trim(),
+            ...(customInstructions.trim() && { customInstructions: customInstructions.trim() }),
           },
         })
         .select()
@@ -211,6 +214,19 @@ export function IdeaGenerator() {
           <p className="text-xs text-muted-foreground">
             Scrapes the last 50 videos + stats, then asks Claude Sonnet for 10 viral ideas
           </p>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="custom-instructions">Custom Instructions (optional)</Label>
+          <Textarea
+            id="custom-instructions"
+            value={customInstructions}
+            onChange={(e) => setCustomInstructions(e.target.value)}
+            placeholder="e.g. Focus on finance topics, make titles provocative, target French audience..."
+            disabled={isGenerating}
+            rows={3}
+            className="resize-none text-sm"
+          />
         </div>
 
         {isGenerating && (
