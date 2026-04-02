@@ -1,5 +1,6 @@
-import React from "react";
+import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -62,6 +63,7 @@ interface SceneGridProps {
   copiedIndex: number | null;
   handleEditScene: (index: number) => void;
   handleEditPrompt: (index: number) => void;
+  handleWritePrompt?: (index: number, text: string) => void;
   setConfirmRegeneratePrompt: (index: number | null) => void;
   setConfirmRegenerateImage: (index: number | null) => void;
   generateSinglePrompt: (index: number) => void;
@@ -91,6 +93,7 @@ export function SceneGrid({
   copiedIndex,
   handleEditScene,
   handleEditPrompt,
+  handleWritePrompt,
   setConfirmRegeneratePrompt,
   setConfirmRegenerateImage,
   generateSinglePrompt,
@@ -105,6 +108,8 @@ export function SceneGrid({
   onAnimateScene,
   visualContinuityEnabled = false,
 }: SceneGridProps) {
+  const [manualPromptIndex, setManualPromptIndex] = useState<number | null>(null);
+  const [manualPromptText, setManualPromptText] = useState("");
   const items = scenes.length > 0 ? scenes : generatedPrompts;
 
   // Fonction pour obtenir la couleur du groupe
@@ -284,26 +289,72 @@ export function SceneGrid({
                     </Button>
                   </div>
                 </div>
+              ) : manualPromptIndex === index ? (
+                <div className="space-y-2 w-full">
+                  <Textarea
+                    value={manualPromptText}
+                    onChange={(e) => setManualPromptText(e.target.value)}
+                    rows={4}
+                    className="text-sm resize-none"
+                    placeholder="Écrire le prompt manuellement..."
+                    autoFocus
+                  />
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        if (handleWritePrompt && manualPromptText.trim()) {
+                          handleWritePrompt(index, manualPromptText);
+                          setManualPromptIndex(null);
+                          setManualPromptText("");
+                        }
+                      }}
+                      disabled={!manualPromptText.trim()}
+                    >
+                      <Check className="h-3 w-3 mr-1" />
+                      <span className="text-xs">Sauvegarder</span>
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => { setManualPromptIndex(null); setManualPromptText(""); }}
+                    >
+                      <span className="text-xs">Annuler</span>
+                    </Button>
+                  </div>
+                </div>
               ) : (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => generateSinglePrompt(index)}
-                  disabled={generatingPromptIndex === index}
-                  className="w-full md:w-auto"
-                >
-                  {generatingPromptIndex === index ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                      <span className="text-xs">Génération...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Sparkles className="h-4 w-4 mr-2" />
-                      <span className="text-xs">Générer prompt</span>
-                    </>
+                <div className="flex gap-2 flex-wrap">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => generateSinglePrompt(index)}
+                    disabled={generatingPromptIndex === index}
+                  >
+                    {generatingPromptIndex === index ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                        <span className="text-xs">Génération...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="h-4 w-4 mr-2" />
+                        <span className="text-xs">Générer prompt</span>
+                      </>
+                    )}
+                  </Button>
+                  {handleWritePrompt && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => { setManualPromptIndex(index); setManualPromptText(""); }}
+                      disabled={generatingPromptIndex === index}
+                    >
+                      <Pencil className="h-4 w-4 mr-2" />
+                      <span className="text-xs">Écrire</span>
+                    </Button>
                   )}
-                </Button>
+                </div>
               )}
             </div>
 

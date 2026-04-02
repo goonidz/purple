@@ -1911,6 +1911,45 @@ const Index = () => {
     }
   };
 
+  const handleWritePrompt = async (index: number, text: string) => {
+    if (!text.trim() || !currentProjectId) return;
+
+    const updatedPrompts = [...generatedPrompts];
+    const scene = scenes[index];
+    updatedPrompts[index] = {
+      ...updatedPrompts[index],
+      prompt: text.trim(),
+      text: scene?.text || '',
+      startTime: scene?.startTime,
+      endTime: scene?.endTime,
+    };
+
+    setGeneratedPrompts(updatedPrompts);
+
+    try {
+      const { error: jsonError } = await supabase
+        .from("projects")
+        .update({ prompts: updatedPrompts as any })
+        .eq("id", currentProjectId);
+      if (jsonError) throw jsonError;
+
+      const { error: sceneError } = await supabase
+        .from("project_scenes")
+        .upsert({
+          project_id: currentProjectId,
+          scene_index: index,
+          prompt: text.trim(),
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'project_id,scene_index' });
+      if (sceneError) console.error("Error saving to project_scenes:", sceneError);
+
+      toast.success("Prompt sauvegardé");
+    } catch (error) {
+      console.error("Error saving prompt:", error);
+      toast.error("Erreur lors de la sauvegarde du prompt");
+    }
+  };
+
   const handleSaveEditedPrompt = async () => {
     if (editingPromptIndex === null) return;
     
@@ -4758,6 +4797,7 @@ const Index = () => {
                       copiedIndex={copiedIndex}
                       handleEditScene={handleEditScene}
                       handleEditPrompt={handleEditPrompt}
+                      handleWritePrompt={handleWritePrompt}
                       setConfirmRegeneratePrompt={setConfirmRegeneratePrompt}
                       setConfirmRegenerateImage={setConfirmRegenerateImage}
                       generateSinglePrompt={generateSinglePrompt}
