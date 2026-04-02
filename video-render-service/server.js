@@ -252,7 +252,6 @@ async function tryUpdateProjectTranscriptFromElevenLabs({ projectId, userId, aud
       .from('projects')
       .update({
         transcript_json: formattedTranscript,
-        audio_url: audioUrl || null,
         updated_at: new Date().toISOString(),
       })
       .eq('id', projectId);
