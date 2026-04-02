@@ -3405,31 +3405,14 @@ async function processKokoroTtsPipeline(job) {
           }
         }
 
-        const audioRes = await fetch(audioOutput);
-        if (!audioRes.ok) throw new Error(`Failed to download Kokoro chunk ${index}: ${audioRes.status}`);
-        const audioBytes = Buffer.from(await audioRes.arrayBuffer());
-
-        const ext = audioOutput.includes('.wav') ? 'wav' : 'mp3';
-        const contentType = ext === 'wav' ? 'audio/wav' : 'audio/mpeg';
-        const storagePath = `tts/${jobId}/chunk_${String(index).padStart(3, '0')}.${ext}`;
-
-        const { error: uploadError } = await supabase.storage
-          .from('audio-files')
-          .upload(storagePath, audioBytes, { contentType, upsert: true });
-        if (uploadError) throw new Error(`Failed to upload chunk ${index}: ${uploadError.message}`);
-
-        const { data: urlData, error: urlError } = await supabase.storage
-          .from('audio-files')
-          .createSignedUrl(storagePath, 3600);
-        if (urlError || !urlData?.signedUrl) throw new Error(`Failed to get signed URL for chunk ${index}: ${urlError?.message || 'no URL'}`);
-        chunkUrls[index] = urlData.signedUrl;
+        chunkUrls[index] = audioOutput;
 
         completedCount++;
         await supabase.from('generation_jobs')
           .update({ progress: completedCount, metadata: { ...meta, totalChunks: chunks.length, completedChunks: completedCount } })
           .eq('id', jobId);
 
-        log(`[Kokoro TTS ${jobId}] Chunk ${index + 1}/${chunks.length} done (${audioBytes.length} bytes)`);
+        log(`[Kokoro TTS ${jobId}] Chunk ${index + 1}/${chunks.length} done`);
       }
 
       const workers = [];
