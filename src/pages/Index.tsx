@@ -3260,6 +3260,7 @@ const Index = () => {
       if (visualMode === 'gameplay') {
         renderOptions.visualMode = 'gameplay';
         renderOptions.gameplayUrls = gameplayUrls;
+        renderOptions.framerate = 30;
       }
       
       // Use GPU rendering if toggle is enabled, otherwise use VPS
@@ -4211,20 +4212,7 @@ const Index = () => {
                                 <span className="text-xs text-muted-foreground">Mode Gameplay — {gameplayUrls.length} vidéo(s) configurée(s)</span>
                               </div>
                               <div className="flex items-center gap-2">
-                                <Select 
-                                  value={exportFramerate.toString()} 
-                                  onValueChange={(value) => setExportFramerate(Number(value))}
-                                  disabled={!audioUrl}
-                                >
-                                  <SelectTrigger className="w-[110px] h-8 text-xs">
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="24">24 fps</SelectItem>
-                                    <SelectItem value="25">25 fps</SelectItem>
-                                    <SelectItem value="30">30 fps</SelectItem>
-                                  </SelectContent>
-                                </Select>
+                                <span className="text-xs text-muted-foreground">30 fps</span>
                                 <Button
                                   onClick={handleRenderVideo}
                                   size="sm"
