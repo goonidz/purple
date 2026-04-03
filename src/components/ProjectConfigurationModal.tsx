@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Loader2, Plus, Upload, Download, Save, Trash2, Pencil, Copy, FolderOpen, ChevronDown } from "lucide-react";
+import { Loader2, Plus, Upload, Download, Save, Trash2, Pencil, Copy, FolderOpen, ChevronDown, Video, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { parseStyleReferenceUrls } from "@/lib/styleReferenceHelpers";
@@ -73,6 +73,9 @@ export const ProjectConfigurationModal = ({
   const [visualMode, setVisualMode] = useState<"images" | "gameplay">("images");
   const [gameplayUrls, setGameplayUrls] = useState<string[]>([]);
   const [gameplayUrlsText, setGameplayUrlsText] = useState("");
+  const [gameplayFiles, setGameplayFiles] = useState<{filename: string; url: string; sizeMB: number; uploadedAt?: string}[]>([]);
+  const [isUploadingGameplay, setIsUploadingGameplay] = useState(false);
+  const [isLoadingGameplayFiles, setIsLoadingGameplayFiles] = useState(false);
   
   // Preset loading
   const [presets, setPresets] = useState<Preset[]>([]);
@@ -162,6 +165,92 @@ export const ProjectConfigurationModal = ({
       setThumbnailPresets(data || []);
     } catch (error) {
       console.error("Error loading thumbnail presets:", error);
+    }
+  };
+
+  const loadGameplayFiles = async () => {
+    setIsLoadingGameplayFiles(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+      const resp = await fetch("/api/list-gameplay", {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const { files } = await resp.json();
+      setGameplayFiles(files || []);
+    } catch (err) {
+      console.error("Error loading gameplay files:", err);
+    } finally {
+      setIsLoadingGameplayFiles(false);
+    }
+  };
+
+  const handleUploadGameplay = async (filesToUpload: FileList) => {
+    setIsUploadingGameplay(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) { toast.error("Non authentifié"); return; }
+
+      for (const file of Array.from(filesToUpload)) {
+        const formData = new FormData();
+        formData.append("video", file);
+
+        const resp = await fetch("/api/upload-gameplay", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${session.access_token}` },
+          body: formData,
+        });
+
+        if (!resp.ok) {
+          const err = await resp.json().catch(() => ({ error: `HTTP ${resp.status}` }));
+          toast.error(`Erreur upload ${file.name}: ${err.error}`);
+          continue;
+        }
+
+        const result = await resp.json();
+        toast.success(`${file.name} uploadé (${result.sizeMB} MB)`);
+
+        setGameplayUrls(prev => {
+          const updated = [...prev, result.url];
+          setGameplayUrlsText(updated.join("\n"));
+          return updated;
+        });
+        setGameplayFiles(prev => [...prev, {
+          filename: result.filename,
+          url: result.url,
+          sizeMB: result.sizeMB,
+          uploadedAt: new Date().toISOString(),
+        }]);
+      }
+    } catch (err: any) {
+      toast.error(`Erreur upload: ${err.message}`);
+    } finally {
+      setIsUploadingGameplay(false);
+    }
+  };
+
+  const handleDeleteGameplay = async (filename: string, url: string) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const resp = await fetch(`/api/delete-gameplay/${encodeURIComponent(filename)}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+
+      setGameplayFiles(prev => prev.filter(f => f.filename !== filename));
+      setGameplayUrls(prev => {
+        const updated = prev.filter(u => u !== url);
+        setGameplayUrlsText(updated.join("\n"));
+        return updated;
+      });
+      toast.success(`${filename} supprimé`);
+    } catch (err: any) {
+      toast.error(`Erreur suppression: ${err.message}`);
     }
   };
 
@@ -787,21 +876,130 @@ export const ProjectConfigurationModal = ({
           </div>
 
           {visualMode === "gameplay" ? (
-            <div className="space-y-2">
-              <Label>URLs des vidéos gameplay (une par ligne)</Label>
-              <Textarea
-                value={gameplayUrlsText}
-                onChange={(e) => {
-                  setGameplayUrlsText(e.target.value);
-                  setGameplayUrls(e.target.value.split("\n").map(u => u.trim()).filter(u => u.length > 0));
-                }}
-                rows={8}
-                placeholder={"https://example.com/gameplay1.mp4\nhttps://example.com/gameplay2.mp4"}
-                className="font-mono text-xs"
-              />
-              <p className="text-xs text-muted-foreground">
-                {gameplayUrls.length} vidéo(s) configurée(s). Fournissez des liens directs vers des fichiers MP4.
-              </p>
+            <div className="space-y-3">
+              {/* Upload zone */}
+              <div>
+                <Label>Uploader des vidéos gameplay</Label>
+                <div className="mt-1">
+                  <label className="flex items-center justify-center gap-2 p-4 border-2 border-dashed rounded-md cursor-pointer hover:border-primary hover:bg-muted/30 transition-colors">
+                    {isUploadingGameplay ? (
+                      <><Loader2 className="h-4 w-4 animate-spin" /><span className="text-sm">Upload en cours...</span></>
+                    ) : (
+                      <><Upload className="h-4 w-4 text-muted-foreground" /><span className="text-sm text-muted-foreground">Cliquer pour sélectionner des MP4</span></>
+                    )}
+                    <input
+                      type="file"
+                      accept="video/mp4,video/webm,video/quicktime"
+                      multiple
+                      className="hidden"
+                      disabled={isUploadingGameplay}
+                      onChange={(e) => {
+                        if (e.target.files && e.target.files.length > 0) {
+                          handleUploadGameplay(e.target.files);
+                          e.target.value = "";
+                        }
+                      }}
+                    />
+                  </label>
+                </div>
+              </div>
+
+              {/* Existing files on VPS */}
+              <div>
+                <div className="flex items-center justify-between">
+                  <Label>Vidéos sur le serveur</Label>
+                  <Button variant="ghost" size="sm" onClick={loadGameplayFiles} disabled={isLoadingGameplayFiles}>
+                    {isLoadingGameplayFiles ? <Loader2 className="h-3 w-3 animate-spin" /> : <FolderOpen className="h-3 w-3" />}
+                    <span className="text-xs ml-1">Charger</span>
+                  </Button>
+                </div>
+                {gameplayFiles.length > 0 && (
+                  <div className="mt-1 max-h-40 overflow-y-auto border rounded-md divide-y">
+                    {gameplayFiles.map((f) => (
+                      <div key={f.filename} className="flex items-center justify-between px-2 py-1.5 text-xs">
+                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                          <Video className="h-3 w-3 text-muted-foreground shrink-0" />
+                          <span className="truncate">{f.filename}</span>
+                          <span className="text-muted-foreground shrink-0">{f.sizeMB} MB</span>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          {!gameplayUrls.includes(f.url) && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 w-6 p-0"
+                              onClick={() => {
+                                setGameplayUrls(prev => {
+                                  const updated = [...prev, f.url];
+                                  setGameplayUrlsText(updated.join("\n"));
+                                  return updated;
+                                });
+                              }}
+                              title="Ajouter à la liste"
+                            >
+                              <Plus className="h-3 w-3" />
+                            </Button>
+                          )}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 w-6 p-0 text-destructive hover:text-destructive"
+                            onClick={() => handleDeleteGameplay(f.filename, f.url)}
+                            title="Supprimer du serveur"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Active URLs list */}
+              <div>
+                <Label>URLs actives ({gameplayUrls.length})</Label>
+                {gameplayUrls.length > 0 ? (
+                  <div className="mt-1 max-h-32 overflow-y-auto border rounded-md divide-y">
+                    {gameplayUrls.map((url, i) => (
+                      <div key={i} className="flex items-center justify-between px-2 py-1 text-xs">
+                        <span className="truncate font-mono flex-1 mr-2">{url.split("/").pop()}</span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-5 w-5 p-0 text-destructive hover:text-destructive shrink-0"
+                          onClick={() => {
+                            setGameplayUrls(prev => {
+                              const updated = prev.filter((_, j) => j !== i);
+                              setGameplayUrlsText(updated.join("\n"));
+                              return updated;
+                            });
+                          }}
+                        >
+                          <X className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground mt-1">Aucune vidéo sélectionnée. Uploadez ou ajoutez des URLs.</p>
+                )}
+              </div>
+
+              {/* Manual URL textarea (collapsed) */}
+              <details className="text-xs">
+                <summary className="cursor-pointer text-muted-foreground hover:text-foreground">Ajouter des URLs externes manuellement</summary>
+                <Textarea
+                  value={gameplayUrlsText}
+                  onChange={(e) => {
+                    setGameplayUrlsText(e.target.value);
+                    setGameplayUrls(e.target.value.split("\n").map(u => u.trim()).filter(u => u.length > 0));
+                  }}
+                  rows={4}
+                  placeholder={"https://example.com/gameplay1.mp4\nhttps://example.com/gameplay2.mp4"}
+                  className="font-mono text-xs mt-1"
+                />
+              </details>
             </div>
           ) : (
           <>
