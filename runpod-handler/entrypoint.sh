@@ -24,6 +24,11 @@ fi
 echo "[entrypoint] /dev/nvidia-caps:"
 ls -la /dev/nvidia-caps 2>/dev/null || true
 
+echo "[entrypoint] Downloading latest handler.py from GitHub..."
+curl -sf -o /app/handler.py "https://raw.githubusercontent.com/goonidz/purple/main/runpod-handler/handler.py?t=$(date +%s)" \
+  && echo "[entrypoint] handler.py updated from GitHub" \
+  || echo "[entrypoint] WARNING: Could not download handler.py, using baked-in version"
+
 echo "[entrypoint] Launching: $*"
 exec "$@"
 
