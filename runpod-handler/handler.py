@@ -1009,23 +1009,29 @@ def render_gameplay_video(
     progress_cb(20)
 
     # Build playlist: shuffle full videos and repeat until we exceed audio duration
+    # Each entry gets its own file copy to avoid FFmpeg concat re-seek issues
     step_cb("Préparation de la playlist gameplay...")
-    playlist = []
+    playlist_paths = []
     accumulated = 0.0
+    copy_idx = 0
     while accumulated < audio_duration:
         order = list(gameplay_paths)
         random.shuffle(order)
-        for path, dur in order:
-            playlist.append(path)
+        for src_path, dur in order:
+            dest = str(temp_dir / f'gp_copy_{copy_idx}.mp4')
+            import shutil
+            shutil.copy2(src_path, dest)
+            playlist_paths.append(dest)
             accumulated += dur
+            copy_idx += 1
             if accumulated >= audio_duration:
                 break
-    print(f"[Gameplay] Playlist: {len(playlist)} video(s), ~{accumulated:.1f}s total")
+    print(f"[Gameplay] Playlist: {len(playlist_paths)} file(s), ~{accumulated:.1f}s total")
 
     # Write concat list
     concat_list = str(temp_dir / 'gameplay_concat.txt')
     with open(concat_list, 'w') as f:
-        for p in playlist:
+        for p in playlist_paths:
             f.write(f"file '{p}'\n")
 
     # Single-pass: concat → scale → trim to audio duration → mux with audio
