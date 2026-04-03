@@ -3153,17 +3153,19 @@ const Index = () => {
       return;
     }
 
-    // Check for missing images
-    const missingImages = generatedPrompts.filter(p => p && p.prompt && !p.imageUrl);
-    if (missingImages.length > 0) {
-      toast.error(`${missingImages.length} scène(s) n'ont pas d'images. Générez les images manquantes d'abord.`);
-      return;
+    // Check for missing images (skip in gameplay mode — no images needed)
+    if (visualMode !== 'gameplay') {
+      const missingImages = generatedPrompts.filter(p => p && p.prompt && !p.imageUrl);
+      if (missingImages.length > 0) {
+        toast.error(`${missingImages.length} scène(s) n'ont pas d'images. Générez les images manquantes d'abord.`);
+        return;
+      }
     }
 
-    // Check for images that need upscaling (Z-Image 16:9 only)
+    // Check for images that need upscaling (Z-Image 16:9 only, skip in gameplay mode)
     const isZImage = imageModel === 'z-image-turbo' || imageModel === 'z-image-turbo-lora';
     const is16x9 = aspectRatio === '16:9';
-    if (isZImage && is16x9) {
+    if (visualMode !== 'gameplay' && isZImage && is16x9) {
       const imagesNeedingUpscale = generatedPrompts.filter((p: any) => {
         if (!p || !p.imageUrl) return false;
         if (p.isUpscaled === true) return false;
@@ -3235,8 +3237,7 @@ const Index = () => {
         setImageHeight(projectData.image_height);
       }
 
-      // Subtitles disabled - Ken Burns effect enabled
-      const renderOptions = {
+      const renderOptions: any = {
         projectId: currentProjectId!,
         framerate: exportFramerate,
         width: renderWidth,
@@ -3255,6 +3256,11 @@ const Index = () => {
           y: 85
         },
       };
+
+      if (visualMode === 'gameplay') {
+        renderOptions.visualMode = 'gameplay';
+        renderOptions.gameplayUrls = gameplayUrls;
+      }
       
       // Use GPU rendering if toggle is enabled, otherwise use VPS
       const result = useGpuRendering 

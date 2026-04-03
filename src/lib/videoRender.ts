@@ -18,8 +18,10 @@ export interface VideoRenderOptions {
   width?: number;
   height?: number;
   subtitleSettings?: SubtitleSettings;
-  effectType?: 'opencv_zoom' | 'pan' | 'none'; // 'opencv_zoom' for GPU zoom (CuPy), 'pan' for pan effect, 'none' for static image
-  renderMethod?: 'standard' | 'lanczos'; // 'standard' = 6x upscale, 'lanczos' = 2x upscale with Lanczos
+  effectType?: 'opencv_zoom' | 'pan' | 'none';
+  renderMethod?: 'standard' | 'lanczos';
+  visualMode?: 'images' | 'gameplay';
+  gameplayUrls?: string[];
 }
 
 export interface VideoRenderResult {
