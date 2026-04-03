@@ -1008,50 +1008,78 @@ def render_gameplay_video(
     print(f"[Gameplay] {len(gameplay_paths)} video(s) available, total {total_gameplay_duration:.1f}s")
     progress_cb(20)
 
-    # Build playlist: shuffle full videos and repeat until we exceed audio duration
-    # Each entry gets its own file copy to avoid FFmpeg concat re-seek issues
-    step_cb("Préparation de la playlist gameplay...")
-    playlist_paths = []
-    accumulated = 0.0
-    copy_idx = 0
-    while accumulated < audio_duration:
-        order = list(gameplay_paths)
-        random.shuffle(order)
-        for src_path, dur in order:
-            dest = str(temp_dir / f'gp_copy_{copy_idx}.mp4')
-            import shutil
-            shutil.copy2(src_path, dest)
-            playlist_paths.append(dest)
-            accumulated += dur
-            copy_idx += 1
-            if accumulated >= audio_duration:
-                break
-    print(f"[Gameplay] Playlist: {len(playlist_paths)} file(s), ~{accumulated:.1f}s total")
-
-    # Write concat list
-    concat_list = str(temp_dir / 'gameplay_concat.txt')
-    with open(concat_list, 'w') as f:
-        for p in playlist_paths:
-            f.write(f"file '{p}'\n")
-
-    # Single-pass: concat → scale → trim to audio duration → mux with audio
+    # If only one gameplay video, use -stream_loop for clean looping
+    # If multiple, pre-encode each to CFR then concat
     step_cb("Encodage de la vidéo gameplay...")
-    progress_cb(30)
+    progress_cb(25)
 
     vf = f'scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2'
 
-    cmd = [
-        FFMPEG_BIN, '-y',
-        '-fflags', '+genpts+igndts',
-        '-f', 'concat', '-safe', '0', '-i', concat_list,
-        '-i', str(audio_path),
-        '-vf', vf,
-        '-r', str(framerate),
-        '-vsync', 'cfr',
-        '-map', '0:v:0', '-map', '1:a:0',
-        '-t', str(audio_duration),
-        '-c:a', 'aac', '-b:a', '192k',
-    ]
+    if len(gameplay_paths) == 1:
+        src_path, src_dur = gameplay_paths[0]
+        loops_needed = int(audio_duration / src_dur)  # -stream_loop N means N extra plays
+        print(f"[Gameplay] Single video, using -stream_loop {loops_needed}")
+
+        cmd = [
+            FFMPEG_BIN, '-y',
+            '-stream_loop', str(loops_needed),
+            '-i', src_path,
+            '-i', str(audio_path),
+            '-vf', vf,
+            '-r', str(framerate),
+            '-map', '0:v:0', '-map', '1:a:0',
+            '-t', str(audio_duration),
+            '-c:a', 'aac', '-b:a', '192k',
+        ]
+    else:
+        # Multiple videos: pre-encode each to uniform CFR format, then concat
+        step_cb("Pré-encodage des vidéos gameplay...")
+        clean_paths = []
+        for i, (src_path, dur) in enumerate(gameplay_paths):
+            clean_dest = str(temp_dir / f'gp_clean_{i}.mp4')
+            pre_cmd = [
+                FFMPEG_BIN, '-y', '-i', src_path,
+                '-vf', vf, '-r', str(framerate), '-an',
+                '-c:v', 'libx264', '-preset', 'fast', '-crf', '16',
+                '-pix_fmt', 'yuv420p',
+                clean_dest,
+            ]
+            print(f"[Gameplay] Pre-encoding video {i+1}...")
+            r = subprocess.run(pre_cmd, capture_output=True, text=True, timeout=3600)
+            if r.returncode != 0:
+                print(f"[Gameplay] Pre-encode {i+1} failed: {r.stderr[-300:]}")
+                return None
+            clean_paths.append((clean_dest, dur))
+            progress_cb(25 + int((i + 1) / len(gameplay_paths) * 15))
+
+        # Build playlist from clean files
+        playlist = []
+        accumulated_pl = 0.0
+        while accumulated_pl < audio_duration:
+            order = list(clean_paths)
+            random.shuffle(order)
+            for path, dur in order:
+                playlist.append(path)
+                accumulated_pl += dur
+                if accumulated_pl >= audio_duration:
+                    break
+
+        concat_list = str(temp_dir / 'gameplay_concat.txt')
+        with open(concat_list, 'w') as f:
+            for p in playlist:
+                f.write(f"file '{p}'\n")
+
+        print(f"[Gameplay] Playlist: {len(playlist)} file(s)")
+
+        cmd = [
+            FFMPEG_BIN, '-y',
+            '-f', 'concat', '-safe', '0', '-i', concat_list,
+            '-i', str(audio_path),
+            '-r', str(framerate),
+            '-map', '0:v:0', '-map', '1:a:0',
+            '-t', str(audio_duration),
+            '-c:a', 'aac', '-b:a', '192k',
+        ]
 
     if GPU_ENCODER_AVAILABLE and ENCODER_NAME:
         cmd.extend(['-c:v', ENCODER_NAME, '-preset', 'medium', '-rc', 'constqp', '-qp', '18', '-b:v', '0'])
