@@ -904,6 +904,8 @@ export default function CalendarVideoModal({
         projectConfig.example_prompts = projectPreset.example_prompts || undefined;
         projectConfig.prompt_system_message = (projectPreset as any).prompt_system_message || undefined;
         projectConfig.style_reference_url = projectPreset.style_reference_url || undefined;
+        projectConfig.visual_mode = (projectPreset as any).visual_mode || 'images';
+        projectConfig.gameplay_urls = (projectPreset as any).gameplay_urls || undefined;
       }
 
       const entryId = entry?.id;

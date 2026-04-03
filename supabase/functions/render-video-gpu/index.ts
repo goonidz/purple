@@ -43,31 +43,38 @@ serve(async (req) => {
       });
     }
 
-    // Extract JWT token from Authorization header
     const token = authHeader.replace('Bearer ', '');
-
-    const supabaseAuth = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? ''
-    );
-
-    const { data: { user }, error: userError } = await supabaseAuth.auth.getUser(token);
-    
-    if (userError || !user) {
-      console.error('[GPU] User authentication failed:', { userError: userError?.message, hasUser: !!user });
-      return new Response(JSON.stringify({ 
-        error: 'Unauthorized',
-        details: userError?.message || 'User not found'
-      }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    console.log('[GPU] User authenticated:', user.id);
-
     const requestBody = await req.json();
     console.log("[GPU] Request body keys:", Object.keys(requestBody));
+
+    // Try user auth first, fall back to service role key with userId in body
+    let userId: string;
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+
+    if (token === serviceRoleKey && requestBody.userId) {
+      // Called from orchestrator with service role key
+      userId = requestBody.userId;
+      console.log('[GPU] Service role auth, userId from body:', userId);
+    } else {
+      const supabaseAuth = createClient(
+        Deno.env.get('SUPABASE_URL') ?? '',
+        Deno.env.get('SUPABASE_ANON_KEY') ?? ''
+      );
+      const { data: { user }, error: userError } = await supabaseAuth.auth.getUser(token);
+      
+      if (userError || !user) {
+        console.error('[GPU] User authentication failed:', { userError: userError?.message, hasUser: !!user });
+        return new Response(JSON.stringify({ 
+          error: 'Unauthorized',
+          details: userError?.message || 'User not found'
+        }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      userId = user.id;
+      console.log('[GPU] User authenticated:', userId);
+    }
     
     const { 
       projectId, 
@@ -76,7 +83,9 @@ serve(async (req) => {
       height = 1080,
       subtitleSettings,
       effectType = 'pan',
-      renderMethod = 'standard'
+      renderMethod = 'standard',
+      visualMode,
+      gameplayUrls,
     } = requestBody;
 
     if (!projectId) {
@@ -105,49 +114,69 @@ serve(async (req) => {
       throw new Error("Project has no audio file");
     }
 
+    // Determine if gameplay mode
+    const isGameplay = visualMode === 'gameplay' || project.visual_mode === 'gameplay';
+    const resolvedGameplayUrls = gameplayUrls || project.gameplay_urls || [];
+
     // Get timing data from projects.scenes (source of truth for timing)
     const scenesJson = project.scenes as any[] || [];
     if (scenesJson.length === 0) {
       throw new Error("Project has no scenes (scenes JSON is empty)");
     }
 
-    // Get prompts data for text
-    const promptsJson = project.prompts as any[] || [];
+    let scenes: Scene[];
 
-    // Fetch image URLs from project_scenes table (source of truth for images)
-    const { data: projectScenes, error: scenesError } = await supabase
-      .from("project_scenes")
-      .select("scene_index, image_url, upscaled_url")
-      .eq("project_id", projectId)
-      .order("scene_index", { ascending: true });
+    if (isGameplay) {
+      console.log(`[GPU] Gameplay mode — ${resolvedGameplayUrls.length} video URL(s)`);
+      if (resolvedGameplayUrls.length === 0) {
+        throw new Error("Gameplay mode but no gameplay video URLs configured");
+      }
+      // In gameplay mode, scenes only need timing data (no images)
+      scenes = scenesJson.map((s: any, index: number) => ({
+        startTime: s.startTime,
+        endTime: s.endTime,
+        imageUrl: '', // not used in gameplay mode
+        text: s.text || '',
+      }));
+    } else {
+      // Get prompts data for text
+      const promptsJson = project.prompts as any[] || [];
 
-    if (scenesError) {
-      console.warn("[GPU] Could not fetch project_scenes, using prompts JSON for images:", scenesError.message);
-    }
+      // Fetch image URLs from project_scenes table (source of truth for images)
+      const { data: projectScenes, error: scenesError } = await supabase
+        .from("project_scenes")
+        .select("scene_index, image_url, upscaled_url")
+        .eq("project_id", projectId)
+        .order("scene_index", { ascending: true });
 
-    // Build a map of scene_index -> image URL from project_scenes
-    const imageUrlMap = new Map<number, string>();
-    if (projectScenes) {
-      for (const s of projectScenes) {
-        const url = s.upscaled_url || s.image_url;
-        if (url) {
-          imageUrlMap.set(s.scene_index, url);
+      if (scenesError) {
+        console.warn("[GPU] Could not fetch project_scenes, using prompts JSON for images:", scenesError.message);
+      }
+
+      // Build a map of scene_index -> image URL from project_scenes
+      const imageUrlMap = new Map<number, string>();
+      if (projectScenes) {
+        for (const s of projectScenes) {
+          const url = s.upscaled_url || s.image_url;
+          if (url) {
+            imageUrlMap.set(s.scene_index, url);
+          }
         }
       }
-    }
 
-    // Merge: timing from scenes JSON, images from project_scenes (with fallback to prompts JSON)
-    const scenes: Scene[] = scenesJson.map((s, index) => ({
-      startTime: s.startTime,
-      endTime: s.endTime,
-      imageUrl: imageUrlMap.get(index) || promptsJson[index]?.imageUrl,  // Prefer project_scenes, fallback to prompts JSON
-      text: s.text || promptsJson[index]?.text || '',
-    }));
+      // Merge: timing from scenes JSON, images from project_scenes (with fallback to prompts JSON)
+      scenes = scenesJson.map((s: any, index: number) => ({
+        startTime: s.startTime,
+        endTime: s.endTime,
+        imageUrl: imageUrlMap.get(index) || promptsJson[index]?.imageUrl,
+        text: s.text || promptsJson[index]?.text || '',
+      }));
 
-    // Check if all scenes have images
-    const missingImages = scenes.filter((s: Scene) => !s.imageUrl);
-    if (missingImages.length > 0) {
-      throw new Error(`${missingImages.length} scene(s) are missing images`);
+      // Check if all scenes have images (only for non-gameplay mode)
+      const missingImages = scenes.filter((s: Scene) => !s.imageUrl);
+      if (missingImages.length > 0) {
+        throw new Error(`${missingImages.length} scene(s) are missing images`);
+      }
     }
 
     // Check if all scenes have valid timing
@@ -179,7 +208,7 @@ serve(async (req) => {
     }
 
     // Prepare render data for RunPod
-    const renderData = {
+    const renderData: any = {
       scenes: scenes.map((scene, index) => ({
         index,
         startTime: scene.startTime,
@@ -208,10 +237,15 @@ serve(async (req) => {
       },
       projectId,
       projectName: project.name || 'video',
-      userId: user.id,
+      userId,
       effectType: effectType || 'pan',
       renderMethod: renderMethod || 'standard',
     };
+
+    if (isGameplay) {
+      renderData.visualMode = 'gameplay';
+      renderData.gameplayUrls = resolvedGameplayUrls;
+    }
 
     // Get RunPod credentials from environment
     const runpodApiKey = Deno.env.get('RUNPOD_API_KEY');
@@ -229,7 +263,7 @@ serve(async (req) => {
     
     const insertData = {
       project_id: projectId,
-      user_id: user.id,
+      user_id: userId,
       status: 'pending',
       progress: 0,
       current_step: 'En attente...',

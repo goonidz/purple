@@ -938,6 +938,157 @@ async def download_scene_image_async(scene_index: int, scene: Dict, temp_path: P
     return (scene_index, str(image_path), None)
 
 
+def get_video_duration(path: str) -> float:
+    """Get video duration in seconds using ffprobe."""
+    cmd = [
+        'ffprobe', '-v', 'error',
+        '-show_entries', 'format=duration',
+        '-of', 'default=noprint_wrappers=1:nokey=1',
+        path
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        return float(result.stdout.strip())
+    except Exception as e:
+        print(f"[Gameplay] ffprobe duration error: {e}")
+        return 0.0
+
+
+def render_gameplay_video(
+    gameplay_urls: List[str],
+    audio_path: str,
+    output_path: str,
+    width: int,
+    height: int,
+    framerate: int,
+    progress_cb=None,
+    step_cb=None,
+) -> Optional[str]:
+    """
+    Download gameplay videos, randomly slice and concatenate segments
+    to cover the full audio duration, then mux with audio.
+    Returns path to final video or None on error.
+    """
+    import random
+    if progress_cb is None:
+        progress_cb = lambda _: None
+    if step_cb is None:
+        step_cb = lambda _: None
+
+    temp_dir = Path(output_path).parent
+
+    # Get audio duration
+    audio_duration = get_video_duration(str(audio_path))
+    if audio_duration <= 0:
+        print("[Gameplay] Could not determine audio duration")
+        return None
+    print(f"[Gameplay] Audio duration: {audio_duration:.1f}s")
+
+    # Download gameplay videos
+    step_cb(f"Téléchargement de {len(gameplay_urls)} vidéo(s) gameplay...")
+    gameplay_paths = []
+    for i, url in enumerate(gameplay_urls):
+        dest = str(temp_dir / f'gameplay_{i}.mp4')
+        print(f"[Gameplay] Downloading video {i+1}/{len(gameplay_urls)}: {url[:80]}...")
+        if download_file(url, dest):
+            dur = get_video_duration(dest)
+            if dur > 0:
+                gameplay_paths.append((dest, dur))
+                print(f"[Gameplay] Video {i+1} downloaded ({dur:.1f}s)")
+            else:
+                print(f"[Gameplay] Video {i+1} downloaded but could not get duration, skipping")
+        else:
+            print(f"[Gameplay] Failed to download video {i+1}")
+        progress_cb(int((i + 1) / len(gameplay_urls) * 15))
+
+    if not gameplay_paths:
+        print("[Gameplay] No gameplay videos could be downloaded")
+        return None
+
+    total_gameplay_duration = sum(d for _, d in gameplay_paths)
+    print(f"[Gameplay] {len(gameplay_paths)} video(s) available, total {total_gameplay_duration:.1f}s")
+
+    # Randomly slice segments to fill audio duration
+    step_cb("Découpe aléatoire des segments gameplay...")
+    segments = []
+    accumulated = 0.0
+    segment_idx = 0
+    min_segment = 3.0
+    max_segment = 15.0
+
+    while accumulated < audio_duration:
+        remaining = audio_duration - accumulated
+        seg_len = min(random.uniform(min_segment, max_segment), remaining)
+        if remaining - seg_len < 1.0:
+            seg_len = remaining  # avoid tiny leftover
+
+        # Pick a random gameplay video
+        vid_path, vid_dur = random.choice(gameplay_paths)
+        max_start = max(0, vid_dur - seg_len)
+        start = random.uniform(0, max_start) if max_start > 0 else 0
+
+        actual_len = min(seg_len, vid_dur - start)
+        if actual_len < 0.5:
+            continue
+
+        seg_output = str(temp_dir / f'gp_seg_{segment_idx}.mp4')
+        cmd = [
+            FFMPEG_BIN, '-y',
+            '-ss', str(start),
+            '-i', vid_path,
+            '-t', str(actual_len),
+            '-vf', f'scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2',
+            '-r', str(framerate),
+            '-an',
+        ]
+
+        if GPU_ENCODER_AVAILABLE and ENCODER_NAME:
+            cmd.extend(['-c:v', ENCODER_NAME, '-preset', ENCODER_PRESET or 'p4'])
+            if ENCODER_GPU_ID is not None:
+                cmd.extend(['-gpu', str(ENCODER_GPU_ID)])
+        else:
+            cmd.extend(['-c:v', 'libx264', '-preset', 'fast', '-crf', '18'])
+
+        cmd.append(seg_output)
+
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+            if result.returncode != 0:
+                print(f"[Gameplay] Segment {segment_idx} encode error: {result.stderr[-300:]}")
+                continue
+        except Exception as e:
+            print(f"[Gameplay] Segment {segment_idx} exception: {e}")
+            continue
+
+        segments.append(seg_output)
+        accumulated += actual_len
+        segment_idx += 1
+        progress_cb(15 + int((accumulated / audio_duration) * 50))
+
+    print(f"[Gameplay] Created {len(segments)} segments, total {accumulated:.1f}s / {audio_duration:.1f}s needed")
+
+    if not segments:
+        print("[Gameplay] No segments created")
+        return None
+
+    # Concatenate all segments
+    step_cb("Assemblage des segments gameplay...")
+    concat_path = str(temp_dir / 'gameplay_concat.mp4')
+    if not concatenate_videos(segments, concat_path):
+        print("[Gameplay] Concatenation failed")
+        return None
+    progress_cb(75)
+
+    # Add audio
+    step_cb("Ajout de l'audio...")
+    if not add_audio(concat_path, str(audio_path), output_path):
+        print("[Gameplay] Audio mux failed")
+        return None
+    progress_cb(95)
+
+    return output_path
+
+
 def render_video_payload(payload: Dict[str, Any], progress_cb=None, step_cb=None) -> Dict[str, Any]:
     """
     Core render pipeline used by both serverless and Pod worker.
@@ -965,13 +1116,20 @@ def render_video_payload(payload: Dict[str, Any], progress_cb=None, step_cb=None
     height = video_settings.get('height', 1080)
     framerate = video_settings.get('framerate', 25)
 
-    if not scenes:
-        return {"error": "No scenes provided"}
+    visual_mode = payload.get('visualMode', 'images')
+    gameplay_urls = payload.get('gameplayUrls', [])
+
     if not audio_url:
         return {"error": "No audio URL provided"}
+    if visual_mode != 'gameplay' and not scenes:
+        return {"error": "No scenes provided"}
 
     print(f"[GPU Handler] Starting render for project {project_id}")
-    print(f"[GPU Handler] {len(scenes)} scenes, {width}x{height} @ {framerate}fps")
+    print(f"[GPU Handler] Mode: {visual_mode}")
+    if visual_mode == 'gameplay':
+        print(f"[GPU Handler] Gameplay URLs: {len(gameplay_urls)}")
+    else:
+        print(f"[GPU Handler] {len(scenes)} scenes, {width}x{height} @ {framerate}fps")
     print(f"[GPU Handler] Effect type: {effect_type}")
     print(f"[GPU Handler] Using encoder: {ENCODER_NAME} (GPU: {GPU_ENCODER_AVAILABLE})")
 
@@ -985,6 +1143,64 @@ def render_video_payload(payload: Dict[str, Any], progress_cb=None, step_cb=None
         audio_path = temp_path / 'audio.mp3'
         if not download_file(audio_url, str(audio_path)):
             return {"error": "Failed to download audio"}
+
+        # ---- GAMEPLAY MODE ----
+        if visual_mode == 'gameplay':
+            if not gameplay_urls:
+                return {"error": "Gameplay mode but no video URLs provided"}
+
+            final_path = temp_path / f'{project_name}.mp4'
+            result_path = render_gameplay_video(
+                gameplay_urls=gameplay_urls,
+                audio_path=str(audio_path),
+                output_path=str(final_path),
+                width=width,
+                height=height,
+                framerate=framerate,
+                progress_cb=progress_cb,
+                step_cb=step_cb,
+            )
+
+            if not result_path:
+                return {"error": "Gameplay render failed"}
+
+            file_size_mb = os.path.getsize(result_path) / (1024 * 1024)
+
+            step_cb("Upload de la vidéo finale...")
+            print("[GPU Handler] Uploading gameplay video to VPS...")
+            try:
+                from datetime import datetime
+                date_str = datetime.now().strftime('%Y%m%d')
+                filename = f"{date_str}_{project_name}.mp4"
+                upload_result = upload_to_vps(result_path, filename)
+                video_url = upload_result['url']
+                print(f"[GPU Handler] Uploaded {upload_result['sizeMB']:.2f} MB to VPS")
+            except Exception as e:
+                print(f"[GPU Handler] VPS upload error: {e}, falling back to Supabase...")
+                try:
+                    from datetime import datetime
+                    date_str = datetime.now().strftime('%Y%m%d')
+                    dest_path_str = f"{user_id}/{project_id}/{date_str}_{project_name}.mp4"
+                    video_url = upload_to_supabase(result_path, 'rendered-videos', dest_path_str)
+                except Exception as e2:
+                    return {"error": f"Failed to upload video: VPS={e}, Supabase={e2}"}
+
+            elapsed = time.time() - start_time
+            print(f"[GPU Handler] Gameplay render complete in {elapsed:.1f}s")
+            progress_cb(100)
+
+            return {
+                "success": True,
+                "videoUrl": video_url,
+                "duration": elapsed,
+                "fileSizeMB": round(file_size_mb, 2),
+                "scenesCount": 0,
+                "resolution": f"{width}x{height}",
+                "framerate": framerate,
+                "effectType": "gameplay",
+                "encoder": ENCODER_NAME,
+                "gpuAccelerated": GPU_ENCODER_AVAILABLE,
+            }
 
         # Download ALL images with HTTP/2 multiplexing (like Node.js axios!)
         step_cb(f"Téléchargement de {len(scenes)} images en parallèle...")

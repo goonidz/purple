@@ -170,6 +170,8 @@ interface ProjectPresetRow {
   lora_url?: string | null;
   lora_steps?: number;
   qa_prompt?: string | null;
+  visual_mode?: string;
+  gameplay_urls?: string[] | null;
 }
 
 // Thumbnail preset
@@ -685,6 +687,8 @@ export default function Presets() {
         lora_url: p.lora_url,
         lora_steps: p.lora_steps ?? 10,
         qa_prompt: p.qa_prompt,
+        visual_mode: p.visual_mode ?? 'images',
+        gameplay_urls: p.gameplay_urls ?? null,
       });
       if (error) throw error;
       toast.success("Preset projet dupliqué");

@@ -70,6 +70,9 @@ export const ProjectConfigurationModal = ({
   const [isSaving, setIsSaving] = useState(false);
   const [semiAutoMode, setSemiAutoMode] = useState(false);
   const [qaEnabled, setQaEnabled] = useState(false);
+  const [visualMode, setVisualMode] = useState<"images" | "gameplay">("images");
+  const [gameplayUrls, setGameplayUrls] = useState<string[]>([]);
+  const [gameplayUrlsText, setGameplayUrlsText] = useState("");
   
   // Preset loading
   const [presets, setPresets] = useState<Preset[]>([]);
@@ -233,6 +236,15 @@ export const ProjectConfigurationModal = ({
       setLoraUrl(preset.lora_url || "");
       setLoraSteps(preset.lora_steps || 10);
       setQaEnabled(preset.qa_enabled === true);
+      if ((preset as any).visual_mode) setVisualMode((preset as any).visual_mode);
+      if ((preset as any).gameplay_urls) {
+        const urls = (preset as any).gameplay_urls as string[];
+        setGameplayUrls(urls);
+        setGameplayUrlsText(urls.join("\n"));
+      } else {
+        setGameplayUrls([]);
+        setGameplayUrlsText("");
+      }
       if (preset.style_reference_url) {
         setStyleReferenceUrls(parseStyleReferenceUrls(preset.style_reference_url));
       }
@@ -553,6 +565,8 @@ export const ProjectConfigurationModal = ({
           style_reference_url: styleReferenceUrls.length > 0 ? JSON.stringify(styleReferenceUrls) : null,
           thumbnail_preset_id: selectedThumbnailPresetId || null,
           qa_enabled: qaEnabled,
+          visual_mode: visualMode,
+          gameplay_urls: visualMode === 'gameplay' && gameplayUrls.length > 0 ? gameplayUrls : null,
         } as any)
         .eq("id", currentProjectId);
 
@@ -759,6 +773,38 @@ export const ProjectConfigurationModal = ({
 
       {step === "image-config" && (
         <div className="space-y-4">
+          <div className="space-y-2">
+            <Label>Mode visuel</Label>
+            <Select value={visualMode} onValueChange={(v: "images" | "gameplay") => setVisualMode(v)}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="images">Images IA</SelectItem>
+                <SelectItem value="gameplay">Gameplay (vidéos)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {visualMode === "gameplay" ? (
+            <div className="space-y-2">
+              <Label>URLs des vidéos gameplay (une par ligne)</Label>
+              <Textarea
+                value={gameplayUrlsText}
+                onChange={(e) => {
+                  setGameplayUrlsText(e.target.value);
+                  setGameplayUrls(e.target.value.split("\n").map(u => u.trim()).filter(u => u.length > 0));
+                }}
+                rows={8}
+                placeholder={"https://example.com/gameplay1.mp4\nhttps://example.com/gameplay2.mp4"}
+                className="font-mono text-xs"
+              />
+              <p className="text-xs text-muted-foreground">
+                {gameplayUrls.length} vidéo(s) configurée(s). Fournissez des liens directs vers des fichiers MP4.
+              </p>
+            </div>
+          ) : (
+          <>
           <div className="space-y-2">
             <Label>Modèle de génération</Label>
             <Select value={imageModel} onValueChange={handleModelChange}>
@@ -1025,6 +1071,9 @@ export const ProjectConfigurationModal = ({
               )}
             </div>
           </div>
+
+          </>
+          )}
 
           {/* Thumbnail preset selector for semi-auto mode */}
           <div className="space-y-2">

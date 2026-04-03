@@ -202,6 +202,8 @@ const Index = () => {
   const [loraUrl, setLoraUrl] = useState<string>("");
   const [loraSteps, setLoraSteps] = useState<number>(10);
   const [qaEnabled, setQaEnabled] = useState<boolean>(false);
+  const [visualMode, setVisualMode] = useState<"images" | "gameplay">("images");
+  const [gameplayUrls, setGameplayUrls] = useState<string[]>([]);
   const [visualContinuityEnabled, setVisualContinuityEnabled] = useState<boolean>(false);
   const [isGeneratingImages, setIsGeneratingImages] = useState(false);
   const [generatingImageIndices, setGeneratingImageIndices] = useState<Set<number>>(new Set());
@@ -1097,6 +1099,8 @@ const Index = () => {
       if (projectData.lora_url) setLoraUrl(projectData.lora_url);
       if (projectData.lora_steps) setLoraSteps(projectData.lora_steps);
       setQaEnabled((projectData as any).qa_enabled === true);
+      if ((projectData as any).visual_mode) setVisualMode((projectData as any).visual_mode);
+      if ((projectData as any).gameplay_urls && Array.isArray((projectData as any).gameplay_urls)) setGameplayUrls((projectData as any).gameplay_urls);
       if (projectData.visual_continuity_enabled !== undefined) setVisualContinuityEnabled(projectData.visual_continuity_enabled);
       if (projectData.prompt_system_message) {
         setPromptSystemMessage(projectData.prompt_system_message);
@@ -1336,6 +1340,8 @@ const Index = () => {
           lora_url: loraUrl || null,
           lora_steps: loraSteps,
           qa_enabled: qaEnabled,
+          visual_mode: visualMode,
+          gameplay_urls: visualMode === 'gameplay' && gameplayUrls.length > 0 ? gameplayUrls : null,
           style_reference_url: serializeStyleReferenceUrls(styleReferenceUrls),
           ...(audioUrl ? { audio_url: audioUrl } : {}),
           prompt_system_message: promptSystemMessage || null,
@@ -3380,6 +3386,12 @@ const Index = () => {
     setLoraUrl(preset.lora_url || "");
     setLoraSteps(preset.lora_steps || 10);
     setQaEnabled((preset as any).qa_enabled === true);
+    if ((preset as any).visual_mode) setVisualMode((preset as any).visual_mode);
+    if ((preset as any).gameplay_urls && Array.isArray((preset as any).gameplay_urls)) {
+      setGameplayUrls((preset as any).gameplay_urls);
+    } else {
+      setGameplayUrls([]);
+    }
     setActivePresetName(preset.name);
     setPromptSystemMessage(preset.prompt_system_message || "");
     setQaPrompt(preset.qa_prompt || "");
@@ -3943,6 +3955,8 @@ const Index = () => {
                     loraUrl,
                     loraSteps,
                     qaPrompt,
+                    visualMode,
+                    gameplayUrls,
                   }}
                   onLoadPreset={handleLoadPreset}
                   currentPresetId={currentPresetId || undefined}
@@ -4180,7 +4194,14 @@ const Index = () => {
                         
                         {/* Boutons d'action - organisés en groupes */}
                         <div className="flex flex-col gap-3">
+                          {visualMode === 'gameplay' && (
+                            <div className="flex items-center gap-2 p-2 bg-muted/50 rounded-md">
+                              <Video className="h-4 w-4 text-muted-foreground" />
+                              <span className="text-xs text-muted-foreground">Mode Gameplay — {gameplayUrls.length} vidéo(s) configurée(s)</span>
+                            </div>
+                          )}
                           {/* Ligne 1: Prompts */}
+                          {visualMode !== 'gameplay' && (
                           <div className="flex items-center gap-2">
                             <span className="text-xs font-medium text-muted-foreground w-16">Prompts</span>
                             <div className="flex items-center gap-2">
@@ -4244,9 +4265,10 @@ const Index = () => {
                               )}
                             </div>
                           </div>
+                          )}
                           
                           {/* Ligne 2: Images */}
-                          {generatedPrompts.length > 0 && (
+                          {visualMode !== 'gameplay' && generatedPrompts.length > 0 && (
                             <div className="flex items-center gap-2">
                               <span className="text-xs font-medium text-muted-foreground w-16">Images</span>
                               <div className="flex items-center gap-2 flex-wrap">
@@ -4368,7 +4390,7 @@ const Index = () => {
                           )}
                           
                           {/* Ligne 3: Upscale (si applicable) */}
-                          {generatedPrompts.length > 0 && !isGeneratingImages && (imageModel === 'z-image-turbo' || imageModel === 'z-image-turbo-lora') && aspectRatio === '16:9' && generatedPrompts.some((p: any) => p && p.imageUrl) && (
+                          {visualMode !== 'gameplay' && generatedPrompts.length > 0 && !isGeneratingImages && (imageModel === 'z-image-turbo' || imageModel === 'z-image-turbo-lora') && aspectRatio === '16:9' && generatedPrompts.some((p: any) => p && p.imageUrl) && (
                             <div className="flex items-center gap-2">
                               <span className="text-xs font-medium text-muted-foreground w-16">Upscale</span>
                               <div className="flex items-center gap-2">
@@ -5296,6 +5318,8 @@ const Index = () => {
                     loraUrl,
                     loraSteps,
                     qaPrompt,
+                    visualMode,
+                    gameplayUrls,
                   }}
                   autoLoadPresetId={sessionStorage.getItem("auto_load_project_preset_id") || undefined}
                   onLoadPreset={handleLoadPreset}

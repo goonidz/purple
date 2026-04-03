@@ -433,14 +433,17 @@ async function stepCreateScenes(pipeline) {
   const { data: project } = await supabase.from('projects').select('transcript_json, scenes').eq('id', project_id).single();
   if (!project?.transcript_json) throw new Error('No transcript_json in project');
 
+  const projectConfig = config.project || {};
+  const isGameplay = projectConfig.visual_mode === 'gameplay';
+
   // Check if scenes already exist (idempotent)
   if (project.scenes && Array.isArray(project.scenes) && project.scenes.length > 0) {
-    console.log(`[orchestrator] [${id}] Scenes already exist (${project.scenes.length}), advancing to prompts`);
-    await advancePipeline(id, 'generate_prompts');
+    const nextStep = isGameplay ? 'render_video' : 'generate_prompts';
+    console.log(`[orchestrator] [${id}] Scenes already exist (${project.scenes.length}), advancing to ${nextStep}`);
+    await advancePipeline(id, nextStep);
     return;
   }
 
-  const projectConfig = config.project || {};
   const durationRanges = projectConfig.duration_ranges || DEFAULT_DURATION_RANGES;
 
   const scenes = parseTranscriptToScenes(project.transcript_json, durationRanges, true);
@@ -460,12 +463,17 @@ async function stepCreateScenes(pipeline) {
   if (projectConfig.example_prompts) updatePayload.example_prompts = projectConfig.example_prompts;
   if (projectConfig.prompt_system_message) updatePayload.prompt_system_message = projectConfig.prompt_system_message;
   if (projectConfig.style_reference_url) updatePayload.style_reference_url = projectConfig.style_reference_url;
+  if (isGameplay) {
+    updatePayload.visual_mode = 'gameplay';
+    if (projectConfig.gameplay_urls) updatePayload.gameplay_urls = projectConfig.gameplay_urls;
+  }
 
   const { error } = await supabase.from('projects').update(updatePayload).eq('id', project_id);
   if (error) throw new Error(`Failed to save scenes: ${error.message}`);
 
-  console.log(`[orchestrator] [${id}] Created ${scenes.length} scenes, advancing to prompts`);
-  await advancePipeline(id, 'generate_prompts');
+  const nextStep = isGameplay ? 'render_video' : 'generate_prompts';
+  console.log(`[orchestrator] [${id}] Created ${scenes.length} scenes, advancing to ${nextStep}`);
+  await advancePipeline(id, nextStep);
 }
 
 // ---------- PROMPTS ----------
@@ -641,6 +649,94 @@ async function stepWaitImages(pipeline) {
   await advancePipeline(id, 'generate_images');
 }
 
+// ---------- RENDER VIDEO (GAMEPLAY) ----------
+
+async function stepRenderVideo(pipeline) {
+  const { id, project_id, user_id, config, calendar_entry_id } = pipeline;
+
+  const { data: project } = await supabase
+    .from('projects')
+    .select('audio_url, scenes, visual_mode, gameplay_urls, name, image_width, image_height')
+    .eq('id', project_id)
+    .single();
+
+  if (!project?.audio_url) throw new Error('No audio_url in project');
+  if (!project.scenes || project.scenes.length === 0) throw new Error('No scenes in project');
+
+  const isGameplay = project.visual_mode === 'gameplay';
+  const gameplayUrls = project.gameplay_urls || config.project?.gameplay_urls || [];
+
+  if (isGameplay && gameplayUrls.length === 0) {
+    throw new Error('Gameplay mode but no gameplay URLs configured');
+  }
+
+  const renderPayload = {
+    projectId: project_id,
+    userId: user_id,
+    width: project.image_width || 1920,
+    height: project.image_height || 1080,
+    framerate: 25,
+    effectType: 'pan',
+    renderMethod: 'standard',
+  };
+
+  if (isGameplay) {
+    renderPayload.visualMode = 'gameplay';
+    renderPayload.gameplayUrls = gameplayUrls;
+  }
+
+  const resp = await fetch(`${SUPABASE_URL}/functions/v1/render-video-gpu`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(renderPayload),
+  });
+
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`render-video-gpu failed (${resp.status}): ${text}`);
+  }
+
+  const result = await resp.json();
+  const gpuJobId = result.jobId;
+  if (!gpuJobId) throw new Error('No jobId returned from render-video-gpu');
+
+  await updatePipelineMetadata(id, { gpuJobId });
+  await updateCalendarStatus(calendar_entry_id, 'auto_render');
+
+  console.log(`[orchestrator] [${id}] GPU render job launched: ${gpuJobId}`);
+  await advancePipeline(id, 'wait_render');
+}
+
+async function stepWaitRender(pipeline) {
+  const { id, metadata, calendar_entry_id } = pipeline;
+  const gpuJobId = metadata?.gpuJobId;
+  if (!gpuJobId) throw new Error('No gpuJobId in pipeline metadata');
+
+  const { data: job } = await supabase
+    .from('gpu_render_jobs')
+    .select('status, video_url, error')
+    .eq('id', gpuJobId)
+    .single();
+
+  if (!job) throw new Error(`GPU render job ${gpuJobId} not found`);
+
+  if (job.status === 'completed' && job.video_url) {
+    console.log(`[orchestrator] [${id}] GPU render completed: ${job.video_url}`);
+    await updateCalendarStatus(calendar_entry_id, 'generating');
+    await advancePipeline(id, 'completed', { step_status: 'completed' });
+    return;
+  }
+
+  if (job.status === 'failed') {
+    throw new Error(`GPU render failed: ${job.error || 'Unknown error'}`);
+  }
+
+  // Still pending/processing — stay on this step
+}
+
 // ============================================================================
 // STEP DISPATCH
 // ============================================================================
@@ -658,6 +754,8 @@ const STEP_HANDLERS = {
   wait_prompts: stepWaitPrompts,
   generate_images: stepGenerateImages,
   wait_images: stepWaitImages,
+  render_video: stepRenderVideo,
+  wait_render: stepWaitRender,
 };
 
 // ============================================================================

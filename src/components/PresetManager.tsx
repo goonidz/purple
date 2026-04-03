@@ -53,6 +53,8 @@ interface Preset {
   lora_steps: number;
   qa_prompt: string | null;
   qa_enabled: boolean;
+  visual_mode: string;
+  gameplay_urls: string[] | null;
 }
 
 const DEFAULT_PROMPT_SYSTEM_MESSAGE = `You are an expert at generating prompts for AI image creation (like Midjourney, Stable Diffusion, DALL-E).
@@ -184,6 +186,8 @@ interface PresetManagerProps {
     loraUrl?: string;
     loraSteps?: number;
     qaPrompt?: string;
+    visualMode?: string;
+    gameplayUrls?: string[];
   };
   onLoadPreset: (preset: Preset) => void;
   autoLoadPresetId?: string; // Optional: preset ID to auto-load from sessionStorage
@@ -222,6 +226,8 @@ function mapRowToPreset(preset: any): Preset {
     lora_steps: presetData.lora_steps || 10,
     qa_prompt: presetData.qa_prompt || null,
     qa_enabled: presetData.qa_enabled === true,
+    visual_mode: presetData.visual_mode || 'images',
+    gameplay_urls: Array.isArray(presetData.gameplay_urls) ? presetData.gameplay_urls : null,
   };
 }
 
@@ -251,6 +257,8 @@ export const PresetManager = ({ currentConfig, onLoadPreset, autoLoadPresetId, c
     loraSteps?: number;
     qaPrompt?: string;
     qaEnabled?: boolean;
+    visualMode?: string;
+    gameplayUrls?: string[];
   } | null>(null);
 
   // LoRA presets
@@ -336,6 +344,8 @@ export const PresetManager = ({ currentConfig, onLoadPreset, autoLoadPresetId, c
         loraSteps: preset.lora_steps || 10,
         qaPrompt: preset.qa_prompt || DEFAULT_QA_PROMPT,
         qaEnabled: preset.qa_enabled === true,
+        visualMode: preset.visual_mode || 'images',
+        gameplayUrls: preset.gameplay_urls || [],
       });
       setIsEditDialogOpen(true);
     })();
@@ -424,6 +434,8 @@ export const PresetManager = ({ currentConfig, onLoadPreset, autoLoadPresetId, c
           lora_steps: currentConfig.loraSteps || 10,
           style_reference_url: JSON.stringify(currentConfig.styleReferenceUrls || []),
           prompt_system_message: currentConfig.promptSystemMessage || DEFAULT_PROMPT_SYSTEM_MESSAGE,
+          visual_mode: currentConfig.visualMode || 'images',
+          gameplay_urls: currentConfig.gameplayUrls?.length ? currentConfig.gameplayUrls : null,
         },
       ]);
 
@@ -715,6 +727,8 @@ export const PresetManager = ({ currentConfig, onLoadPreset, autoLoadPresetId, c
           prompt_system_message: editFormData.promptSystemMessage || null,
           qa_prompt: editFormData.qaPrompt || null,
           qa_enabled: editFormData.qaEnabled === true,
+          visual_mode: editFormData.visualMode || 'images',
+          gameplay_urls: editFormData.gameplayUrls?.length ? editFormData.gameplayUrls : null,
         })
         .eq("id", selectedPresetId);
 
@@ -755,6 +769,8 @@ export const PresetManager = ({ currentConfig, onLoadPreset, autoLoadPresetId, c
       loraSteps: preset.lora_steps || 10,
       qaPrompt: preset.qa_prompt || DEFAULT_QA_PROMPT,
       qaEnabled: preset.qa_enabled === true,
+      visualMode: preset.visual_mode || 'images',
+      gameplayUrls: preset.gameplay_urls || [],
     });
     setIsEditDialogOpen(true);
   };
@@ -799,6 +815,8 @@ export const PresetManager = ({ currentConfig, onLoadPreset, autoLoadPresetId, c
           prompt_system_message: sourcePreset.prompt_system_message,
           qa_prompt: sourcePreset.qa_prompt,
           qa_enabled: sourcePreset.qa_enabled,
+          visual_mode: sourcePreset.visual_mode || 'images',
+          gameplay_urls: sourcePreset.gameplay_urls || null,
         },
       ]);
 
