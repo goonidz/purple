@@ -33,7 +33,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Upload, X, Loader2, Image as ImageIcon, RefreshCw, Settings, Download, Video, Type, Check, Copy, FolderOpen, Pencil, AlertCircle, AlertTriangle, FileText, ArrowUp, MonitorPlay, Cloud, Trash2, Play, Sparkles, User as UserIcon, CheckCircle2, Clock, Maximize2, Calendar, ChevronDown, ChevronUp, Minimize2, Zap, RotateCcw } from "lucide-react";
+import { Upload, X, Loader2, Image as ImageIcon, RefreshCw, Settings, Download, Video, Type, Check, Copy, FolderOpen, Pencil, AlertCircle, AlertTriangle, FileText, ArrowUp, MonitorPlay, Cloud, Trash2, Play, Sparkles, User as UserIcon, CheckCircle2, Clock, Maximize2, Calendar, ChevronDown, ChevronUp, Minimize2, Zap, RotateCcw, Plus } from "lucide-react";
 import AppHeader from "@/components/AppHeader";
 import { ProjectConfigurationModal } from "@/components/ProjectConfigurationModal";
 import { toast } from "sonner";
@@ -204,6 +204,9 @@ const Index = () => {
   const [qaEnabled, setQaEnabled] = useState<boolean>(false);
   const [visualMode, setVisualMode] = useState<"images" | "gameplay">("images");
   const [gameplayUrls, setGameplayUrls] = useState<string[]>([]);
+  const [gameplayUploading, setGameplayUploading] = useState(false);
+  const [gameplayLoadingFiles, setGameplayLoadingFiles] = useState(false);
+  const [gameplayServerFiles, setGameplayServerFiles] = useState<{filename: string; url: string; sizeMB: number}[]>([]);
   const [visualContinuityEnabled, setVisualContinuityEnabled] = useState<boolean>(false);
   const [isGeneratingImages, setIsGeneratingImages] = useState(false);
   const [generatingImageIndices, setGeneratingImageIndices] = useState<Set<number>>(new Set());
@@ -5647,6 +5650,148 @@ Remember: Use temporal context to understand the topic, but the query must be PR
             </DialogHeader>
             <div className="overflow-y-auto flex-1 min-h-0 space-y-6 pr-2 -mr-2">
 
+              {/* Visual mode toggle */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium block">Mode visuel</label>
+                <Select value={visualMode} onValueChange={(v: "images" | "gameplay") => setVisualMode(v)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="images">Images IA</SelectItem>
+                    <SelectItem value="gameplay">Gameplay (vidéos)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {visualMode === "gameplay" ? (
+                <div className="space-y-3 p-4 border rounded-lg bg-muted/30">
+                  {/* Upload zone */}
+                  <div>
+                    <label className="text-sm font-medium block mb-1">Uploader des vidéos gameplay</label>
+                    <label className="flex items-center justify-center gap-2 p-4 border-2 border-dashed rounded-md cursor-pointer hover:border-primary hover:bg-muted/30 transition-colors">
+                      {gameplayUploading ? (
+                        <><Loader2 className="h-4 w-4 animate-spin" /><span className="text-sm">Upload en cours...</span></>
+                      ) : (
+                        <><Upload className="h-4 w-4 text-muted-foreground" /><span className="text-sm text-muted-foreground">Cliquer pour sélectionner des MP4</span></>
+                      )}
+                      <input
+                        type="file"
+                        accept="video/mp4,video/webm,video/quicktime"
+                        multiple
+                        className="hidden"
+                        disabled={gameplayUploading}
+                        onChange={async (e) => {
+                          if (!e.target.files || e.target.files.length === 0) return;
+                          setGameplayUploading(true);
+                          try {
+                            const { data: { session } } = await supabase.auth.getSession();
+                            if (!session) { toast.error("Non authentifié"); return; }
+                            for (const file of Array.from(e.target.files)) {
+                              const formData = new FormData();
+                              formData.append("video", file);
+                              const resp = await fetch("/api/upload-gameplay", {
+                                method: "POST",
+                                headers: { Authorization: `Bearer ${session.access_token}` },
+                                body: formData,
+                              });
+                              if (!resp.ok) {
+                                const err = await resp.json().catch(() => ({ error: `HTTP ${resp.status}` }));
+                                toast.error(`Erreur upload ${file.name}: ${err.error}`);
+                                continue;
+                              }
+                              const result = await resp.json();
+                              toast.success(`${file.name} uploadé (${result.sizeMB} MB)`);
+                              setGameplayUrls(prev => [...prev, result.url]);
+                              setGameplayServerFiles(prev => [...prev, { filename: result.filename, url: result.url, sizeMB: result.sizeMB }]);
+                            }
+                          } catch (err: any) {
+                            toast.error(`Erreur: ${err.message}`);
+                          } finally {
+                            setGameplayUploading(false);
+                            e.target.value = "";
+                          }
+                        }}
+                      />
+                    </label>
+                  </div>
+
+                  {/* Server files */}
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-medium">Vidéos sur le serveur</label>
+                      <Button variant="ghost" size="sm" onClick={async () => {
+                        setGameplayLoadingFiles(true);
+                        try {
+                          const { data: { session } } = await supabase.auth.getSession();
+                          if (!session) return;
+                          const resp = await fetch("/api/list-gameplay", { headers: { Authorization: `Bearer ${session.access_token}` } });
+                          if (resp.ok) {
+                            const { files } = await resp.json();
+                            setGameplayServerFiles(files || []);
+                          }
+                        } catch {} finally { setGameplayLoadingFiles(false); }
+                      }} disabled={gameplayLoadingFiles}>
+                        {gameplayLoadingFiles ? <Loader2 className="h-3 w-3 animate-spin" /> : <FolderOpen className="h-3 w-3" />}
+                        <span className="text-xs ml-1">Charger</span>
+                      </Button>
+                    </div>
+                    {gameplayServerFiles.length > 0 && (
+                      <div className="mt-1 max-h-40 overflow-y-auto border rounded-md divide-y">
+                        {gameplayServerFiles.map((f) => (
+                          <div key={f.filename} className="flex items-center justify-between px-2 py-1.5 text-xs">
+                            <div className="flex items-center gap-2 min-w-0 flex-1">
+                              <Video className="h-3 w-3 text-muted-foreground shrink-0" />
+                              <span className="truncate">{f.filename}</span>
+                              <span className="text-muted-foreground shrink-0">{f.sizeMB} MB</span>
+                            </div>
+                            <div className="flex items-center gap-1 shrink-0">
+                              {!gameplayUrls.includes(f.url) && (
+                                <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => setGameplayUrls(prev => [...prev, f.url])}>
+                                  <Plus className="h-3 w-3" />
+                                </Button>
+                              )}
+                              <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-destructive hover:text-destructive" onClick={async () => {
+                                try {
+                                  const { data: { session } } = await supabase.auth.getSession();
+                                  if (!session) return;
+                                  await fetch(`/api/delete-gameplay/${encodeURIComponent(f.filename)}`, { method: "DELETE", headers: { Authorization: `Bearer ${session.access_token}` } });
+                                  setGameplayServerFiles(prev => prev.filter(x => x.filename !== f.filename));
+                                  setGameplayUrls(prev => prev.filter(u => u !== f.url));
+                                  toast.success(`${f.filename} supprimé`);
+                                } catch (err: any) { toast.error(`Erreur: ${err.message}`); }
+                              }}>
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Active URLs */}
+                  <div>
+                    <label className="text-sm font-medium">URLs actives ({gameplayUrls.length})</label>
+                    {gameplayUrls.length > 0 ? (
+                      <div className="mt-1 max-h-32 overflow-y-auto border rounded-md divide-y">
+                        {gameplayUrls.map((url, i) => (
+                          <div key={i} className="flex items-center justify-between px-2 py-1 text-xs">
+                            <span className="truncate font-mono flex-1 mr-2">{url.split("/").pop()}</span>
+                            <Button variant="ghost" size="sm" className="h-5 w-5 p-0 text-destructive hover:text-destructive shrink-0" onClick={() => setGameplayUrls(prev => prev.filter((_, j) => j !== i))}>
+                              <X className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-muted-foreground mt-1">Aucune vidéo sélectionnée.</p>
+                    )}
+                  </div>
+                </div>
+              ) : (
+              <>
+
               <div>
                 <label className="text-sm font-medium mb-2 block">
                   Image de référence de style (optionnel)
@@ -5833,6 +5978,8 @@ Remember: Use temporal context to understand the topic, but the query must be PR
                   </div>
                 </div>
               </div>
+              </>
+              )}
 
               {/* QA toggle */}
               <div className="flex items-start gap-3 p-4 border rounded-lg">
