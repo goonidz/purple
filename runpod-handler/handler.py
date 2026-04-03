@@ -1043,7 +1043,7 @@ def render_gameplay_video(
         ]
 
         if GPU_ENCODER_AVAILABLE and ENCODER_NAME:
-            cmd.extend(['-c:v', ENCODER_NAME, '-preset', ENCODER_PRESET or 'p4'])
+            cmd.extend(['-c:v', ENCODER_NAME, '-preset', 'p7', '-rc', 'constqp', '-qp', '18', '-b:v', '0'])
             if ENCODER_GPU_ID is not None:
                 cmd.extend(['-gpu', str(ENCODER_GPU_ID)])
         else:
