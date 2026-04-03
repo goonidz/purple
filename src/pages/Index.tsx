@@ -4199,9 +4199,35 @@ const Index = () => {
                         {/* Boutons d'action - organisés en groupes */}
                         <div className="flex flex-col gap-3">
                           {visualMode === 'gameplay' && (
-                            <div className="flex items-center gap-2 p-2 bg-muted/50 rounded-md">
-                              <Video className="h-4 w-4 text-muted-foreground" />
-                              <span className="text-xs text-muted-foreground">Mode Gameplay — {gameplayUrls.length} vidéo(s) configurée(s)</span>
+                            <div className="flex items-center gap-2 justify-between p-2 bg-muted/50 rounded-md">
+                              <div className="flex items-center gap-2">
+                                <Video className="h-4 w-4 text-muted-foreground" />
+                                <span className="text-xs text-muted-foreground">Mode Gameplay — {gameplayUrls.length} vidéo(s) configurée(s)</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Select 
+                                  value={exportFramerate.toString()} 
+                                  onValueChange={(value) => setExportFramerate(Number(value))}
+                                  disabled={!audioUrl}
+                                >
+                                  <SelectTrigger className="w-[110px] h-8 text-xs">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="24">24 fps</SelectItem>
+                                    <SelectItem value="25">25 fps</SelectItem>
+                                    <SelectItem value="30">30 fps</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                                <Button
+                                  onClick={handleRenderVideo}
+                                  size="sm"
+                                  disabled={!audioUrl || gameplayUrls.length === 0}
+                                >
+                                  <Video className="mr-2 h-4 w-4" />
+                                  Rendu vidéo
+                                </Button>
+                              </div>
                             </div>
                           )}
                           {/* Ligne 1: Prompts */}
