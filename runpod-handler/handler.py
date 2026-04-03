@@ -1042,10 +1042,12 @@ def render_gameplay_video(
 
     cmd = [
         FFMPEG_BIN, '-y',
+        '-fflags', '+genpts+igndts',
         '-f', 'concat', '-safe', '0', '-i', concat_list,
         '-i', str(audio_path),
         '-vf', vf,
         '-r', str(framerate),
+        '-vsync', 'cfr',
         '-map', '0:v:0', '-map', '1:a:0',
         '-t', str(audio_duration),
         '-c:a', 'aac', '-b:a', '192k',
