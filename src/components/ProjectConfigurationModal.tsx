@@ -75,6 +75,7 @@ export const ProjectConfigurationModal = ({
   const [gameplayUrlsText, setGameplayUrlsText] = useState("");
   const [gameplayFiles, setGameplayFiles] = useState<{filename: string; url: string; sizeMB: number; uploadedAt?: string}[]>([]);
   const [isUploadingGameplay, setIsUploadingGameplay] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<{filename: string; percent: number; speed: string; loaded: number; total: number} | null>(null);
   const [isLoadingGameplayFiles, setIsLoadingGameplayFiles] = useState(false);
   
   // Preset loading
@@ -193,40 +194,43 @@ export const ProjectConfigurationModal = ({
       if (!session) { toast.error("Non authentifié"); return; }
 
       for (const file of Array.from(filesToUpload)) {
-        const formData = new FormData();
-        formData.append("video", file);
-
-        const resp = await fetch("/api/upload-gameplay", {
-          method: "POST",
-          headers: { Authorization: `Bearer ${session.access_token}` },
-          body: formData,
+        await new Promise<void>((resolve) => {
+          const formData = new FormData();
+          formData.append("video", file);
+          const xhr = new XMLHttpRequest();
+          const startTime = Date.now();
+          xhr.upload.addEventListener("progress", (ev) => {
+            if (!ev.lengthComputable) return;
+            const percent = Math.round((ev.loaded / ev.total) * 100);
+            const elapsed = (Date.now() - startTime) / 1000;
+            const bps = elapsed > 0 ? ev.loaded / elapsed : 0;
+            const speed = bps > 1024 * 1024 ? `${(bps / (1024 * 1024)).toFixed(1)} MB/s` : `${(bps / 1024).toFixed(0)} KB/s`;
+            setUploadProgress({ filename: file.name, percent, speed, loaded: ev.loaded, total: ev.total });
+          });
+          xhr.addEventListener("load", () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              try {
+                const result = JSON.parse(xhr.responseText);
+                toast.success(`${file.name} uploadé (${result.sizeMB} MB)`);
+                setGameplayUrls(prev => { const u = [...prev, result.url]; setGameplayUrlsText(u.join("\n")); return u; });
+                setGameplayFiles(prev => [...prev, { filename: result.filename, url: result.url, sizeMB: result.sizeMB, uploadedAt: new Date().toISOString() }]);
+              } catch {}
+            } else {
+              toast.error(`Erreur upload ${file.name}: HTTP ${xhr.status}`);
+            }
+            resolve();
+          });
+          xhr.addEventListener("error", () => { toast.error(`Erreur réseau: ${file.name}`); resolve(); });
+          xhr.open("POST", "/api/upload-gameplay");
+          xhr.setRequestHeader("Authorization", `Bearer ${session.access_token}`);
+          xhr.send(formData);
         });
-
-        if (!resp.ok) {
-          const err = await resp.json().catch(() => ({ error: `HTTP ${resp.status}` }));
-          toast.error(`Erreur upload ${file.name}: ${err.error}`);
-          continue;
-        }
-
-        const result = await resp.json();
-        toast.success(`${file.name} uploadé (${result.sizeMB} MB)`);
-
-        setGameplayUrls(prev => {
-          const updated = [...prev, result.url];
-          setGameplayUrlsText(updated.join("\n"));
-          return updated;
-        });
-        setGameplayFiles(prev => [...prev, {
-          filename: result.filename,
-          url: result.url,
-          sizeMB: result.sizeMB,
-          uploadedAt: new Date().toISOString(),
-        }]);
       }
     } catch (err: any) {
       toast.error(`Erreur upload: ${err.message}`);
     } finally {
       setIsUploadingGameplay(false);
+      setUploadProgress(null);
     }
   };
 
@@ -881,12 +885,24 @@ export const ProjectConfigurationModal = ({
               <div>
                 <Label>Uploader des vidéos gameplay</Label>
                 <div className="mt-1">
+                  {isUploadingGameplay && uploadProgress ? (
+                    <div className="p-3 border rounded-md space-y-2">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-medium truncate flex-1 mr-2">{uploadProgress.filename}</span>
+                        <span className="text-muted-foreground shrink-0">{uploadProgress.speed}</span>
+                      </div>
+                      <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
+                        <div className="bg-primary h-full rounded-full transition-all duration-300" style={{ width: `${uploadProgress.percent}%` }} />
+                      </div>
+                      <div className="flex items-center justify-between text-xs text-muted-foreground">
+                        <span>{(uploadProgress.loaded / (1024 * 1024)).toFixed(1)} / {(uploadProgress.total / (1024 * 1024)).toFixed(1)} MB</span>
+                        <span>{uploadProgress.percent}%</span>
+                      </div>
+                    </div>
+                  ) : (
                   <label className="flex items-center justify-center gap-2 p-4 border-2 border-dashed rounded-md cursor-pointer hover:border-primary hover:bg-muted/30 transition-colors">
-                    {isUploadingGameplay ? (
-                      <><Loader2 className="h-4 w-4 animate-spin" /><span className="text-sm">Upload en cours...</span></>
-                    ) : (
-                      <><Upload className="h-4 w-4 text-muted-foreground" /><span className="text-sm text-muted-foreground">Cliquer pour sélectionner des MP4</span></>
-                    )}
+                    <Upload className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm text-muted-foreground">Cliquer pour sélectionner des MP4</span>
                     <input
                       type="file"
                       accept="video/mp4,video/webm,video/quicktime"
@@ -901,6 +917,7 @@ export const ProjectConfigurationModal = ({
                       }}
                     />
                   </label>
+                  )}
                 </div>
               </div>
 

@@ -205,6 +205,7 @@ const Index = () => {
   const [visualMode, setVisualMode] = useState<"images" | "gameplay">("images");
   const [gameplayUrls, setGameplayUrls] = useState<string[]>([]);
   const [gameplayUploading, setGameplayUploading] = useState(false);
+  const [gameplayUploadProgress, setGameplayUploadProgress] = useState<{filename: string; percent: number; speed: string; loaded: number; total: number} | null>(null);
   const [gameplayLoadingFiles, setGameplayLoadingFiles] = useState(false);
   const [gameplayServerFiles, setGameplayServerFiles] = useState<{filename: string; url: string; sizeMB: number}[]>([]);
   const [visualContinuityEnabled, setVisualContinuityEnabled] = useState<boolean>(false);
@@ -5669,12 +5670,24 @@ Remember: Use temporal context to understand the topic, but the query must be PR
                   {/* Upload zone */}
                   <div>
                     <label className="text-sm font-medium block mb-1">Uploader des vidéos gameplay</label>
+                    {gameplayUploading && gameplayUploadProgress ? (
+                      <div className="p-3 border rounded-md space-y-2">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-medium truncate flex-1 mr-2">{gameplayUploadProgress.filename}</span>
+                          <span className="text-muted-foreground shrink-0">{gameplayUploadProgress.speed}</span>
+                        </div>
+                        <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
+                          <div className="bg-primary h-full rounded-full transition-all duration-300" style={{ width: `${gameplayUploadProgress.percent}%` }} />
+                        </div>
+                        <div className="flex items-center justify-between text-xs text-muted-foreground">
+                          <span>{(gameplayUploadProgress.loaded / (1024 * 1024)).toFixed(1)} / {(gameplayUploadProgress.total / (1024 * 1024)).toFixed(1)} MB</span>
+                          <span>{gameplayUploadProgress.percent}%</span>
+                        </div>
+                      </div>
+                    ) : (
                     <label className="flex items-center justify-center gap-2 p-4 border-2 border-dashed rounded-md cursor-pointer hover:border-primary hover:bg-muted/30 transition-colors">
-                      {gameplayUploading ? (
-                        <><Loader2 className="h-4 w-4 animate-spin" /><span className="text-sm">Upload en cours...</span></>
-                      ) : (
-                        <><Upload className="h-4 w-4 text-muted-foreground" /><span className="text-sm text-muted-foreground">Cliquer pour sélectionner des MP4</span></>
-                      )}
+                      <Upload className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-sm text-muted-foreground">Cliquer pour sélectionner des MP4</span>
                       <input
                         type="file"
                         accept="video/mp4,video/webm,video/quicktime"
@@ -5684,36 +5697,57 @@ Remember: Use temporal context to understand the topic, but the query must be PR
                         onChange={async (e) => {
                           if (!e.target.files || e.target.files.length === 0) return;
                           setGameplayUploading(true);
+                          const files = Array.from(e.target.files);
                           try {
                             const { data: { session } } = await supabase.auth.getSession();
                             if (!session) { toast.error("Non authentifié"); return; }
-                            for (const file of Array.from(e.target.files)) {
-                              const formData = new FormData();
-                              formData.append("video", file);
-                              const resp = await fetch("/api/upload-gameplay", {
-                                method: "POST",
-                                headers: { Authorization: `Bearer ${session.access_token}` },
-                                body: formData,
+                            for (const file of files) {
+                              await new Promise<void>((resolve, reject) => {
+                                const formData = new FormData();
+                                formData.append("video", file);
+                                const xhr = new XMLHttpRequest();
+                                let startTime = Date.now();
+                                xhr.upload.addEventListener("progress", (ev) => {
+                                  if (!ev.lengthComputable) return;
+                                  const percent = Math.round((ev.loaded / ev.total) * 100);
+                                  const elapsed = (Date.now() - startTime) / 1000;
+                                  const bytesPerSec = elapsed > 0 ? ev.loaded / elapsed : 0;
+                                  let speed = "";
+                                  if (bytesPerSec > 1024 * 1024) speed = `${(bytesPerSec / (1024 * 1024)).toFixed(1)} MB/s`;
+                                  else speed = `${(bytesPerSec / 1024).toFixed(0)} KB/s`;
+                                  setGameplayUploadProgress({ filename: file.name, percent, speed, loaded: ev.loaded, total: ev.total });
+                                });
+                                xhr.addEventListener("load", () => {
+                                  if (xhr.status >= 200 && xhr.status < 300) {
+                                    try {
+                                      const result = JSON.parse(xhr.responseText);
+                                      toast.success(`${file.name} uploadé (${result.sizeMB} MB)`);
+                                      setGameplayUrls(prev => [...prev, result.url]);
+                                      setGameplayServerFiles(prev => [...prev, { filename: result.filename, url: result.url, sizeMB: result.sizeMB }]);
+                                    } catch {} 
+                                    resolve();
+                                  } else {
+                                    toast.error(`Erreur upload ${file.name}: HTTP ${xhr.status}`);
+                                    resolve();
+                                  }
+                                });
+                                xhr.addEventListener("error", () => { toast.error(`Erreur réseau: ${file.name}`); resolve(); });
+                                xhr.open("POST", "/api/upload-gameplay");
+                                xhr.setRequestHeader("Authorization", `Bearer ${session.access_token}`);
+                                xhr.send(formData);
                               });
-                              if (!resp.ok) {
-                                const err = await resp.json().catch(() => ({ error: `HTTP ${resp.status}` }));
-                                toast.error(`Erreur upload ${file.name}: ${err.error}`);
-                                continue;
-                              }
-                              const result = await resp.json();
-                              toast.success(`${file.name} uploadé (${result.sizeMB} MB)`);
-                              setGameplayUrls(prev => [...prev, result.url]);
-                              setGameplayServerFiles(prev => [...prev, { filename: result.filename, url: result.url, sizeMB: result.sizeMB }]);
                             }
                           } catch (err: any) {
                             toast.error(`Erreur: ${err.message}`);
                           } finally {
                             setGameplayUploading(false);
+                            setGameplayUploadProgress(null);
                             e.target.value = "";
                           }
                         }}
                       />
                     </label>
+                    )}
                   </div>
 
                   {/* Server files */}
