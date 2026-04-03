@@ -1034,8 +1034,8 @@ def render_gameplay_video(
         seg_output = str(temp_dir / f'gp_seg_{segment_idx}.mp4')
         cmd = [
             FFMPEG_BIN, '-y',
-            '-ss', str(start),
             '-i', vid_path,
+            '-ss', str(start),
             '-t', str(actual_len),
             '-vf', f'scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2',
             '-r', str(framerate),
