@@ -965,9 +965,9 @@ def render_gameplay_video(
     step_cb=None,
 ) -> Optional[str]:
     """
-    Download gameplay videos, randomly slice and concatenate segments
-    to cover the full audio duration, then mux with audio.
-    Returns path to final video or None on error.
+    Download gameplay videos, shuffle and loop them to cover the full
+    audio duration, then scale/trim in a single pass with audio.
+    No segment slicing — gameplay plays as-is.
     """
     import random
     if progress_cb is None:
@@ -977,7 +977,6 @@ def render_gameplay_video(
 
     temp_dir = Path(output_path).parent
 
-    # Get audio duration
     audio_duration = get_video_duration(str(audio_path))
     if audio_duration <= 0:
         print("[Gameplay] Could not determine audio duration")
@@ -1007,83 +1006,65 @@ def render_gameplay_video(
 
     total_gameplay_duration = sum(d for _, d in gameplay_paths)
     print(f"[Gameplay] {len(gameplay_paths)} video(s) available, total {total_gameplay_duration:.1f}s")
+    progress_cb(20)
 
-    # Randomly slice segments to fill audio duration
-    step_cb("Découpe aléatoire des segments gameplay...")
-    segments = []
+    # Build playlist: shuffle full videos and repeat until we exceed audio duration
+    step_cb("Préparation de la playlist gameplay...")
+    playlist = []
     accumulated = 0.0
-    segment_idx = 0
-    min_segment = 3.0
-    max_segment = 15.0
-
     while accumulated < audio_duration:
-        remaining = audio_duration - accumulated
-        seg_len = min(random.uniform(min_segment, max_segment), remaining)
-        if remaining - seg_len < 1.0:
-            seg_len = remaining  # avoid tiny leftover
+        order = list(gameplay_paths)
+        random.shuffle(order)
+        for path, dur in order:
+            playlist.append(path)
+            accumulated += dur
+            if accumulated >= audio_duration:
+                break
+    print(f"[Gameplay] Playlist: {len(playlist)} video(s), ~{accumulated:.1f}s total")
 
-        # Pick a random gameplay video
-        vid_path, vid_dur = random.choice(gameplay_paths)
-        max_start = max(0, vid_dur - seg_len)
-        start = random.uniform(0, max_start) if max_start > 0 else 0
+    # Write concat list
+    concat_list = str(temp_dir / 'gameplay_concat.txt')
+    with open(concat_list, 'w') as f:
+        for p in playlist:
+            f.write(f"file '{p}'\n")
 
-        actual_len = min(seg_len, vid_dur - start)
-        if actual_len < 0.5:
-            continue
+    # Single-pass: concat → scale → trim to audio duration → mux with audio
+    step_cb("Encodage de la vidéo gameplay...")
+    progress_cb(30)
 
-        seg_output = str(temp_dir / f'gp_seg_{segment_idx}.mp4')
-        cmd = [
-            FFMPEG_BIN, '-y',
-            '-i', vid_path,
-            '-ss', str(start),
-            '-t', str(actual_len),
-            '-vf', f'scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2',
-            '-r', str(framerate),
-            '-an',
-        ]
+    vf = f'scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2'
 
-        if GPU_ENCODER_AVAILABLE and ENCODER_NAME:
-            cmd.extend(['-c:v', ENCODER_NAME, '-preset', 'p7', '-rc', 'constqp', '-qp', '18', '-b:v', '0'])
-            if ENCODER_GPU_ID is not None:
-                cmd.extend(['-gpu', str(ENCODER_GPU_ID)])
-        else:
-            cmd.extend(['-c:v', 'libx264', '-preset', 'fast', '-crf', '18'])
+    cmd = [
+        FFMPEG_BIN, '-y',
+        '-f', 'concat', '-safe', '0', '-i', concat_list,
+        '-i', str(audio_path),
+        '-vf', vf,
+        '-r', str(framerate),
+        '-map', '0:v:0', '-map', '1:a:0',
+        '-t', str(audio_duration),
+        '-c:a', 'aac', '-b:a', '192k',
+    ]
 
-        cmd.append(seg_output)
+    if GPU_ENCODER_AVAILABLE and ENCODER_NAME:
+        cmd.extend(['-c:v', ENCODER_NAME, '-preset', 'p7', '-rc', 'constqp', '-qp', '18', '-b:v', '0'])
+        if ENCODER_GPU_ID is not None:
+            cmd.extend(['-gpu', str(ENCODER_GPU_ID)])
+    else:
+        cmd.extend(['-c:v', 'libx264', '-preset', 'slow', '-crf', '18'])
 
-        try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
-            if result.returncode != 0:
-                print(f"[Gameplay] Segment {segment_idx} encode error: {result.stderr[-300:]}")
-                continue
-        except Exception as e:
-            print(f"[Gameplay] Segment {segment_idx} exception: {e}")
-            continue
+    cmd.append(output_path)
 
-        segments.append(seg_output)
-        accumulated += actual_len
-        segment_idx += 1
-        progress_cb(15 + int((accumulated / audio_duration) * 50))
-
-    print(f"[Gameplay] Created {len(segments)} segments, total {accumulated:.1f}s / {audio_duration:.1f}s needed")
-
-    if not segments:
-        print("[Gameplay] No segments created")
+    print(f"[Gameplay] Encoding: {' '.join(cmd[:15])}...")
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
+        if result.returncode != 0:
+            print(f"[Gameplay] Encode error: {result.stderr[-500:]}")
+            return None
+    except Exception as e:
+        print(f"[Gameplay] Encode exception: {e}")
         return None
 
-    # Concatenate all segments
-    step_cb("Assemblage des segments gameplay...")
-    concat_path = str(temp_dir / 'gameplay_concat.mp4')
-    if not concatenate_videos(segments, concat_path):
-        print("[Gameplay] Concatenation failed")
-        return None
-    progress_cb(75)
-
-    # Add audio
-    step_cb("Ajout de l'audio...")
-    if not add_audio(concat_path, str(audio_path), output_path):
-        print("[Gameplay] Audio mux failed")
-        return None
+    progress_cb(90)
     progress_cb(95)
 
     return output_path
