@@ -1046,7 +1046,7 @@ def render_gameplay_video(
     ]
 
     if GPU_ENCODER_AVAILABLE and ENCODER_NAME:
-        cmd.extend(['-c:v', ENCODER_NAME, '-preset', 'p7', '-rc', 'constqp', '-qp', '18', '-b:v', '0'])
+        cmd.extend(['-c:v', ENCODER_NAME, '-preset', 'medium', '-rc', 'constqp', '-qp', '18', '-b:v', '0'])
         if ENCODER_GPU_ID is not None:
             cmd.extend(['-gpu', str(ENCODER_GPU_ID)])
     else:
@@ -1054,9 +1054,9 @@ def render_gameplay_video(
 
     cmd.append(output_path)
 
-    print(f"[Gameplay] Encoding: {' '.join(cmd[:15])}...")
+    print(f"[Gameplay] Encoding: {' '.join(cmd)}...")
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=7200)
         if result.returncode != 0:
             print(f"[Gameplay] Encode error: {result.stderr[-500:]}")
             return None
