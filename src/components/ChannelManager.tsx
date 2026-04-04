@@ -257,6 +257,7 @@ export default function ChannelManager({
 
   const handleConfigurePresets = (channel: Channel) => {
     setConfiguringChannelId(channel.id);
+    setConfiguringChannelName(channel.name);
     setSelectedScriptPresetId(channel.script_preset_id || "none");
     setSelectedTtsPresetId(channel.tts_preset_id || "none");
     setSelectedProjectPresetId(channel.project_preset_id || "none");
@@ -264,6 +265,8 @@ export default function ChannelManager({
     setSelectedThumbnailV2PresetId(channel.thumbnail_v2_preset_id || "none");
     setThumbnailPresetEnabled(channel.thumbnail_preset_enabled ?? true);
   };
+
+  const [configuringChannelName, setConfiguringChannelName] = useState("");
 
   const handleSavePresets = async () => {
     if (!configuringChannelId) return;
@@ -273,6 +276,7 @@ export default function ChannelManager({
       const { error } = await supabase
         .from("channels")
         .update({
+          name: configuringChannelName.trim() || configuringChannel?.name,
           script_preset_id: selectedScriptPresetId === "none" ? null : selectedScriptPresetId,
           tts_preset_id: selectedTtsPresetId === "none" ? null : selectedTtsPresetId,
           project_preset_id: selectedProjectPresetId === "none" ? null : selectedProjectPresetId,
@@ -451,7 +455,8 @@ export default function ChannelManager({
     <PresetConfigDialog
       isOpen={!!configuringChannelId}
       onClose={() => setConfiguringChannelId(null)}
-      channelName={configuringChannel?.name || ""}
+      channelName={configuringChannelName}
+      onChannelNameChange={setConfiguringChannelName}
       scriptPresets={scriptPresets}
       ttsPresets={ttsPresets}
       projectPresets={projectPresets}
@@ -481,6 +486,7 @@ function PresetConfigDialog({
   isOpen,
   onClose,
   channelName,
+  onChannelNameChange,
   scriptPresets,
   ttsPresets,
   projectPresets,
@@ -505,6 +511,7 @@ function PresetConfigDialog({
   isOpen: boolean;
   onClose: () => void;
   channelName: string;
+  onChannelNameChange: (name: string) => void;
   scriptPresets: ScriptPreset[];
   ttsPresets: TtsPreset[];
   projectPresets: ProjectPreset[];
@@ -530,7 +537,7 @@ function PresetConfigDialog({
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Configurer les presets - {channelName}</DialogTitle>
+          <DialogTitle>Configurer la chaîne</DialogTitle>
           <DialogDescription>
             Sélectionnez les presets par défaut pour cette chaîne. Ils seront automatiquement appliqués lors du lancement d'une génération depuis le calendrier.
           </DialogDescription>
@@ -549,6 +556,16 @@ function PresetConfigDialog({
           </div>
         ) : (
           <div className="space-y-6 mt-4">
+            <div className="space-y-2">
+              <Label htmlFor="channel-name">Nom de la chaîne</Label>
+              <Input
+                id="channel-name"
+                value={channelName}
+                onChange={(e) => onChannelNameChange(e.target.value)}
+                placeholder="Nom de la chaîne"
+              />
+            </div>
+
             {/* Script Preset */}
             <div className="space-y-2">
               <Label htmlFor="script-preset">Preset de script</Label>
