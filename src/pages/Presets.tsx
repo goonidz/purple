@@ -1189,6 +1189,33 @@ export default function Presets() {
                   </div>
                 </div>
               </>
+            ) : ttsProvider === "inworld" ? (
+              <>
+                <div>
+                  <Label>Modèle Inworld</Label>
+                  <Select value={ttsModel || "inworld-tts-1.5-max"} onValueChange={setTtsModel}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="inworld-tts-1.5-max">Inworld TTS 1.5 Max</SelectItem>
+                      <SelectItem value="inworld-tts-1.5-mini">Inworld TTS 1.5 Mini</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Voice ID</Label>
+                  <Input value={ttsVoiceId} onChange={(e) => setTtsVoiceId(e.target.value)} placeholder="Ex: Dennis, Alex, Ashley..." />
+                </div>
+                <div>
+                  <Label>Vitesse ({ttsSpeed.toFixed(2)}x)</Label>
+                  <input type="range" min={0.5} max={1.5} step={0.01} value={ttsSpeed}
+                    onChange={(e) => setTtsSpeed(parseFloat(e.target.value))}
+                    className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary" />
+                  <div className="flex justify-between text-xs text-muted-foreground">
+                    <span>0.5x</span>
+                    <span>1.5x</span>
+                  </div>
+                </div>
+              </>
             ) : ttsProvider === "minimax" ? (
               <>
                 <div>

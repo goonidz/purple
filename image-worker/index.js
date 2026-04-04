@@ -3987,70 +3987,197 @@ async function processMinimaxTtsPipeline(job) {
 }
 
 // ============================================================================
-// INWORLD EDGE FUNCTION PIPELINE (with optional RVC)
+// INWORLD TTS DIRECT PIPELINE (1.5 Max / 1.5 Mini, with optional RVC)
 // ============================================================================
 
-async function processInworldEdgeFunctionPipeline(job) {
+const INWORLD_CHUNK_SIZE = 2000;
+const INWORLD_CONCURRENCY = 5;
+const INWORLD_API_URL = 'https://api.inworld.ai/tts/v1/voice';
+
+async function callInworldTts(apiKey, text, voiceId, modelId, speakingRate) {
+  const requestBody = {
+    text,
+    voiceId,
+    modelId,
+    audioConfig: {
+      audioEncoding: 'MP3',
+      sampleRateHertz: 48000,
+      speakingRate: typeof speakingRate === 'number' && Number.isFinite(speakingRate) ? speakingRate : 0.9,
+    },
+    temperature: 1.0,
+    applyTextNormalization: 'ON',
+  };
+
+  const response = await fetch(INWORLD_API_URL, {
+    method: 'POST',
+    headers: { 'Authorization': `Basic ${apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(requestBody),
+  });
+
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`Inworld API ${response.status}: ${errText.substring(0, 300)}`);
+  }
+
+  const json = await response.json();
+  if (!json.audioContent) throw new Error('Inworld returned no audioContent');
+
+  const binary = Buffer.from(json.audioContent, 'base64');
+  return binary;
+}
+
+async function processInworldDirectTtsPipeline(job) {
   const startTime = Date.now();
   const { id: jobId, project_id: projectId, user_id: userId, metadata: meta } = job;
 
   try {
-    log(`[inworld ${jobId}] Starting: invoke generate-audio-inworld${meta.rvcEnabled ? ' + RVC' : ''}`);
+    const text = applyAudioTags(meta.script || meta.text, meta);
+    const voice = meta.voice || 'Dennis';
+    const modelId = meta.model || 'inworld-tts-1.5-max';
+    const speed = typeof meta.speed === 'number' ? meta.speed : 0.9;
+    const wantRVC = meta.rvcEnabled && meta.rvcModelUrl;
+
+    if (!text || text.trim().length < 5) throw new Error('No text provided for Inworld TTS');
+
+    log(`[Inworld ${jobId}] Starting (model=${modelId}, voice=${voice}, speed=${speed}x, rvc=${!!wantRVC}, text=${text.length} chars)`);
+
+    const apiKey = await getUserApiKey(userId, 'inworld');
+    if (!apiKey) throw new Error('Inworld API key not configured. Please add it in your profile.');
+
+    const chunks = chunkTextByChars(text, INWORLD_CHUNK_SIZE);
+    log(`[Inworld ${jobId}] Split into ${chunks.length} chunks`);
 
     await supabase.from('generation_jobs')
-      .update({ current_step: 'Génération audio (inworld)...', metadata: { ...meta, step: 'tts_generation' } })
+      .update({ total: chunks.length + 2, progress: 0, current_step: `Découpage en ${chunks.length} chunks...`, metadata: { ...meta, totalChunks: chunks.length, step: 'chunking' } })
       .eq('id', jobId);
 
-    const taggedMeta = { ...meta };
-    if (meta.audioTagsEnabled && meta.audioTagsText && meta.script) {
-      taggedMeta.script = applyAudioTags(meta.script, meta);
+    const chunkUrls = new Array(chunks.length);
+    let completedCount = 0;
+    const chunkQueue = chunks.map((_, i) => i);
+
+    async function processOneInworldChunk(index) {
+      const MAX_RETRIES = 3;
+      let audioBuffer;
+
+      for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        try {
+          log(`[Inworld ${jobId}] Chunk ${index + 1}/${chunks.length}${attempt > 1 ? ` [retry ${attempt}]` : ''}...`);
+          audioBuffer = await callInworldTts(apiKey, chunks[index], voice, modelId, speed);
+          break;
+        } catch (err) {
+          logError(`[Inworld ${jobId}] Chunk ${index + 1} attempt ${attempt} failed:`, err.message);
+          if (attempt === MAX_RETRIES) throw err;
+          await sleep(2000 * attempt);
+        }
+      }
+
+      const storagePath = `tts/${jobId}/chunk_${String(index).padStart(3, '0')}.mp3`;
+      const { error: uploadError } = await supabase.storage
+        .from('audio-files')
+        .upload(storagePath, audioBuffer, { contentType: 'audio/mpeg', upsert: true });
+      if (uploadError) throw new Error(`Failed to upload chunk ${index}: ${uploadError.message}`);
+
+      const { data: urlData, error: urlError } = await supabase.storage
+        .from('audio-files')
+        .createSignedUrl(storagePath, 3600);
+      if (urlError || !urlData?.signedUrl) throw new Error(`Failed to get signed URL for chunk ${index}`);
+
+      chunkUrls[index] = urlData.signedUrl;
+      completedCount++;
+      await supabase.from('generation_jobs')
+        .update({ progress: completedCount, current_step: `Génération Inworld ${completedCount}/${chunks.length}...`, metadata: { ...meta, totalChunks: chunks.length, completedChunks: completedCount, step: 'inworld_tts' } })
+        .eq('id', jobId);
     }
 
-    const edgeFnUrl = `${SUPABASE_URL}/functions/v1/generate-audio-inworld`;
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5 * 60 * 1000);
-
-    const response = await fetch(edgeFnUrl, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectId, userId, ...taggedMeta }),
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
-
-    if (!response.ok) {
-      const errText = await response.text();
-      throw new Error(`Inworld Edge Function failed (${response.status}): ${errText.substring(0, 300)}`);
+    const workers = [];
+    for (let w = 0; w < Math.min(INWORLD_CONCURRENCY, chunks.length); w++) {
+      workers.push((async () => {
+        while (chunkQueue.length > 0) {
+          const idx = chunkQueue.shift();
+          if (idx === undefined) break;
+          await processOneInworldChunk(idx);
+        }
+      })());
     }
+    await Promise.all(workers);
 
-    const result = await response.json();
-    let audioUrl = result.audioUrl;
-    if (!audioUrl) {
-      const { data: project } = await supabase.from('projects').select('audio_url').eq('id', projectId).single();
-      audioUrl = project?.audio_url;
-    }
-    if (!audioUrl) throw new Error('Inworld returned no audioUrl');
+    log(`[Inworld ${jobId}] All ${chunks.length} chunks done. Concatenating...`);
 
-    let finalAudioUrl = audioUrl;
-    if (meta.rvcEnabled && meta.rvcModelUrl) {
-      finalAudioUrl = await applyRVCConversion(jobId, audioUrl, {
-        rvcModelUrl: meta.rvcModelUrl, rvcIndexUrl: meta.rvcIndexUrl || '',
-        rvcPitch: typeof meta.rvcPitch === 'number' ? meta.rvcPitch : 0,
-        rvcIndexRate: typeof meta.rvcIndexRate === 'number' ? meta.rvcIndexRate : 0.75,
-        userId, projectId,
-      }, meta);
-      if (projectId) {
-        await supabase.from('projects').update({ audio_url: finalAudioUrl, updated_at: new Date().toISOString() }).eq('id', projectId);
+    await supabase.from('generation_jobs')
+      .update({ progress: chunks.length, current_step: 'Concaténation audio...', metadata: { ...meta, totalChunks: chunks.length, completedChunks: chunks.length, step: 'concat' } })
+      .eq('id', jobId);
+
+    const CONCAT_MAX_RETRIES = 3;
+    let concatResult;
+    for (let attempt = 1; attempt <= CONCAT_MAX_RETRIES; attempt++) {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 120000);
+        const concatResponse = await fetch('http://localhost:3000/concat-audio', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ audioUrls: chunkUrls, userId, projectId }),
+          signal: controller.signal,
+        });
+        clearTimeout(timeout);
+        if (!concatResponse.ok) {
+          const errText = await concatResponse.text();
+          throw new Error(`concat-audio HTTP ${concatResponse.status}: ${errText.substring(0, 300)}`);
+        }
+        concatResult = await concatResponse.json();
+        break;
+      } catch (concatErr) {
+        logError(`[Inworld ${jobId}] concat attempt ${attempt}/${CONCAT_MAX_RETRIES} failed:`, concatErr.message);
+        if (attempt === CONCAT_MAX_RETRIES) throw concatErr;
+        await sleep(5000 * attempt);
       }
     }
 
+    let concatenatedUrl = concatResult.audioUrl;
+    if (concatenatedUrl && concatenatedUrl.includes('localhost')) {
+      concatenatedUrl = concatenatedUrl.replace(/http:\/\/localhost:\d+/, 'https://purpleai.duckdns.org/api/render');
+    }
+    log(`[Inworld ${jobId}] Concat done: ${concatenatedUrl} (${concatResult.totalDuration?.toFixed(1)}s)`);
+
+    let finalAudioUrl = concatenatedUrl;
+
+    if (wantRVC) {
+      await supabase.from('generation_jobs').update({ progress: chunks.length + 1 }).eq('id', jobId);
+      finalAudioUrl = await applyRVCConversion(jobId, concatenatedUrl, {
+        rvcModelUrl: meta.rvcModelUrl,
+        rvcIndexUrl: meta.rvcIndexUrl || '',
+        rvcPitch: typeof meta.rvcPitch === 'number' ? meta.rvcPitch : 0,
+        rvcIndexRate: typeof meta.rvcIndexRate === 'number' ? meta.rvcIndexRate : 0.75,
+        userId, projectId,
+      }, { ...meta, totalChunks: chunks.length });
+    }
+
+    if (projectId) {
+      await supabase.from('projects')
+        .update({ audio_url: finalAudioUrl, updated_at: new Date().toISOString() })
+        .eq('id', projectId);
+    }
+
     await supabase.from('generation_jobs')
-      .update({ status: 'completed', progress: 1, current_step: 'Terminé !', completed_at: new Date().toISOString(), metadata: { ...meta, audioUrl: finalAudioUrl, durationMs: Date.now() - startTime } })
+      .update({
+        status: 'completed',
+        progress: chunks.length + (wantRVC ? 2 : 1),
+        current_step: 'Terminé !',
+        completed_at: new Date().toISOString(),
+        metadata: {
+          ...meta,
+          totalChunks: chunks.length,
+          audioUrl: finalAudioUrl,
+          totalDuration: concatResult.totalDuration,
+          durationMs: Date.now() - startTime,
+        },
+      })
       .eq('id', jobId);
 
-    log(`[inworld ${jobId}] Done in ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
+    log(`[Inworld ${jobId}] Done in ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
+
   } catch (err) {
-    logError(`[inworld ${jobId}] Pipeline failed:`, err.message);
+    logError(`[Inworld ${jobId}] Pipeline failed:`, err.message);
     await supabase.from('generation_jobs')
       .update({ status: 'failed', error_message: err.message, completed_at: new Date().toISOString() })
       .eq('id', jobId);
@@ -4630,7 +4757,7 @@ async function mainLoop() {
               else if (job.metadata?.provider === 'ai33') pipeline = processAi33AudioPipeline(job);
               else if (job.metadata?.provider === 'edgetts') pipeline = processEdgeTTSPipeline(job);
               else if (job.metadata?.provider === 'minimax') pipeline = processMinimaxTtsPipeline(job);
-              else if (job.metadata?.provider === 'inworld') pipeline = processInworldEdgeFunctionPipeline(job);
+              else if (job.metadata?.provider === 'inworld') pipeline = processInworldDirectTtsPipeline(job);
               else if (job.metadata?.provider === 'qwen3_tts') pipeline = processQwen3TtsPipeline(job);
               else if (job.metadata?.provider === 'kokoro') pipeline = processKokoroTtsPipeline(job);
               else pipeline = processAudioTTSPipeline(job);

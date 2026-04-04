@@ -259,6 +259,7 @@ const CreateFromScratch = () => {
   const [kokoroVoice, setKokoroVoice] = useState("af_bella");
   const [kokoroSpeed, setKokoroSpeed] = useState(1.0);
   const [inworldVoiceId, setInworldVoiceId] = useState("Dennis");
+  const [inworldModel, setInworldModel] = useState("inworld-tts-1.5-max");
   const [inworldSpeakingRate, setInworldSpeakingRate] = useState(0.9);
   const [forceElevenLabsTranscription, setForceElevenLabsTranscription] = useState(true);
   const [minimaxModel, setMinimaxModel] = useState("speech-2.8-turbo");
@@ -861,6 +862,7 @@ const CreateFromScratch = () => {
     // Load voice ID based on provider
     if (preset.provider === "inworld") {
       setInworldVoiceId(preset.voice_id);
+      if (preset.model) setInworldModel(preset.model);
       if (!opts?.silent) {
         setInworldSpeakingRate(typeof preset.speed === "number" && Number.isFinite(preset.speed) ? preset.speed : 0.9);
       }
@@ -954,6 +956,7 @@ const CreateFromScratch = () => {
         presetData.emotion = JSON.stringify({ edgeTTSSpeed, ...rvcData, ...audioTagsData });
       } else if (ttsProvider === "inworld") {
         presetData.voice_id = inworldVoiceId;
+        presetData.model = inworldModel;
         presetData.speed = inworldSpeakingRate;
         presetData.emotion = JSON.stringify({ ...rvcData, ...audioTagsData });
       } else if (ttsProvider === "kokoro") {
@@ -1050,6 +1053,7 @@ const CreateFromScratch = () => {
         updateData.emotion = JSON.stringify({ edgeTTSSpeed, ...rvcData, ...audioTagsData });
       } else if (ttsProvider === "inworld") {
         updateData.voice_id = inworldVoiceId;
+        updateData.model = inworldModel;
         updateData.speed = inworldSpeakingRate;
         updateData.emotion = JSON.stringify({ ...rvcData, ...audioTagsData });
       } else if (ttsProvider === "kokoro") {
@@ -2010,6 +2014,7 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
         audioMetadata.speed = edgeTTSSpeed;
       } else if (ttsProvider === "inworld") {
         audioMetadata.voice = inworldVoiceId;
+        audioMetadata.model = inworldModel;
         audioMetadata.speed = inworldSpeakingRate;
         audioMetadata.forceElevenLabsTranscription = forceElevenLabsTranscription;
       } else if (ttsProvider === "kokoro") {
@@ -3058,7 +3063,7 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                             <SelectItem value="ai33">AI33.pro (ElevenLabs)</SelectItem>
                             <SelectItem value="edgetts">EdgeTTS (Microsoft Neural)</SelectItem>
                             <SelectItem value="minimax">MiniMax (API Officielle)</SelectItem>
-                            <SelectItem value="inworld">Inworld AI (TTS 1 Max)</SelectItem>
+                            <SelectItem value="inworld">Inworld AI</SelectItem>
                             <SelectItem value="kokoro">Kokoro (Replicate)</SelectItem>
                           </SelectContent>
                         </Select>
@@ -3066,6 +3071,18 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
 
                       {ttsProvider === "inworld" && (
                         <div className="space-y-4 p-4 bg-muted/50 rounded-lg">
+                          <div className="space-y-2">
+                            <Label>Modèle Inworld</Label>
+                            <Select value={inworldModel} onValueChange={setInworldModel}>
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="inworld-tts-1.5-max">Inworld TTS 1.5 Max</SelectItem>
+                                <SelectItem value="inworld-tts-1.5-mini">Inworld TTS 1.5 Mini</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
                           <div className="space-y-2">
                             <Label>Voice ID Inworld</Label>
                             <Input
@@ -4057,6 +4074,9 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
               <ul className="space-y-1 text-muted-foreground">
                 <li>Fournisseur : {ttsProvider === "minimax" ? "MiniMax" : ttsProvider === "inworld" ? "Inworld AI" : ttsProvider === "edgetts" ? "EdgeTTS" : ttsProvider === "ai33" ? "AI33.pro" : ttsProvider === "kokoro" ? "Kokoro" : "ElevenLabs"}{rvcEnabled ? " + RVC" : ""}</li>
                 <li>Voix : {ttsProvider === "inworld" ? inworldVoiceId : ttsProvider === "edgetts" ? edgeTTSVoice : ttsProvider === "kokoro" ? kokoroVoice : selectedVoice}</li>
+                {ttsProvider === "inworld" && (
+                  <li>Modèle : {inworldModel}</li>
+                )}
                 {ttsProvider === "minimax" && (
                   <>
                     <li>Modèle : {minimaxModel}</li>
@@ -4099,7 +4119,7 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Fournisseur</Label>
-                <Select value={ttsProvider} onValueChange={(value: "minimax" | "inworld" | "genaipro" | "ai33" | "edgetts") => setTtsProvider(value)}>
+                <Select value={ttsProvider} onValueChange={(value: "minimax" | "inworld" | "genaipro" | "ai33" | "edgetts" | "kokoro") => setTtsProvider(value)}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
@@ -4108,7 +4128,8 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                     <SelectItem value="ai33">AI33.pro (ElevenLabs)</SelectItem>
                     <SelectItem value="edgetts">EdgeTTS (Microsoft Neural)</SelectItem>
                     <SelectItem value="minimax">MiniMax (API Officielle)</SelectItem>
-                    <SelectItem value="inworld">Inworld AI (TTS 1 Max)</SelectItem>
+                    <SelectItem value="inworld">Inworld AI</SelectItem>
+                    <SelectItem value="kokoro">Kokoro (Replicate)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
