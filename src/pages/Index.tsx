@@ -5892,12 +5892,19 @@ Remember: Use temporal context to understand the topic, but the query must be PR
                     className="w-full"
                   />
                   {uploadedStyleImageUrl && (
-                    <div className="mt-2">
+                    <div className="mt-2 relative inline-block">
                       <img 
                         src={uploadedStyleImageUrl} 
                         alt="Style reference" 
                         className="w-32 h-32 object-cover rounded border"
                       />
+                      <button
+                        type="button"
+                        onClick={() => { setStyleReferenceUrls([]); setUploadedStyleImageUrl(""); }}
+                        className="absolute -top-2 -right-2 bg-destructive text-destructive-foreground rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold shadow hover:bg-destructive/90"
+                      >
+                        ×
+                      </button>
                     </div>
                   )}
                 </div>
