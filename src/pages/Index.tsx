@@ -243,6 +243,7 @@ const Index = () => {
   const [imageSearchPreviousScenes, setImageSearchPreviousScenes] = useState<string[]>([]);
   const [imageSearchNextScenes, setImageSearchNextScenes] = useState<string[]>([]);
   const [projectSummary, setProjectSummary] = useState<string | null>(null);
+  const [projectScript, setProjectScript] = useState<string | null>(null);
   const [imageSettingsOpen, setImageSettingsOpen] = useState(false);
   const [sceneSettingsOpen, setSceneSettingsOpen] = useState(false);
   const [promptSettingsOpen, setPromptSettingsOpen] = useState(false);
@@ -997,6 +998,7 @@ const Index = () => {
 
       setProjectName(data.name || "");
       setProjectSummary(data.summary || null);
+      setProjectScript(data.script || null);
       
       // Load transcript data
       if (data.transcript_json) {
@@ -5015,9 +5017,19 @@ const Index = () => {
                         <h2 className="text-lg font-semibold">Script / Transcription</h2>
                       </div>
                       <ScrollArea className="flex-1 min-h-0 space-y-4">
-                        {projectSummary && (
+                        {projectScript && (
                           <div>
                             <h3 className="text-sm font-medium text-muted-foreground mb-1">Script original</h3>
+                            <div className="bg-card rounded-lg border p-3">
+                              <p className="text-foreground leading-relaxed whitespace-pre-wrap text-xs">
+                                {projectScript}
+                              </p>
+                            </div>
+                          </div>
+                        )}
+                        {projectSummary && (
+                          <div className="mt-4">
+                            <h3 className="text-sm font-medium text-muted-foreground mb-1">Résumé</h3>
                             <div className="bg-card rounded-lg border p-3">
                               <p className="text-foreground leading-relaxed whitespace-pre-wrap text-xs">
                                 {projectSummary}
@@ -5035,7 +5047,7 @@ const Index = () => {
                             </div>
                           </div>
                         )}
-                        {!projectSummary && !(transcriptData && (transcriptData as { segments?: Array<{ text: string }> }).segments) && (
+                        {!projectScript && !projectSummary && !(transcriptData && (transcriptData as { segments?: Array<{ text: string }> }).segments) && (
                           <div className="bg-muted/30 rounded-lg border p-3">
                             <p className="text-muted-foreground text-center text-xs">Aucun script ou transcription disponible</p>
                           </div>
