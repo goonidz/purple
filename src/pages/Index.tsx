@@ -5014,22 +5014,30 @@ const Index = () => {
                       <div className="flex items-center justify-between mb-2 pb-2 border-b">
                         <h2 className="text-lg font-semibold">Script / Transcription</h2>
                       </div>
-                      <ScrollArea className="flex-1 min-h-0">
-                        {transcriptData && (transcriptData as { segments?: Array<{ text: string }> }).segments ? (
-                          <div className="bg-card rounded-lg border p-3">
-                            <p className="text-foreground leading-relaxed whitespace-pre-wrap text-xs">
-                              {((transcriptData as { segments?: Array<{ text: string }> }).segments || []).map(s => s.text).join(' ')}
-                            </p>
+                      <ScrollArea className="flex-1 min-h-0 space-y-4">
+                        {projectSummary && (
+                          <div>
+                            <h3 className="text-sm font-medium text-muted-foreground mb-1">Script original</h3>
+                            <div className="bg-card rounded-lg border p-3">
+                              <p className="text-foreground leading-relaxed whitespace-pre-wrap text-xs">
+                                {projectSummary}
+                              </p>
+                            </div>
                           </div>
-                        ) : projectSummary ? (
-                          <div className="bg-card rounded-lg border p-3">
-                            <p className="text-foreground leading-relaxed whitespace-pre-wrap text-xs">
-                              {projectSummary}
-                            </p>
+                        )}
+                        {transcriptData && (transcriptData as { segments?: Array<{ text: string }> }).segments && (
+                          <div className="mt-4">
+                            <h3 className="text-sm font-medium text-muted-foreground mb-1">Transcription audio</h3>
+                            <div className="bg-card rounded-lg border p-3">
+                              <p className="text-foreground leading-relaxed whitespace-pre-wrap text-xs">
+                                {((transcriptData as { segments?: Array<{ text: string }> }).segments || []).map(s => s.text).join(' ')}
+                              </p>
+                            </div>
                           </div>
-                        ) : (
+                        )}
+                        {!projectSummary && !(transcriptData && (transcriptData as { segments?: Array<{ text: string }> }).segments) && (
                           <div className="bg-muted/30 rounded-lg border p-3">
-                            <p className="text-muted-foreground text-center text-xs">Aucune transcription disponible</p>
+                            <p className="text-muted-foreground text-center text-xs">Aucun script ou transcription disponible</p>
                           </div>
                         )}
                       </ScrollArea>
