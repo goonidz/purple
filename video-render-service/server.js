@@ -2795,9 +2795,9 @@ async function processRenderJob(jobId, renderData) {
             // Get VPS public URL from environment or use default
             const vpsPublicUrl = process.env.VPS_PUBLIC_URL || `http://51.91.158.233:${PORT}`;
             
-            // Generate URL path (relative to temp directory)
+            // Generate URL path (relative to temp directory, route through /api/render/ nginx proxy)
             const relativePath = path.relative(TEMP_DIR, outputPath);
-            const videoUrl = `${vpsPublicUrl}/videos/${relativePath}`;
+            const videoUrl = `${vpsPublicUrl}/api/render/videos/${relativePath}`;
             
             const duration = ((Date.now() - startTime) / 1000).toFixed(2);
             addStep('Rendu terminé !', 100);
@@ -3678,8 +3678,8 @@ app.post('/concat-audio', async (req, res) => {
       console.warn(`[${jobId}] Cleanup warning:`, cleanupError.message);
     }
 
-    // Generate public URL (use VPS_PUBLIC_URL from env)
-    const publicUrl = `${process.env.VPS_PUBLIC_URL || `http://localhost:${PORT}`}/videos/${outputFilename}`;
+    // Generate public URL (use VPS_PUBLIC_URL from env, route through /api/render/ nginx proxy)
+    const publicUrl = `${process.env.VPS_PUBLIC_URL || `http://localhost:${PORT}`}/api/render/videos/${outputFilename}`;
     
     console.log(`[${jobId}] Audio concatenation complete: ${publicUrl}`);
 
