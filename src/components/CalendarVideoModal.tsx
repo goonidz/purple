@@ -260,10 +260,12 @@ export default function CalendarVideoModal({
       if (!scriptValue && data.project_id) {
         const { data: projData } = await supabase
           .from("projects")
-          .select("summary")
+          .select("script, summary")
           .eq("id", data.project_id)
           .single();
-        if (projData?.summary) {
+        if (projData?.script) {
+          scriptValue = projData.script;
+        } else if (projData?.summary) {
           scriptValue = projData.summary;
         }
       }

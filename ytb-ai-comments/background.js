@@ -222,17 +222,20 @@ async function handleGetVideoContext(videoId) {
 
         let script = entry.script || null;
 
-        // 2. If linked to a project, get the project's AI-written script (stored in summary)
+        // 2. If linked to a project, get the project's script (or summary as fallback)
         if (entry.project_id && !script) {
           const projResp = await fetch(
-            `${supabaseUrl}/rest/v1/projects?id=eq.${entry.project_id}&select=name,summary&limit=1`,
+            `${supabaseUrl}/rest/v1/projects?id=eq.${entry.project_id}&select=name,script,summary&limit=1`,
             { headers }
           );
           if (projResp.ok) {
             const projRows = await projResp.json();
-            if (projRows.length > 0 && projRows[0].summary) {
-              script = projRows[0].summary;
-              console.log('[YT AI BG] Got script from linked project:', projRows[0].name, script.length, 'chars');
+            if (projRows.length > 0) {
+              const proj = projRows[0];
+              script = proj.script || proj.summary || null;
+              if (script) {
+                console.log('[YT AI BG] Got script from linked project:', proj.name, script.length, 'chars');
+              }
             }
           }
         }
