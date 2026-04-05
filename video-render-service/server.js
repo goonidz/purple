@@ -3819,7 +3819,10 @@ async function transcribeWithGroq(audioPath, groqApiKey) {
     throw new Error(`Compressed audio is ${sizeMB.toFixed(1)} MB (max 100 MB)`);
   }
 
-  const publicUrl = `${process.env.VPS_PUBLIC_URL || `http://localhost:${PORT}`}/videos/${compressedFilename}`;
+  const baseUrl = process.env.VPS_PUBLIC_URL;
+  const publicUrl = baseUrl
+    ? `${baseUrl}/api/render/videos/${compressedFilename}`
+    : `http://localhost:${PORT}/videos/${compressedFilename}`;
   console.log(`[groq-transcribe] Sending URL to Groq Whisper API: ${publicUrl}`);
 
   const formData = new FormData();
