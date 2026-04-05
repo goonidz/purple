@@ -2826,29 +2826,31 @@ async function processTranscriptionJob(
   authHeader: string,
   adminClient: any
 ) {
-  const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
   const audioUrl = metadata.audioUrl;
 
   if (!audioUrl) {
     throw new Error("Audio URL is required for transcription");
   }
 
-  const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
-  const response = await fetch(`${supabaseUrl}/functions/v1/transcribe-audio`, {
+  const ffmpegServiceUrl = Deno.env.get('FFMPEG_SERVICE_URL');
+  if (!ffmpegServiceUrl) {
+    throw new Error("FFMPEG_SERVICE_URL not configured — cannot reach VPS for Groq transcription");
+  }
+
+  console.log(`[processTranscriptionJob] Calling VPS /transcribe-groq for project ${projectId}`);
+
+  const response = await fetch(`${ffmpegServiceUrl}/transcribe-groq`, {
     method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${supabaseServiceKey}`,
-      'Content-Type': 'application/json',
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ audioUrl, userId }),
   });
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`Transcription failed: ${errorText}`);
+    throw new Error(`Groq transcription failed: ${errorText}`);
   }
 
-  const transcriptData = await response.json();
+  const { transcript: transcriptData } = await response.json();
 
   // Save transcript to project
   await adminClient

@@ -28,6 +28,7 @@ const Profile = () => {
   const [ai33ApiKey, setAi33ApiKey] = useState("");
   const [zaiApiKey, setZaiApiKey] = useState("");
   const [openrouterApiKey, setOpenrouterApiKey] = useState("");
+  const [groqApiKey, setGroqApiKey] = useState("");
   
   // Track original values to detect changes
   const [originalKeys, setOriginalKeys] = useState({
@@ -43,7 +44,8 @@ const Profile = () => {
     genaipro: "",
     ai33: "",
     zai: "",
-    openrouter: ""
+    openrouter: "",
+    groq: ""
   });
   const [showKeys, setShowKeys] = useState({
     replicate: false,
@@ -58,7 +60,8 @@ const Profile = () => {
     genaipro: false,
     ai33: false,
     zai: false,
-    openrouter: false
+    openrouter: false,
+    groq: false
   });
 
   // Password change state
@@ -94,7 +97,7 @@ const Profile = () => {
     setIsLoading(true);
     try {
       // Try to get API keys from Vault
-      const [replicateResult, elevenLabsResult, minimaxResult, anthropicResult, braveResult, keiResult, apifyResult, inworldResult, geminiResult, genaiproResult, ai33Result, zaiResult, openrouterResult] = await Promise.all([
+      const [replicateResult, elevenLabsResult, minimaxResult, anthropicResult, braveResult, keiResult, apifyResult, inworldResult, geminiResult, genaiproResult, ai33Result, zaiResult, openrouterResult, groqResult] = await Promise.all([
         supabase.rpc('get_user_api_key', { key_name: 'replicate' }),
         supabase.rpc('get_user_api_key', { key_name: 'eleven_labs' }),
         supabase.rpc('get_user_api_key', { key_name: 'minimax' }),
@@ -108,6 +111,7 @@ const Profile = () => {
         supabase.rpc('get_user_api_key', { key_name: 'ai33' }),
         supabase.rpc('get_user_api_key', { key_name: 'zai' }),
         supabase.rpc('get_user_api_key', { key_name: 'openrouter' }),
+        supabase.rpc('get_user_api_key', { key_name: 'groq' }),
       ]);
 
       const replicateValue = replicateResult.data || "";
@@ -123,6 +127,7 @@ const Profile = () => {
       const ai33Value = ai33Result.data || "";
       const zaiValue = zaiResult.data || "";
       const openrouterValue = openrouterResult.data || "";
+      const groqValue = groqResult.data || "";
 
       // Set current values
       setReplicateApiKey(replicateValue);
@@ -138,6 +143,7 @@ const Profile = () => {
       setAi33ApiKey(ai33Value);
       setZaiApiKey(zaiValue);
       setOpenrouterApiKey(openrouterValue);
+      setGroqApiKey(groqValue);
       
       // Store original values to track changes
       setOriginalKeys({
@@ -153,7 +159,8 @@ const Profile = () => {
         genaipro: genaiproValue,
         ai33: ai33Value,
         zai: zaiValue,
-        openrouter: openrouterValue
+        openrouter: openrouterValue,
+        groq: groqValue
       });
       
       if (replicateResult.error && !replicateResult.error.message?.includes('not found')) {
@@ -221,6 +228,9 @@ const Profile = () => {
     if (openrouterApiKey.trim() !== originalKeys.openrouter) {
       changedKeys.push({ key_name: 'openrouter', key_value: openrouterApiKey.trim() });
     }
+    if (groqApiKey.trim() !== originalKeys.groq) {
+      changedKeys.push({ key_name: 'groq', key_value: groqApiKey.trim() });
+    }
 
     if (changedKeys.length === 0) {
       toast.info("Aucune modification détectée");
@@ -263,7 +273,8 @@ const Profile = () => {
         genaipro: genaiproApiKey.trim(),
         ai33: ai33ApiKey.trim(),
         zai: zaiApiKey.trim(),
-        openrouter: openrouterApiKey.trim()
+        openrouter: openrouterApiKey.trim(),
+        groq: groqApiKey.trim()
       });
 
       toast.success("Clés API sauvegardées avec succès !");
@@ -432,9 +443,45 @@ const Profile = () => {
                       </Button>
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      Utilisée pour la transcription audio et TTS.{" "}
+                      Utilisée pour le TTS.{" "}
                       <a
                         href="https://elevenlabs.io/app/settings/api-keys"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary hover:underline"
+                      >
+                        Obtenir une clé
+                      </a>
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="groq-key">
+                      GroqCloud API Key
+                    </Label>
+                    <div className="relative">
+                      <Input
+                        id="groq-key"
+                        type={showKeys.groq ? "text" : "password"}
+                        value={groqApiKey}
+                        onChange={(e) => setGroqApiKey(e.target.value)}
+                        placeholder="gsk_..."
+                        className="pr-10"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                        onClick={() => setShowKeys(prev => ({ ...prev, groq: !prev.groq }))}
+                      >
+                        {showKeys.groq ? <EyeOff className="h-4 w-4 text-muted-foreground" /> : <Eye className="h-4 w-4 text-muted-foreground" />}
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Utilisée pour la transcription audio (Whisper).{" "}
+                      <a
+                        href="https://console.groq.com/keys"
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-primary hover:underline"
