@@ -203,7 +203,7 @@ export function IdeaGenerator() {
         title: idea.title,
         scheduled_date: format(date, "yyyy-MM-dd"),
         channel_id: selectedChannelId,
-        status: "idea",
+        status: "planned",
         notes: idea.reasoning,
       });
 
