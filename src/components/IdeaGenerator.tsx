@@ -243,7 +243,7 @@ export function IdeaGenerator() {
             <Globe className="h-3.5 w-3.5 text-muted-foreground" />
             Web Search
           </Label>
-          <span className="text-xs text-muted-foreground">— Claude recherche sur le web les tendances actuelles</span>
+          <span className="text-xs text-muted-foreground">— Claude recherche sur le web les tendances actuelles (coûte plus cher en tokens)</span>
         </div>
 
         {isGenerating && (
