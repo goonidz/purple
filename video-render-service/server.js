@@ -227,31 +227,6 @@ async function tryUpdateProjectTranscriptFromGroq({ projectId, userId, audioPath
   }
 }
 
-async function shouldTranscribe({ projectId }) {
-  if (!supabase || !projectId) return true;
-  try {
-    const { data: job, error } = await supabase
-      .from('generation_jobs')
-      .select('metadata, created_at')
-      .eq('project_id', projectId)
-      .eq('job_type', 'audio_generation')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (error) throw error;
-
-    const flag = job?.metadata?.forceElevenLabsTranscription;
-    if (flag === false) {
-      console.log(`[transcript] Transcription skipped for project ${projectId} (flag=false)`);
-      return false;
-    }
-    return true;
-  } catch (e) {
-    console.warn(`[transcript] Failed to read generation_jobs metadata for ${projectId}; defaulting to transcribe.`, e.message || e);
-    return true;
-  }
-}
-
 // Job status storage (in-memory, could be moved to Redis/DB for production)
 const jobs = new Map();
 
@@ -3717,9 +3692,7 @@ app.post('/concat-audio', async (req, res) => {
     });
 
     if (projectId && userId && supabase) {
-      setTimeout(async () => {
-        const doTranscribe = await shouldTranscribe({ projectId });
-        if (!doTranscribe) return;
+      setTimeout(() => {
         tryUpdateProjectTranscriptFromGroq({
           projectId,
           userId,

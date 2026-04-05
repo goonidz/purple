@@ -261,7 +261,6 @@ const CreateFromScratch = () => {
   const [inworldVoiceId, setInworldVoiceId] = useState("Dennis");
   const [inworldModel, setInworldModel] = useState("inworld-tts-1.5-max");
   const [inworldSpeakingRate, setInworldSpeakingRate] = useState(0.9);
-  const [forceElevenLabsTranscription, setForceElevenLabsTranscription] = useState(true);
   const [minimaxModel, setMinimaxModel] = useState("speech-2.8-turbo");
   // GenAIPro settings
   const [genaiproVoiceId, setGenaiproVoiceId] = useState("uju3wxzG5OhpWcoi3SMy");
@@ -2016,7 +2015,6 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
         audioMetadata.voice = inworldVoiceId;
         audioMetadata.model = inworldModel;
         audioMetadata.speed = inworldSpeakingRate;
-        audioMetadata.forceElevenLabsTranscription = forceElevenLabsTranscription;
       } else if (ttsProvider === "kokoro") {
         audioMetadata.voice = kokoroVoice;
         audioMetadata.speed = kokoroSpeed;
@@ -3131,20 +3129,6 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                               <span>0.5x</span>
                               <span>1.5x</span>
                             </div>
-                          </div>
-                          <div className="flex items-center justify-between p-3 bg-background/60 rounded-lg border">
-                            <div className="space-y-0.5">
-                              <Label className="text-sm">Transcrire avec ElevenLabs</Label>
-                              <p className="text-xs text-muted-foreground">
-                                Recommandé : garantit un transcript complet/ordonné (même si Inworld fournit des timestamps).
-                              </p>
-                            </div>
-                            <input
-                              type="checkbox"
-                              checked={forceElevenLabsTranscription}
-                              onChange={(e) => setForceElevenLabsTranscription(e.target.checked)}
-                              className="h-5 w-5 rounded border-gray-300 text-primary focus:ring-primary"
-                            />
                           </div>
                           <p className="text-xs text-amber-600">
                             Note : Inworld TTS supporte max 2000 caractères par requête. Les scripts longs seront automatiquement découpés et assemblés.
