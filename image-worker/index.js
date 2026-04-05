@@ -4271,14 +4271,14 @@ async function fetchYouTubeChannelVideos(channelHandle, youtubeApiKey) {
   return { channelTitle, subscriberCount, videos };
 }
 
-async function callAnthropicForIdeas(anthropicKey, channelData, customInstructions) {
+async function callAnthropicForIdeas(anthropicKey, channelData, customInstructions, useWebSearch = false) {
   const { channelTitle, subscriberCount, videos } = channelData;
 
   const videoSummary = videos.map((v, i) =>
     `${i + 1}. "${v.title}" — ${v.views.toLocaleString()} views, ${v.likes.toLocaleString()} likes, ${v.comments.toLocaleString()} comments, ${v.viewsPerDay.toLocaleString()} views/day, ${v.engagementRate}% engagement, published ${v.publishedAt}`
   ).join('\n');
 
-  const systemPrompt = `You're a world class copywriter writing the best youtube titles. Analyze those topics and how they went viral or not, and find me some similar topics that I can do to go viral.`;
+  const systemPrompt = `You're a world class copywriter writing the best youtube titles. Analyze those topics and how they went viral or not, and find me some similar topics that I can do to go viral.${useWebSearch ? ' Use web search to find current trending topics and news relevant to this channel\'s niche to inform your ideas.' : ''}`;
 
   let userMessage = `Here are the last ${videos.length} videos from the YouTube channel "${channelTitle}" (${subscriberCount.toLocaleString()} subscribers):
 
@@ -4295,7 +4295,18 @@ Based on this data, give me exactly 10 viral video ideas. For each idea, provide
 
   userMessage += `\n\nFormat your response as a JSON array of objects with keys: "title", "reasoning", "viralScore". Return ONLY the JSON array, no other text.`;
 
-  log(`[IDEAS] Calling Anthropic claude-sonnet-4-6...`);
+  const body = {
+    model: 'claude-sonnet-4-6',
+    max_tokens: 16000,
+    system: systemPrompt,
+    messages: [{ role: 'user', content: userMessage }],
+  };
+
+  if (useWebSearch) {
+    body.tools = [{ type: 'web_search_20250305', name: 'web_search' }];
+  }
+
+  log(`[IDEAS] Calling Anthropic claude-sonnet-4-6${useWebSearch ? ' (with web search)' : ''}...`);
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -4303,12 +4314,7 @@ Based on this data, give me exactly 10 viral video ideas. For each idea, provide
       'anthropic-version': '2023-06-01',
       'content-type': 'application/json',
     },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 4096,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: userMessage }],
-    }),
+    body: JSON.stringify(body),
   });
 
   if (!response.ok) {
@@ -4317,10 +4323,13 @@ Based on this data, give me exactly 10 viral video ideas. For each idea, provide
   }
 
   const result = await response.json();
-  const textContent = result.content?.find(c => c.type === 'text')?.text;
-  if (!textContent) throw new Error('Anthropic returned no text content');
+  const allText = (result.content || [])
+    .filter(c => c.type === 'text')
+    .map(c => c.text)
+    .join('\n');
+  if (!allText) throw new Error('Anthropic returned no text content');
 
-  const jsonMatch = textContent.match(/\[[\s\S]*\]/);
+  const jsonMatch = allText.match(/\[[\s\S]*\]/);
   if (!jsonMatch) throw new Error('Could not parse ideas JSON from Anthropic response');
 
   const ideas = JSON.parse(jsonMatch[0]);
@@ -4349,7 +4358,7 @@ async function processIdeaGenerationPipeline(job) {
       .eq('id', jobId);
 
     const anthropicKey = await getUserApiKey(userId, 'anthropic');
-    const ideas = await callAnthropicForIdeas(anthropicKey, channelData, meta?.customInstructions);
+    const ideas = await callAnthropicForIdeas(anthropicKey, channelData, meta?.customInstructions, !!meta?.useWebSearch);
 
     await supabase.from('generation_jobs')
       .update({ progress: 2, metadata: { ...meta, step: 'saving_results' } })

@@ -5,7 +5,8 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
-import { Loader2, Lightbulb, Clock, Trash2, AlertCircle, Sparkles, TrendingUp, RotateCcw } from "lucide-react";
+import { Loader2, Lightbulb, Clock, Trash2, AlertCircle, Sparkles, TrendingUp, RotateCcw, Globe } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
@@ -34,6 +35,7 @@ const STEP_LABELS: Record<string, string> = {
 export function IdeaGenerator() {
   const [channelHandle, setChannelHandle] = useState("");
   const [customInstructions, setCustomInstructions] = useState("");
+  const [useWebSearch, setUseWebSearch] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [jobId, setJobId] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
@@ -140,6 +142,7 @@ export function IdeaGenerator() {
             pipeline: "idea_generation",
             channelHandle: channelHandle.trim(),
             ...(customInstructions.trim() && { customInstructions: customInstructions.trim() }),
+            ...(useWebSearch && { useWebSearch: true }),
           },
         })
         .select()
@@ -227,6 +230,20 @@ export function IdeaGenerator() {
             rows={3}
             className="resize-none text-sm"
           />
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Checkbox
+            id="web-search"
+            checked={useWebSearch}
+            onCheckedChange={(checked) => setUseWebSearch(checked === true)}
+            disabled={isGenerating}
+          />
+          <Label htmlFor="web-search" className="flex items-center gap-1.5 text-sm cursor-pointer">
+            <Globe className="h-3.5 w-3.5 text-muted-foreground" />
+            Web Search
+          </Label>
+          <span className="text-xs text-muted-foreground">— Claude recherche sur le web les tendances actuelles</span>
         </div>
 
         {isGenerating && (
