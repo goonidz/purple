@@ -5023,8 +5023,8 @@ const Index = () => {
               <TabsContent value="thumbnails" className="m-0">
                 <div className="max-w-5xl mx-auto">
                   {channelThumbnailVersion === 'v2' && calendarChannelName && (
-                    <div className="mb-4 flex items-center gap-2 rounded-lg border border-amber-500/50 bg-amber-500/10 px-4 py-3 text-sm text-amber-200 cursor-pointer hover:bg-amber-500/20 transition-colors" onClick={() => setActiveTab('thumbnails-v2')}>
-                      <AlertTriangle className="h-4 w-4 shrink-0 text-amber-400" />
+                    <div className="mb-4 flex items-center gap-2 rounded-lg border border-amber-500/50 bg-amber-100 px-4 py-3 text-sm text-black cursor-pointer hover:bg-amber-200 transition-colors" onClick={() => setActiveTab('thumbnails-v2')}>
+                      <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />
                       <span>La chaîne <strong>{calendarChannelName}</strong> utilise un preset <strong>Miniature V2</strong>. Cliquez ici pour y accéder.</span>
                     </div>
                   )}
@@ -5039,8 +5039,8 @@ const Index = () => {
               <TabsContent value="thumbnails-v2" className="m-0">
                 <div className="max-w-5xl mx-auto">
                   {channelThumbnailVersion === 'v1' && calendarChannelName && (
-                    <div className="mb-4 flex items-center gap-2 rounded-lg border border-amber-500/50 bg-amber-500/10 px-4 py-3 text-sm text-amber-200 cursor-pointer hover:bg-amber-500/20 transition-colors" onClick={() => setActiveTab('thumbnails')}>
-                      <AlertTriangle className="h-4 w-4 shrink-0 text-amber-400" />
+                    <div className="mb-4 flex items-center gap-2 rounded-lg border border-amber-500/50 bg-amber-100 px-4 py-3 text-sm text-black cursor-pointer hover:bg-amber-200 transition-colors" onClick={() => setActiveTab('thumbnails')}>
+                      <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />
                       <span>La chaîne <strong>{calendarChannelName}</strong> utilise un preset <strong>Miniatures V1</strong>. Cliquez ici pour y accéder.</span>
                     </div>
                   )}
