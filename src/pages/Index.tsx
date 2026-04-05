@@ -263,6 +263,12 @@ const Index = () => {
   const [isExporting, setIsExporting] = useState(false);
   const [isRendering, setIsRendering] = useState(false);
   const [useGpuRendering, setUseGpuRendering] = useState(true);
+
+  // Render preset state
+  const [renderPresets, setRenderPresets] = useState<any[]>([]);
+  const [currentRenderPresetId, setCurrentRenderPresetId] = useState<string | null>(null);
+  const [blackscreenUrl, setBlackscreenUrl] = useState<string | null>(null);
+  const [blackscreenOpacity, setBlackscreenOpacity] = useState(0.45);
   const [audioUrl, setAudioUrl] = useState<string>("");
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [isUploadingAudio, setIsUploadingAudio] = useState(false);
@@ -1229,11 +1235,29 @@ const Index = () => {
       if (projectData.thumbnail_preset_id) {
         thumbnailPresetIdRef.current = projectData.thumbnail_preset_id;
       }
+
+      // Load render preset from project
+      if (projectData.render_preset_id) {
+        const { data: rp } = await supabase
+          .from('render_presets' as any)
+          .select('*')
+          .eq('id', projectData.render_preset_id)
+          .single();
+        if (rp) {
+          setCurrentRenderPresetId(rp.id);
+          setExportFramerate(rp.framerate);
+          setExportEffectType(rp.effect_type);
+          setUseGpuRendering(rp.use_gpu);
+          setBlackscreenUrl(rp.blackscreen_url);
+          setBlackscreenOpacity(rp.blackscreen_opacity);
+          console.log('[loadProjectData] Loaded render preset:', rp.name);
+        }
+      }
       
       // Load calendar date and channel if project is linked to calendar
       const { data: calendarEntries, error: calendarError } = await supabase
         .from("content_calendar")
-        .select("scheduled_date, id, channel_id, status, audio_url, channels(name, color, project_preset_id)")
+        .select("scheduled_date, id, channel_id, status, audio_url, channels(name, color, project_preset_id, render_preset_id)")
         .eq("project_id", projectId);
       
       if (calendarError) {
@@ -1253,9 +1277,31 @@ const Index = () => {
         // Get channel info from calendar entry
         const entryWithChannel = calendarEntries?.find(entry => entry.channel_id && entry.channels);
         if (entryWithChannel && entryWithChannel.channels) {
-          const channelData = entryWithChannel.channels as { name: string; color: string; project_preset_id?: string };
+          const channelData = entryWithChannel.channels as { name: string; color: string; project_preset_id?: string; render_preset_id?: string };
           setCalendarChannelName(channelData.name);
           setCalendarChannelColor(channelData.color);
+
+          // Load render preset from channel if project doesn't have one
+          if (!projectData.render_preset_id && channelData.render_preset_id) {
+            const { data: rp } = await supabase
+              .from('render_presets' as any)
+              .select('*')
+              .eq('id', channelData.render_preset_id)
+              .single();
+            if (rp) {
+              setCurrentRenderPresetId(rp.id);
+              setExportFramerate(rp.framerate);
+              setExportEffectType(rp.effect_type);
+              setUseGpuRendering(rp.use_gpu);
+              setBlackscreenUrl(rp.blackscreen_url);
+              setBlackscreenOpacity(rp.blackscreen_opacity);
+              await supabase
+                .from('projects')
+                .update({ render_preset_id: channelData.render_preset_id } as any)
+                .eq('id', projectId);
+              console.log('[loadProjectData] Loaded render preset from channel:', rp.name);
+            }
+          }
           
           // Load preset from channel OR from project's saved preset_id
           const presetIdToLoad = projectData.preset_id || channelData.project_preset_id;
@@ -1400,6 +1446,41 @@ const Index = () => {
       if (error) throw error;
     } catch (error) {
       console.error("Error saving export base path:", error);
+    }
+  };
+
+  const loadRenderPresets = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('render_presets' as any)
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (!error && data) setRenderPresets(data as any[]);
+    } catch {}
+  };
+
+  useEffect(() => { loadRenderPresets(); }, []);
+
+  const applyRenderPreset = async (presetId: string | null) => {
+    setCurrentRenderPresetId(presetId);
+    if (!presetId) {
+      setBlackscreenUrl(null);
+      setBlackscreenOpacity(0.45);
+      return;
+    }
+    const preset = renderPresets.find((p: any) => p.id === presetId);
+    if (preset) {
+      setExportFramerate(preset.framerate);
+      setExportEffectType(preset.effect_type);
+      setUseGpuRendering(preset.use_gpu);
+      setBlackscreenUrl(preset.blackscreen_url);
+      setBlackscreenOpacity(preset.blackscreen_opacity);
+    }
+    if (currentProjectId) {
+      await supabase
+        .from('projects')
+        .update({ render_preset_id: presetId } as any)
+        .eq('id', currentProjectId);
     }
   };
 
@@ -3264,6 +3345,11 @@ const Index = () => {
         renderOptions.gameplayUrls = gameplayUrls;
         renderOptions.framerate = 30;
       }
+
+      if (blackscreenUrl) {
+        renderOptions.blackscreenUrl = blackscreenUrl;
+        renderOptions.blackscreenOpacity = blackscreenOpacity;
+      }
       
       // Use GPU rendering if toggle is enabled, otherwise use VPS
       const result = useGpuRendering 
@@ -4146,6 +4232,20 @@ const Index = () => {
                                 </Button>
                                 {generatedPrompts.filter(p => p && p.imageUrl).length > 0 && (
                                   <>
+                                    <Select
+                                      value={currentRenderPresetId || "_none"}
+                                      onValueChange={(v) => applyRenderPreset(v === "_none" ? null : v)}
+                                    >
+                                      <SelectTrigger className="w-[160px] h-9">
+                                        <SelectValue placeholder="Preset rendu" />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="_none">Sans preset</SelectItem>
+                                        {renderPresets.map((rp: any) => (
+                                          <SelectItem key={rp.id} value={rp.id}>{rp.name}</SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
                                     <Select 
                                       value={exportFramerate.toString()} 
                                       onValueChange={(value) => setExportFramerate(Number(value))}
@@ -4191,6 +4291,11 @@ const Index = () => {
                                         GPU
                                       </Label>
                                     </div>
+                                    {blackscreenUrl && (
+                                      <div className="flex items-center gap-1 px-2 py-1 bg-orange-500/10 rounded-md" title={`Particles ${Math.round(blackscreenOpacity * 100)}%`}>
+                                        <span className="text-xs">✨ {Math.round(blackscreenOpacity * 100)}%</span>
+                                      </div>
+                                    )}
                                     <Button
                                       onClick={handleRenderVideo}
                                       size="sm"

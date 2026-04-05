@@ -2319,8 +2319,10 @@ async function processRenderJob(jobId, renderData) {
       projectId,
       projectName,
       userId,
-      effectType = 'zoom', // 'zoom' for Ken Burns, 'pan' for pan effects
-      renderMethod = 'standard' // 'standard' = 6x upscale, 'lanczos' = 2x upscale with Lanczos
+      effectType = 'zoom',
+      renderMethod = 'standard',
+      blackscreenUrl,
+      blackscreenOpacity = 0.45,
     } = renderData;
     
     console.log(`[${jobId}] Received effectType: ${effectType} (type: ${typeof effectType})`);
@@ -2772,7 +2774,49 @@ async function processRenderJob(jobId, renderData) {
             clearInterval(fallbackInterval);
           }
           
-          addStep('Encodage terminé', 95);
+          addStep('Encodage terminé', 93);
+
+          // Apply blackscreen overlay if configured
+          if (blackscreenUrl) {
+            try {
+              addStep('Application overlay particles...', 94, true);
+              console.log(`[${jobId}] Downloading blackscreen: ${blackscreenUrl.substring(0, 80)}...`);
+
+              const bsPath = path.join(workDir, 'blackscreen_src.mp4');
+              const bsResponse = await fetch(blackscreenUrl);
+              if (bsResponse.ok) {
+                const bsBuffer = Buffer.from(await bsResponse.arrayBuffer());
+                fs.writeFileSync(bsPath, bsBuffer);
+
+                const bsOutputPath = path.join(workDir, 'output_bs.mp4');
+                const { execFileSync } = require('child_process');
+                const bsArgs = [
+                  '-y',
+                  '-i', outputPath,
+                  '-stream_loop', '-1', '-i', bsPath,
+                  '-filter_complex',
+                  `[1:v]scale=${videoSettings.width || 1920}:${videoSettings.height || 1080},format=rgba,colorchannelmixer=aa=${blackscreenOpacity.toFixed(2)},setpts=PTS-STARTPTS[fg];[0:v][fg]overlay=0:0:shortest=1`,
+                  '-c:a', 'copy',
+                  '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23',
+                  '-pix_fmt', 'yuv420p',
+                  bsOutputPath,
+                ];
+                console.log(`[${jobId}] Running blackscreen overlay...`);
+                execFileSync('ffmpeg', bsArgs, { timeout: 7200000 });
+
+                if (fs.existsSync(bsOutputPath)) {
+                  fs.renameSync(bsOutputPath, outputPath);
+                  console.log(`[${jobId}] Blackscreen overlay applied`);
+                }
+              } else {
+                console.warn(`[${jobId}] Failed to download blackscreen: HTTP ${bsResponse.status}`);
+              }
+            } catch (bsErr) {
+              console.error(`[${jobId}] Blackscreen overlay error (continuing without):`, bsErr.message);
+            }
+          }
+
+          addStep('Finalisation...', 95);
           
           try {
             // Verify final video duration

@@ -18,6 +18,10 @@ const PUBLIC_URL_BASE = process.env.PUBLIC_URL_BASE || 'http://51.91.158.233/ren
 const GAMEPLAY_DIR = process.env.GAMEPLAY_DIR || '/var/www/gameplay';
 const GAMEPLAY_URL_BASE = process.env.GAMEPLAY_URL_BASE || 'https://purpleai.duckdns.org/gameplay';
 
+// Blackscreen storage
+const BLACKSCREEN_DIR = process.env.BLACKSCREEN_DIR || '/var/www/blackscreen';
+const BLACKSCREEN_URL_BASE = process.env.BLACKSCREEN_URL_BASE || 'https://purpleai.duckdns.org/blackscreen';
+
 // API authentication token
 const API_TOKEN = process.env.VIDEO_UPLOAD_TOKEN || crypto.randomBytes(32).toString('hex');
 
@@ -40,6 +44,10 @@ if (!fs.existsSync(VIDEOS_DIR)) {
 if (!fs.existsSync(GAMEPLAY_DIR)) {
   fs.mkdirSync(GAMEPLAY_DIR, { recursive: true });
   console.log(`[Storage API] Created gameplay directory: ${GAMEPLAY_DIR}`);
+}
+if (!fs.existsSync(BLACKSCREEN_DIR)) {
+  fs.mkdirSync(BLACKSCREEN_DIR, { recursive: true });
+  console.log(`[Storage API] Created blackscreen directory: ${BLACKSCREEN_DIR}`);
 }
 
 // Configure multer for file uploads
@@ -146,6 +154,37 @@ const gameplayStorage = multer.diskStorage({
 
 const gameplayUpload = multer({
   storage: gameplayStorage,
+  limits: { fileSize: Infinity },
+  fileFilter: (req, file, cb) => {
+    const allowed = ['video/mp4', 'video/webm', 'video/quicktime'];
+    if (allowed.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Invalid file type. Only MP4, WebM, and MOV are allowed.'));
+    }
+  }
+});
+
+// Blackscreen multer config
+const blackscreenStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const userDir = path.join(BLACKSCREEN_DIR, req.userId);
+    if (!fs.existsSync(userDir)) {
+      fs.mkdirSync(userDir, { recursive: true });
+    }
+    cb(null, userDir);
+  },
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname) || '.mp4';
+    const baseName = path.basename(file.originalname, ext);
+    const safe = sanitizeFilename(baseName);
+    const finalName = safe ? `${safe}${ext}` : `${Date.now()}-${crypto.randomBytes(4).toString('hex')}${ext}`;
+    cb(null, finalName);
+  }
+});
+
+const blackscreenUpload = multer({
+  storage: blackscreenStorage,
   limits: { fileSize: Infinity },
   fileFilter: (req, file, cb) => {
     const allowed = ['video/mp4', 'video/webm', 'video/quicktime'];
@@ -310,6 +349,80 @@ app.delete('/api/delete-gameplay/:filename', authenticateJWT, (req, res) => {
   res.json({ success: true });
 });
 
+// ============================================================================
+// BLACKSCREEN ENDPOINTS
+// ============================================================================
+
+app.post('/api/upload-blackscreen', authenticateJWT, blackscreenUpload.single('video'), (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'No video file provided' });
+  }
+
+  const filename = req.file.filename;
+  const publicUrl = `${BLACKSCREEN_URL_BASE}/${req.userId}/${filename}`;
+  const fileSizeMB = (req.file.size / (1024 * 1024)).toFixed(2);
+
+  console.log(`[Blackscreen] Uploaded: ${req.userId}/${filename} (${fileSizeMB} MB)`);
+
+  res.json({
+    success: true,
+    url: publicUrl,
+    filename,
+    size: req.file.size,
+    sizeMB: parseFloat(fileSizeMB),
+  });
+});
+
+app.get('/api/list-blackscreen', authenticateJWT, (req, res) => {
+  const userDir = path.join(BLACKSCREEN_DIR, req.userId);
+
+  if (!fs.existsSync(userDir)) {
+    return res.json({ files: [] });
+  }
+
+  try {
+    const entries = fs.readdirSync(userDir);
+    const files = entries
+      .filter(f => {
+        const ext = path.extname(f).toLowerCase();
+        return ['.mp4', '.webm', '.mov'].includes(ext);
+      })
+      .map(f => {
+        const filePath = path.join(userDir, f);
+        const stat = fs.statSync(filePath);
+        return {
+          filename: f,
+          url: `${BLACKSCREEN_URL_BASE}/${req.userId}/${f}`,
+          size: stat.size,
+          sizeMB: parseFloat((stat.size / (1024 * 1024)).toFixed(2)),
+          uploadedAt: stat.mtime.toISOString(),
+        };
+      })
+      .sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt));
+
+    res.json({ files });
+  } catch (err) {
+    console.error('[Blackscreen] List error:', err.message);
+    res.status(500).json({ error: 'Failed to list files' });
+  }
+});
+
+app.delete('/api/delete-blackscreen/:filename', authenticateJWT, (req, res) => {
+  const userDir = path.join(BLACKSCREEN_DIR, req.userId);
+  const filePath = resolveSafePath(req.params.filename, userDir);
+
+  if (!filePath) {
+    return res.status(400).json({ error: 'Invalid filename' });
+  }
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({ error: 'File not found' });
+  }
+
+  fs.unlinkSync(filePath);
+  console.log(`[Blackscreen] Deleted: ${req.userId}/${req.params.filename}`);
+  res.json({ success: true });
+});
+
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error('[Storage API] Error:', err.message);
@@ -321,7 +434,9 @@ app.listen(PORT, () => {
   console.log(`[Storage API] Server running on port ${PORT}`);
   console.log(`[Storage API] Videos directory: ${VIDEOS_DIR}`);
   console.log(`[Storage API] Gameplay directory: ${GAMEPLAY_DIR}`);
+  console.log(`[Storage API] Blackscreen directory: ${BLACKSCREEN_DIR}`);
   console.log(`[Storage API] Public URL base: ${PUBLIC_URL_BASE}`);
   console.log(`[Storage API] Gameplay URL base: ${GAMEPLAY_URL_BASE}`);
+  console.log(`[Storage API] Blackscreen URL base: ${BLACKSCREEN_URL_BASE}`);
   console.log(`[Storage API] API Token: ${process.env.VIDEO_UPLOAD_TOKEN ? '[SET]' : '[GENERATED - set VIDEO_UPLOAD_TOKEN for production]'}`);
 });

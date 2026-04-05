@@ -45,9 +45,11 @@ import {
   FolderOpen,
   MoreHorizontal,
   SlidersHorizontal,
+  Video,
 } from "lucide-react";
 import { PresetManager } from "@/components/PresetManager";
 import { ExportPathPresetManager } from "@/components/ExportPathPresetManager";
+import { RenderPresetManager } from "@/components/RenderPresetManager";
 import { DurationRange, convertLegacyToRanges, DEFAULT_DURATION_RANGES } from "@/lib/durationRanges";
 
 const DEFAULT_SCRIPT_PROMPT = `Tu es un expert en écriture de scripts pour vidéos YouTube.
@@ -966,11 +968,11 @@ export default function Presets() {
           <h1 className="text-2xl font-semibold">Mes presets</h1>
         </div>
         <p className="text-muted-foreground text-sm mb-6">
-          Gérez tous vos presets (script, TTS, projet, miniatures, LoRA, chemins d'export) en un seul endroit.
+          Gérez tous vos presets (script, TTS, projet, miniatures, LoRA, rendu, chemins d'export) en un seul endroit.
         </p>
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-3 sm:grid-cols-6 gap-1 mb-6">
+          <TabsList className="grid w-full grid-cols-4 sm:grid-cols-7 gap-1 mb-6">
             <TabsTrigger value="script" className="gap-1.5">
               <FileText className="h-4 w-4" /> Script
             </TabsTrigger>
@@ -985,6 +987,9 @@ export default function Presets() {
             </TabsTrigger>
             <TabsTrigger value="lora" className="gap-1.5">
               <Layers className="h-4 w-4" /> LoRA
+            </TabsTrigger>
+            <TabsTrigger value="render" className="gap-1.5">
+              <Video className="h-4 w-4" /> Rendu
             </TabsTrigger>
             <TabsTrigger value="export" className="gap-1.5">
               <FolderOpen className="h-4 w-4" /> Chemins
@@ -1074,6 +1079,10 @@ export default function Presets() {
               duplicateLoraPreset,
               deleteLoraPreset
             )}
+          </TabsContent>
+
+          <TabsContent value="render" className="space-y-4">
+            <RenderPresetManager />
           </TabsContent>
 
           <TabsContent value="export" className="space-y-4">

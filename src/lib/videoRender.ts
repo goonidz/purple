@@ -22,6 +22,8 @@ export interface VideoRenderOptions {
   renderMethod?: 'standard' | 'lanczos';
   visualMode?: 'images' | 'gameplay';
   gameplayUrls?: string[];
+  blackscreenUrl?: string;
+  blackscreenOpacity?: number;
 }
 
 export interface VideoRenderResult {
@@ -68,13 +70,13 @@ export async function renderVideo(options: VideoRenderOptions): Promise<VideoRen
       }
     }
 
-    const { projectId, framerate = 25, width = 1920, height = 1080, subtitleSettings, effectType = 'pan', renderMethod = 'standard' } = options;
+    const { projectId, framerate = 25, width = 1920, height = 1080, subtitleSettings, effectType = 'pan', renderMethod = 'standard', blackscreenUrl, blackscreenOpacity } = options;
 
-    console.log('Calling render-video Edge Function with:', { projectId, framerate, width, height, effectType, renderMethod });
+    console.log('Calling render-video Edge Function with:', { projectId, framerate, width, height, effectType, renderMethod, blackscreenUrl: !!blackscreenUrl });
     console.log('User authenticated:', user.id);
     console.log('Session valid:', !!session);
 
-    const requestBody = {
+    const requestBody: Record<string, any> = {
       projectId,
       framerate,
       width,
@@ -83,6 +85,11 @@ export async function renderVideo(options: VideoRenderOptions): Promise<VideoRen
       effectType,
       renderMethod,
     };
+
+    if (blackscreenUrl) {
+      requestBody.blackscreenUrl = blackscreenUrl;
+      requestBody.blackscreenOpacity = blackscreenOpacity ?? 0.45;
+    }
     
     console.log('Request body keys:', Object.keys(requestBody));
     console.log('Request body effectType:', requestBody.effectType, '(type:', typeof requestBody.effectType, ')');

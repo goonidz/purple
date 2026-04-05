@@ -23,9 +23,9 @@ export async function renderVideoGpu(options: VideoRenderOptions): Promise<Video
       }
     }
 
-    const { projectId, framerate = 25, width = 1920, height = 1080, subtitleSettings, effectType = 'pan', renderMethod = 'standard', visualMode, gameplayUrls } = options;
+    const { projectId, framerate = 25, width = 1920, height = 1080, subtitleSettings, effectType = 'pan', renderMethod = 'standard', visualMode, gameplayUrls, blackscreenUrl, blackscreenOpacity } = options;
 
-    console.log('[GPU] Calling render-video-gpu Edge Function (Serverless) with:', { projectId, framerate, width, height, effectType, renderMethod, visualMode, gameplayUrls: gameplayUrls?.length });
+    console.log('[GPU] Calling render-video-gpu Edge Function (Serverless) with:', { projectId, framerate, width, height, effectType, renderMethod, visualMode, gameplayUrls: gameplayUrls?.length, blackscreenUrl: !!blackscreenUrl });
     console.log('[GPU] User authenticated:', user.id);
 
     const requestBody: Record<string, any> = {
@@ -41,6 +41,11 @@ export async function renderVideoGpu(options: VideoRenderOptions): Promise<Video
     if (visualMode === 'gameplay') {
       requestBody.visualMode = 'gameplay';
       requestBody.gameplayUrls = gameplayUrls;
+    }
+
+    if (blackscreenUrl) {
+      requestBody.blackscreenUrl = blackscreenUrl;
+      requestBody.blackscreenOpacity = blackscreenOpacity ?? 0.45;
     }
 
     const { data, error } = await supabase.functions.invoke('render-video-gpu', {

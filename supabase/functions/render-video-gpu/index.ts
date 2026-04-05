@@ -86,6 +86,8 @@ serve(async (req) => {
       renderMethod = 'standard',
       visualMode,
       gameplayUrls,
+      blackscreenUrl,
+      blackscreenOpacity,
     } = requestBody;
 
     if (!projectId) {
@@ -245,6 +247,11 @@ serve(async (req) => {
     if (isGameplay) {
       renderData.visualMode = 'gameplay';
       renderData.gameplayUrls = resolvedGameplayUrls;
+    }
+
+    if (blackscreenUrl) {
+      renderData.blackscreenUrl = blackscreenUrl;
+      renderData.blackscreenOpacity = blackscreenOpacity ?? 0.45;
     }
 
     // Get RunPod credentials from environment

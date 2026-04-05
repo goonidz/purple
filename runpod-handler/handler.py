@@ -1106,6 +1106,58 @@ def render_gameplay_video(
     return output_path
 
 
+def apply_blackscreen_overlay(
+    input_path: str,
+    blackscreen_url: str,
+    opacity: float,
+    output_path: str,
+    width: int,
+    height: int,
+    step_cb=None,
+) -> Optional[str]:
+    """Download a blackscreen video and overlay it on top of the rendered video."""
+    try:
+        if step_cb:
+            step_cb("Application de l'overlay particles...")
+        print(f"[Blackscreen] Downloading: {blackscreen_url[:80]}...")
+        bs_path = str(Path(input_path).parent / 'blackscreen_src.mp4')
+        if not download_file(blackscreen_url, bs_path):
+            print("[Blackscreen] Download failed, skipping overlay")
+            return input_path
+
+        cmd = [
+            FFMPEG_BIN, '-y',
+            '-i', input_path,
+            '-stream_loop', '-1', '-i', bs_path,
+            '-filter_complex',
+            f"[1:v]scale={width}:{height},format=rgba,colorchannelmixer=aa={opacity:.2f},setpts=PTS-STARTPTS[fg];"
+            f"[0:v][fg]overlay=0:0:shortest=1",
+            '-c:a', 'copy',
+        ]
+
+        if GPU_ENCODER_AVAILABLE and ENCODER_NAME:
+            cmd.extend(['-c:v', ENCODER_NAME, '-preset', 'medium', '-rc', 'constqp', '-qp', '18', '-b:v', '0'])
+            if ENCODER_GPU_ID is not None:
+                cmd.extend(['-gpu', str(ENCODER_GPU_ID)])
+        else:
+            cmd.extend(['-c:v', 'libx264', '-preset', 'fast', '-crf', '18'])
+
+        cmd.extend(['-pix_fmt', 'yuv420p'])
+        cmd.append(output_path)
+
+        print(f"[Blackscreen] Running overlay: {' '.join(cmd[:10])}...")
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=7200)
+        if result.returncode != 0:
+            print(f"[Blackscreen] FFmpeg error: {result.stderr[-500:]}")
+            return input_path
+
+        print(f"[Blackscreen] Overlay applied successfully")
+        return output_path
+    except Exception as e:
+        print(f"[Blackscreen] Exception: {e}")
+        return input_path
+
+
 def render_video_payload(payload: Dict[str, Any], progress_cb=None, step_cb=None) -> Dict[str, Any]:
     """
     Core render pipeline used by both serverless and Pod worker.
@@ -1135,6 +1187,8 @@ def render_video_payload(payload: Dict[str, Any], progress_cb=None, step_cb=None
 
     visual_mode = payload.get('visualMode', 'images')
     gameplay_urls = payload.get('gameplayUrls', [])
+    blackscreen_url = payload.get('blackscreenUrl', '')
+    blackscreen_opacity = payload.get('blackscreenOpacity', 0.45)
 
     if not audio_url:
         return {"error": "No audio URL provided"}
@@ -1180,6 +1234,13 @@ def render_video_payload(payload: Dict[str, Any], progress_cb=None, step_cb=None
 
             if not result_path:
                 return {"error": "Gameplay render failed"}
+
+            if blackscreen_url:
+                bs_output = str(temp_path / f'{project_name}_bs.mp4')
+                result_path = apply_blackscreen_overlay(
+                    result_path, blackscreen_url, blackscreen_opacity,
+                    bs_output, width, height, step_cb=step_cb,
+                ) or result_path
 
             file_size_mb = os.path.getsize(result_path) / (1024 * 1024)
 
@@ -1363,6 +1424,15 @@ def render_video_payload(payload: Dict[str, Any], progress_cb=None, step_cb=None
         final_path = temp_path / f'{project_name}.mp4'
         if not add_audio(str(concat_path), str(audio_path), str(final_path)):
             return {"error": "Failed to add audio to video"}
+
+        if blackscreen_url:
+            bs_output = str(temp_path / f'{project_name}_bs.mp4')
+            bs_result = apply_blackscreen_overlay(
+                str(final_path), blackscreen_url, blackscreen_opacity,
+                bs_output, width, height, step_cb=step_cb,
+            )
+            if bs_result and bs_result != str(final_path):
+                final_path = Path(bs_result)
 
         progress_cb(95)
 

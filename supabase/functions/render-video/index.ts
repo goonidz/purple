@@ -84,8 +84,10 @@ serve(async (req) => {
       width = 1920,
       height = 1080,
       subtitleSettings,
-      effectType = 'pan', // 'zoom' for Ken Burns, 'pan' for pan effects
-      renderMethod = 'standard' // 'standard' = 6x upscale, 'lanczos' = 2x upscale with Lanczos
+      effectType = 'pan',
+      renderMethod = 'standard',
+      blackscreenUrl,
+      blackscreenOpacity,
     } = requestBody;
 
     if (!projectId) {
@@ -183,9 +185,14 @@ serve(async (req) => {
       projectId,
       projectName: project.name || 'video', // Pass project name for output filename
       userId: user.id,
-      effectType: effectType || 'zoom', // Pass effect type to VPS service (ensure it's never undefined)
-      renderMethod: renderMethod || 'standard', // Pass render method to VPS service
-    };
+      effectType: effectType || 'zoom',
+      renderMethod: renderMethod || 'standard',
+    } as Record<string, any>;
+
+    if (blackscreenUrl) {
+      renderData.blackscreenUrl = blackscreenUrl;
+      renderData.blackscreenOpacity = blackscreenOpacity ?? 0.45;
+    }
 
     console.log("Sending render data to VPS with effectType:", effectType);
     console.log("renderData keys before sending:", Object.keys(renderData));
