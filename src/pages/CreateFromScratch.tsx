@@ -322,6 +322,7 @@ const CreateFromScratch = () => {
   const [calendarChannelName, setCalendarChannelName] = useState<string | null>(null);
   const [calendarChannelColor, setCalendarChannelColor] = useState<string | null>(null);
   const [sourceTranscript, setSourceTranscript] = useState<string | null>(null);
+  const [calendarNotes, setCalendarNotes] = useState<string | null>(null);
   
   // Script saving
   const [isSavingScript, setIsSavingScript] = useState(false);
@@ -1398,12 +1399,12 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
     await generateScriptWithPrompt(enhancedPrompt);
   };
 
-  // Load source transcript from calendar entry
+  // Load source transcript and notes from calendar entry
   const loadSourceTranscript = async (entryId: string) => {
     try {
       const { data, error } = await supabase
         .from("content_calendar")
-        .select("source_transcript")
+        .select("source_transcript, notes")
         .eq("id", entryId)
         .single();
 
@@ -1411,6 +1412,9 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
 
       if (data?.source_transcript) {
         setSourceTranscript(data.source_transcript);
+      }
+      if (data?.notes) {
+        setCalendarNotes(data.notes);
       }
     } catch (error) {
       console.error("Error loading source transcript:", error);
@@ -1420,13 +1424,15 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
   // Function to replace variables in prompt
   const replacePromptVariables = (prompt: string, projectNameValue: string): string => {
     const transcriptValue = sourceTranscript || "";
+    const notesValue = calendarNotes || "";
     return prompt
       .replace(/\{\{projectName\}\}/g, projectNameValue)
       .replace(/\{\{project_name\}\}/g, projectNameValue)
       .replace(/\{\{title\}\}/g, projectNameValue)
       .replace(/\{\{videoTitle\}\}/g, projectNameValue)
       .replace(/\{\{sourceTranscript\}\}/g, transcriptValue)
-      .replace(/\{\{source_transcript\}\}/g, transcriptValue);
+      .replace(/\{\{source_transcript\}\}/g, transcriptValue)
+      .replace(/\{\{notes\}\}/g, notesValue);
   };
 
   const generateScriptWithPrompt = async (promptToUse: string) => {
@@ -2527,6 +2533,8 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                                 value = projectName || "Nom du projet";
                               } else if (varName.includes("sourcetranscript") || varName.includes("source_transcript")) {
                                 value = sourceTranscript ? `${sourceTranscript.substring(0, 50)}...` : "(non disponible)";
+                              } else if (varName === "{{notes}}") {
+                                value = calendarNotes ? `${calendarNotes.substring(0, 50)}...` : "(non disponible)";
                               } else {
                                 value = "Variable inconnue";
                               }
@@ -2548,7 +2556,7 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                             : "Claude Sonnet 4.6 (Anthropic)"}{" "}
                         pour générer le script. Incluez tous les détails: sujet, durée, style, langue, etc.
                         <br />
-                        <span className="font-semibold">Variables disponibles:</span> <code className="bg-primary/20 text-primary px-1 rounded font-semibold">{"{{projectName}}"}</code> sera remplacé par le nom du projet, <code className="bg-primary/20 text-primary px-1 rounded font-semibold">{"{{sourceTranscript}}"}</code> par la transcription de la vidéo source (si disponible depuis le calendrier).
+                        <span className="font-semibold">Variables disponibles:</span> <code className="bg-primary/20 text-primary px-1 rounded font-semibold">{"{{projectName}}"}</code> sera remplacé par le nom du projet, <code className="bg-primary/20 text-primary px-1 rounded font-semibold">{"{{sourceTranscript}}"}</code> par la transcription de la vidéo source, <code className="bg-primary/20 text-primary px-1 rounded font-semibold">{"{{notes}}"}</code> par les notes de la carte calendrier liée.
                       </p>
                     </CollapsibleContent>
                   </Collapsible>
