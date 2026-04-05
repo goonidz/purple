@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>YouTube AI Comments Settings</title>
+  <style>
+    :root {
+      --bg-primary: #0f0f0f;
+      --bg-secondary: #1a1a1a;
+      --bg-tertiary: #272727;
+      --text-primary: #f1f1f1;
+      --text-secondary: #aaaaaa;
+      --accent: #8b5cf6;
+      --accent-hover: #a78bfa;
+      --accent-gradient: linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%);
+      --border: #3d3d3d;
+      --success: #22c55e;
+      --error: #ef4444;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      width: 380px;
+      min-height: 400px;
+    }
+
+    .header {
+      background: var(--accent-gradient);
+      padding: 20px;
+      text-align: center;
+    }
+
+    .header h1 {
+      font-size: 18px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .header h1 svg {
+      width: 24px;
+      height: 24px;
+    }
+
+    .header p {
+      font-size: 12px;
+      opacity: 0.9;
+      margin-top: 4px;
+    }
+
+    .content {
+      padding: 20px;
+    }
+
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      margin-bottom: 8px;
+    }
+
+    input[type="text"],
+    input[type="password"],
+    textarea {
+      width: 100%;
+      padding: 12px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text-primary);
+      font-size: 13px;
+      font-family: inherit;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    input[type="text"]:focus,
+    input[type="password"]:focus,
+    textarea:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.2);
+    }
+
+    textarea {
+      min-height: 140px;
+      resize: vertical;
+      line-height: 1.5;
+    }
+
+    .hint {
+      font-size: 11px;
+      color: var(--text-secondary);
+      margin-top: 6px;
+      line-height: 1.4;
+    }
+
+    .hint code {
+      background: var(--bg-tertiary);
+      padding: 2px 5px;
+      border-radius: 3px;
+      font-family: 'SF Mono', Monaco, monospace;
+      font-size: 10px;
+    }
+
+    .btn {
+      width: 100%;
+      padding: 12px 20px;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .btn-primary {
+      background: var(--accent-gradient);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      opacity: 0.9;
+      transform: translateY(-1px);
+    }
+
+    .btn-secondary {
+      background: var(--bg-tertiary);
+      color: var(--text-primary);
+      margin-top: 10px;
+    }
+
+    .btn-secondary:hover {
+      background: var(--border);
+    }
+
+    .btn-danger {
+      background: rgba(239, 68, 68, 0.15);
+      color: var(--error);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      margin-top: 10px;
+    }
+
+    .btn-danger:hover {
+      background: rgba(239, 68, 68, 0.25);
+    }
+
+    .status {
+      padding: 10px 14px;
+      border-radius: 6px;
+      font-size: 12px;
+      margin-top: 16px;
+      display: none;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .status.success {
+      display: flex;
+      background: rgba(34, 197, 94, 0.15);
+      color: var(--success);
+      border: 1px solid rgba(34, 197, 94, 0.3);
+    }
+
+    .status.error {
+      display: flex;
+      background: rgba(239, 68, 68, 0.15);
+      color: var(--error);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+    }
+
+    .divider {
+      height: 1px;
+      background: var(--border);
+      margin: 20px 0;
+    }
+
+    .api-key-wrapper {
+      position: relative;
+    }
+
+    .toggle-visibility {
+      position: absolute;
+      right: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: none;
+      border: none;
+      color: var(--text-secondary);
+      cursor: pointer;
+      padding: 4px;
+    }
+
+    .toggle-visibility:hover {
+      color: var(--text-primary);
+    }
+
+    .footer {
+      padding: 16px 20px;
+      background: var(--bg-secondary);
+      border-top: 1px solid var(--border);
+      text-align: center;
+      font-size: 11px;
+      color: var(--text-secondary);
+    }
+
+    .footer a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    .footer a:hover {
+      text-decoration: underline;
+    }
+
+    /* VideoFlow auth section */
+    .auth-section {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 20px;
+    }
+
+    .auth-section .auth-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    .auth-section .auth-header svg {
+      width: 18px;
+      height: 18px;
+      color: var(--accent);
+    }
+
+    .auth-section .auth-header span {
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .auth-connected {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: var(--success);
+    }
+
+    .auth-connected svg {
+      width: 14px;
+      height: 14px;
+    }
+
+    .auth-email {
+      color: var(--text-primary);
+      font-weight: 500;
+    }
+
+    .auth-disconnected {
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin-bottom: 10px;
+    }
+
+    .btn-connect {
+      width: 100%;
+      padding: 10px 16px;
+      background: var(--accent);
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+
+    .btn-connect:hover {
+      background: var(--accent-hover);
+    }
+
+    .btn-disconnect {
+      background: none;
+      border: none;
+      color: var(--text-secondary);
+      font-size: 11px;
+      cursor: pointer;
+      padding: 4px 0;
+      margin-top: 8px;
+    }
+
+    .btn-disconnect:hover {
+      color: var(--error);
+    }
+
+    .hidden {
+      display: none !important;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"/>
+      </svg>
+      YouTube AI Comments
+    </h1>
+    <p>Generate AI-powered replies with Gemini</p>
+  </div>
+
+  <div class="content">
+    <!-- VideoFlow Auth Section -->
+    <div class="auth-section">
+      <div class="auth-header">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+          <circle cx="12" cy="7" r="4"/>
+        </svg>
+        <span>VideoFlow</span>
+      </div>
+
+      <div id="authConnected" class="hidden">
+        <div class="auth-connected">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
+          </svg>
+          <span>Connected as <span id="authEmail" class="auth-email"></span></span>
+        </div>
+        <button class="btn-disconnect" id="disconnectBtn">Disconnect</button>
+      </div>
+
+      <div id="authDisconnected">
+        <p class="auth-disconnected">Connect to VideoFlow to automatically use your Gemini API key.</p>
+        <button class="btn-connect" id="connectBtn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+            <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/>
+            <polyline points="10 17 15 12 10 7"/>
+            <line x1="15" y1="12" x2="3" y2="12"/>
+          </svg>
+          Connect to VideoFlow
+        </button>
+      </div>
+    </div>
+
+    <!-- Fallback API Key (shown when not connected) -->
+    <div class="form-group" id="apiKeySection">
+      <label for="apiKey">Gemini API Key <span style="font-weight: normal; color: var(--text-secondary);">(fallback)</span></label>
+      <div class="api-key-wrapper">
+        <input type="password" id="apiKey" placeholder="Enter your Gemini API key">
+        <button class="toggle-visibility" type="button" id="toggleKey">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+            <circle cx="12" cy="12" r="3"/>
+          </svg>
+        </button>
+      </div>
+      <p class="hint">Get your API key from <a href="https://aistudio.google.com/app/apikey" target="_blank">Google AI Studio</a>. Used only if not connected to VideoFlow.</p>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="form-group">
+      <label for="promptTemplate">Custom Prompt Template</label>
+      <textarea id="promptTemplate" placeholder="Enter your custom prompt..."></textarea>
+      <p class="hint">Use <code>{comment}</code> for the comment text and <code>{transcript}</code> for the video transcript</p>
+    </div>
+
+    <button class="btn btn-primary" id="saveBtn">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+        <polyline points="17 21 17 13 7 13 7 21"/>
+        <polyline points="7 3 7 8 15 8"/>
+      </svg>
+      Save Settings
+    </button>
+
+    <button class="btn btn-secondary" id="resetBtn">
+      Reset to Default Prompt
+    </button>
+
+    <div class="status" id="status">
+      <span id="statusText"></span>
+    </div>
+  </div>
+
+  <div class="footer">
+    Powered by Gemini 2.5 Flash
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -244,7 +244,7 @@ export default function CalendarVideoModal({
     const loadFullEntry = async () => {
       const { data, error } = await supabase
         .from("content_calendar")
-        .select("script, notes, audio_url, source_url, source_thumbnail_url, source_transcript")
+        .select("script, notes, audio_url, source_url, source_thumbnail_url, source_transcript, project_id")
         .eq("id", entry.id)
         .single();
 
@@ -254,7 +254,21 @@ export default function CalendarVideoModal({
       }
       if (!data) return;
 
-      setScript(data.script || "");
+      let scriptValue = data.script || "";
+
+      // If no script on the calendar entry but a project is linked, load the project's script
+      if (!scriptValue && data.project_id) {
+        const { data: projData } = await supabase
+          .from("projects")
+          .select("summary")
+          .eq("id", data.project_id)
+          .single();
+        if (projData?.summary) {
+          scriptValue = projData.summary;
+        }
+      }
+
+      setScript(scriptValue);
       setNotes(data.notes || "");
       setAudioUrl(data.audio_url);
       setSourceUrl(data.source_url || "");

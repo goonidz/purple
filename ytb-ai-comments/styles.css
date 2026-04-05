@@ -1,0 +1,149 @@
+/* YouTube AI Comments - Injected Button Styles */
+
+/* Small subtle icon button */
+.ytb-ai-comment-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  margin-left: 4px;
+  background: transparent;
+  border: none;
+  border-radius: 50%;
+  color: #909090;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  vertical-align: middle;
+  opacity: 0;
+}
+
+/* Show on comment hover */
+ytd-comment-thread-renderer:hover .ytb-ai-comment-btn,
+ytd-comment-renderer:hover .ytb-ai-comment-btn,
+.ytb-ai-comment-btn:focus {
+  opacity: 1;
+}
+
+.ytb-ai-comment-btn:hover {
+  color: #c084fc;
+  background: rgba(192, 132, 252, 0.1);
+}
+
+.ytb-ai-comment-btn:active {
+  transform: scale(0.95);
+}
+
+.ytb-ai-comment-btn:disabled {
+  opacity: 0.5 !important;
+  cursor: not-allowed;
+}
+
+.ytb-ai-comment-btn svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+/* Hide text label */
+.ytb-ai-btn-text {
+  display: none;
+}
+
+/* Loading spinner */
+.ytb-ai-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(192, 132, 252, 0.3);
+  border-top-color: #c084fc;
+  border-radius: 50%;
+  animation: ytb-ai-spin 0.8s linear infinite;
+}
+
+@keyframes ytb-ai-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Show button when loading */
+.ytb-ai-comment-btn:disabled {
+  opacity: 1 !important;
+}
+
+/* YouTube Studio specific styles */
+.ytb-ai-studio-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  margin-left: 8px;
+  background: transparent;
+  border: 1px solid #3d3d3d;
+  border-radius: 4px;
+  color: #aaa;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  vertical-align: middle;
+  opacity: 1;
+}
+
+.ytb-ai-studio-btn:hover {
+  color: #c084fc;
+  border-color: #c084fc;
+  background: rgba(192, 132, 252, 0.1);
+}
+
+.ytb-ai-studio-btn:active {
+  transform: scale(0.95);
+}
+
+.ytb-ai-studio-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* Button wrapper (button + transcript icon) */
+.ytb-ai-btn-wrapper {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  vertical-align: middle;
+}
+
+/* Transcript status icon */
+.ytb-ai-transcript-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+ytd-comment-thread-renderer:hover .ytb-ai-transcript-icon,
+ytd-comment-renderer:hover .ytb-ai-transcript-icon,
+.ytb-ai-btn-wrapper:hover .ytb-ai-transcript-icon {
+  opacity: 1;
+}
+
+.ytb-ai-studio-btn ~ .ytb-ai-transcript-icon {
+  opacity: 1;
+}
+
+.ytb-ai-transcript-icon svg {
+  width: 12px;
+  height: 12px;
+}
+
+.ytb-ai-transcript-ok {
+  color: #22c55e;
+}
+
+.ytb-ai-transcript-none {
+  color: #6b7280;
+}

@@ -68,7 +68,9 @@ const Auth = () => {
         user: {
           id: session.user.id,
           email: session.user.email
-        }
+        },
+        supabaseUrl: import.meta.env.VITE_SUPABASE_URL,
+        supabaseAnonKey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY
       }, window.location.origin);
       
       setAuthSent(true);
