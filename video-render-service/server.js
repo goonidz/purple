@@ -3716,8 +3716,6 @@ app.post('/concat-audio', async (req, res) => {
       totalDuration: audioDurations.reduce((sum, d) => sum + (typeof d === 'number' ? d : 0), 0),
     });
 
-    // Best-effort: produce a reliable transcript_json via ElevenLabs STT on the VPS,
-    // but only if the job metadata doesn't explicitly opt out.
     if (projectId && userId && supabase) {
       setTimeout(async () => {
         const doTranscribe = await shouldTranscribe({ projectId });
@@ -3804,8 +3802,8 @@ app.post('/probe-audio-duration', async (req, res) => {
 // ============================================================================
 
 async function transcribeWithGroq(audioPath, groqApiKey) {
-  const workDir = path.dirname(audioPath);
-  const compressedPath = path.join(workDir, 'compressed_audio.mp3');
+  const compressedFilename = `groq_compressed_${Date.now()}_${Math.random().toString(36).substring(7)}.mp3`;
+  const compressedPath = path.join(TEMP_DIR, compressedFilename);
 
   console.log(`[groq-transcribe] Compressing audio: ${audioPath}`);
   execSync(`ffmpeg -y -i "${audioPath}" -ar 16000 -ac 1 -b:a 64k "${compressedPath}"`, {
@@ -3817,24 +3815,28 @@ async function transcribeWithGroq(audioPath, groqApiKey) {
   const sizeMB = stats.size / (1024 * 1024);
   console.log(`[groq-transcribe] Compressed audio size: ${sizeMB.toFixed(1)} MB`);
   if (sizeMB > 100) {
+    try { await unlink(compressedPath); } catch (_) {}
     throw new Error(`Compressed audio is ${sizeMB.toFixed(1)} MB (max 100 MB)`);
   }
 
-  const audioBuffer = fs.readFileSync(compressedPath);
-  const blob = new Blob([audioBuffer], { type: 'audio/mpeg' });
+  const publicUrl = `${process.env.VPS_PUBLIC_URL || `http://localhost:${PORT}`}/videos/${compressedFilename}`;
+  console.log(`[groq-transcribe] Sending URL to Groq Whisper API: ${publicUrl}`);
+
   const formData = new FormData();
-  formData.append('file', blob, 'audio.mp3');
+  formData.append('url', publicUrl);
   formData.append('model', 'whisper-large-v3-turbo');
   formData.append('temperature', '0');
   formData.append('response_format', 'verbose_json');
   formData.append('timestamp_granularities[]', 'word');
 
-  console.log(`[groq-transcribe] Sending to Groq Whisper API...`);
   const resp = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
     method: 'POST',
     headers: { Authorization: `Bearer ${groqApiKey}` },
     body: formData,
   });
+
+  // Cleanup compressed file after Groq has fetched it
+  try { await unlink(compressedPath); } catch (_) {}
 
   if (!resp.ok) {
     const errText = await resp.text();
@@ -3853,8 +3855,6 @@ async function transcribeWithGroq(audioPath, groqApiKey) {
     full_text: data.text || '',
   };
 
-  try { await unlink(compressedPath); } catch (_) {}
-
   console.log(`[groq-transcribe] Transcription complete: ${formattedTranscript.segments.length} words`);
   return formattedTranscript;
 }
@@ -3870,12 +3870,9 @@ app.post('/transcribe-groq', async (req, res) => {
   }
 
   const jobId = `groq_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-  const workDir = path.join(TEMP_DIR, jobId);
-  const audioPath = path.join(workDir, 'input_audio.mp3');
+  const audioPath = path.join(TEMP_DIR, `${jobId}_input.mp3`);
 
   try {
-    await mkdir(workDir, { recursive: true });
-
     const { data: groqApiKey, error: apiKeyError } = await supabase.rpc('get_user_api_key_for_service', {
       target_user_id: userId,
       key_name: 'groq',
@@ -3890,27 +3887,12 @@ app.post('/transcribe-groq', async (req, res) => {
 
     const transcript = await transcribeWithGroq(audioPath, groqApiKey);
 
-    // Cleanup
-    try {
-      const files = fs.readdirSync(workDir);
-      for (const file of files) {
-        await unlink(path.join(workDir, file)).catch(() => {});
-      }
-      fs.rmdirSync(workDir);
-    } catch (_) {}
+    try { await unlink(audioPath); } catch (_) {}
 
     res.json({ success: true, transcript });
   } catch (error) {
     console.error(`[${jobId}] Groq transcription error:`, error.message || error);
-    try {
-      if (fs.existsSync(workDir)) {
-        const files = fs.readdirSync(workDir);
-        for (const file of files) {
-          await unlink(path.join(workDir, file)).catch(() => {});
-        }
-        fs.rmdirSync(workDir);
-      }
-    } catch (_) {}
+    try { await unlink(audioPath); } catch (_) {}
     res.status(500).json({ error: error.message || 'Groq transcription failed' });
   }
 });
