@@ -5,10 +5,14 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
-import { Loader2, Lightbulb, Clock, Trash2, AlertCircle, Sparkles, TrendingUp, RotateCcw, Globe } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Loader2, Lightbulb, Clock, Trash2, AlertCircle, Sparkles, TrendingUp, RotateCcw, Globe, CalendarPlus, Check } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { format } from "date-fns";
 
 interface Idea {
   title: string;
@@ -44,14 +48,29 @@ export function IdeaGenerator() {
   const [ideas, setIdeas] = useState<Idea[] | null>(null);
   const [channelTitle, setChannelTitle] = useState<string | null>(null);
   const [history, setHistory] = useState<HistoryJob[]>([]);
+  const [channels, setChannels] = useState<{ id: string; name: string; color: string }[]>([]);
+  const [selectedChannelId, setSelectedChannelId] = useState<string>("");
+  const [addedIdeas, setAddedIdeas] = useState<Set<string>>(new Set());
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     fetchHistory();
+    fetchChannels();
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
     };
   }, []);
+
+  const fetchChannels = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+    const { data } = await supabase
+      .from("channels")
+      .select("id, name, color")
+      .eq("user_id", session.user.id)
+      .order("name", { ascending: true });
+    if (data) setChannels(data);
+  };
 
   const fetchHistory = async () => {
     const { data: { session } } = await supabase.auth.getSession();
@@ -96,6 +115,7 @@ export function IdeaGenerator() {
         pollRef.current = null;
         setIdeas(meta?.ideas || []);
         setChannelTitle(meta?.channelTitle || null);
+        setAddedIdeas(new Set());
         setIsGenerating(false);
         toast.success(`${meta?.ideas?.length || 0} ideas generated!`);
         fetchHistory();
@@ -168,6 +188,32 @@ export function IdeaGenerator() {
   const loadFromHistory = (job: HistoryJob) => {
     setIdeas(job.metadata?.ideas || []);
     setChannelTitle(job.metadata?.channelTitle || null);
+    setAddedIdeas(new Set());
+  };
+
+  const addIdeaToCalendar = async (idea: Idea, date: Date) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) { toast.error("Non connecté"); return; }
+    if (!selectedChannelId) { toast.error("Sélectionnez une chaîne"); return; }
+
+    const { error } = await supabase
+      .from("content_calendar")
+      .insert({
+        user_id: session.user.id,
+        title: idea.title,
+        scheduled_date: format(date, "yyyy-MM-dd"),
+        channel_id: selectedChannelId,
+        status: "idea",
+        notes: idea.reasoning,
+      });
+
+    if (error) {
+      toast.error(`Erreur: ${error.message}`);
+      return;
+    }
+
+    setAddedIdeas((prev) => new Set(prev).add(idea.title));
+    toast.success("Idée ajoutée au calendrier !");
   };
 
   const formatDate = (dateStr: string) => {
@@ -262,29 +308,84 @@ export function IdeaGenerator() {
 
       {ideas && ideas.length > 0 && (
         <Card className="p-6 space-y-4">
-          <div className="flex items-center gap-2">
-            <TrendingUp className="h-5 w-5 text-green-500" />
-            <h3 className="text-lg font-semibold">
-              {channelTitle ? `Ideas inspired by ${channelTitle}` : "Generated Ideas"}
-            </h3>
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <TrendingUp className="h-5 w-5 text-green-500" />
+              <h3 className="text-lg font-semibold">
+                {channelTitle ? `Ideas inspired by ${channelTitle}` : "Generated Ideas"}
+              </h3>
+            </div>
+            <div className="flex items-center gap-2">
+              <Label className="text-xs text-muted-foreground whitespace-nowrap">Chaîne :</Label>
+              <Select value={selectedChannelId} onValueChange={setSelectedChannelId}>
+                <SelectTrigger className="w-[180px] h-8 text-xs">
+                  <SelectValue placeholder="Choisir une chaîne" />
+                </SelectTrigger>
+                <SelectContent>
+                  {channels.map((ch) => (
+                    <SelectItem key={ch.id} value={ch.id}>
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: ch.color }} />
+                        {ch.name}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           <div className="space-y-3">
-            {[...ideas].sort((a, b) => b.viralScore - a.viralScore).map((idea, i) => (
-              <div key={i} className="p-4 border rounded-lg space-y-2 hover:bg-muted/20 transition-colors">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-start gap-3 min-w-0">
-                    <span className="text-lg font-bold text-muted-foreground shrink-0 w-6 text-right">{i + 1}</span>
-                    <h4 className="font-semibold text-sm leading-snug">{idea.title}</h4>
+            {[...ideas].sort((a, b) => b.viralScore - a.viralScore).map((idea, i) => {
+              const isAdded = addedIdeas.has(idea.title);
+              return (
+                <div key={i} className="p-4 border rounded-lg space-y-2 hover:bg-muted/20 transition-colors">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-start gap-3 min-w-0">
+                      <span className="text-lg font-bold text-muted-foreground shrink-0 w-6 text-right">{i + 1}</span>
+                      <h4 className="font-semibold text-sm leading-snug">{idea.title}</h4>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/10 text-primary text-xs font-bold">
+                        <TrendingUp className="h-3 w-3" />
+                        {idea.viralScore}/10
+                      </div>
+                      {isAdded ? (
+                        <div className="flex items-center gap-1 px-2 py-1 rounded-md bg-green-500/10 text-green-600 text-xs font-medium">
+                          <Check className="h-3 w-3" />
+                          Ajouté
+                        </div>
+                      ) : (
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-7 text-xs gap-1"
+                              disabled={!selectedChannelId}
+                              title={!selectedChannelId ? "Sélectionnez une chaîne d'abord" : "Ajouter au calendrier"}
+                            >
+                              <CalendarPlus className="h-3 w-3" />
+                              Planifier
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-0" align="end">
+                            <Calendar
+                              mode="single"
+                              onSelect={(date) => {
+                                if (date) addIdeaToCalendar(idea, date);
+                              }}
+                              initialFocus
+                            />
+                          </PopoverContent>
+                        </Popover>
+                      )}
+                    </div>
                   </div>
-                  <div className="shrink-0 flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/10 text-primary text-xs font-bold">
-                    <TrendingUp className="h-3 w-3" />
-                    {idea.viralScore}/10
-                  </div>
+                  <p className="text-xs text-muted-foreground ml-9">{idea.reasoning}</p>
                 </div>
-                <p className="text-xs text-muted-foreground ml-9">{idea.reasoning}</p>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </Card>
       )}
