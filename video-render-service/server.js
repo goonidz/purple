@@ -3806,7 +3806,7 @@ async function transcribeWithGroq(audioPath, groqApiKey) {
   const compressedPath = path.join(TEMP_DIR, compressedFilename);
 
   console.log(`[groq-transcribe] Compressing audio: ${audioPath}`);
-  execSync(`ffmpeg -y -i "${audioPath}" -ar 16000 -ac 1 -b:a 64k "${compressedPath}"`, {
+  execSync(`ffmpeg -y -i "${audioPath}" -ar 16000 -ac 1 -b:a 24k "${compressedPath}"`, {
     timeout: 300000,
     stdio: 'pipe',
   });
@@ -3814,9 +3814,9 @@ async function transcribeWithGroq(audioPath, groqApiKey) {
   const stats = fs.statSync(compressedPath);
   const sizeMB = stats.size / (1024 * 1024);
   console.log(`[groq-transcribe] Compressed audio size: ${sizeMB.toFixed(1)} MB`);
-  if (sizeMB > 100) {
+  if (sizeMB > 25) {
     try { await unlink(compressedPath); } catch (_) {}
-    throw new Error(`Compressed audio is ${sizeMB.toFixed(1)} MB (max 100 MB)`);
+    throw new Error(`Compressed audio is ${sizeMB.toFixed(1)} MB (max 25 MB)`);
   }
 
   const baseUrl = process.env.VPS_PUBLIC_URL;
