@@ -382,21 +382,37 @@ export function IdeaGenerator() {
                               variant="outline"
                               size="sm"
                               className="h-7 text-xs gap-1"
-                              disabled={!selectedChannelId}
-                              title={!selectedChannelId ? "Sélectionnez une chaîne d'abord" : "Ajouter au calendrier"}
                             >
                               <CalendarPlus className="h-3 w-3" />
                               Planifier
                             </Button>
                           </PopoverTrigger>
-                          <PopoverContent className="w-auto p-0" align="end">
-                            <Calendar
-                              mode="single"
-                              onSelect={(date) => {
-                                if (date) addIdeaToCalendar(idea, date);
-                              }}
-                              initialFocus
-                            />
+                          <PopoverContent className="w-auto p-2" align="end">
+                            {!selectedChannelId ? (
+                              <div className="space-y-2 p-2">
+                                <p className="text-xs font-medium">Choisir une chaîne :</p>
+                                <div className="space-y-1">
+                                  {channels.map((ch) => (
+                                    <button
+                                      key={ch.id}
+                                      className="flex items-center gap-2 w-full px-3 py-2 text-sm rounded-md hover:bg-muted transition-colors text-left"
+                                      onClick={() => setSelectedChannelId(ch.id)}
+                                    >
+                                      <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: ch.color }} />
+                                      {ch.name}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            ) : (
+                              <Calendar
+                                mode="single"
+                                onSelect={(date) => {
+                                  if (date) addIdeaToCalendar(idea, date);
+                                }}
+                                initialFocus
+                              />
+                            )}
                           </PopoverContent>
                         </Popover>
                       )}
