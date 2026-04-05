@@ -270,7 +270,7 @@ export function IdeaGenerator() {
           </div>
 
           <div className="space-y-3">
-            {ideas.map((idea, i) => (
+            {[...ideas].sort((a, b) => b.viralScore - a.viralScore).map((idea, i) => (
               <div key={i} className="p-4 border rounded-lg space-y-2 hover:bg-muted/20 transition-colors">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-start gap-3 min-w-0">
