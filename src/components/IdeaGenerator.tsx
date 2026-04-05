@@ -276,6 +276,26 @@ export function IdeaGenerator() {
             rows={3}
             className="resize-none text-sm"
           />
+          <div className="flex flex-wrap gap-1.5">
+            {[
+              "Find topics related to this week's trending news",
+              "Focus on controversial / debate-style topics",
+              "Target French-speaking audience",
+              "Adapt ideas to the WW2 / history niche",
+              "Make titles clickbait & provocative",
+              "Find evergreen topics with long-term potential",
+            ].map((suggestion) => (
+              <button
+                key={suggestion}
+                type="button"
+                disabled={isGenerating}
+                className="px-2 py-1 text-xs rounded-md border bg-muted/50 text-muted-foreground hover:bg-primary/10 hover:text-primary hover:border-primary/30 transition-colors disabled:opacity-50"
+                onClick={() => setCustomInstructions((prev) => prev ? `${prev}\n${suggestion}` : suggestion)}
+              >
+                + {suggestion}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="flex items-center gap-2">
