@@ -3801,29 +3801,23 @@ app.post('/probe-audio-duration', async (req, res) => {
 // GROQ WHISPER TRANSCRIPTION
 // ============================================================================
 
-async function transcribeWithGroq(audioPath, groqApiKey) {
-  const compressedFilename = `groq_compressed_${Date.now()}_${Math.random().toString(36).substring(7)}.mp3`;
-  const compressedPath = path.join(TEMP_DIR, compressedFilename);
-
-  console.log(`[groq-transcribe] Compressing audio: ${audioPath}`);
-  execSync(`ffmpeg -y -i "${audioPath}" -ar 16000 -ac 1 -b:a 24k "${compressedPath}"`, {
-    timeout: 300000,
-    stdio: 'pipe',
-  });
-
-  const stats = fs.statSync(compressedPath);
-  const sizeMB = stats.size / (1024 * 1024);
-  console.log(`[groq-transcribe] Compressed audio size: ${sizeMB.toFixed(1)} MB`);
-  if (sizeMB > 25) {
-    try { await unlink(compressedPath); } catch (_) {}
-    throw new Error(`Compressed audio is ${sizeMB.toFixed(1)} MB (max 25 MB)`);
-  }
-
+function getPublicUrl(filename) {
   const baseUrl = process.env.VPS_PUBLIC_URL;
-  const publicUrl = baseUrl
-    ? `${baseUrl}/api/render/videos/${compressedFilename}`
-    : `http://localhost:${PORT}/videos/${compressedFilename}`;
-  console.log(`[groq-transcribe] Sending URL to Groq Whisper API: ${publicUrl}`);
+  return baseUrl
+    ? `${baseUrl}/api/render/videos/${filename}`
+    : `http://localhost:${PORT}/videos/${filename}`;
+}
+
+function getAudioDurationSecs(filePath) {
+  const out = execSync(`ffprobe -v error -show_entries format=duration -of csv=p=0 "${filePath}"`, {
+    timeout: 30000, stdio: 'pipe', encoding: 'utf-8',
+  });
+  return parseFloat(out.trim());
+}
+
+async function sendChunkToGroq(chunkPath, groqApiKey) {
+  const chunkFilename = path.basename(chunkPath);
+  const publicUrl = getPublicUrl(chunkFilename);
 
   const formData = new FormData();
   formData.append('url', publicUrl);
@@ -3838,27 +3832,94 @@ async function transcribeWithGroq(audioPath, groqApiKey) {
     body: formData,
   });
 
-  // Cleanup compressed file after Groq has fetched it
-  try { await unlink(compressedPath); } catch (_) {}
+  try { await unlink(chunkPath); } catch (_) {}
 
   if (!resp.ok) {
     const errText = await resp.text();
     throw new Error(`Groq API error ${resp.status}: ${errText}`);
   }
+  return resp.json();
+}
 
-  const data = await resp.json();
+async function transcribeWithGroq(audioPath, groqApiKey) {
+  const compressedFilename = `groq_compressed_${Date.now()}_${Math.random().toString(36).substring(7)}.mp3`;
+  const compressedPath = path.join(TEMP_DIR, compressedFilename);
+
+  console.log(`[groq-transcribe] Compressing audio: ${audioPath}`);
+  execSync(`ffmpeg -y -i "${audioPath}" -ar 16000 -ac 1 -b:a 24k "${compressedPath}"`, {
+    timeout: 600000,
+    stdio: 'pipe',
+  });
+
+  const stats = fs.statSync(compressedPath);
+  const sizeMB = stats.size / (1024 * 1024);
+  console.log(`[groq-transcribe] Compressed audio size: ${sizeMB.toFixed(1)} MB`);
+
+  const MAX_CHUNK_MB = 24;
+
+  if (sizeMB <= MAX_CHUNK_MB) {
+    console.log(`[groq-transcribe] Single chunk, sending URL to Groq...`);
+    const data = await sendChunkToGroq(compressedPath, groqApiKey);
+
+    const formattedTranscript = {
+      segments: (data.words || []).map((w) => ({
+        text: w.word,
+        start_time: w.start,
+        end_time: w.end,
+      })),
+      language_code: data.language || 'en',
+      full_text: data.text || '',
+    };
+    console.log(`[groq-transcribe] Transcription complete: ${formattedTranscript.segments.length} words`);
+    return formattedTranscript;
+  }
+
+  // --- Chunked transcription ---
+  const totalDuration = getAudioDurationSecs(compressedPath);
+  const numChunks = Math.ceil(sizeMB / MAX_CHUNK_MB);
+  const chunkDuration = Math.ceil(totalDuration / numChunks);
+  console.log(`[groq-transcribe] File too large (${sizeMB.toFixed(1)} MB), splitting into ${numChunks} chunks of ~${chunkDuration}s`);
+
+  const chunkPaths = [];
+  for (let i = 0; i < numChunks; i++) {
+    const startSec = i * chunkDuration;
+    const chunkName = `groq_chunk_${Date.now()}_${i}.mp3`;
+    const chunkPath = path.join(TEMP_DIR, chunkName);
+    execSync(`ffmpeg -y -ss ${startSec} -t ${chunkDuration} -i "${compressedPath}" -c copy "${chunkPath}"`, {
+      timeout: 60000, stdio: 'pipe',
+    });
+    chunkPaths.push(chunkPath);
+  }
+
+  try { await unlink(compressedPath); } catch (_) {}
+
+  let allWords = [];
+  let language = 'en';
+  let fullText = '';
+
+  for (let i = 0; i < chunkPaths.length; i++) {
+    const offsetSec = i * chunkDuration;
+    console.log(`[groq-transcribe] Sending chunk ${i + 1}/${chunkPaths.length} (offset ${offsetSec}s)...`);
+    const data = await sendChunkToGroq(chunkPaths[i], groqApiKey);
+
+    if (i === 0 && data.language) language = data.language;
+    if (data.text) fullText += (fullText ? ' ' : '') + data.text;
+
+    const words = (data.words || []).map((w) => ({
+      text: w.word,
+      start_time: w.start + offsetSec,
+      end_time: w.end + offsetSec,
+    }));
+    allWords = allWords.concat(words);
+  }
 
   const formattedTranscript = {
-    segments: (data.words || []).map((w) => ({
-      text: w.word,
-      start_time: w.start,
-      end_time: w.end,
-    })),
-    language_code: data.language || 'en',
-    full_text: data.text || '',
+    segments: allWords,
+    language_code: language,
+    full_text: fullText,
   };
 
-  console.log(`[groq-transcribe] Transcription complete: ${formattedTranscript.segments.length} words`);
+  console.log(`[groq-transcribe] Chunked transcription complete: ${allWords.length} words across ${numChunks} chunks`);
   return formattedTranscript;
 }
 
