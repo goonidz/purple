@@ -169,6 +169,7 @@ const Index = () => {
   const [calendarChannelName, setCalendarChannelName] = useState<string | null>(null);
   const [calendarChannelColor, setCalendarChannelColor] = useState<string | null>(null);
   const [calendarStatus, setCalendarStatus] = useState<string | null>(null);
+  const [channelThumbnailVersion, setChannelThumbnailVersion] = useState<'v1' | 'v2' | 'both' | null>(null);
   const [transcriptFile, setTranscriptFile] = useState<File | null>(null);
   const [transcriptData, setTranscriptData] = useState<TranscriptData | null>(null);
   const [examplePrompts, setExamplePrompts] = useState<string[]>(["", "", ""]);
@@ -1257,7 +1258,7 @@ const Index = () => {
       // Load calendar date and channel if project is linked to calendar
       const { data: calendarEntries, error: calendarError } = await supabase
         .from("content_calendar")
-        .select("scheduled_date, id, channel_id, status, audio_url, channels(name, color, project_preset_id, render_preset_id)")
+        .select("scheduled_date, id, channel_id, status, audio_url, channels(name, color, project_preset_id, render_preset_id, thumbnail_preset_id, thumbnail_v2_preset_id)")
         .eq("project_id", projectId);
       
       if (calendarError) {
@@ -1266,6 +1267,7 @@ const Index = () => {
         setCalendarChannelName(null);
         setCalendarChannelColor(null);
         setCalendarStatus(null);
+        setChannelThumbnailVersion(null);
       } else {
         console.log("Calendar entries for project:", calendarEntries);
         // Get the first entry with a scheduled_date
@@ -1277,9 +1279,13 @@ const Index = () => {
         // Get channel info from calendar entry
         const entryWithChannel = calendarEntries?.find(entry => entry.channel_id && entry.channels);
         if (entryWithChannel && entryWithChannel.channels) {
-          const channelData = entryWithChannel.channels as { name: string; color: string; project_preset_id?: string; render_preset_id?: string };
+          const channelData = entryWithChannel.channels as { name: string; color: string; project_preset_id?: string; render_preset_id?: string; thumbnail_preset_id?: string; thumbnail_v2_preset_id?: string };
           setCalendarChannelName(channelData.name);
           setCalendarChannelColor(channelData.color);
+
+          const hasV1 = !!channelData.thumbnail_preset_id;
+          const hasV2 = !!channelData.thumbnail_v2_preset_id;
+          setChannelThumbnailVersion(hasV1 && hasV2 ? 'both' : hasV1 ? 'v1' : hasV2 ? 'v2' : null);
 
           // Load render preset from channel if project doesn't have one
           if (!projectData.render_preset_id && channelData.render_preset_id) {
@@ -5016,6 +5022,12 @@ const Index = () => {
 
               <TabsContent value="thumbnails" className="m-0">
                 <div className="max-w-5xl mx-auto">
+                  {channelThumbnailVersion === 'v2' && calendarChannelName && (
+                    <div className="mb-4 flex items-center gap-2 rounded-lg border border-amber-500/50 bg-amber-500/10 px-4 py-3 text-sm text-amber-200 cursor-pointer hover:bg-amber-500/20 transition-colors" onClick={() => setActiveTab('thumbnails-v2')}>
+                      <AlertTriangle className="h-4 w-4 shrink-0 text-amber-400" />
+                      <span>La chaîne <strong>{calendarChannelName}</strong> utilise un preset <strong>Miniature V2</strong>. Cliquez ici pour y accéder.</span>
+                    </div>
+                  )}
                   <ThumbnailGenerator
                     projectId={currentProjectId || ""}
                     videoScript={generatedPrompts.filter(p => p).map(p => p.text).join(" ")}
@@ -5026,6 +5038,12 @@ const Index = () => {
 
               <TabsContent value="thumbnails-v2" className="m-0">
                 <div className="max-w-5xl mx-auto">
+                  {channelThumbnailVersion === 'v1' && calendarChannelName && (
+                    <div className="mb-4 flex items-center gap-2 rounded-lg border border-amber-500/50 bg-amber-500/10 px-4 py-3 text-sm text-amber-200 cursor-pointer hover:bg-amber-500/20 transition-colors" onClick={() => setActiveTab('thumbnails')}>
+                      <AlertTriangle className="h-4 w-4 shrink-0 text-amber-400" />
+                      <span>La chaîne <strong>{calendarChannelName}</strong> utilise un preset <strong>Miniatures V1</strong>. Cliquez ici pour y accéder.</span>
+                    </div>
+                  )}
                   <ThumbnailGeneratorV2
                     projectId={currentProjectId || ""}
                     videoScript={generatedPrompts.filter(p => p).map(p => p.text).join(" ")}
