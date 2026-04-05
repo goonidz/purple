@@ -521,21 +521,20 @@ export function RenderPresetManager({
               )}
 
               {/* Opacity slider */}
-              {formBlackscreenUrl && (
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <Label className="text-xs">Opacité</Label>
-                    <span className="text-xs text-muted-foreground">{Math.round(formBlackscreenOpacity * 100)}%</span>
-                  </div>
-                  <Slider
-                    value={[formBlackscreenOpacity * 100]}
-                    onValueChange={([v]) => setFormBlackscreenOpacity(v / 100)}
-                    min={5}
-                    max={100}
-                    step={5}
-                  />
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <Label className="text-xs">Opacité de l'overlay</Label>
+                  <span className="text-xs font-medium">{Math.round(formBlackscreenOpacity * 100)}%</span>
                 </div>
-              )}
+                <Slider
+                  value={[formBlackscreenOpacity * 100]}
+                  onValueChange={([v]) => setFormBlackscreenOpacity(v / 100)}
+                  min={5}
+                  max={100}
+                  step={5}
+                  disabled={!formBlackscreenUrl}
+                />
+              </div>
             </div>
 
             {/* Actions */}
