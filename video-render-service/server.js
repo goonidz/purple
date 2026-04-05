@@ -3893,15 +3893,18 @@ async function transcribeWithGroq(audioPath, groqApiKey) {
 
   try { await unlink(compressedPath); } catch (_) {}
 
+  console.log(`[groq-transcribe] Sending ${chunkPaths.length} chunks in parallel...`);
+  const results = await Promise.all(
+    chunkPaths.map((cp, i) => sendChunkToGroq(cp, groqApiKey).then(data => ({ i, data })))
+  );
+  results.sort((a, b) => a.i - b.i);
+
   let allWords = [];
   let language = 'en';
   let fullText = '';
 
-  for (let i = 0; i < chunkPaths.length; i++) {
+  for (const { i, data } of results) {
     const offsetSec = i * chunkDuration;
-    console.log(`[groq-transcribe] Sending chunk ${i + 1}/${chunkPaths.length} (offset ${offsetSec}s)...`);
-    const data = await sendChunkToGroq(chunkPaths[i], groqApiKey);
-
     if (i === 0 && data.language) language = data.language;
     if (data.text) fullText += (fullText ? ' ' : '') + data.text;
 
