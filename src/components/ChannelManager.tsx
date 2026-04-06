@@ -546,6 +546,14 @@ export default function ChannelManager({
       isLoadingPresets={isLoadingPresets}
       isSavingPresets={isSavingPresets}
       onSave={handleSavePresets}
+      animatorEnabled={animatorEnabled}
+      setAnimatorEnabled={setAnimatorEnabled}
+      animatorBranding={animatorBranding}
+      setAnimatorBranding={setAnimatorBranding}
+      animatorExtraPrompt={animatorExtraPrompt}
+      setAnimatorExtraPrompt={setAnimatorExtraPrompt}
+      animatorModel={animatorModel}
+      setAnimatorModel={setAnimatorModel}
     />
     </>
   );
@@ -579,6 +587,14 @@ function PresetConfigDialog({
   isLoadingPresets,
   isSavingPresets,
   onSave,
+  animatorEnabled,
+  setAnimatorEnabled,
+  animatorBranding,
+  setAnimatorBranding,
+  animatorExtraPrompt,
+  setAnimatorExtraPrompt,
+  animatorModel,
+  setAnimatorModel,
 }: {
   isOpen: boolean;
   onClose: () => void;
@@ -607,6 +623,14 @@ function PresetConfigDialog({
   isLoadingPresets: boolean;
   isSavingPresets: boolean;
   onSave: () => void;
+  animatorEnabled: boolean;
+  setAnimatorEnabled: (enabled: boolean) => void;
+  animatorBranding: any;
+  setAnimatorBranding: (branding: any) => void;
+  animatorExtraPrompt: string;
+  setAnimatorExtraPrompt: (prompt: string) => void;
+  animatorModel: string;
+  setAnimatorModel: (model: string) => void;
 }) {
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
