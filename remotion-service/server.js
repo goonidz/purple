@@ -252,7 +252,7 @@ app.post('/animator/generate', async (req, res) => {
     const result = await generateComposition({
       anthropicKey,
       segments,
-      componentName: componentName || `Anim_${jobId.replace(/-/g, '_')}`,
+      componentName: componentName || `Anim${jobId.replace(/[^a-zA-Z0-9]/g, '')}`,
       audioFilename,
       brandingConfig,
       brandingMarkdown,
@@ -466,9 +466,10 @@ app.post('/animator/generate-and-render', async (req, res) => {
   if (!bundleLocation) return res.status(503).json({ error: 'Bundle not ready' });
 
   const jobId = `animator-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  const effectiveName = componentName || `Anim_${jobId.replace(/-/g, '_')}`;
+  const effectiveName = componentName || `Anim${jobId.replace(/[^a-zA-Z0-9]/g, '')}`;
+  const compositionId = effectiveName.replace(/_/g, '-');
 
-  activeJobs.set(jobId, { status: 'generating', progress: 0, startedAt: Date.now(), compositionId: effectiveName });
+  activeJobs.set(jobId, { status: 'generating', progress: 0, startedAt: Date.now(), compositionId });
 
   if (supabase && projectId && userId) {
     await supabase.from('remotion_render_jobs').insert({
@@ -515,8 +516,8 @@ app.post('/animator/generate-and-render', async (req, res) => {
         const lineEnd = rootContent.indexOf('\n', lastImportIdx);
         rootContent = rootContent.slice(0, lineEnd + 1) + importLine + '\n' + rootContent.slice(lineEnd + 1);
       }
-      const compBlock = `      <Composition id="${effectiveName}" component={${effectiveName}} durationInFrames={${result.durationInFrames}} fps={${fps}} width={${width}} height={${height}} defaultProps={{}} />`;
-      if (!rootContent.includes(`id="${effectiveName}"`)) {
+      const compBlock = `      <Composition id="${compositionId}" component={${effectiveName}} durationInFrames={${result.durationInFrames}} fps={${fps}} width={${width}} height={${height}} defaultProps={{}} />`;
+      if (!rootContent.includes(`id="${compositionId}"`)) {
         const closingIdx = rootContent.lastIndexOf('    </>');
         if (closingIdx !== -1) rootContent = rootContent.slice(0, closingIdx) + compBlock + '\n' + rootContent.slice(closingIdx);
       }
@@ -526,7 +527,7 @@ app.post('/animator/generate-and-render', async (req, res) => {
       const newBundle = await bundle({ entryPoint, webpackOverride: (config) => config });
 
       const outputFile = path.join(__dirname, 'temp', `${jobId}.mp4`);
-      const composition = await selectComposition({ serveUrl: newBundle, id: effectiveName, inputProps: {} });
+      const composition = await selectComposition({ serveUrl: newBundle, id: compositionId, inputProps: {} });
 
       await renderMedia({
         composition: { ...composition, durationInFrames: result.durationInFrames, fps, width, height },

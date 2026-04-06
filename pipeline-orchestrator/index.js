@@ -864,10 +864,9 @@ async function stepAnimatorGenerate(pipeline) {
   }
 
   const safeName = (project.name || 'Composition')
-    .replace(/[^a-zA-Z0-9]/g, '_')
-    .replace(/^_+|_+$/g, '')
+    .replace(/[^a-zA-Z0-9]/g, '')
     .substring(0, 40);
-  const componentName = `Anim_${safeName}_${Date.now().toString(36)}`;
+  const componentName = `Anim${safeName}${Date.now().toString(36)}`;
 
   console.log(`[orchestrator] [${id}] Starting animator generation: ${componentName} (${project.animator_segments.segments.length} segments)`);
 
