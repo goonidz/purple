@@ -572,11 +572,6 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
       return;
     }
 
-    if (exampleUrls.length === 0) {
-      toast.error("Ajoutez au moins un exemple de miniature");
-      return;
-    }
-
     setIsSavingPreset(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -849,11 +844,6 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
   };
 
   const generateThumbnails = async () => {
-    if (exampleUrls.length === 0) {
-      toast.error("Ajoute au moins un exemple de miniature");
-      return;
-    }
-
     if (hasActiveJob('thumbnails')) {
       toast.error("Une génération de miniatures est déjà en cours");
       return;
