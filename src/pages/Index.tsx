@@ -4140,8 +4140,15 @@ const Index = () => {
                             if (!currentProjectId) return;
                             setIsAnimatorGenerating(true);
                             try {
-                              const { data: proj } = await supabase.from("projects").select("channel_id").eq("id", currentProjectId).single();
-                              if (!proj?.channel_id) { toast.error("Pas de chaîne liée"); return; }
+                              const { data: calEntry } = await supabase
+                                .from("content_calendar")
+                                .select("channel_id")
+                                .eq("project_id", currentProjectId)
+                                .not("channel_id", "is", null)
+                                .limit(1)
+                                .single();
+                              const channelId = calEntry?.channel_id;
+                              if (!channelId) { toast.error("Pas de chaîne liée"); return; }
 
                               const userId = (await supabase.auth.getUser()).data.user?.id;
 
@@ -4160,7 +4167,7 @@ const Index = () => {
                               const { error } = await (supabase.from("auto_pipelines" as any) as any).insert({
                                 project_id: currentProjectId,
                                 user_id: userId,
-                                channel_id: proj.channel_id,
+                                channel_id: channelId,
                                 status: "running",
                                 current_step: "animator_transcribe",
                                 steps_completed: ["generate_script", "generate_audio", "wait_audio", "transcription", "wait_transcription"],
