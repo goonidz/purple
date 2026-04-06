@@ -4191,6 +4191,43 @@ const Index = () => {
                   </Card>
                 )}
 
+                {/* Animator video preview — standalone block for animator channels */}
+                {isAnimatorChannel && animatorVideoUrl && (
+                  <Card className="p-6 border-2 border-purple-500/30 bg-purple-500/5 mb-6">
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="font-semibold text-lg flex items-center gap-2">
+                        <Sparkles className="h-5 w-5 text-purple-500" />
+                        Animation Remotion
+                      </h3>
+                      <div className="flex gap-2">
+                        <Button size="sm" variant="outline" onClick={() => window.open(animatorVideoUrl!, '_blank')}>
+                          Voir la vidéo
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={isAnimatorGenerating}
+                          onClick={() => setShowConfigurationModal(false)}
+                        >
+                          {isAnimatorGenerating ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
+                          Régénérer
+                        </Button>
+                      </div>
+                    </div>
+                    <video src={animatorVideoUrl!} controls className="w-full rounded-lg max-h-[500px]" />
+                  </Card>
+                )}
+
+                {isAnimatorChannel && !animatorVideoUrl && isAnimatorGenerating && (
+                  <Card className="p-6 border-2 border-purple-500/30 bg-purple-500/5 mb-6">
+                    <div className="flex items-center gap-3">
+                      <Loader2 className="h-5 w-5 animate-spin text-purple-500" />
+                      <span className="text-sm font-medium">Génération de l'animation Remotion en cours...</span>
+                    </div>
+                  </Card>
+                )}
+
+                {!isAnimatorChannel && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 md:gap-6">
                   {/* Configuration des scènes */}
                   <Card className="p-4 bg-muted/30 border-primary/20">
@@ -4299,6 +4336,7 @@ const Index = () => {
                     </div>
                   </Card>
                 </div>
+                )}
 
                 {(scenes.length > 0 || generatedPrompts.length > 0) && (
                   <Card className="p-6">
