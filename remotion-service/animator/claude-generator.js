@@ -5,15 +5,34 @@ const CHUNK_SIZE_DEFAULT = 25;
 const PRICES = { input: 3, output: 15, cacheWrite: 3.75, cacheRead: 0.30 };
 
 function stripSharedDeclarations(code) {
-  const SHARED = ['BG', 'ACCENT', 'ACCENT_DIM', 'TEXT_PRIMARY', 'TEXT_DIM', 'RED', 'RED_DIM', 'WHITE', 'WHITE_DIM', 'useFade', 'Grid'];
-  const pattern = new RegExp(
+  const SHARED = ['BG', 'ACCENT', 'ACCENT_DIM', 'TEXT_PRIMARY', 'TEXT_DIM', 'RED', 'RED_DIM', 'WHITE', 'WHITE_DIM', 'useFade', 'Grid', 'GRID_STYLE'];
+  const declPattern = new RegExp(
     `^\\s*(?:const|let|var)\\s+(${SHARED.join('|')})\\s*[=:]|` +
     `^\\s*function\\s+(${SHARED.join('|')})\\s*[(<]`
   );
-  return code
-    .split('\n')
-    .filter(line => !pattern.test(line))
-    .join('\n');
+  const lines = code.split('\n');
+  const result = [];
+  let stripping = false;
+  let braceDepth = 0;
+  for (const line of lines) {
+    if (!stripping && declPattern.test(line)) {
+      stripping = true;
+      braceDepth = 0;
+    }
+    if (stripping) {
+      for (const ch of line) {
+        if (ch === '{') braceDepth++;
+        if (ch === '}') braceDepth--;
+      }
+      if (braceDepth <= 0 && line.includes('}')) {
+        stripping = false;
+        braceDepth = 0;
+      }
+      continue;
+    }
+    result.push(line);
+  }
+  return result.join('\n');
 }
 
 async function generateChunk(client, model, systemPrompt, chunkSegments, chunkIdx, totalChunks, extraPrompt, globalOffset) {
