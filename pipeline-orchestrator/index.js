@@ -877,6 +877,7 @@ async function stepAnimatorGenerate(pipeline) {
       anthropicKey,
       segments: project.animator_segments.segments,
       componentName,
+      audioUrl: project.audio_url || null,
       audioFilename: null,
       brandingConfig,
       brandingMarkdown,

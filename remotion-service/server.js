@@ -447,6 +447,7 @@ app.post('/animator/generate-and-render', async (req, res) => {
     segments,
     componentName,
     audioFilename,
+    audioUrl,
     brandingConfig,
     brandingMarkdown,
     extraPrompt,
@@ -469,6 +470,23 @@ app.post('/animator/generate-and-render', async (req, res) => {
   const effectiveName = componentName || `Anim${jobId.replace(/[^a-zA-Z0-9]/g, '')}`;
   const compositionId = effectiveName.replace(/_/g, '-');
 
+  let resolvedAudioFilename = audioFilename || null;
+  if (!resolvedAudioFilename && audioUrl) {
+    try {
+      const audioResp = await fetch(audioUrl);
+      if (audioResp.ok) {
+        const audioBuffer = Buffer.from(await audioResp.arrayBuffer());
+        resolvedAudioFilename = `${jobId}-audio.mp3`;
+        const publicDir = path.join(__dirname, 'public');
+        if (!fs.existsSync(publicDir)) fs.mkdirSync(publicDir, { recursive: true });
+        fs.writeFileSync(path.join(publicDir, resolvedAudioFilename), audioBuffer);
+        console.log(`[Animator] Downloaded audio: ${resolvedAudioFilename} (${audioBuffer.length} bytes)`);
+      }
+    } catch (e) {
+      console.warn(`[Animator] Failed to download audio: ${e.message}`);
+    }
+  }
+
   activeJobs.set(jobId, { status: 'generating', progress: 0, startedAt: Date.now(), compositionId });
 
   if (supabase && projectId && userId) {
@@ -489,7 +507,7 @@ app.post('/animator/generate-and-render', async (req, res) => {
     try {
       const result = await generateComposition({
         anthropicKey, segments, componentName: effectiveName,
-        audioFilename, brandingConfig, brandingMarkdown, extraPrompt, model, chunkSize, fps, width, height,
+        audioFilename: resolvedAudioFilename, brandingConfig, brandingMarkdown, extraPrompt, model, chunkSize, fps, width, height,
       });
 
       if (supabase && projectId) {
