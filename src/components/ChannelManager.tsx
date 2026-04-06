@@ -928,37 +928,12 @@ function PresetConfigDialog({
                           variant="ghost"
                           className="h-6 text-xs"
                           onClick={async () => {
-                            try {
-                              const resp = await fetch('/remotion-service/animator/default-branding.md');
-                              if (resp.ok) {
-                                setAnimatorBrandingMarkdown(await resp.text());
-                              }
-                            } catch (_) {
-                              setAnimatorBrandingMarkdown(`# Branding & Style de montage
-
-## Palette — 3 couleurs, pas plus
-
-| Token | Valeur | Usage |
-|-------|--------|-------|
-| \`BG\` | \`#111118\` | Fond global |
-| \`RED\` | \`#ef4444\` | Accent unique |
-| \`WHITE\` | \`#f0f0f0\` | Texte principal |
-
-## Typographie
-- Font: system-ui, sans-serif
-- Hero: 120–180px, Titre: 48–64px, Sous-titre: 28–36px
-
-## Animations
-- Fade in/out ~12% de la durée du segment
-- Springs: smooth { damping: 200 }, snappy { damping: 20, stiffness: 200 }, punch { damping: 8 }
-- Stagger: 8 frames entre éléments
-- Jamais de CSS transitions — tout via interpolate() et spring()
-- Toujours extrapolateRight: "clamp"
-
-## Data visualization
-Si la donnée peut être montrée dans un chart → utiliser un chart (bar, line, donut, area).
-`);
+                            const { data, error } = await supabase.rpc('get_default_branding_markdown');
+                            if (error) {
+                              toast.error('Impossible de charger le template par défaut');
+                              return;
                             }
+                            if (data) setAnimatorBrandingMarkdown(data);
                           }}
                         >
                           Charger le template par défaut
