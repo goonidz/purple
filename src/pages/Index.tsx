@@ -273,6 +273,7 @@ const Index = () => {
   const [audioUrl, setAudioUrl] = useState<string>("");
   const [animatorVideoUrl, setAnimatorVideoUrl] = useState<string | null>(null);
   const [isAnimatorGenerating, setIsAnimatorGenerating] = useState(false);
+  const [isAnimatorChannel, setIsAnimatorChannel] = useState(false);
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [isUploadingAudio, setIsUploadingAudio] = useState(false);
   const [isDraggingAudio, setIsDraggingAudio] = useState(false);
@@ -937,6 +938,11 @@ const Index = () => {
     if (generatedPrompts.length > 0) {
       return;
     }
+
+    // Don't show scene config for animator channels — scenes come from Groq segments
+    if (isAnimatorChannel) {
+      return;
+    }
     
     // Force open modal when configure param is present (bypass projectDataLoaded check)
     if (shouldConfigure && transcriptData && scenes.length === 0 && currentProjectId && !hasShownConfigModalRef.current) {
@@ -962,7 +968,7 @@ const Index = () => {
       }, 500);
       return () => clearTimeout(timer);
     }
-  }, [transcriptData, scenes, generatedPrompts, currentProjectId, hasActiveJob, searchParams, navigate]);
+  }, [transcriptData, scenes, generatedPrompts, currentProjectId, hasActiveJob, searchParams, navigate, isAnimatorChannel]);
   
   // Reset the flag when project changes
   useEffect(() => {
@@ -1265,7 +1271,7 @@ const Index = () => {
       // Load calendar date and channel if project is linked to calendar
       const { data: calendarEntries, error: calendarError } = await supabase
         .from("content_calendar")
-        .select("scheduled_date, id, channel_id, status, audio_url, channels(name, color, project_preset_id, render_preset_id, thumbnail_preset_id, thumbnail_v2_preset_id)")
+        .select("scheduled_date, id, channel_id, status, audio_url, channels(name, color, project_preset_id, render_preset_id, thumbnail_preset_id, thumbnail_v2_preset_id, animator_preset_id)")
         .eq("project_id", projectId);
       
       if (calendarError) {
@@ -1286,13 +1292,20 @@ const Index = () => {
         // Get channel info from calendar entry
         const entryWithChannel = calendarEntries?.find(entry => entry.channel_id && entry.channels);
         if (entryWithChannel && entryWithChannel.channels) {
-          const channelData = entryWithChannel.channels as { name: string; color: string; project_preset_id?: string; render_preset_id?: string; thumbnail_preset_id?: string; thumbnail_v2_preset_id?: string };
+          const channelData = entryWithChannel.channels as { name: string; color: string; project_preset_id?: string; render_preset_id?: string; thumbnail_preset_id?: string; thumbnail_v2_preset_id?: string; animator_preset_id?: string };
           setCalendarChannelName(channelData.name);
           setCalendarChannelColor(channelData.color);
 
           const hasV1 = !!channelData.thumbnail_preset_id;
           const hasV2 = !!channelData.thumbnail_v2_preset_id;
           setChannelThumbnailVersion(hasV1 && hasV2 ? 'both' : hasV1 ? 'v1' : hasV2 ? 'v2' : null);
+
+          if (channelData.animator_preset_id) {
+            const { data: animPreset } = await (supabase.from("animator_presets" as any) as any).select("enabled").eq("id", channelData.animator_preset_id).single();
+            setIsAnimatorChannel(!!(animPreset as any)?.enabled);
+          } else {
+            setIsAnimatorChannel(false);
+          }
 
           // Load render preset from channel if project doesn't have one
           if (!projectData.render_preset_id && channelData.render_preset_id) {
@@ -1361,6 +1374,7 @@ const Index = () => {
         } else {
           setCalendarChannelName(null);
           setCalendarChannelColor(null);
+          setIsAnimatorChannel(false);
         }
         
         // Get status from calendar entry
@@ -4086,7 +4100,7 @@ const Index = () => {
                 )}
 
                 {/* CTA when transcription is done but no scenes AND no prompts yet */}
-                {transcriptData && scenes.length === 0 && generatedPrompts.length === 0 && (
+                {transcriptData && scenes.length === 0 && generatedPrompts.length === 0 && !isAnimatorChannel && (
                   <Card className="p-6 border-2 border-primary/50 bg-primary/5 mb-6">
                     <div className="flex items-start gap-4">
                       <div className="rounded-full bg-primary/10 p-3">
@@ -4100,6 +4114,68 @@ const Index = () => {
                         <Button onClick={() => setShowConfigurationModal(true)} size="lg">
                           <Settings className="mr-2 h-4 w-4" />
                           Configurer et générer les scènes
+                        </Button>
+                      </div>
+                    </div>
+                  </Card>
+                )}
+
+                {/* CTA for Remotion Animator channels */}
+                {transcriptData && isAnimatorChannel && !animatorVideoUrl && !isAnimatorGenerating && (
+                  <Card className="p-6 border-2 border-purple-500/50 bg-purple-500/5 mb-6">
+                    <div className="flex items-start gap-4">
+                      <div className="rounded-full bg-purple-500/10 p-3">
+                        <Sparkles className="h-6 w-6 text-purple-500" />
+                      </div>
+                      <div className="flex-1">
+                        <h3 className="font-semibold text-lg mb-1">Transcription prête — Mode Remotion Animator</h3>
+                        <p className="text-sm text-muted-foreground mb-4">
+                          Les segments audio seront utilisés pour générer une animation Remotion via Claude.
+                          Lancez le pipeline pour démarrer la génération automatique.
+                        </p>
+                        <Button
+                          size="lg"
+                          className="bg-purple-600 hover:bg-purple-700"
+                          onClick={async () => {
+                            if (!currentProjectId) return;
+                            setIsAnimatorGenerating(true);
+                            try {
+                              const { data: proj } = await supabase.from("projects").select("channel_id").eq("id", currentProjectId).single();
+                              if (!proj?.channel_id) { toast.error("Pas de chaîne liée"); return; }
+
+                              const userId = (await supabase.auth.getUser()).data.user?.id;
+
+                              const { data: existing } = await supabase
+                                .from("auto_pipelines" as any)
+                                .select("id, status")
+                                .eq("project_id", currentProjectId)
+                                .order("created_at", { ascending: false })
+                                .limit(1);
+
+                              if ((existing as any)?.[0]?.status === 'running') {
+                                toast.info("Le pipeline est déjà en cours");
+                                return;
+                              }
+
+                              const { error } = await (supabase.from("auto_pipelines" as any) as any).insert({
+                                project_id: currentProjectId,
+                                user_id: userId,
+                                channel_id: proj.channel_id,
+                                status: "running",
+                                current_step: "animator_transcribe",
+                                steps_completed: ["generate_script", "generate_audio", "wait_audio", "transcription", "wait_transcription"],
+                              });
+                              if (error) throw error;
+                              toast.success("Pipeline Animator lancé !");
+                            } catch (e: any) {
+                              toast.error("Erreur: " + e.message);
+                            } finally {
+                              setIsAnimatorGenerating(false);
+                            }
+                          }}
+                        >
+                          <Sparkles className="mr-2 h-4 w-4" />
+                          Lancer le pipeline Animator
                         </Button>
                       </div>
                     </div>
