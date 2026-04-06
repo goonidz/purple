@@ -5,6 +5,8 @@ const { parseTranscriptToScenes, DEFAULT_DURATION_RANGES } = require('./scenePar
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const VPS_URL = process.env.VPS_URL || 'http://localhost:3001';
+const FFMPEG_SERVICE_URL = process.env.FFMPEG_SERVICE_URL || 'http://localhost:3000';
+const REMOTION_SERVICE_URL = process.env.REMOTION_SERVICE_URL || 'http://localhost:3002';
 const POLL_INTERVAL = 30_000;
 const MAX_RETRIES = 3;
 
@@ -411,7 +413,8 @@ async function stepWaitTranscription(pipeline) {
   const { data: project } = await supabase.from('projects').select('transcript_json').eq('id', project_id).single();
   if (project?.transcript_json && project.transcript_json.segments?.length > 0) {
     console.log(`[orchestrator] [${id}] Transcript already in DB, advancing`);
-    await advancePipeline(id, 'create_scenes');
+    const nextStep = await getNextStepAfterTranscription(pipeline);
+    await advancePipeline(id, nextStep);
     return;
   }
 
@@ -420,10 +423,35 @@ async function stepWaitTranscription(pipeline) {
 
   if (job.status === 'completed') {
     console.log(`[orchestrator] [${id}] Transcription completed`);
-    await advancePipeline(id, 'create_scenes');
+    const nextStep = await getNextStepAfterTranscription(pipeline);
+    await advancePipeline(id, nextStep);
   } else if (job.status === 'failed') {
     throw new Error(`Transcription failed: ${job.metadata?.error || 'unknown'}`);
   }
+}
+
+async function getNextStepAfterTranscription(pipeline) {
+  if (pipeline.channel_id) {
+    try {
+      const { data: ch } = await supabase
+        .from('channels')
+        .select('animator_preset_id')
+        .eq('id', pipeline.channel_id)
+        .single();
+      if (ch?.animator_preset_id) {
+        const { data: preset } = await supabase
+          .from('animator_presets')
+          .select('enabled')
+          .eq('id', ch.animator_preset_id)
+          .single();
+        if (preset?.enabled) {
+          console.log(`[orchestrator] [${pipeline.id}] Animator enabled for channel, branching to animator flow`);
+          return 'animator_transcribe';
+        }
+      }
+    } catch (_) {}
+  }
+  return 'create_scenes';
 }
 
 async function stepCreateScenes(pipeline) {
@@ -738,6 +766,165 @@ async function stepWaitRender(pipeline) {
 }
 
 // ============================================================================
+// ANIMATOR STEPS (Remotion Animator workflow)
+// ============================================================================
+
+async function stepAnimatorTranscribe(pipeline) {
+  const { id, project_id, user_id } = pipeline;
+
+  const { data: project } = await supabase
+    .from('projects')
+    .select('audio_url, animator_segments')
+    .eq('id', project_id)
+    .single();
+
+  if (project?.animator_segments && project.animator_segments.segments?.length > 0) {
+    console.log(`[orchestrator] [${id}] Animator segments already exist, skipping`);
+    await advancePipeline(id, 'wait_animator_transcribe');
+    return;
+  }
+
+  if (!project?.audio_url) throw new Error('No audio_url in project for animator transcription');
+
+  console.log(`[orchestrator] [${id}] Starting Groq segment-level transcription`);
+  const resp = await fetch(`${FFMPEG_SERVICE_URL}/transcribe-groq-segments`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ audioUrl: project.audio_url, userId: user_id }),
+  });
+
+  if (!resp.ok) {
+    const errText = await resp.text();
+    throw new Error(`Groq segment transcription failed: ${errText}`);
+  }
+
+  const { transcript } = await resp.json();
+  await supabase.from('projects').update({ animator_segments: transcript }).eq('id', project_id);
+
+  console.log(`[orchestrator] [${id}] Animator segments saved: ${transcript.segments?.length} segments`);
+  await advancePipeline(id, 'wait_animator_transcribe');
+}
+
+async function stepWaitAnimatorTranscribe(pipeline) {
+  const { id, project_id } = pipeline;
+
+  const { data: project } = await supabase
+    .from('projects')
+    .select('animator_segments')
+    .eq('id', project_id)
+    .single();
+
+  if (project?.animator_segments && project.animator_segments.segments?.length > 0) {
+    console.log(`[orchestrator] [${id}] Animator segments ready`);
+    await advancePipeline(id, 'animator_generate');
+  }
+}
+
+async function stepAnimatorGenerate(pipeline) {
+  const { id, project_id, user_id, channel_id } = pipeline;
+
+  const { data: project } = await supabase
+    .from('projects')
+    .select('animator_segments, audio_url, name')
+    .eq('id', project_id)
+    .single();
+
+  if (!project?.animator_segments?.segments?.length) {
+    throw new Error('No animator_segments in project');
+  }
+
+  const anthropicKey = await getUserApiKey(user_id, 'anthropic');
+
+  let brandingConfig = null;
+  let extraPrompt = '';
+  let model = 'claude-sonnet-4-6';
+  let chunkSize = 25;
+
+  if (channel_id) {
+    const { data: ch } = await supabase
+      .from('channels')
+      .select('animator_preset_id')
+      .eq('id', channel_id)
+      .single();
+    if (ch?.animator_preset_id) {
+      const { data: preset } = await supabase
+        .from('animator_presets')
+        .select('*')
+        .eq('id', ch.animator_preset_id)
+        .single();
+      if (preset) {
+        brandingConfig = preset.branding_config;
+        extraPrompt = preset.extra_prompt || '';
+        model = preset.model || 'claude-sonnet-4-6';
+        chunkSize = preset.chunk_size || 25;
+      }
+    }
+  }
+
+  const safeName = (project.name || 'Composition')
+    .replace(/[^a-zA-Z0-9]/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .substring(0, 40);
+  const componentName = `Anim_${safeName}_${Date.now().toString(36)}`;
+
+  console.log(`[orchestrator] [${id}] Starting animator generation: ${componentName} (${project.animator_segments.segments.length} segments)`);
+
+  const resp = await fetch(`${REMOTION_SERVICE_URL}/animator/generate-and-render`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      anthropicKey,
+      segments: project.animator_segments.segments,
+      componentName,
+      audioFilename: null,
+      brandingConfig,
+      extraPrompt,
+      model,
+      chunkSize,
+      fps: 30,
+      width: 1920,
+      height: 1080,
+      projectId: project_id,
+      userId: user_id,
+    }),
+  });
+
+  if (!resp.ok) {
+    const errText = await resp.text();
+    throw new Error(`Animator generate-and-render failed: ${errText}`);
+  }
+
+  const { jobId } = await resp.json();
+  console.log(`[orchestrator] [${id}] Animator job created: ${jobId}`);
+  await advancePipeline(id, 'wait_animator_generate', { metadata: { ...pipeline.metadata, animatorJobId: jobId } });
+}
+
+async function stepWaitAnimatorGenerate(pipeline) {
+  const { id, metadata } = pipeline;
+  const jobId = metadata?.animatorJobId;
+  if (!jobId) throw new Error('No animatorJobId in metadata');
+
+  const { data: job } = await supabase
+    .from('remotion_render_jobs')
+    .select('status, video_url, error_message, progress')
+    .eq('id', jobId)
+    .single();
+
+  if (!job) return;
+
+  if (job.status === 'completed' && job.video_url) {
+    console.log(`[orchestrator] [${id}] Animator render completed: ${job.video_url}`);
+    await advancePipeline(id, 'completed');
+  } else if (job.status === 'failed') {
+    throw new Error(`Animator render failed: ${job.error_message || 'unknown'}`);
+  } else {
+    if (job.progress) {
+      console.log(`[orchestrator] [${id}] Animator job ${jobId}: ${job.status} (${job.progress}%)`);
+    }
+  }
+}
+
+// ============================================================================
 // STEP DISPATCH
 // ============================================================================
 
@@ -756,6 +943,11 @@ const STEP_HANDLERS = {
   wait_images: stepWaitImages,
   render_video: stepRenderVideo,
   wait_render: stepWaitRender,
+  // Animator workflow
+  animator_transcribe: stepAnimatorTranscribe,
+  wait_animator_transcribe: stepWaitAnimatorTranscribe,
+  animator_generate: stepAnimatorGenerate,
+  wait_animator_generate: stepWaitAnimatorGenerate,
 };
 
 // ============================================================================

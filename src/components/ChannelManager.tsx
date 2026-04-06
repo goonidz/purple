@@ -104,6 +104,17 @@ export default function ChannelManager({
   const [isLoadingPresets, setIsLoadingPresets] = useState(false);
   const [isSavingPresets, setIsSavingPresets] = useState(false);
 
+  // Animator preset state
+  const [animatorEnabled, setAnimatorEnabled] = useState(false);
+  const [animatorBranding, setAnimatorBranding] = useState({
+    palette: { bg: '#111118', accent: '#ef4444', accentDim: 'rgba(239,68,68,0.25)', text: '#f0f0f0', textDim: 'rgba(240,240,240,0.35)' },
+    typography: { fontFamily: 'system-ui, sans-serif', heroSize: 150, titleSize: 56, subtitleSize: 32, labelSize: 21 },
+    animation: { fadeRatio: 0.12, staggerFrames: 8, premountFrames: 15 },
+  });
+  const [animatorExtraPrompt, setAnimatorExtraPrompt] = useState('');
+  const [animatorModel, setAnimatorModel] = useState('claude-sonnet-4-6');
+  const [animatorPresetId, setAnimatorPresetId] = useState<string | null>(null);
+
   useEffect(() => {
     if (isOpen) {
       loadChannels();
@@ -260,7 +271,7 @@ export default function ChannelManager({
     }
   };
 
-  const handleConfigurePresets = (channel: Channel) => {
+  const handleConfigurePresets = async (channel: Channel) => {
     setConfiguringChannelId(channel.id);
     setConfiguringChannelName(channel.name);
     setSelectedScriptPresetId(channel.script_preset_id || "none");
@@ -270,6 +281,28 @@ export default function ChannelManager({
     setSelectedThumbnailV2PresetId(channel.thumbnail_v2_preset_id || "none");
     setSelectedRenderPresetId(channel.render_preset_id || "none");
     setThumbnailPresetEnabled(channel.thumbnail_preset_enabled ?? true);
+
+    // Load animator preset if exists
+    const chAny = channel as any;
+    if (chAny.animator_preset_id) {
+      const { data: preset } = await supabase
+        .from("animator_presets" as any)
+        .select("*")
+        .eq("id", chAny.animator_preset_id)
+        .single();
+      if (preset) {
+        setAnimatorPresetId(preset.id);
+        setAnimatorEnabled((preset as any).enabled ?? false);
+        setAnimatorBranding((preset as any).branding_config || animatorBranding);
+        setAnimatorExtraPrompt((preset as any).extra_prompt || '');
+        setAnimatorModel((preset as any).model || 'claude-sonnet-4-6');
+        return;
+      }
+    }
+    setAnimatorPresetId(null);
+    setAnimatorEnabled(false);
+    setAnimatorExtraPrompt('');
+    setAnimatorModel('claude-sonnet-4-6');
   };
 
   const [configuringChannelName, setConfiguringChannelName] = useState("");
@@ -279,6 +312,31 @@ export default function ChannelManager({
 
     setIsSavingPresets(true);
     try {
+      // Save or update animator preset
+      let finalAnimatorPresetId = animatorPresetId;
+      if (animatorEnabled || animatorPresetId) {
+        const animatorData = {
+          user_id: userId,
+          channel_id: configuringChannelId,
+          enabled: animatorEnabled,
+          branding_config: animatorBranding,
+          extra_prompt: animatorExtraPrompt,
+          model: animatorModel,
+          updated_at: new Date().toISOString(),
+        };
+
+        if (animatorPresetId) {
+          await supabase.from("animator_presets" as any).update(animatorData as any).eq("id", animatorPresetId);
+        } else {
+          const { data: newPreset } = await supabase
+            .from("animator_presets" as any)
+            .insert({ ...animatorData, name: configuringChannelName || 'Animator' } as any)
+            .select("id")
+            .single();
+          if (newPreset) finalAnimatorPresetId = (newPreset as any).id;
+        }
+      }
+
       const { error } = await supabase
         .from("channels")
         .update({
@@ -290,6 +348,7 @@ export default function ChannelManager({
           thumbnail_v2_preset_id: selectedThumbnailV2PresetId === "none" ? null : selectedThumbnailV2PresetId,
           render_preset_id: selectedRenderPresetId === "none" ? null : selectedRenderPresetId,
           thumbnail_preset_enabled: thumbnailPresetEnabled,
+          animator_preset_id: finalAnimatorPresetId || null,
         } as any)
         .eq("id", configuringChannelId);
 
@@ -728,6 +787,115 @@ function PresetConfigDialog({
               <p className="text-xs text-muted-foreground">
                 FPS, effet vidéo, GPU et overlay particles pour le rendu
               </p>
+            </div>
+
+            {/* Remotion Animator */}
+            <div className="space-y-3 border-t pt-4 mt-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label className="text-base font-semibold">Remotion Animator</Label>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Génère des compositions animées via Claude AI au lieu des images classiques
+                  </p>
+                </div>
+                <Switch checked={animatorEnabled} onCheckedChange={setAnimatorEnabled} />
+              </div>
+
+              {animatorEnabled && (
+                <div className="space-y-3 pl-2 border-l-2 border-primary/20">
+                  <div className="space-y-1">
+                    <Label className="text-sm">Modèle Claude</Label>
+                    <Select value={animatorModel} onValueChange={setAnimatorModel}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="claude-sonnet-4-6">Claude Sonnet 4.6</SelectItem>
+                        <SelectItem value="claude-sonnet-4-5-20250620">Claude Sonnet 4.5</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <Label className="text-xs">Fond (BG)</Label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="color"
+                          value={animatorBranding.palette.bg}
+                          onChange={(e) => setAnimatorBranding(prev => ({
+                            ...prev,
+                            palette: { ...prev.palette, bg: e.target.value }
+                          }))}
+                          className="w-8 h-8 rounded cursor-pointer border"
+                        />
+                        <Input
+                          value={animatorBranding.palette.bg}
+                          onChange={(e) => setAnimatorBranding(prev => ({
+                            ...prev,
+                            palette: { ...prev.palette, bg: e.target.value }
+                          }))}
+                          className="h-8 text-xs font-mono"
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Accent</Label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="color"
+                          value={animatorBranding.palette.accent}
+                          onChange={(e) => setAnimatorBranding(prev => ({
+                            ...prev,
+                            palette: { ...prev.palette, accent: e.target.value }
+                          }))}
+                          className="w-8 h-8 rounded cursor-pointer border"
+                        />
+                        <Input
+                          value={animatorBranding.palette.accent}
+                          onChange={(e) => setAnimatorBranding(prev => ({
+                            ...prev,
+                            palette: { ...prev.palette, accent: e.target.value }
+                          }))}
+                          className="h-8 text-xs font-mono"
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Texte principal</Label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="color"
+                          value={animatorBranding.palette.text}
+                          onChange={(e) => setAnimatorBranding(prev => ({
+                            ...prev,
+                            palette: { ...prev.palette, text: e.target.value }
+                          }))}
+                          className="w-8 h-8 rounded cursor-pointer border"
+                        />
+                        <Input
+                          value={animatorBranding.palette.text}
+                          onChange={(e) => setAnimatorBranding(prev => ({
+                            ...prev,
+                            palette: { ...prev.palette, text: e.target.value }
+                          }))}
+                          className="h-8 text-xs font-mono"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-sm">Instructions supplémentaires (optionnel)</Label>
+                    <textarea
+                      value={animatorExtraPrompt}
+                      onChange={(e) => setAnimatorExtraPrompt(e.target.value)}
+                      placeholder="Ex: Style minimaliste, pas de charts, focus sur le texte..."
+                      className="w-full h-20 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}

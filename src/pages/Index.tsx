@@ -271,6 +271,8 @@ const Index = () => {
   const [blackscreenUrl, setBlackscreenUrl] = useState<string | null>(null);
   const [blackscreenOpacity, setBlackscreenOpacity] = useState(0.45);
   const [audioUrl, setAudioUrl] = useState<string>("");
+  const [animatorVideoUrl, setAnimatorVideoUrl] = useState<string | null>(null);
+  const [isAnimatorGenerating, setIsAnimatorGenerating] = useState(false);
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [isUploadingAudio, setIsUploadingAudio] = useState(false);
   const [isDraggingAudio, setIsDraggingAudio] = useState(false);
@@ -1211,6 +1213,11 @@ const Index = () => {
       setStyleReferenceUrls(parsedUrls);
       if (parsedUrls.length > 0) {
         setUploadedStyleImageUrl(parsedUrls[0]);
+      }
+      if (data.animator_video_url) {
+        setAnimatorVideoUrl(data.animator_video_url);
+      } else {
+        setAnimatorVideoUrl(null);
       }
       if (data.audio_url) {
         setAudioUrl(data.audio_url);
@@ -4316,6 +4323,73 @@ const Index = () => {
                           </div>
                         </div>
                         
+                        {/* Animator video preview + regenerate */}
+                        {animatorVideoUrl && (
+                          <div className="p-2 bg-purple-500/10 border border-purple-500/20 rounded-md space-y-2">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs font-medium text-purple-400">Animation Remotion</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={async () => {
+                                    if (!currentProjectId || isAnimatorGenerating) return;
+                                    setIsAnimatorGenerating(true);
+                                    try {
+                                      const { data: proj } = await supabase.from("projects").select("animator_segments, audio_url, channel_id").eq("id", currentProjectId).single();
+                                      if (!proj?.animator_segments?.segments?.length) {
+                                        toast.error("Pas de segments animator pour ce projet");
+                                        return;
+                                      }
+                                      const { data: apiKey } = await supabase.rpc("get_user_api_key", { key_name: "anthropic" });
+                                      if (!apiKey) { toast.error("Clé Anthropic non configurée"); return; }
+
+                                      let brandingConfig = null;
+                                      if (proj.channel_id) {
+                                        const { data: ch } = await supabase.from("channels").select("animator_preset_id").eq("id", proj.channel_id).single();
+                                        if ((ch as any)?.animator_preset_id) {
+                                          const { data: preset } = await (supabase.from("animator_presets" as any) as any).select("*").eq("id", (ch as any).animator_preset_id).single();
+                                          if (preset) brandingConfig = (preset as any).branding_config;
+                                        }
+                                      }
+
+                                      const resp = await fetch(`${import.meta.env.VITE_VPS_URL || ""}/remotion/animator/generate-and-render`, {
+                                        method: "POST",
+                                        headers: { "Content-Type": "application/json" },
+                                        body: JSON.stringify({
+                                          anthropicKey: apiKey,
+                                          segments: proj.animator_segments.segments,
+                                          projectId: currentProjectId,
+                                          userId: (await supabase.auth.getUser()).data.user?.id,
+                                          brandingConfig,
+                                        }),
+                                      });
+                                      if (!resp.ok) throw new Error(await resp.text());
+                                      toast.success("Régénération Animator lancée !");
+                                    } catch (err: any) {
+                                      toast.error("Erreur Animator: " + (err.message || err));
+                                    } finally {
+                                      setIsAnimatorGenerating(false);
+                                    }
+                                  }}
+                                  disabled={isAnimatorGenerating}
+                                >
+                                  {isAnimatorGenerating ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
+                                  Régénérer
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  onClick={() => window.open(animatorVideoUrl, '_blank')}
+                                >
+                                  Voir la vidéo
+                                </Button>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
                         {/* Boutons d'action - organisés en groupes */}
                         <div className="flex flex-col gap-3">
                           {visualMode === 'gameplay' && (

@@ -3937,6 +3937,156 @@ app.post('/transcribe-groq', async (req, res) => {
   }
 });
 
+// ─── Groq Segment-Level Transcription (for Remotion Animator) ─────────────────
+
+async function sendChunkToGroqSegments(chunkPath, groqApiKey) {
+  const chunkFilename = path.basename(chunkPath);
+  const publicUrl = getPublicUrl(chunkFilename);
+
+  const formData = new FormData();
+  formData.append('url', publicUrl);
+  formData.append('model', 'whisper-large-v3-turbo');
+  formData.append('temperature', '0');
+  formData.append('response_format', 'verbose_json');
+  formData.append('timestamp_granularities[]', 'segment');
+
+  const resp = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${groqApiKey}` },
+    body: formData,
+  });
+
+  try { await unlink(chunkPath); } catch (_) {}
+
+  if (!resp.ok) {
+    const errText = await resp.text();
+    throw new Error(`Groq API error ${resp.status}: ${errText}`);
+  }
+  return resp.json();
+}
+
+async function transcribeWithGroqSegments(audioPath, groqApiKey) {
+  const compressedFilename = `groq_seg_${Date.now()}_${Math.random().toString(36).substring(7)}.mp3`;
+  const compressedPath = path.join(TEMP_DIR, compressedFilename);
+
+  console.log(`[groq-segments] Compressing audio: ${audioPath}`);
+  execSync(`ffmpeg -y -i "${audioPath}" -ar 16000 -ac 1 -b:a 24k "${compressedPath}"`, {
+    timeout: 600000,
+    stdio: 'pipe',
+  });
+
+  const stats = fs.statSync(compressedPath);
+  const sizeMB = stats.size / (1024 * 1024);
+  console.log(`[groq-segments] Compressed audio size: ${sizeMB.toFixed(1)} MB`);
+
+  const MAX_CHUNK_MB = 24;
+
+  if (sizeMB <= MAX_CHUNK_MB) {
+    console.log(`[groq-segments] Single chunk, sending to Groq (segment mode)...`);
+    const data = await sendChunkToGroqSegments(compressedPath, groqApiKey);
+
+    const formattedTranscript = {
+      segments: (data.segments || []).map((s) => ({
+        text: s.text.trim(),
+        start: s.start,
+        end: s.end,
+      })),
+      language_code: data.language || 'en',
+      full_text: data.text || '',
+    };
+    console.log(`[groq-segments] Transcription complete: ${formattedTranscript.segments.length} segments`);
+    return formattedTranscript;
+  }
+
+  const totalDuration = getAudioDurationSecs(compressedPath);
+  const numChunks = Math.ceil(sizeMB / MAX_CHUNK_MB);
+  const chunkDuration = Math.ceil(totalDuration / numChunks);
+  console.log(`[groq-segments] File too large (${sizeMB.toFixed(1)} MB), splitting into ${numChunks} chunks of ~${chunkDuration}s`);
+
+  const chunkPaths = [];
+  for (let i = 0; i < numChunks; i++) {
+    const startSec = i * chunkDuration;
+    const chunkName = `groq_seg_chunk_${Date.now()}_${i}.mp3`;
+    const chunkPath = path.join(TEMP_DIR, chunkName);
+    execSync(`ffmpeg -y -ss ${startSec} -t ${chunkDuration} -i "${compressedPath}" -c copy "${chunkPath}"`, {
+      timeout: 60000, stdio: 'pipe',
+    });
+    chunkPaths.push(chunkPath);
+  }
+
+  try { await unlink(compressedPath); } catch (_) {}
+
+  console.log(`[groq-segments] Sending ${chunkPaths.length} chunks in parallel...`);
+  const results = await Promise.all(
+    chunkPaths.map((cp, i) => sendChunkToGroqSegments(cp, groqApiKey).then(data => ({ i, data })))
+  );
+  results.sort((a, b) => a.i - b.i);
+
+  let allSegments = [];
+  let language = 'en';
+  let fullText = '';
+
+  for (const { i, data } of results) {
+    const offsetSec = i * chunkDuration;
+    if (i === 0 && data.language) language = data.language;
+    if (data.text) fullText += (fullText ? ' ' : '') + data.text;
+
+    const segs = (data.segments || []).map((s) => ({
+      text: s.text.trim(),
+      start: s.start + offsetSec,
+      end: s.end + offsetSec,
+    }));
+    allSegments = allSegments.concat(segs);
+  }
+
+  const formattedTranscript = {
+    segments: allSegments,
+    language_code: language,
+    full_text: fullText,
+  };
+
+  console.log(`[groq-segments] Chunked transcription complete: ${allSegments.length} segments across ${numChunks} chunks`);
+  return formattedTranscript;
+}
+
+app.post('/transcribe-groq-segments', async (req, res) => {
+  const { audioUrl, userId } = req.body || {};
+
+  if (!audioUrl) {
+    return res.status(400).json({ error: 'audioUrl is required' });
+  }
+  if (!userId) {
+    return res.status(400).json({ error: 'userId is required' });
+  }
+
+  const jobId = `groq_seg_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+  const audioPath = path.join(TEMP_DIR, `${jobId}_input.mp3`);
+
+  try {
+    const { data: groqApiKey, error: apiKeyError } = await supabase.rpc('get_user_api_key_for_service', {
+      target_user_id: userId,
+      key_name: 'groq',
+    });
+
+    if (apiKeyError || !groqApiKey) {
+      return res.status(400).json({ error: 'Groq API key not found for user. Please set it in your profile.' });
+    }
+
+    console.log(`[${jobId}] Downloading audio: ${audioUrl.substring(0, 120)}...`);
+    await downloadFile(audioUrl, audioPath);
+
+    const transcript = await transcribeWithGroqSegments(audioPath, groqApiKey);
+
+    try { await unlink(audioPath); } catch (_) {}
+
+    res.json({ success: true, transcript });
+  } catch (error) {
+    console.error(`[${jobId}] Groq segment transcription error:`, error.message || error);
+    try { await unlink(audioPath); } catch (_) {}
+    res.status(500).json({ error: error.message || 'Groq segment transcription failed' });
+  }
+});
+
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({ 
