@@ -1,292 +1,224 @@
 const express = require('express');
-const { bundle } = require('@remotion/bundler');
-const { renderMedia, selectComposition, getCompositions } = require('@remotion/renderer');
-const { createClient } = require('@supabase/supabase-js');
+const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-
+const { createClient } = require('@supabase/supabase-js');
 require('dotenv').config();
 
-const app = express();
-const PORT = process.env.REMOTION_PORT || 3002;
+const { bundle } = require('@remotion/bundler');
+const { renderMedia, selectComposition, getCompositions, ensureBrowser } = require('@remotion/renderer');
 
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const supabase = SUPABASE_URL && SUPABASE_SERVICE_KEY
-  ? createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY)
-  : null;
+const app = express();
+const PORT = process.env.PORT || 3002;
+
+app.use(cors());
+app.use(express.json({ limit: '50mb' }));
 
 const TEMP_DIR = path.join(__dirname, 'temp');
 if (!fs.existsSync(TEMP_DIR)) fs.mkdirSync(TEMP_DIR, { recursive: true });
 
-const OUTPUT_DIR = path.join(__dirname, 'output');
-if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+app.use('/renders', express.static(TEMP_DIR));
+
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null;
 
 let bundleLocation = null;
-let isRendering = false;
-const renderQueue = [];
+let browserInstance = null;
 
-app.use(express.json({ limit: '50mb' }));
+const activeJobs = new Map();
 
-// ─── Bundle on startup ──────────────────────────────────────────────
-async function ensureBundle() {
-  if (bundleLocation) return bundleLocation;
-
+async function initBundle() {
   console.log('[Remotion] Bundling compositions...');
-  const startTime = Date.now();
-
+  const entryPoint = path.join(__dirname, 'src', 'index.js');
   bundleLocation = await bundle({
-    entryPoint: path.resolve(__dirname, 'src/index.js'),
+    entryPoint,
     webpackOverride: (config) => config,
   });
-
-  console.log(`[Remotion] Bundle ready in ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
-  return bundleLocation;
+  console.log('[Remotion] Bundle ready at:', bundleLocation);
 }
 
-// ─── Health check ───────────────────────────────────────────────────
+async function initBrowser() {
+  console.log('[Remotion] Ensuring headless browser...');
+  await ensureBrowser();
+  console.log('[Remotion] Browser ready');
+}
+
+// --- Health ---
 app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
-    service: 'remotion-render-service',
-    bundled: !!bundleLocation,
-    rendering: isRendering,
-    queueLength: renderQueue.length,
+    bundleReady: !!bundleLocation,
+    activeJobs: activeJobs.size,
     uptime: process.uptime(),
   });
 });
 
-// ─── List compositions ──────────────────────────────────────────────
+// --- List compositions ---
 app.get('/compositions', async (req, res) => {
   try {
-    const bundleLoc = await ensureBundle();
-    const compositions = await getCompositions(bundleLoc);
-    res.json({
-      success: true,
-      compositions: compositions.map((c) => ({
-        id: c.id,
-        width: c.width,
-        height: c.height,
-        fps: c.fps,
-        durationInFrames: c.durationInFrames,
-      })),
-    });
+    if (!bundleLocation) return res.status(503).json({ error: 'Bundle not ready' });
+    const compositions = await getCompositions(bundleLocation);
+    res.json(compositions.map(c => ({
+      id: c.id,
+      width: c.width,
+      height: c.height,
+      fps: c.fps,
+      durationInFrames: c.durationInFrames,
+    })));
   } catch (err) {
     console.error('[Remotion] Error listing compositions:', err);
-    res.status(500).json({ success: false, error: err.message });
+    res.status(500).json({ error: err.message });
   }
 });
 
-// ─── Render endpoint ────────────────────────────────────────────────
+// --- Render endpoint ---
 app.post('/render', async (req, res) => {
   const {
-    compositionId,
+    compositionId = 'Slideshow',
     inputProps = {},
-    codec = 'h264',
-    fps,
-    width,
-    height,
+    fps = 30,
+    width = 1920,
+    height = 1080,
     durationInFrames,
-    jobId,
-    outputFormat = 'mp4',
+    codec = 'h264',
+    crf,
+    jobId: externalJobId,
   } = req.body;
 
-  if (!compositionId) {
-    return res.status(400).json({ success: false, error: 'compositionId is required' });
+  if (!bundleLocation) {
+    return res.status(503).json({ error: 'Bundle not ready yet, try again shortly' });
   }
 
-  const renderJobId = jobId || `render_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  const outputFile = path.join(OUTPUT_DIR, `${renderJobId}.${outputFormat === 'webm' ? 'webm' : 'mp4'}`);
+  const jobId = externalJobId || `remotion-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const outputFile = path.join(TEMP_DIR, `${jobId}.mp4`);
 
-  console.log(`[Remotion] Render request: ${compositionId} -> ${renderJobId}`);
-
-  // Return immediately, process in background
-  res.json({
-    success: true,
-    jobId: renderJobId,
-    status: 'queued',
-    message: 'Render job queued',
-  });
-
-  // Queue the render
-  renderQueue.push({
-    renderJobId,
+  activeJobs.set(jobId, {
+    status: 'rendering',
+    progress: 0,
+    startedAt: Date.now(),
     compositionId,
-    inputProps,
-    codec,
-    fps,
-    width,
-    height,
-    durationInFrames,
-    outputFile,
-    outputFormat,
   });
 
-  processQueue();
-});
+  res.json({ success: true, jobId, status: 'rendering' });
 
-// ─── Queue processor ────────────────────────────────────────────────
-async function processQueue() {
-  if (isRendering || renderQueue.length === 0) return;
-
-  isRendering = true;
-  const job = renderQueue.shift();
-
-  try {
-    await updateJobStatus(job.renderJobId, 'rendering', 0, 'Bundling...');
-
-    const bundleLoc = await ensureBundle();
-
-    await updateJobStatus(job.renderJobId, 'rendering', 5, 'Selecting composition...');
-
-    const compositionOverrides = {};
-    if (job.fps) compositionOverrides.fps = job.fps;
-    if (job.width) compositionOverrides.width = job.width;
-    if (job.height) compositionOverrides.height = job.height;
-    if (job.durationInFrames) compositionOverrides.durationInFrames = job.durationInFrames;
-
-    const composition = await selectComposition({
-      serveUrl: bundleLoc,
-      id: job.compositionId,
-      inputProps: job.inputProps,
-      ...compositionOverrides,
-    });
-
-    console.log(`[Remotion] Rendering ${composition.id}: ${composition.width}x${composition.height} @ ${composition.fps}fps, ${composition.durationInFrames} frames`);
-
-    await updateJobStatus(job.renderJobId, 'rendering', 10, 'Rendering frames...');
-
-    await renderMedia({
-      composition,
-      serveUrl: bundleLoc,
-      codec: job.codec || 'h264',
-      outputLocation: job.outputFile,
-      inputProps: job.inputProps,
-      onProgress: ({ progress }) => {
-        const pct = Math.round(progress * 100);
-        if (pct % 10 === 0) {
-          console.log(`[Remotion] ${job.renderJobId}: ${pct}%`);
-          updateJobStatus(job.renderJobId, 'rendering', pct, `Rendering: ${pct}%`);
-        }
-      },
-    });
-
-    const stats = fs.statSync(job.outputFile);
-    console.log(`[Remotion] Render complete: ${job.outputFile} (${(stats.size / 1024 / 1024).toFixed(1)}MB)`);
-
-    await updateJobStatus(job.renderJobId, 'completed', 100, 'Render complete', {
-      outputFile: job.outputFile,
-      fileSize: stats.size,
-    });
-
-  } catch (err) {
-    console.error(`[Remotion] Render failed for ${job.renderJobId}:`, err);
-    await updateJobStatus(job.renderJobId, 'failed', 0, err.message);
-  } finally {
-    isRendering = false;
-    if (renderQueue.length > 0) processQueue();
-  }
-}
-
-// ─── Download rendered file ─────────────────────────────────────────
-app.get('/download/:jobId', (req, res) => {
-  const { jobId } = req.params;
-  const mp4Path = path.join(OUTPUT_DIR, `${jobId}.mp4`);
-  const webmPath = path.join(OUTPUT_DIR, `${jobId}.webm`);
-
-  const filePath = fs.existsSync(mp4Path) ? mp4Path : fs.existsSync(webmPath) ? webmPath : null;
-
-  if (!filePath) {
-    return res.status(404).json({ success: false, error: 'Rendered file not found' });
-  }
-
-  const ext = path.extname(filePath);
-  const contentType = ext === '.webm' ? 'video/webm' : 'video/mp4';
-
-  res.setHeader('Content-Type', contentType);
-  res.setHeader('Content-Disposition', `attachment; filename="${jobId}${ext}"`);
-  fs.createReadStream(filePath).pipe(res);
-});
-
-// ─── Job status (via Supabase or in-memory) ─────────────────────────
-const jobStatuses = new Map();
-
-app.get('/status/:jobId', (req, res) => {
-  const { jobId } = req.params;
-  const status = jobStatuses.get(jobId);
-
-  if (!status) {
-    return res.status(404).json({ success: false, error: 'Job not found' });
-  }
-
-  res.json({ success: true, ...status });
-});
-
-async function updateJobStatus(jobId, status, progress, message, extra = {}) {
-  const statusObj = {
-    jobId,
-    status,
-    progress,
-    message,
-    updatedAt: new Date().toISOString(),
-    ...extra,
-  };
-
-  jobStatuses.set(jobId, statusObj);
-
-  if (supabase) {
+  (async () => {
     try {
-      await supabase.from('remotion_render_jobs').upsert({
-        id: jobId,
-        status,
-        progress,
-        current_step: message,
-        video_url: extra.outputFile || null,
-        error_message: status === 'failed' ? message : null,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'id' });
+      if (supabase && externalJobId) {
+        await supabase.from('remotion_render_jobs').upsert({
+          id: jobId,
+          status: 'rendering',
+          progress: 0,
+          composition_id: compositionId,
+          input_props: inputProps,
+        });
+      }
+
+      const composition = await selectComposition({
+        serveUrl: bundleLocation,
+        id: compositionId,
+        inputProps,
+      });
+
+      const finalDuration = durationInFrames || composition.durationInFrames;
+      const finalFps = fps || composition.fps;
+      const finalWidth = width || composition.width;
+      const finalHeight = height || composition.height;
+
+      console.log(`[Remotion] Rendering ${compositionId}: ${finalWidth}x${finalHeight} @ ${finalFps}fps, ${finalDuration} frames`);
+
+      await renderMedia({
+        composition: {
+          ...composition,
+          durationInFrames: finalDuration,
+          fps: finalFps,
+          width: finalWidth,
+          height: finalHeight,
+        },
+        serveUrl: bundleLocation,
+        codec,
+        outputLocation: outputFile,
+        inputProps,
+        ...(crf !== undefined ? { crf } : {}),
+        onProgress: ({ progress }) => {
+          const pct = Math.round(progress * 100);
+          const job = activeJobs.get(jobId);
+          if (job) job.progress = pct;
+
+          if (pct % 10 === 0) {
+            console.log(`[Remotion] ${jobId} progress: ${pct}%`);
+          }
+
+          if (supabase && externalJobId && pct % 5 === 0) {
+            supabase.from('remotion_render_jobs').update({ progress: pct }).eq('id', jobId).then(() => {});
+          }
+        },
+      });
+
+      const videoUrl = `http://localhost:${PORT}/renders/${jobId}.mp4`;
+
+      const job = activeJobs.get(jobId);
+      if (job) {
+        job.status = 'completed';
+        job.progress = 100;
+        job.videoUrl = videoUrl;
+        job.completedAt = Date.now();
+      }
+
+      console.log(`[Remotion] Render complete: ${jobId} -> ${outputFile}`);
+
+      if (supabase && externalJobId) {
+        await supabase.from('remotion_render_jobs').update({
+          status: 'completed',
+          progress: 100,
+          video_url: videoUrl,
+          completed_at: new Date().toISOString(),
+        }).eq('id', jobId);
+      }
     } catch (err) {
-      console.warn(`[Remotion] DB update failed for ${jobId}:`, err.message);
+      console.error(`[Remotion] Render failed for ${jobId}:`, err);
+      const job = activeJobs.get(jobId);
+      if (job) {
+        job.status = 'failed';
+        job.error = err.message;
+      }
+
+      if (supabase && externalJobId) {
+        await supabase.from('remotion_render_jobs').update({
+          status: 'failed',
+          error_message: err.message,
+        }).eq('id', jobId);
+      }
     }
-  }
-}
+  })();
+});
 
-// ─── Serve output files statically ──────────────────────────────────
-app.use('/output', express.static(OUTPUT_DIR));
+// --- Job status ---
+app.get('/render/:jobId', (req, res) => {
+  const job = activeJobs.get(req.params.jobId);
+  if (!job) return res.status(404).json({ error: 'Job not found' });
+  res.json({ jobId: req.params.jobId, ...job });
+});
 
-// ─── Cleanup old renders ────────────────────────────────────────────
-function cleanupOldRenders() {
-  const MAX_AGE_HOURS = 24;
-  const now = Date.now();
+// --- Cancel ---
+app.delete('/render/:jobId', (req, res) => {
+  const job = activeJobs.get(req.params.jobId);
+  if (!job) return res.status(404).json({ error: 'Job not found' });
+  job.status = 'cancelled';
+  res.json({ success: true, jobId: req.params.jobId, status: 'cancelled' });
+});
 
-  [OUTPUT_DIR, TEMP_DIR].forEach((dir) => {
-    if (!fs.existsSync(dir)) return;
-    const files = fs.readdirSync(dir);
-    files.forEach((file) => {
-      const filePath = path.join(dir, file);
-      try {
-        const stats = fs.statSync(filePath);
-        const ageHours = (now - stats.mtimeMs) / (1000 * 60 * 60);
-        if (ageHours > MAX_AGE_HOURS) {
-          fs.unlinkSync(filePath);
-          console.log(`[Remotion] Cleaned up old file: ${file}`);
-        }
-      } catch (e) { /* ignore */ }
-    });
-  });
-}
-
-setInterval(cleanupOldRenders, 60 * 60 * 1000);
-
-// ─── Worker mode: poll Supabase for pending jobs ────────────────────
-const WORKER_MODE = (process.env.REMOTION_WORKER_MODE || '').toLowerCase() === 'true';
-const POLL_INTERVAL = parseInt(process.env.REMOTION_POLL_INTERVAL || '5000', 10);
+// --- Worker mode: poll Supabase for pending remotion jobs ---
+let workerInterval = null;
+const WORKER_POLL_MS = parseInt(process.env.WORKER_POLL_MS || '5000', 10);
+const WORKER_ENABLED = process.env.WORKER_MODE === 'true';
 
 async function pollForJobs() {
-  if (!supabase) {
-    console.warn('[Remotion Worker] No Supabase config, skipping poll');
-    return;
+  if (!supabase || !bundleLocation) return;
+  if (activeJobs.size > 0) {
+    const rendering = [...activeJobs.values()].filter(j => j.status === 'rendering');
+    if (rendering.length >= (parseInt(process.env.MAX_CONCURRENT_RENDERS || '2', 10))) return;
   }
 
   try {
@@ -297,74 +229,118 @@ async function pollForJobs() {
       .order('created_at', { ascending: true })
       .limit(1);
 
-    if (error) {
-      console.error('[Remotion Worker] Poll error:', error.message);
-      return;
-    }
-
-    if (!jobs || jobs.length === 0) return;
+    if (error || !jobs || jobs.length === 0) return;
 
     const job = jobs[0];
-    console.log(`[Remotion Worker] Picked up job: ${job.id}`);
+    console.log(`[Worker] Claimed job ${job.id} (composition: ${job.composition_id})`);
 
-    const { error: claimError } = await supabase
-      .from('remotion_render_jobs')
-      .update({ status: 'rendering', updated_at: new Date().toISOString() })
-      .eq('id', job.id)
-      .eq('status', 'pending');
+    await supabase.from('remotion_render_jobs').update({ status: 'claimed' }).eq('id', job.id);
 
-    if (claimError) {
-      console.warn('[Remotion Worker] Failed to claim job:', claimError.message);
-      return;
-    }
+    const outputFile = path.join(TEMP_DIR, `${job.id}.mp4`);
 
-    const meta = job.metadata || {};
-
-    renderQueue.push({
-      renderJobId: job.id,
-      compositionId: meta.compositionId || 'Slideshow',
-      inputProps: meta.inputProps || {},
-      codec: meta.codec || 'h264',
-      fps: meta.fps,
-      width: meta.width,
-      height: meta.height,
-      durationInFrames: meta.durationInFrames,
-      outputFile: path.join(OUTPUT_DIR, `${job.id}.mp4`),
-      outputFormat: meta.outputFormat || 'mp4',
+    activeJobs.set(job.id, {
+      status: 'rendering',
+      progress: 0,
+      startedAt: Date.now(),
+      compositionId: job.composition_id,
     });
 
-    processQueue();
+    try {
+      const composition = await selectComposition({
+        serveUrl: bundleLocation,
+        id: job.composition_id,
+        inputProps: job.input_props || {},
+      });
+
+      const finalDuration = job.duration_in_frames || composition.durationInFrames;
+      const finalFps = job.fps || composition.fps;
+      const finalWidth = job.width || composition.width;
+      const finalHeight = job.height || composition.height;
+
+      await supabase.from('remotion_render_jobs').update({ status: 'rendering', progress: 0 }).eq('id', job.id);
+
+      await renderMedia({
+        composition: {
+          ...composition,
+          durationInFrames: finalDuration,
+          fps: finalFps,
+          width: finalWidth,
+          height: finalHeight,
+        },
+        serveUrl: bundleLocation,
+        codec: job.codec || 'h264',
+        outputLocation: outputFile,
+        inputProps: job.input_props || {},
+        ...(job.crf !== undefined ? { crf: job.crf } : {}),
+        onProgress: ({ progress }) => {
+          const pct = Math.round(progress * 100);
+          const activeJob = activeJobs.get(job.id);
+          if (activeJob) activeJob.progress = pct;
+
+          if (pct % 10 === 0) {
+            supabase.from('remotion_render_jobs').update({ progress: pct }).eq('id', job.id).then(() => {});
+          }
+        },
+      });
+
+      const videoUrl = `http://${process.env.VPS_HOST || 'localhost'}:${PORT}/renders/${job.id}.mp4`;
+
+      activeJobs.get(job.id).status = 'completed';
+      activeJobs.get(job.id).progress = 100;
+      activeJobs.get(job.id).videoUrl = videoUrl;
+
+      await supabase.from('remotion_render_jobs').update({
+        status: 'completed',
+        progress: 100,
+        video_url: videoUrl,
+        completed_at: new Date().toISOString(),
+      }).eq('id', job.id);
+
+      console.log(`[Worker] Job ${job.id} completed: ${videoUrl}`);
+    } catch (err) {
+      console.error(`[Worker] Job ${job.id} failed:`, err);
+      activeJobs.get(job.id).status = 'failed';
+      activeJobs.get(job.id).error = err.message;
+
+      await supabase.from('remotion_render_jobs').update({
+        status: 'failed',
+        error_message: err.message,
+      }).eq('id', job.id);
+    }
   } catch (err) {
-    console.error('[Remotion Worker] Unexpected error:', err);
+    console.error('[Worker] Poll error:', err.message);
   }
 }
 
-// ─── Start server ───────────────────────────────────────────────────
-async function start() {
-  console.log('[Remotion] Starting render service...');
-
+// --- Startup ---
+(async () => {
   try {
-    await ensureBundle();
-    console.log('[Remotion] Initial bundle complete');
+    await initBrowser();
+    await initBundle();
+
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(`[Remotion] Service running on port ${PORT}`);
+      console.log(`[Remotion] Worker mode: ${WORKER_ENABLED ? 'ON' : 'OFF'}`);
+    });
+
+    if (WORKER_ENABLED) {
+      console.log(`[Worker] Polling every ${WORKER_POLL_MS}ms for pending jobs`);
+      workerInterval = setInterval(pollForJobs, WORKER_POLL_MS);
+    }
   } catch (err) {
-    console.error('[Remotion] Initial bundle failed:', err.message);
-    console.log('[Remotion] Will retry on first render request');
-    bundleLocation = null;
+    console.error('[Remotion] Failed to start:', err);
+    process.exit(1);
   }
+})();
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`[Remotion] Render service listening on port ${PORT}`);
-    console.log(`[Remotion] Worker mode: ${WORKER_MODE ? 'ENABLED' : 'DISABLED (API-only)'}`);
-    console.log(`[Remotion] Supabase: ${supabase ? 'connected' : 'not configured'}`);
-  });
+process.on('SIGTERM', () => {
+  console.log('[Remotion] SIGTERM received, shutting down...');
+  if (workerInterval) clearInterval(workerInterval);
+  process.exit(0);
+});
 
-  if (WORKER_MODE) {
-    console.log(`[Remotion Worker] Polling every ${POLL_INTERVAL}ms`);
-    setInterval(pollForJobs, POLL_INTERVAL);
-  }
-}
-
-start().catch((err) => {
-  console.error('[Remotion] Fatal error:', err);
-  process.exit(1);
+process.on('SIGINT', () => {
+  console.log('[Remotion] SIGINT received, shutting down...');
+  if (workerInterval) clearInterval(workerInterval);
+  process.exit(0);
 });
