@@ -18,15 +18,22 @@ function stripSharedDeclarations(code) {
     if (!stripping && declPattern.test(line)) {
       stripping = true;
       braceDepth = 0;
+      for (const ch of line) {
+        if (ch === '{') braceDepth++;
+        if (ch === '}') braceDepth--;
+      }
+      if (braceDepth <= 0) {
+        stripping = false;
+      }
+      continue;
     }
     if (stripping) {
       for (const ch of line) {
         if (ch === '{') braceDepth++;
         if (ch === '}') braceDepth--;
       }
-      if (braceDepth <= 0 && line.includes('}')) {
+      if (braceDepth <= 0) {
         stripping = false;
-        braceDepth = 0;
       }
       continue;
     }
