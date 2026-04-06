@@ -18,6 +18,12 @@ app.use(express.json({ limit: '50mb' }));
 const TEMP_DIR = path.join(__dirname, 'temp');
 if (!fs.existsSync(TEMP_DIR)) fs.mkdirSync(TEMP_DIR, { recursive: true });
 
+const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL; // e.g. https://purpleai.duckdns.org/remotion-renders
+function buildVideoUrl(filename) {
+  if (PUBLIC_BASE_URL) return `${PUBLIC_BASE_URL}/${filename}`;
+  return `http://${process.env.VPS_HOST || 'localhost'}:${PORT}/renders/${filename}`;
+}
+
 app.use('/renders', express.static(TEMP_DIR));
 
 const supabaseUrl = process.env.SUPABASE_URL;
@@ -156,7 +162,7 @@ app.post('/render', async (req, res) => {
         },
       });
 
-      const videoUrl = `http://localhost:${PORT}/renders/${jobId}.mp4`;
+      const videoUrl = buildVideoUrl(`${jobId}.mp4`);
 
       const job = activeJobs.get(jobId);
       if (job) {
@@ -396,7 +402,7 @@ app.post('/animator/render', async (req, res) => {
           },
         });
 
-        const videoUrl = `http://${process.env.VPS_HOST || 'localhost'}:${PORT}/renders/${jobId}.mp4`;
+        const videoUrl = buildVideoUrl(`${jobId}.mp4`);
 
         const job = activeJobs.get(jobId);
         if (job) {
@@ -564,7 +570,7 @@ app.post('/animator/generate-and-render', async (req, res) => {
         },
       });
 
-      const videoUrl = `http://${process.env.VPS_HOST || 'localhost'}:${PORT}/renders/${jobId}.mp4`;
+      const videoUrl = buildVideoUrl(`${jobId}.mp4`);
       const j = activeJobs.get(jobId);
       if (j) { j.status = 'completed'; j.progress = 100; j.videoUrl = videoUrl; }
 
@@ -662,7 +668,7 @@ async function pollForJobs() {
         },
       });
 
-      const videoUrl = `http://${process.env.VPS_HOST || 'localhost'}:${PORT}/renders/${job.id}.mp4`;
+      const videoUrl = buildVideoUrl(`${job.id}.mp4`);
 
       activeJobs.get(job.id).status = 'completed';
       activeJobs.get(job.id).progress = 100;
