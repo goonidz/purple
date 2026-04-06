@@ -73,11 +73,14 @@ No other colors allowed. Hierarchy via opacity and font weight only.
 `;
 }
 
-function buildSystemPrompt(brandingConfig, extraPrompt) {
+function buildSystemPrompt(brandingConfig, extraPrompt, brandingMarkdown) {
   const parts = [];
   const skillsLoaded = [];
 
-  if (brandingConfig && brandingConfig.palette) {
+  if (brandingMarkdown && brandingMarkdown.trim().length > 0) {
+    parts.push(brandingMarkdown);
+    skillsLoaded.push('custom-branding-markdown');
+  } else if (brandingConfig && brandingConfig.palette) {
     parts.push(buildBrandingMarkdown(brandingConfig));
     skillsLoaded.push('custom-branding');
   } else if (fs.existsSync(DEFAULT_BRANDING_PATH)) {

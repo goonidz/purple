@@ -166,6 +166,7 @@ async function generateComposition({
   componentName,
   audioFilename,
   brandingConfig,
+  brandingMarkdown,
   extraPrompt,
   model,
   chunkSize,
@@ -181,7 +182,7 @@ async function generateComposition({
   const effectiveName = componentName || `Composition_${Date.now()}`;
   const effectiveFps = fps || 30;
 
-  const { systemPrompt, skillsLoaded } = buildSystemPrompt(brandingConfig, extraPrompt);
+  const { systemPrompt, skillsLoaded } = buildSystemPrompt(brandingConfig, extraPrompt, brandingMarkdown);
 
   const chunks = [];
   for (let i = 0; i < segments.length; i += effectiveChunkSize) {

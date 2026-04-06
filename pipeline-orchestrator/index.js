@@ -836,6 +836,7 @@ async function stepAnimatorGenerate(pipeline) {
   const anthropicKey = await getUserApiKey(user_id, 'anthropic');
 
   let brandingConfig = null;
+  let brandingMarkdown = '';
   let extraPrompt = '';
   let model = 'claude-sonnet-4-6';
   let chunkSize = 25;
@@ -854,6 +855,7 @@ async function stepAnimatorGenerate(pipeline) {
         .single();
       if (preset) {
         brandingConfig = preset.branding_config;
+        brandingMarkdown = preset.branding_markdown || '';
         extraPrompt = preset.extra_prompt || '';
         model = preset.model || 'claude-sonnet-4-6';
         chunkSize = preset.chunk_size || 25;
@@ -878,6 +880,7 @@ async function stepAnimatorGenerate(pipeline) {
       componentName,
       audioFilename: null,
       brandingConfig,
+      brandingMarkdown,
       extraPrompt,
       model,
       chunkSize,

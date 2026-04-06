@@ -219,6 +219,7 @@ app.post('/animator/generate', async (req, res) => {
     componentName,
     audioFilename,
     brandingConfig,
+    brandingMarkdown,
     extraPrompt,
     model,
     chunkSize,
@@ -254,6 +255,7 @@ app.post('/animator/generate', async (req, res) => {
       componentName: componentName || `Anim_${jobId.replace(/-/g, '_')}`,
       audioFilename,
       brandingConfig,
+      brandingMarkdown,
       extraPrompt,
       model,
       chunkSize,
@@ -446,6 +448,7 @@ app.post('/animator/generate-and-render', async (req, res) => {
     componentName,
     audioFilename,
     brandingConfig,
+    brandingMarkdown,
     extraPrompt,
     model,
     chunkSize,
@@ -485,7 +488,7 @@ app.post('/animator/generate-and-render', async (req, res) => {
     try {
       const result = await generateComposition({
         anthropicKey, segments, componentName: effectiveName,
-        audioFilename, brandingConfig, extraPrompt, model, chunkSize, fps, width, height,
+        audioFilename, brandingConfig, brandingMarkdown, extraPrompt, model, chunkSize, fps, width, height,
       });
 
       if (supabase && projectId) {

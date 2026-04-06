@@ -114,6 +114,7 @@ export default function ChannelManager({
   const [animatorExtraPrompt, setAnimatorExtraPrompt] = useState('');
   const [animatorModel, setAnimatorModel] = useState('claude-sonnet-4-6');
   const [animatorPresetId, setAnimatorPresetId] = useState<string | null>(null);
+  const [animatorBrandingMarkdown, setAnimatorBrandingMarkdown] = useState('');
 
   useEffect(() => {
     if (isOpen) {
@@ -296,6 +297,7 @@ export default function ChannelManager({
         setAnimatorBranding((preset as any).branding_config || animatorBranding);
         setAnimatorExtraPrompt((preset as any).extra_prompt || '');
         setAnimatorModel((preset as any).model || 'claude-sonnet-4-6');
+        setAnimatorBrandingMarkdown((preset as any).branding_markdown || '');
         return;
       }
     }
@@ -303,6 +305,7 @@ export default function ChannelManager({
     setAnimatorEnabled(false);
     setAnimatorExtraPrompt('');
     setAnimatorModel('claude-sonnet-4-6');
+    setAnimatorBrandingMarkdown('');
   };
 
   const [configuringChannelName, setConfiguringChannelName] = useState("");
@@ -320,6 +323,7 @@ export default function ChannelManager({
           channel_id: configuringChannelId,
           enabled: animatorEnabled,
           branding_config: animatorBranding,
+          branding_markdown: animatorBrandingMarkdown,
           extra_prompt: animatorExtraPrompt,
           model: animatorModel,
           updated_at: new Date().toISOString(),
@@ -554,6 +558,8 @@ export default function ChannelManager({
       setAnimatorExtraPrompt={setAnimatorExtraPrompt}
       animatorModel={animatorModel}
       setAnimatorModel={setAnimatorModel}
+      animatorBrandingMarkdown={animatorBrandingMarkdown}
+      setAnimatorBrandingMarkdown={setAnimatorBrandingMarkdown}
     />
     </>
   );
@@ -595,6 +601,8 @@ function PresetConfigDialog({
   setAnimatorExtraPrompt,
   animatorModel,
   setAnimatorModel,
+  animatorBrandingMarkdown,
+  setAnimatorBrandingMarkdown,
 }: {
   isOpen: boolean;
   onClose: () => void;
@@ -631,6 +639,8 @@ function PresetConfigDialog({
   setAnimatorExtraPrompt: (prompt: string) => void;
   animatorModel: string;
   setAnimatorModel: (model: string) => void;
+  animatorBrandingMarkdown: string;
+  setAnimatorBrandingMarkdown: (md: string) => void;
 }) {
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
@@ -907,6 +917,63 @@ function PresetConfigDialog({
                         />
                       </div>
                     </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-sm">Branding & Style (Markdown)</Label>
+                      {!animatorBrandingMarkdown && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-6 text-xs"
+                          onClick={async () => {
+                            try {
+                              const resp = await fetch('/remotion-service/animator/default-branding.md');
+                              if (resp.ok) {
+                                setAnimatorBrandingMarkdown(await resp.text());
+                              }
+                            } catch (_) {
+                              setAnimatorBrandingMarkdown(`# Branding & Style de montage
+
+## Palette — 3 couleurs, pas plus
+
+| Token | Valeur | Usage |
+|-------|--------|-------|
+| \`BG\` | \`#111118\` | Fond global |
+| \`RED\` | \`#ef4444\` | Accent unique |
+| \`WHITE\` | \`#f0f0f0\` | Texte principal |
+
+## Typographie
+- Font: system-ui, sans-serif
+- Hero: 120–180px, Titre: 48–64px, Sous-titre: 28–36px
+
+## Animations
+- Fade in/out ~12% de la durée du segment
+- Springs: smooth { damping: 200 }, snappy { damping: 20, stiffness: 200 }, punch { damping: 8 }
+- Stagger: 8 frames entre éléments
+- Jamais de CSS transitions — tout via interpolate() et spring()
+- Toujours extrapolateRight: "clamp"
+
+## Data visualization
+Si la donnée peut être montrée dans un chart → utiliser un chart (bar, line, donut, area).
+`);
+                            }
+                          }}
+                        >
+                          Charger le template par défaut
+                        </Button>
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Document complet envoyé à Claude comme référence de style. Laissez vide pour utiliser le branding par défaut.
+                    </p>
+                    <textarea
+                      value={animatorBrandingMarkdown}
+                      onChange={(e) => setAnimatorBrandingMarkdown(e.target.value)}
+                      placeholder="Laissez vide pour utiliser le branding par défaut, ou collez/éditez votre guide de style ici..."
+                      className="w-full h-48 rounded-md border border-input bg-background px-3 py-2 text-xs font-mono leading-relaxed"
+                    />
                   </div>
 
                   <div className="space-y-1">
