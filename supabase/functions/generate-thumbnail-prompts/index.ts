@@ -118,12 +118,7 @@ serve(async (req) => {
       );
     }
 
-    if (!exampleUrls || !Array.isArray(exampleUrls) || exampleUrls.length === 0) {
-      return new Response(
-        JSON.stringify({ error: "Les exemples de miniatures sont requis" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
+    const hasExamples = exampleUrls && Array.isArray(exampleUrls) && exampleUrls.length > 0;
 
     // Check which model to use
     const useClaudeModel = textModel === 'claude-sonnet-4-6' || textModel === 'claude-sonnet-4';
@@ -286,22 +281,27 @@ Retourne UNIQUEMENT un JSON avec ce format exact:
 }`;
 
     // Build content parts array for Google Gemini API
-    const contentParts: any[] = [
-      { text: "EXEMPLES DE MINIATURES À REPRODUIRE (analyse le style, la composition, les couleurs):" }
-    ];
+    const contentParts: any[] = [];
 
-    // Add example images (convert to base64)
-    console.log(`Converting ${exampleUrls.length} example images to base64...`);
-    for (const url of exampleUrls) {
-      const imageData = await imageUrlToBase64(url);
-      if (imageData) {
-        contentParts.push({
-          inline_data: {
-            mime_type: imageData.mimeType,
-            data: imageData.data
-          }
-        });
+    if (hasExamples) {
+      contentParts.push(
+        { text: "EXEMPLES DE MINIATURES À REPRODUIRE (analyse le style, la composition, les couleurs):" }
+      );
+
+      console.log(`Converting ${exampleUrls.length} example images to base64...`);
+      for (const url of exampleUrls) {
+        const imageData = await imageUrlToBase64(url);
+        if (imageData) {
+          contentParts.push({
+            inline_data: {
+              mime_type: imageData.mimeType,
+              data: imageData.data
+            }
+          });
+        }
       }
+    } else {
+      console.log("No example images provided, generating without style reference");
     }
 
     // Add character reference if provided
@@ -357,7 +357,7 @@ Crée des designs SIMPLES (3-4 éléments max) mais PERTINENTS au script.`
     });
 
     console.log(`Generating thumbnail prompts with ${useClaudeModel ? 'Claude Sonnet 4.6 (Anthropic)' : 'Gemini 2.0 Flash'}...`);
-    console.log(`Processed ${exampleUrls.length} example images and ${characterRefUrl ? '1' : '0'} character image`);
+    console.log(`Processed ${hasExamples ? exampleUrls.length : 0} example images and ${characterRefUrl ? '1' : '0'} character image`);
 
     let generatedContent: string;
 
@@ -365,16 +365,17 @@ Crée des designs SIMPLES (3-4 éléments max) mais PERTINENTS au script.`
       // Build multimodal content blocks for Anthropic Messages API
       const userContent: any[] = [];
 
-      userContent.push({ type: "text", text: "EXEMPLES DE MINIATURES À REPRODUIRE (analyse le style, la composition, les couleurs):" });
+      if (hasExamples) {
+        userContent.push({ type: "text", text: "EXEMPLES DE MINIATURES À REPRODUIRE (analyse le style, la composition, les couleurs):" });
 
-      // Add ALL example images as base64 image blocks
-      for (const url of exampleUrls) {
-        const imageData = await imageUrlToBase64(url);
-        if (imageData) {
-          userContent.push({
-            type: "image",
-            source: { type: "base64", media_type: imageData.mimeType, data: imageData.data }
-          });
+        for (const url of exampleUrls) {
+          const imageData = await imageUrlToBase64(url);
+          if (imageData) {
+            userContent.push({
+              type: "image",
+              source: { type: "base64", media_type: imageData.mimeType, data: imageData.data }
+            });
+          }
         }
       }
 

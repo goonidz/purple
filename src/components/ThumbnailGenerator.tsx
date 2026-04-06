@@ -1436,7 +1436,7 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
           {/* Bouton de génération */}
           <Button
             onClick={generateThumbnails}
-            disabled={isGenerating || exampleUrls.length === 0}
+            disabled={isGenerating}
             className="w-full"
             size="lg"
           >

@@ -3852,7 +3852,7 @@ async function processThumbnailsJob(
     textModel
   } = metadata;
 
-  if (!videoScript || !videoTitle || !exampleUrls || exampleUrls.length === 0) {
+  if (!videoScript || !videoTitle) {
     throw new Error("Missing required thumbnail data in metadata");
   }
 
@@ -3893,8 +3893,8 @@ async function processThumbnailsJob(
     throw new Error(promptsData.error);
   }
   
-  if (!promptsData.prompts || promptsData.prompts.length !== 3) {
-    throw new Error("Failed to generate 3 prompts");
+  if (!promptsData.prompts || promptsData.prompts.length === 0) {
+    throw new Error("Failed to generate prompts");
   }
 
   const creativePrompts = promptsData.prompts as string[];
@@ -3913,9 +3913,9 @@ async function processThumbnailsJob(
   // Build webhook URL
   const webhookUrl = `${supabaseUrl}/functions/v1/replicate-webhook`;
 
-  // Step 2: Start all 3 generations with webhooks (non-blocking)
+  // Step 2: Start all generations with webhooks (non-blocking)
   let failedCount = 0;
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < creativePrompts.length; i++) {
     const prompt = creativePrompts[i];
     
     try {
@@ -4001,13 +4001,10 @@ async function processThumbnailsJob(
   const successCount = createdPredictions?.length || 0;
   
   if (successCount === 0) {
-    // All 3 thumbnail generations failed - mark job as failed
     throw new Error(`Toutes les générations de miniatures ont échoué. Vérifiez votre clé API Replicate.`);
   }
 
-  // Job stays in 'processing' status - the webhook will mark it complete
-  // Do NOT mark as completed here - that's the webhook's job
-  console.log(`Thumbnail generations started: ${successCount}/3 successful. Waiting for webhooks...`);
+  console.log(`Thumbnail generations started: ${successCount}/${creativePrompts.length} successful. Waiting for webhooks...`);
   
   // Throw a special marker to prevent the job from being marked complete by processJob
   throw new Error("WEBHOOK_MODE_ACTIVE");
