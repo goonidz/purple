@@ -4154,12 +4154,12 @@ const Index = () => {
 
                               const { data: existing } = await supabase
                                 .from("auto_pipelines" as any)
-                                .select("id, status")
+                                .select("id, step_status")
                                 .eq("project_id", currentProjectId)
                                 .order("created_at", { ascending: false })
                                 .limit(1);
 
-                              if ((existing as any)?.[0]?.status === 'running') {
+                              if ((existing as any)?.[0]?.step_status === 'running' || (existing as any)?.[0]?.step_status === 'pending') {
                                 toast.info("Le pipeline est déjà en cours");
                                 return;
                               }
@@ -4168,9 +4168,9 @@ const Index = () => {
                                 project_id: currentProjectId,
                                 user_id: userId,
                                 channel_id: channelId,
-                                status: "running",
+                                step_status: "pending",
                                 current_step: "animator_transcribe",
-                                steps_completed: ["generate_script", "generate_audio", "wait_audio", "transcription", "wait_transcription"],
+                                metadata: { skipped_steps: ["generate_script", "generate_audio", "wait_audio", "transcription", "wait_transcription"] },
                               });
                               if (error) throw error;
                               toast.success("Pipeline Animator lancé !");
