@@ -4142,13 +4142,14 @@ const Index = () => {
                             try {
                               const { data: calEntry } = await supabase
                                 .from("content_calendar")
-                                .select("channel_id")
+                                .select("id, channel_id")
                                 .eq("project_id", currentProjectId)
                                 .not("channel_id", "is", null)
                                 .limit(1)
                                 .single();
                               const channelId = calEntry?.channel_id;
-                              if (!channelId) { toast.error("Pas de chaîne liée"); return; }
+                              const calendarEntryId = calEntry?.id;
+                              if (!channelId || !calendarEntryId) { toast.error("Pas de chaîne liée"); return; }
 
                               const userId = (await supabase.auth.getUser()).data.user?.id;
 
@@ -4168,6 +4169,7 @@ const Index = () => {
                                 project_id: currentProjectId,
                                 user_id: userId,
                                 channel_id: channelId,
+                                calendar_entry_id: calendarEntryId,
                                 step_status: "pending",
                                 current_step: "animator_transcribe",
                                 metadata: { skipped_steps: ["generate_script", "generate_audio", "wait_audio", "transcription", "wait_transcription"] },
