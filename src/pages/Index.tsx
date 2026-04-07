@@ -277,6 +277,7 @@ const Index = () => {
   const [animatorPipelineStatus, setAnimatorPipelineStatus] = useState<{ current_step: string; step_status: string } | null>(null);
   const [animatorTokens, setAnimatorTokens] = useState<{ input: number; output: number; cacheRead: number; cacheCreated: number } | null>(null);
   const [animatorCostUsd, setAnimatorCostUsd] = useState<number | null>(null);
+  const [animatorSegments, setAnimatorSegments] = useState<{ start: number; end: number; text: string }[] | null>(null);
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [isUploadingAudio, setIsUploadingAudio] = useState(false);
   const [isDraggingAudio, setIsDraggingAudio] = useState(false);
@@ -1265,6 +1266,7 @@ const Index = () => {
       setAnimatorVideoUrl(data.animator_video_url || null);
       if (data.animator_tokens) setAnimatorTokens(data.animator_tokens);
       if (data.animator_cost_usd != null) setAnimatorCostUsd(Number(data.animator_cost_usd));
+      if (data.animator_segments?.segments) setAnimatorSegments(data.animator_segments.segments);
       if (data.audio_url) {
         setAudioUrl(data.audio_url);
       } else if (existingScenes.length > 0) {
@@ -4269,6 +4271,23 @@ const Index = () => {
                           <span className="ml-auto font-medium text-foreground">≈ ${animatorCostUsd.toFixed(4)}</span>
                         )}
                       </div>
+                    )}
+                    {animatorSegments && animatorSegments.length > 0 && (
+                      <details className="mt-3 border-t pt-3">
+                        <summary className="text-xs font-medium cursor-pointer text-muted-foreground hover:text-foreground">
+                          Segments Groq ({animatorSegments.length})
+                        </summary>
+                        <div className="mt-2 max-h-[300px] overflow-y-auto space-y-1">
+                          {animatorSegments.map((seg, i) => (
+                            <div key={i} className="flex gap-2 text-xs py-1 border-b border-border/50 last:border-0">
+                              <span className="text-muted-foreground font-mono whitespace-nowrap w-[90px] shrink-0">
+                                {seg.start.toFixed(2)}s → {seg.end.toFixed(2)}s
+                              </span>
+                              <span className="text-foreground">{seg.text}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </details>
                     )}
                   </Card>
                 )}
