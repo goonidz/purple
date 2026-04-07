@@ -983,7 +983,7 @@ import { createRoot } from 'react-dom/client';
 import { Player } from '@remotion/player';
 import { ${compName} } from './${compName}';
 
-const SPEEDS = [1, 2, 4, 8];
+const SPEEDS = [0.5, 1, 2, 4];
 
 const App = () => {
   const playerRef = useRef(null);
@@ -1047,7 +1047,7 @@ const App = () => {
                 transition: 'all 0.15s',
               }}
             >
-              {s}x
+              {s === 0.5 ? '½' : s}x
             </button>
           ))}
         </div>
