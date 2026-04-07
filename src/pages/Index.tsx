@@ -4566,6 +4566,21 @@ const Index = () => {
                         );
                       })}
                     </div>
+                    {(animatorTokens || animatorCostUsd != null) && (
+                      <div className="flex flex-wrap gap-3 mt-3 text-xs text-muted-foreground border-t border-purple-500/10 pt-3">
+                        {animatorTokens && (
+                          <>
+                            <span>In: <strong className="text-foreground">{animatorTokens.input?.toLocaleString()}</strong></span>
+                            <span>Out: <strong className="text-foreground">{animatorTokens.output?.toLocaleString()}</strong></span>
+                            {animatorTokens.cacheRead > 0 && <span>Cache read: <strong className="text-foreground">{animatorTokens.cacheRead?.toLocaleString()}</strong></span>}
+                            {animatorTokens.cacheCreated > 0 && <span>Cache write: <strong className="text-foreground">{animatorTokens.cacheCreated?.toLocaleString()}</strong></span>}
+                          </>
+                        )}
+                        {animatorCostUsd != null && (
+                          <span className="ml-auto font-medium text-foreground">≈ ${animatorCostUsd.toFixed(4)}</span>
+                        )}
+                      </div>
+                    )}
                   </Card>
                 )}
 
