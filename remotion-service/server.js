@@ -976,28 +976,48 @@ app.post('/animator/preview-bundle', async (req, res) => {
 
     fs.writeFileSync(path.join(srcDir, `${compName}.tsx`), compositionCode, 'utf-8');
 
-    // Player entry: renders @remotion/player with the composition component
+    // Player entry: renders @remotion/player + posts current frame to parent
     fs.writeFileSync(path.join(srcDir, 'player-entry.jsx'), `
-import React from 'react';
+import React, { useRef, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Player } from '@remotion/player';
 import { ${compName} } from './${compName}';
 
-const App = () => (
-  <div style={{ width: '100vw', height: '100vh', background: '#0a0a0f', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-    <Player
-      component={${compName}}
-      durationInFrames={${durationInFrames}}
-      fps={${fps}}
-      compositionWidth={1920}
-      compositionHeight={1080}
-      style={{ width: '100%', maxHeight: '100vh' }}
-      controls
-      autoPlay
-      loop
-    />
-  </div>
-);
+const App = () => {
+  const playerRef = useRef(null);
+
+  useEffect(() => {
+    let last = -1;
+    let id;
+    const tick = () => {
+      const f = playerRef.current?.getCurrentFrame?.() ?? 0;
+      if (f !== last) {
+        window.parent.postMessage({ type: 'remotion-frame', frame: f }, '*');
+        last = f;
+      }
+      id = requestAnimationFrame(tick);
+    };
+    id = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(id);
+  }, []);
+
+  return (
+    <div style={{ width: '100vw', height: '100vh', background: '#0a0a0f', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+      <Player
+        ref={playerRef}
+        component={${compName}}
+        durationInFrames={${durationInFrames}}
+        fps={${fps}}
+        compositionWidth={1920}
+        compositionHeight={1080}
+        style={{ width: '100%', maxHeight: '100vh' }}
+        controls
+        autoPlay
+        loop
+      />
+    </div>
+  );
+};
 
 const container = document.getElementById('container') || document.getElementById('root') || document.body;
 createRoot(container).render(<App />);
@@ -1041,12 +1061,163 @@ createRoot(container).render(<App />);
       : `http://localhost:${PORT}/preview-bundles`;
     const previewUrl = `${baseUrl}/${codeHash}/index.html`;
 
-    const result = { success: true, previewUrl, hash: codeHash, durationInFrames, fps, totalDuration };
+    const result = { success: true, previewUrl, hash: codeHash, durationInFrames, fps, totalDuration, segments };
     previewCache.set(projectId, { hash: codeHash, result });
     console.log(`[Preview] Bundle ready: ${previewUrl}`);
     res.json(result);
   } catch (err) {
     console.error(`[Preview] Bundle failed:`, err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- Edit scene via AI chat ---
+app.post('/animator/edit-scene', async (req, res) => {
+  const { projectId, sceneIndex, instruction, model } = req.body;
+  if (!projectId) return res.status(400).json({ error: 'projectId is required' });
+  if (sceneIndex == null) return res.status(400).json({ error: 'sceneIndex is required' });
+  if (!instruction) return res.status(400).json({ error: 'instruction is required' });
+  if (!supabase) return res.status(503).json({ error: 'Supabase not configured' });
+
+  try {
+    const { data: scene, error: sceneErr } = await supabase
+      .from('project_scenes')
+      .select('animator_code, animator_code_status')
+      .eq('project_id', projectId)
+      .eq('scene_index', sceneIndex)
+      .single();
+
+    if (sceneErr || !scene?.animator_code) {
+      return res.status(400).json({ error: 'Scene not found or has no code' });
+    }
+
+    // Resolve model + API key from channel preset
+    const { data: calEntry } = await supabase
+      .from('content_calendar').select('channel_id')
+      .eq('project_id', projectId).not('channel_id', 'is', null).limit(1).single();
+
+    let resolvedModel = model || 'claude-sonnet-4-6';
+    let anthropicKey = null;
+    let geminiKey = null;
+
+    if (calEntry?.channel_id) {
+      const { data: ch } = await supabase.from('channels').select('animator_preset_id').eq('id', calEntry.channel_id).single();
+      if (ch?.animator_preset_id) {
+        const { data: preset } = await supabase.from('animator_presets').select('model').eq('id', ch.animator_preset_id).single();
+        if (preset?.model && !model) resolvedModel = preset.model;
+      }
+    }
+
+    // Fetch user API key via Vault RPC (same as image-worker)
+    const { data: proj } = await supabase.from('projects').select('user_id').eq('id', projectId).single();
+    if (proj?.user_id) {
+      const useGemini = resolvedModel.startsWith('gemini-');
+      const keyName = useGemini ? 'gemini' : 'anthropic';
+      const rpcName = keyName === 'gemini' ? 'get_user_api_key' : 'get_user_api_key_for_service';
+      const params = keyName === 'gemini'
+        ? { key_name: keyName, p_user_id: proj.user_id }
+        : { target_user_id: proj.user_id, key_name: keyName };
+      const { data: keyData } = await supabase.rpc(rpcName, params);
+      if (keyData) {
+        if (useGemini) geminiKey = keyData;
+        else anthropicKey = keyData;
+      }
+    }
+
+    const useGemini = resolvedModel.startsWith('gemini-');
+    if (useGemini && !geminiKey) return res.status(400).json({ error: 'No Gemini API key found' });
+    if (!useGemini && !anthropicKey) return res.status(400).json({ error: 'No Anthropic API key found' });
+
+    const segName = `Seg${sceneIndex + 1}`;
+    const editSystemPrompt = `You are editing an existing Remotion animation component.
+The user will give you the current code and an instruction for what to change.
+Return ONLY the modified function code. Keep the same function name (${segName}).
+NO imports, NO exports — just the plain function declaration.
+Follow these rules:
+- interpolate() outputRange MUST contain ONLY numbers, NEVER strings.
+- Write plain JSX only. NO TypeScript annotations.
+- Do NOT use markdown code fences.
+- Do NOT add comments explaining your changes.`;
+
+    const userMessage = `Current code for ${segName}:\n\`\`\`\n${scene.animator_code}\n\`\`\`\n\nInstruction: ${instruction}`;
+
+    console.log(`[Edit] Editing scene ${sceneIndex} for ${projectId} with ${resolvedModel}`);
+
+    let newCode;
+    if (useGemini) {
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${resolvedModel}:generateContent?key=${geminiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: editSystemPrompt }] },
+            contents: [{ role: 'user', parts: [{ text: userMessage }] }],
+            tools: [{
+              functionDeclarations: [{
+                name: 'write_segment_components',
+                description: 'Write the modified Remotion segment component function',
+                parameters: {
+                  type: 'OBJECT',
+                  properties: { components_code: { type: 'STRING', description: 'Modified function code' } },
+                  required: ['components_code'],
+                },
+              }],
+            }],
+            toolConfig: { functionCallingConfig: { mode: 'ANY', allowedFunctionNames: ['write_segment_components'] } },
+            generationConfig: { maxOutputTokens: 16000 },
+          }),
+        }
+      );
+      if (!response.ok) throw new Error(`Gemini error ${response.status}: ${(await response.text()).substring(0, 300)}`);
+      const data = await response.json();
+      const fnCall = data.candidates?.[0]?.content?.parts?.find(p => p.functionCall);
+      if (!fnCall) throw new Error('Gemini returned no function call');
+      newCode = fnCall.functionCall.args.components_code;
+    } else {
+      const client = new Anthropic({ apiKey: anthropicKey });
+      const stream = client.messages.stream({
+        model: resolvedModel,
+        max_tokens: 16000,
+        system: [{ type: 'text', text: editSystemPrompt }],
+        messages: [{ role: 'user', content: userMessage }],
+        tools: [{
+          name: 'write_segment_components',
+          description: 'Write the modified Remotion segment component function',
+          input_schema: {
+            type: 'object',
+            properties: { components_code: { type: 'string', description: 'Modified function code' } },
+            required: ['components_code'],
+          },
+        }],
+        tool_choice: { type: 'tool', name: 'write_segment_components' },
+      });
+      const response = await stream.finalMessage();
+      const toolBlock = response.content.find(b => b.type === 'tool_use');
+      if (!toolBlock?.input?.components_code) throw new Error('Claude returned no tool call');
+      newCode = toolBlock.input.components_code;
+    }
+
+    // Strip markdown fences if present
+    newCode = newCode.replace(/^```[\w]*\n?/gm, '').replace(/```\s*$/gm, '').trim();
+
+    // Validate function name
+    if (!newCode.includes(`function ${segName}`) && !newCode.includes(`const ${segName}`)) {
+      console.warn(`[Edit] Warning: output may not contain ${segName}`);
+    }
+
+    await supabase.from('project_scenes').update({
+      animator_code: newCode,
+      animator_code_status: 'completed',
+    }).eq('project_id', projectId).eq('scene_index', sceneIndex);
+
+    // Invalidate preview cache
+    previewCache.delete(projectId);
+
+    console.log(`[Edit] Scene ${sceneIndex} updated for ${projectId} (${newCode.length} chars)`);
+    res.json({ success: true, sceneIndex, codeLength: newCode.length });
+  } catch (err) {
+    console.error(`[Edit] Failed:`, err.message);
     res.status(500).json({ error: err.message });
   }
 });
