@@ -274,6 +274,7 @@ const Index = () => {
   const [animatorVideoUrl, setAnimatorVideoUrl] = useState<string | null>(null);
   const [isAnimatorGenerating, setIsAnimatorGenerating] = useState(false);
   const [isAnimatorChannel, setIsAnimatorChannel] = useState(false);
+  const [animatorPipelineStatus, setAnimatorPipelineStatus] = useState<{ current_step: string; step_status: string } | null>(null);
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [isUploadingAudio, setIsUploadingAudio] = useState(false);
   const [isDraggingAudio, setIsDraggingAudio] = useState(false);
@@ -898,6 +899,37 @@ const Index = () => {
 
     return () => clearInterval(pollInterval);
   }, [currentProjectId]);
+
+  // Poll animator pipeline status
+  useEffect(() => {
+    if (!currentProjectId || !isAnimatorChannel) {
+      setAnimatorPipelineStatus(null);
+      return;
+    }
+    let cancelled = false;
+    const poll = async () => {
+      const { data } = await (supabase.from("auto_pipelines" as any) as any)
+        .select("current_step, step_status")
+        .eq("project_id", currentProjectId)
+        .neq("current_step", "cancelled")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .single();
+      if (!cancelled) {
+        setAnimatorPipelineStatus(data || null);
+        if (data?.current_step === 'completed' && data?.step_status === 'completed') {
+          setIsAnimatorGenerating(false);
+          const { data: proj } = await supabase.from('projects').select('animator_video_url').eq('id', currentProjectId).single();
+          if (proj?.animator_video_url) setAnimatorVideoUrl(proj.animator_video_url);
+        } else if (data && data.step_status !== 'failed' && data.current_step !== 'completed') {
+          setIsAnimatorGenerating(true);
+        }
+      }
+    };
+    poll();
+    const iv = setInterval(poll, 3_000);
+    return () => { cancelled = true; clearInterval(iv); };
+  }, [currentProjectId, isAnimatorChannel]);
 
   // Auto-save project data when it changes
   // Note: prompts are NOT included here because they are managed by the backend job queue
@@ -4218,14 +4250,39 @@ const Index = () => {
                   </Card>
                 )}
 
-                {isAnimatorChannel && !animatorVideoUrl && isAnimatorGenerating && (
-                  <Card className="p-6 border-2 border-purple-500/30 bg-purple-500/5 mb-6">
-                    <div className="flex items-center gap-3">
-                      <Loader2 className="h-5 w-5 animate-spin text-purple-500" />
-                      <span className="text-sm font-medium">Génération de l'animation Remotion en cours...</span>
-                    </div>
-                  </Card>
-                )}
+                {isAnimatorChannel && isAnimatorGenerating && animatorPipelineStatus && animatorPipelineStatus.current_step !== 'completed' && animatorPipelineStatus.step_status !== 'failed' && (() => {
+                  const cs = animatorPipelineStatus.current_step;
+                  const steps = ['create_project', 'generate_script', 'wait_script', 'generate_audio', 'wait_audio', 'animator_transcribe', 'wait_animator_transcribe', 'animator_generate', 'wait_animator_generate'];
+                  const labels = ['Projet', 'Script', 'Script...', 'Audio', 'Audio...', 'Transcription', 'Transcription...', 'Animation', 'Rendu...'];
+                  const currentIdx = steps.indexOf(cs);
+                  const desc: Record<string, string> = {
+                    create_project: 'Création du projet...',
+                    generate_script: 'Génération du script...',
+                    wait_script: 'Génération du script...',
+                    generate_audio: 'Génération audio...',
+                    wait_audio: 'Génération audio...',
+                    animator_transcribe: 'Transcription Groq (segments)...',
+                    wait_animator_transcribe: 'Transcription Groq (segments)...',
+                    animator_generate: 'Génération du code par Claude...',
+                    wait_animator_generate: 'Rendu Remotion en cours...',
+                  };
+                  return (
+                    <Card className="p-4 border-2 border-purple-500/30 bg-purple-500/5 mb-6">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Loader2 className="h-4 w-4 animate-spin text-purple-500" />
+                        <span className="text-sm font-medium">Pipeline Animator en cours</span>
+                      </div>
+                      <div className="flex gap-1 mb-1">
+                        {steps.map((step, i) => (
+                          <div key={step} className="flex-1" title={labels[i]}>
+                            <div className={`h-1.5 rounded-full transition-all ${i < currentIdx ? 'bg-purple-500' : i === currentIdx ? 'bg-purple-500/50 animate-pulse' : 'bg-muted'}`} />
+                          </div>
+                        ))}
+                      </div>
+                      <p className="text-xs text-muted-foreground">{desc[cs] || cs}</p>
+                    </Card>
+                  );
+                })()}
 
                 {!isAnimatorChannel && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 md:gap-6">
