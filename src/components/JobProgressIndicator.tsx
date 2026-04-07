@@ -302,14 +302,26 @@ export function VideoRenderJobIndicator({ job, className, onCancel }: VideoRende
     }
   };
 
+  const isAnimatorRender = job.metadata && typeof job.metadata === 'object' && (job.metadata as any).type === 'animator';
+
   // For completed jobs, only show the success message (no card wrapper)
   if (isCompleted) {
     return (
-      <div className="flex items-center gap-2 p-2 bg-muted/50 rounded-md border border-border">
-        <span className="text-lg">🎉</span>
+      <div className={cn("flex items-center gap-2 p-2 rounded-md border", isAnimatorRender ? "bg-purple-500/10 border-purple-500/20" : "bg-muted/50 border-border")}>
+        <span className="text-lg">{isAnimatorRender ? '✨' : '🎉'}</span>
         <span className="text-sm font-medium text-foreground flex-1">
-          Rendu terminé !
+          {isAnimatorRender ? 'Rendu Animator terminé !' : 'Rendu terminé !'}
         </span>
+        {job.video_url && (
+          <a
+            href={job.video_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs text-primary hover:underline"
+          >
+            Voir la vidéo
+          </a>
+        )}
         <Button
           variant="ghost"
           size="sm"

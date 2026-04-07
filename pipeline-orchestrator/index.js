@@ -1044,6 +1044,28 @@ async function stepWaitAnimatorRender(pipeline) {
     if (job.tokens) projectUpdate.animator_tokens = job.tokens;
     if (job.costUsd != null) projectUpdate.animator_cost_usd = job.costUsd;
     await supabase.from('projects').update(projectUpdate).eq('id', project_id);
+
+    // Insert into video_render_jobs so it appears in "Rendu final" tab + triggers banner notification
+    try {
+      const { error: insertErr } = await supabase.from('video_render_jobs').insert({
+        project_id,
+        user_id: pipeline.user_id,
+        status: 'completed',
+        progress: 100,
+        job_id: jobId,
+        video_url: job.videoUrl,
+        completed_at: new Date().toISOString(),
+        metadata: { type: 'animator' },
+      });
+      if (insertErr) {
+        console.warn(`[orchestrator] [${id}] Failed to insert video_render_jobs for animator: ${insertErr.message}`);
+      } else {
+        console.log(`[orchestrator] [${id}] Animator render added to video_render_jobs`);
+      }
+    } catch (e) {
+      console.warn(`[orchestrator] [${id}] Error inserting video_render_jobs: ${e.message}`);
+    }
+
     await advancePipeline(id, 'completed', { step_status: 'completed' });
   } else if (job.status === 'failed') {
     throw new Error(`Animator render failed: ${job.error || 'unknown'}`);

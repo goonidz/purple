@@ -4342,92 +4342,6 @@ const Index = () => {
                   );
                 })()}
 
-                {/* Animator video preview — standalone block for animator channels */}
-                {isAnimatorChannel && animatorVideoUrl && (
-                  <Card className="p-6 border-2 border-purple-500/30 bg-purple-500/5 mb-6">
-                    <div className="flex items-center justify-between mb-3">
-                      <h3 className="font-semibold text-lg flex items-center gap-2">
-                        <Sparkles className="h-5 w-5 text-purple-500" />
-                        Animation Remotion
-                      </h3>
-                      <div className="flex gap-2">
-                        <Button size="sm" variant="outline" onClick={() => window.open(animatorVideoUrl!, '_blank')}>
-                          Voir la vidéo
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={isAnimatorGenerating}
-                          onClick={() => setShowConfigurationModal(false)}
-                        >
-                          {isAnimatorGenerating ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
-                          Régénérer
-                        </Button>
-                      </div>
-                    </div>
-                    <video src={animatorVideoUrl!} controls className="w-full rounded-lg max-h-[500px]" />
-                    {(animatorTokens || animatorCostUsd != null) && (
-                      <div className="flex flex-wrap gap-3 mt-3 text-xs text-muted-foreground border-t pt-3">
-                        {animatorTokens && (
-                          <>
-                            <span>In: <strong className="text-foreground">{animatorTokens.input?.toLocaleString()}</strong></span>
-                            <span>Out: <strong className="text-foreground">{animatorTokens.output?.toLocaleString()}</strong></span>
-                            {animatorTokens.cacheRead > 0 && <span>Cache read: <strong className="text-foreground">{animatorTokens.cacheRead?.toLocaleString()}</strong></span>}
-                            {animatorTokens.cacheCreated > 0 && <span>Cache write: <strong className="text-foreground">{animatorTokens.cacheCreated?.toLocaleString()}</strong></span>}
-                          </>
-                        )}
-                        {animatorCostUsd != null && (
-                          <span className="ml-auto font-medium text-foreground">≈ ${animatorCostUsd.toFixed(4)}</span>
-                        )}
-                      </div>
-                    )}
-                    {animatorSegments && animatorSegments.length > 0 && (
-                      <details className="mt-3 border-t pt-3">
-                        <summary className="text-xs font-medium cursor-pointer text-muted-foreground hover:text-foreground">
-                          Segments bruts Groq ({animatorSegments.length})
-                        </summary>
-                        <div className="mt-2 max-h-[300px] overflow-y-auto">
-                          <table className="w-full text-xs">
-                            <tbody>
-                              {animatorSegments.map((seg, i) => (
-                                <tr key={i} className="border-b border-border/30 last:border-0">
-                                  <td className="text-muted-foreground font-mono whitespace-nowrap py-1.5 pr-4 align-top" style={{ width: '120px' }}>
-                                    {seg.start.toFixed(2)}s → {seg.end.toFixed(2)}s
-                                  </td>
-                                  <td className="text-foreground py-1.5">{seg.text}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </details>
-                    )}
-                    {animatorSegmentsProcessed && animatorSegmentsProcessed.length > 0 && (
-                      <details className="mt-2 border-t pt-3">
-                        <summary className="text-xs font-medium cursor-pointer text-muted-foreground hover:text-foreground">
-                          Segments fusionnés ({animatorSegmentsProcessed.length}
-                          {animatorSegments && animatorSegmentsProcessed.length < animatorSegments.length && (
-                            <span className="text-amber-400 ml-1">← {animatorSegments.length - animatorSegmentsProcessed.length} fusionné(s)</span>
-                          )})
-                        </summary>
-                        <div className="mt-2 max-h-[300px] overflow-y-auto">
-                          <table className="w-full text-xs">
-                            <tbody>
-                              {animatorSegmentsProcessed.map((seg, i) => (
-                                <tr key={i} className="border-b border-border/30 last:border-0">
-                                  <td className="text-muted-foreground font-mono whitespace-nowrap py-1.5 pr-4 align-top" style={{ width: '120px' }}>
-                                    {seg.start.toFixed(2)}s → {seg.end.toFixed(2)}s
-                                  </td>
-                                  <td className="text-foreground py-1.5">{seg.text}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </details>
-                    )}
-                  </Card>
-                )}
 
                 {isAnimatorChannel && isAnimatorGenerating && animatorPipelineStatus && animatorPipelineStatus.current_step !== 'completed' && animatorPipelineStatus.step_status !== 'failed' && (() => {
                   const cs = animatorPipelineStatus.current_step;
@@ -4697,66 +4611,6 @@ const Index = () => {
                           </div>
                         </div>
                         
-                        {/* Animator video preview + regenerate */}
-                        {animatorVideoUrl && (
-                          <div className="p-2 bg-purple-500/10 border border-purple-500/20 rounded-md space-y-2">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-2">
-                                <span className="text-xs font-medium text-purple-400">Animation Remotion</span>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={async () => {
-                                    if (!currentProjectId || isAnimatorGenerating) return;
-                                    setIsAnimatorGenerating(true);
-                                    try {
-                                      const { data: proj } = await supabase.from("projects").select("scenes, channel_id").eq("id", currentProjectId).single();
-                                      if (!proj?.scenes?.length) {
-                                        toast.error("Pas de scènes pour ce projet");
-                                        return;
-                                      }
-                                      const userId = (await supabase.auth.getUser()).data.user?.id;
-                                      const { data: calEntry } = await supabase
-                                        .from("content_calendar")
-                                        .select("id")
-                                        .eq("project_id", currentProjectId)
-                                        .order("created_at", { ascending: false })
-                                        .limit(1)
-                                        .single();
-                                      const { error } = await (supabase.from("auto_pipelines" as any) as any).insert({
-                                        project_id: currentProjectId,
-                                        user_id: userId,
-                                        channel_id: proj.channel_id || null,
-                                        calendar_entry_id: calEntry?.id || null,
-                                        step_status: "pending",
-                                        current_step: "animator_generate",
-                                        metadata: {},
-                                      });
-                                      if (error) throw error;
-                                      toast.success("Régénération Animator lancée !");
-                                    } catch (err: any) {
-                                      toast.error("Erreur Animator: " + (err.message || err));
-                                    } finally {
-                                      setIsAnimatorGenerating(false);
-                                    }
-                                  }}
-                                  disabled={isAnimatorGenerating}
-                                >
-                                  {isAnimatorGenerating ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
-                                  Régénérer
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  onClick={() => window.open(animatorVideoUrl, '_blank')}
-                                >
-                                  Voir la vidéo
-                                </Button>
-                              </div>
-                            </div>
-                          </div>
-                        )}
 
                         {/* Boutons d'action - organisés en groupes */}
                         <div className="flex flex-col gap-3">
@@ -5919,6 +5773,12 @@ const Index = () => {
                                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 border border-yellow-500/20">
                                       <Zap className="h-3 w-3" />
                                       GPU
+                                    </span>
+                                  )}
+                                  {job.type === 'vps' && 'metadata' in job && (job as any).metadata?.type === 'animator' && (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20">
+                                      <Sparkles className="h-3 w-3" />
+                                      Animator
                                     </span>
                                   )}
                                 </div>
