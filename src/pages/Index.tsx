@@ -4292,7 +4292,39 @@ const Index = () => {
                                 }}
                               >
                                 <Sparkles className="mr-2 h-4 w-4" />
-                                {hasAnySceneCode ? 'Tout régénérer' : "Lancer l'Animator"}
+                                Lancer l'Animator
+                              </Button>
+                            )}
+                            {hasAnySceneCode && (
+                              <Button
+                                variant="outline"
+                                size="lg"
+                                disabled={isAnimatorGenerating}
+                                onClick={async () => {
+                                  if (!currentProjectId) return;
+                                  const confirmed = window.confirm("Supprimer toutes les scènes générées et tout régénérer ?");
+                                  if (!confirmed) return;
+                                  setIsAnimatorGenerating(true);
+                                  try {
+                                    await supabase
+                                      .from('project_scenes')
+                                      .update({ animator_code: null, animator_code_status: null })
+                                      .eq('project_id', currentProjectId);
+                                    await supabase
+                                      .from('projects')
+                                      .update({ animator_video_url: null })
+                                      .eq('id', currentProjectId);
+                                    setAnimatorVideoUrl(null);
+                                    setAnimatorSceneStatuses([]);
+                                    await startJob('animator_scenes' as any);
+                                  } catch (e: any) {
+                                    toast.error("Erreur: " + e.message);
+                                    setIsAnimatorGenerating(false);
+                                  }
+                                }}
+                              >
+                                <RotateCcw className="mr-2 h-4 w-4" />
+                                Tout régénérer
                               </Button>
                             )}
                             <Button
