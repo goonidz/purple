@@ -976,15 +976,18 @@ app.post('/animator/preview-bundle', async (req, res) => {
 
     fs.writeFileSync(path.join(srcDir, `${compName}.tsx`), compositionCode, 'utf-8');
 
-    // Player entry: renders @remotion/player + posts current frame to parent
+    // Player entry: renders @remotion/player + posts current frame to parent + speed controls
     fs.writeFileSync(path.join(srcDir, 'player-entry.jsx'), `
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Player } from '@remotion/player';
 import { ${compName} } from './${compName}';
 
+const SPEEDS = [1, 2, 4, 8];
+
 const App = () => {
   const playerRef = useRef(null);
+  const [speed, setSpeed] = useState(1);
 
   useEffect(() => {
     let last = -1;
@@ -1001,20 +1004,54 @@ const App = () => {
     return () => cancelAnimationFrame(id);
   }, []);
 
+  const cycleSpeed = useCallback(() => {
+    setSpeed(prev => {
+      const idx = SPEEDS.indexOf(prev);
+      return SPEEDS[(idx + 1) % SPEEDS.length];
+    });
+  }, []);
+
   return (
-    <div style={{ width: '100vw', height: '100vh', background: '#0a0a0f', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-      <Player
-        ref={playerRef}
-        component={${compName}}
-        durationInFrames={${durationInFrames}}
-        fps={${fps}}
-        compositionWidth={1920}
-        compositionHeight={1080}
-        style={{ width: '100%', maxHeight: '100vh' }}
-        controls
-        autoPlay
-        loop
-      />
+    <div style={{ width: '100vw', height: '100vh', background: '#0a0a0f', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }}>
+      <div style={{ position: 'relative', width: '100%', flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <Player
+          ref={playerRef}
+          component={${compName}}
+          durationInFrames={${durationInFrames}}
+          fps={${fps}}
+          compositionWidth={1920}
+          compositionHeight={1080}
+          style={{ width: '100%', maxHeight: '100vh' }}
+          controls
+          autoPlay
+          loop
+          playbackRate={speed}
+        />
+        <div style={{
+          position: 'absolute', top: 8, right: 8, display: 'flex', gap: 4, zIndex: 10,
+        }}>
+          {SPEEDS.map(s => (
+            <button
+              key={s}
+              onClick={() => setSpeed(s)}
+              style={{
+                padding: '2px 8px',
+                fontSize: 12,
+                fontWeight: s === speed ? 700 : 400,
+                background: s === speed ? 'rgba(168,85,247,0.85)' : 'rgba(0,0,0,0.55)',
+                color: '#fff',
+                border: s === speed ? '1px solid rgba(168,85,247,1)' : '1px solid rgba(255,255,255,0.15)',
+                borderRadius: 6,
+                cursor: 'pointer',
+                backdropFilter: 'blur(4px)',
+                transition: 'all 0.15s',
+              }}
+            >
+              {s}x
+            </button>
+          ))}
+        </div>
+      </div>
     </div>
   );
 };
