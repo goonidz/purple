@@ -189,8 +189,8 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
         setIsRebuilding(false);
       }
 
-      // If this was a QA edit, refresh that scene's screenshot
-      if (opts?.screenshotUrl && qaScreenshots.length > 0) {
+      // Refresh QA screenshot if the grid is open and has this scene
+      if (qaScreenshots.length > 0 && qaScreenshots.some(s => s.sceneIndex === sceneIdx)) {
         setQaScreenshots((prev) =>
           prev.map((s) => s.sceneIndex === sceneIdx ? { ...s, success: true, url: null, error: undefined } : s)
         );

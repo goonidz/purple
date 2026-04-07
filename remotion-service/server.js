@@ -1163,12 +1163,22 @@ app.post('/animator/edit-scene', async (req, res) => {
     let resolvedModel = model || 'claude-sonnet-4-6';
     let anthropicKey = null;
     let geminiKey = null;
+    let brandingConfig = null;
+    let brandingMarkdown = '';
+    let extraPrompt = '';
+    let selectedSkills = null;
 
     if (calEntry?.channel_id) {
       const { data: ch } = await supabase.from('channels').select('animator_preset_id').eq('id', calEntry.channel_id).single();
       if (ch?.animator_preset_id) {
-        const { data: preset } = await supabase.from('animator_presets').select('model').eq('id', ch.animator_preset_id).single();
-        if (preset?.model && !model) resolvedModel = preset.model;
+        const { data: preset } = await supabase.from('animator_presets').select('*').eq('id', ch.animator_preset_id).single();
+        if (preset) {
+          if (preset.model && !model) resolvedModel = preset.model;
+          brandingConfig = preset.branding_config;
+          brandingMarkdown = preset.branding_markdown || '';
+          extraPrompt = preset.extra_prompt || '';
+          selectedSkills = preset.selected_skills || null;
+        }
       }
     }
 
@@ -1193,15 +1203,17 @@ app.post('/animator/edit-scene', async (req, res) => {
     if (!useGemini && !anthropicKey) return res.status(400).json({ error: 'No Anthropic API key found' });
 
     const segName = `Seg${sceneIndex + 1}`;
-    const editSystemPrompt = `You are editing an existing Remotion animation component.
+
+    // Build full system prompt with branding + skills (same as generation)
+    const { systemPrompt: baseSystemPrompt, skillsLoaded } = buildSystemPrompt(brandingConfig, extraPrompt, brandingMarkdown, selectedSkills);
+    console.log(`[Edit] Skills loaded: ${skillsLoaded.join(', ')}`);
+
+    const editSystemPrompt = baseSystemPrompt + `\n\n---\n\n<!-- EDIT MODE -->
+You are editing an existing Remotion animation component.
 The user will give you the current code and an instruction for what to change.
 Return ONLY the modified function code. Keep the same function name (${segName}).
 NO imports, NO exports — just the plain function declaration.
-Follow these rules:
-- interpolate() outputRange MUST contain ONLY numbers, NEVER strings.
-- Write plain JSX only. NO TypeScript annotations.
-- Do NOT use markdown code fences.
-- Do NOT add comments explaining your changes.`;
+Do NOT add comments explaining your changes.`;
 
     const userMessage = `Current code for ${segName}:\n\`\`\`\n${scene.animator_code}\n\`\`\`\n\nInstruction: ${instruction}`;
 
