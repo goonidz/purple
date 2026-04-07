@@ -936,10 +936,29 @@ app.post('/animator/preview-bundle', async (req, res) => {
       }
     }
 
-    const compositionCode = buildWrapper(compName, segments, null, fps, allCode, brandingConfig);
-
     const previewDir = path.join(PREVIEW_DIR, codeHash);
     if (!fs.existsSync(previewDir)) fs.mkdirSync(previewDir, { recursive: true });
+
+    const publicDir = path.join(previewDir, 'public');
+    if (!fs.existsSync(publicDir)) fs.mkdirSync(publicDir, { recursive: true });
+
+    // Download audio into the preview bundle's public dir
+    let audioFilename = null;
+    const audioSource = project?.audio_url;
+    if (audioSource) {
+      try {
+        const audioResp = await fetch(audioSource);
+        if (audioResp.ok) {
+          const audioBuffer = Buffer.from(await audioResp.arrayBuffer());
+          audioFilename = `preview-${codeHash}-audio.mp3`;
+          fs.writeFileSync(path.join(publicDir, audioFilename), audioBuffer);
+        }
+      } catch (e) {
+        console.warn(`[Preview] Failed to download audio: ${e.message}`);
+      }
+    }
+
+    const compositionCode = buildWrapper(compName, segments, audioFilename, fps, allCode, brandingConfig);
 
     const srcDir = path.join(previewDir, 'src');
     if (!fs.existsSync(srcDir)) fs.mkdirSync(srcDir, { recursive: true });
@@ -978,6 +997,8 @@ createRoot(container).render(<App />);
       entryPoint: path.join(srcDir, 'player-entry.jsx'),
       webpackOverride: (config) => config,
       ignoreRegisterRootWarning: true,
+      rootDir: previewDir,
+      publicDir: path.join(previewDir, 'public'),
     });
 
     const bundleFiles = fs.readdirSync(bundlePath);
