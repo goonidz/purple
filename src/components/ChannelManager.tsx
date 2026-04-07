@@ -115,7 +115,7 @@ export default function ChannelManager({
   const [animatorModel, setAnimatorModel] = useState('claude-sonnet-4-6');
   const [animatorPresetId, setAnimatorPresetId] = useState<string | null>(null);
   const [animatorBrandingMarkdown, setAnimatorBrandingMarkdown] = useState('');
-  const [animatorSelectedSkills, setAnimatorSelectedSkills] = useState<string[]>([
+  const [selectedSkillsList, setSelectedSkillsList] = useState<string[]>([
     'animations.md', 'timing.md', 'sequencing.md', 'charts.md', 'text-animations.md',
   ]);
 
@@ -301,7 +301,7 @@ export default function ChannelManager({
         setAnimatorExtraPrompt((preset as any).extra_prompt || '');
         setAnimatorModel((preset as any).model || 'claude-sonnet-4-6');
         setAnimatorBrandingMarkdown((preset as any).branding_markdown || '');
-        setAnimatorSelectedSkills((preset as any).selected_skills || ['animations.md', 'timing.md', 'sequencing.md', 'charts.md', 'text-animations.md']);
+        setSelectedSkillsList((preset as any).selected_skills || ['animations.md', 'timing.md', 'sequencing.md', 'charts.md', 'text-animations.md']);
         return;
       }
     }
@@ -330,7 +330,7 @@ export default function ChannelManager({
           branding_markdown: animatorBrandingMarkdown,
           extra_prompt: animatorExtraPrompt,
           model: animatorModel,
-          selected_skills: animatorSelectedSkills,
+          selected_skills: selectedSkillsList,
           updated_at: new Date().toISOString(),
         };
 
@@ -565,6 +565,8 @@ export default function ChannelManager({
       setAnimatorModel={setAnimatorModel}
       animatorBrandingMarkdown={animatorBrandingMarkdown}
       setAnimatorBrandingMarkdown={setAnimatorBrandingMarkdown}
+      selectedSkillsList={selectedSkillsList}
+      setSelectedSkillsList={setSelectedSkillsList}
     />
     </>
   );
@@ -608,6 +610,8 @@ function PresetConfigDialog({
   setAnimatorModel,
   animatorBrandingMarkdown,
   setAnimatorBrandingMarkdown,
+  selectedSkillsList,
+  setSelectedSkillsList,
 }: {
   isOpen: boolean;
   onClose: () => void;
@@ -646,6 +650,8 @@ function PresetConfigDialog({
   setAnimatorModel: (model: string) => void;
   animatorBrandingMarkdown: string;
   setAnimatorBrandingMarkdown: (md: string) => void;
+  selectedSkillsList: string[];
+  setSelectedSkillsList: (skills: string[] | ((prev: string[]) => string[])) => void;
 }) {
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
@@ -985,12 +991,12 @@ function PresetConfigDialog({
                         <label key={skill.file} className="flex items-start gap-2 p-1.5 rounded hover:bg-muted/50 cursor-pointer">
                           <input
                             type="checkbox"
-                            checked={animatorSelectedSkills.includes(skill.file)}
+                            checked={selectedSkillsList.includes(skill.file)}
                             onChange={(e) => {
                               if (e.target.checked) {
-                                setAnimatorSelectedSkills(prev => [...prev, skill.file]);
+                                setSelectedSkillsList(prev => [...prev, skill.file]);
                               } else {
-                                setAnimatorSelectedSkills(prev => prev.filter(s => s !== skill.file));
+                                setSelectedSkillsList(prev => prev.filter(s => s !== skill.file));
                               }
                             }}
                             className="mt-0.5 rounded border-input"
