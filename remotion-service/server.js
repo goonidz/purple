@@ -1019,7 +1019,10 @@ createRoot(container).render(<App />);
       .replace(/href="\//g, 'href="./')
       .replace(/src="\//g, 'src="./')
       .replace(/window\.remotion_publicPath\s*=\s*"\/"/g, 'window.remotion_publicPath = "./"')
-      .replace(/window\.remotion_publicFolderExists\s*=\s*"\/public"/g, 'window.remotion_publicFolderExists = "./public"');
+      .replace(/window\.remotion_staticBase\s*=\s*"\/public"/g, 'window.remotion_staticBase = "./public"')
+      .replace(/window\.remotion_publicFolderExists\s*=\s*"\/public"/g, 'window.remotion_publicFolderExists = "./public"')
+      .replace(/"src":"\/public\//g, '"src":"./public/')
+      .replace(/remotion_numberOfAudioTags\s*=\s*0/g, 'remotion_numberOfAudioTags = 5');
     fs.writeFileSync(indexPath, indexHtml, 'utf-8');
 
     const baseUrl = PUBLIC_BASE_URL
