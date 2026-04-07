@@ -113,6 +113,7 @@ export default function ChannelManager({
   });
   const [animatorExtraPrompt, setAnimatorExtraPrompt] = useState('');
   const [animatorModel, setAnimatorModel] = useState('claude-sonnet-4-6');
+  const [animatorMinSegDuration, setAnimatorMinSegDuration] = useState(0);
   const [animatorPresetId, setAnimatorPresetId] = useState<string | null>(null);
   const [animatorBrandingMarkdown, setAnimatorBrandingMarkdown] = useState('');
   const [selectedSkillsList, setSelectedSkillsList] = useState<string[]>([
@@ -302,6 +303,7 @@ export default function ChannelManager({
         setAnimatorModel((preset as any).model || 'claude-sonnet-4-6');
         setAnimatorBrandingMarkdown((preset as any).branding_markdown || '');
         setSelectedSkillsList((preset as any).selected_skills || ['animations.md', 'timing.md', 'sequencing.md', 'charts.md', 'text-animations.md']);
+        setAnimatorMinSegDuration((preset as any).min_segment_duration || 0);
         return;
       }
     }
@@ -310,6 +312,7 @@ export default function ChannelManager({
     setAnimatorExtraPrompt('');
     setAnimatorModel('claude-sonnet-4-6');
     setAnimatorBrandingMarkdown('');
+    setAnimatorMinSegDuration(0);
   };
 
   const [configuringChannelName, setConfiguringChannelName] = useState("");
@@ -331,6 +334,7 @@ export default function ChannelManager({
           extra_prompt: animatorExtraPrompt,
           model: animatorModel,
           selected_skills: selectedSkillsList,
+          min_segment_duration: animatorMinSegDuration,
           updated_at: new Date().toISOString(),
         };
 
@@ -567,6 +571,8 @@ export default function ChannelManager({
       setAnimatorBrandingMarkdown={setAnimatorBrandingMarkdown}
       selectedSkillsList={selectedSkillsList}
       setSelectedSkillsList={setSelectedSkillsList}
+      animatorMinSegDuration={animatorMinSegDuration}
+      setAnimatorMinSegDuration={setAnimatorMinSegDuration}
     />
     </>
   );
@@ -612,6 +618,8 @@ function PresetConfigDialog({
   setAnimatorBrandingMarkdown,
   selectedSkillsList,
   setSelectedSkillsList,
+  animatorMinSegDuration,
+  setAnimatorMinSegDuration,
 }: {
   isOpen: boolean;
   onClose: () => void;
@@ -652,6 +660,8 @@ function PresetConfigDialog({
   setAnimatorBrandingMarkdown: (md: string) => void;
   selectedSkillsList: string[];
   setSelectedSkillsList: (skills: string[] | ((prev: string[]) => string[])) => void;
+  animatorMinSegDuration: number;
+  setAnimatorMinSegDuration: (v: number) => void;
 }) {
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
@@ -859,6 +869,22 @@ function PresetConfigDialog({
                         <SelectItem value="claude-sonnet-4-5-20250620">Claude Sonnet 4.5</SelectItem>
                       </SelectContent>
                     </Select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-xs">Durée min. segment (secondes)</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={15}
+                      step={0.5}
+                      value={animatorMinSegDuration}
+                      onChange={(e) => setAnimatorMinSegDuration(Number(e.target.value))}
+                      className="h-8 text-xs w-32"
+                    />
+                    <p className="text-[10px] text-muted-foreground">
+                      0 = désactivé. Les segments plus courts seront fusionnés avec le suivant.
+                    </p>
                   </div>
 
                   <div className="grid grid-cols-2 gap-2">

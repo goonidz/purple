@@ -17,6 +17,26 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
+function mergeShortSegments(segments, minDuration) {
+  if (!minDuration || minDuration <= 0 || !segments?.length) return segments;
+  const merged = [];
+  for (let i = 0; i < segments.length; i++) {
+    const seg = { ...segments[i] };
+    while (i + 1 < segments.length && (seg.end - seg.start) < minDuration) {
+      const next = segments[++i];
+      seg.text = seg.text + ' ' + next.text;
+      seg.end = next.end;
+    }
+    if (merged.length > 0 && (seg.end - seg.start) < minDuration) {
+      merged[merged.length - 1].text += ' ' + seg.text;
+      merged[merged.length - 1].end = seg.end;
+    } else {
+      merged.push(seg);
+    }
+  }
+  return merged;
+}
+
 // ============================================================================
 // HELPERS
 // ============================================================================
@@ -841,6 +861,7 @@ async function stepAnimatorGenerate(pipeline) {
   let selectedSkills = null;
   let model = 'claude-sonnet-4-6';
   let chunkSize = 25;
+  let minSegDuration = 0;
 
   if (channel_id) {
     const { data: ch } = await supabase
@@ -861,8 +882,15 @@ async function stepAnimatorGenerate(pipeline) {
         selectedSkills = preset.selected_skills || null;
         model = preset.model || 'claude-sonnet-4-6';
         chunkSize = preset.chunk_size || 25;
+        minSegDuration = preset.min_segment_duration || 0;
       }
     }
+  }
+
+  const rawSegments = project.animator_segments.segments;
+  const finalSegments = mergeShortSegments(rawSegments, minSegDuration);
+  if (finalSegments.length !== rawSegments.length) {
+    console.log(`[orchestrator] [${id}] Merged short segments: ${rawSegments.length} -> ${finalSegments.length} (min ${minSegDuration}s)`);
   }
 
   const safeName = (project.name || 'Composition')
@@ -870,14 +898,14 @@ async function stepAnimatorGenerate(pipeline) {
     .substring(0, 40);
   const componentName = `Anim${safeName}${Date.now().toString(36)}`;
 
-  console.log(`[orchestrator] [${id}] Starting animator generation: ${componentName} (${project.animator_segments.segments.length} segments)`);
+  console.log(`[orchestrator] [${id}] Starting animator generation: ${componentName} (${finalSegments.length} segments)`);
 
   const resp = await fetch(`${REMOTION_SERVICE_URL}/animator/generate-and-render`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       anthropicKey,
-      segments: project.animator_segments.segments,
+      segments: finalSegments,
       componentName,
       audioUrl: project.audio_url || null,
       audioFilename: null,
