@@ -533,6 +533,24 @@ app.post('/animator/generate-and-render', async (req, res) => {
       if (job) { job.status = 'rendering'; job.tokens = result.tokens; job.costUsd = result.costUsd; }
 
       const srcDir = path.join(__dirname, 'src');
+
+      // Clean up old TSX files from previous renders of the same project (same name prefix, different timestamp)
+      const namePrefix = effectiveName.replace(/[a-z0-9]{6,12}$/i, '');
+      if (namePrefix.length >= 8) {
+        const oldFiles = fs.readdirSync(srcDir).filter(f => f.startsWith(namePrefix) && f.endsWith('.tsx') && f !== `${effectiveName}.tsx`);
+        if (oldFiles.length > 0) {
+          console.log(`[Animator] Cleaning ${oldFiles.length} old TSX file(s) for prefix "${namePrefix}"`);
+          const rootPath = path.join(srcDir, 'Root.jsx');
+          let rootClean = fs.readFileSync(rootPath, 'utf-8');
+          for (const f of oldFiles) {
+            const oldName = f.replace('.tsx', '');
+            fs.unlinkSync(path.join(srcDir, f));
+            rootClean = rootClean.split('\n').filter(line => !line.includes(oldName)).join('\n');
+          }
+          fs.writeFileSync(rootPath, rootClean, 'utf-8');
+        }
+      }
+
       fs.writeFileSync(path.join(srcDir, `${effectiveName}.tsx`), result.code, 'utf-8');
 
       const rootPath = path.join(srcDir, 'Root.jsx');
