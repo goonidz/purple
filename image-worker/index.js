@@ -8,6 +8,7 @@ const sharp = require('sharp');
 // ============================================================================
 const MAX_CONCURRENT_DEFAULT = 20;
 const MAX_CONCURRENT_AI33 = 40;
+const MAX_CONCURRENT_ANIMATOR = 50;
 const POLL_INTERVAL_MS = 3000;
 const REPLICATE_POLL_MS = 2000;
 const REPLICATE_TIMEOUT_MS = 5 * 60 * 1000;
@@ -28,6 +29,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 // STATE
 // ============================================================================
 let activeJobs = 0;
+let activeAnimatorJobs = 0;
 const apiKeyCache = new Map();
 const processingJobIds = new Set();
 
@@ -4847,7 +4849,7 @@ async function resumeRvcPoll(job, runpodJobId) {
 // ============================================================================
 
 async function mainLoop() {
-  log(`Image Worker started (MAX_CONCURRENT=${MAX_CONCURRENT_DEFAULT}/${MAX_CONCURRENT_AI33} ai33, POLL=${POLL_INTERVAL_MS}ms)`);
+  log(`Image Worker started (MAX_CONCURRENT=${MAX_CONCURRENT_DEFAULT}/${MAX_CONCURRENT_AI33} ai33, ANIMATOR=${MAX_CONCURRENT_ANIMATOR}, POLL=${POLL_INTERVAL_MS}ms)`);
   log(`Supabase: ${SUPABASE_URL}`);
   log(`Job types: single_image, thumbnails, single_prompt, audio_generation (gemini/genaipro/ai33/edgetts), idea_generation`);
 
@@ -4865,7 +4867,7 @@ async function mainLoop() {
       await checkDiskUsage();
       await cleanupStuckParents();
       // ── PRIORITY PASS: audio, prompt, idea, thumbnail jobs run outside image concurrency ──
-      const PRIORITY_TYPES = ['audio_generation', 'single_prompt', 'animator_scene', 'idea_generation', 'thumbnails', 'thumbnails_v2'];
+      const PRIORITY_TYPES = ['audio_generation', 'single_prompt', 'idea_generation', 'thumbnails', 'thumbnails_v2'];
       {
         const { data: priorityJobs } = await supabase
           .from('generation_jobs')
@@ -4908,7 +4910,6 @@ async function mainLoop() {
             if (job.job_type === 'thumbnails') pipeline = processThumbnailsPipeline(job);
             else if (job.job_type === 'thumbnails_v2') pipeline = processThumbnailsV2Pipeline(job);
             else if (job.job_type === 'single_prompt') pipeline = processPromptJob(job);
-            else if (job.job_type === 'animator_scene') pipeline = processAnimatorSceneJob(job);
             else if (job.job_type === 'audio_generation') {
               if (job.metadata?.provider === 'genaipro') pipeline = processGenaiproAudioPipeline(job);
               else if (job.metadata?.provider === 'ai33') pipeline = processAi33AudioPipeline(job);
@@ -4930,6 +4931,59 @@ async function mainLoop() {
             } else {
               processingJobIds.delete(job.id);
             }
+          }
+        }
+      }
+
+      // ── ANIMATOR PASS: limited to MAX_CONCURRENT_ANIMATOR ──
+      const animatorSlots = MAX_CONCURRENT_ANIMATOR - activeAnimatorJobs;
+      if (animatorSlots > 0) {
+        const { data: animJobs } = await supabase
+          .from('generation_jobs')
+          .select('*')
+          .eq('status', 'pending')
+          .eq('job_type', 'animator_scene')
+          .order('created_at', { ascending: true })
+          .limit(Math.min(animatorSlots, 20));
+
+        if (animJobs && animJobs.length > 0) {
+          const aParentIds = [...new Set(animJobs.map(j => j.parent_job_id).filter(Boolean))];
+          const aCancelledParents = new Set();
+          if (aParentIds.length > 0) {
+            const { data: ap } = await supabase.from('generation_jobs').select('id, status').in('id', aParentIds).eq('status', 'cancelled');
+            if (ap) ap.forEach(p => aCancelledParents.add(p.id));
+          }
+          if (aCancelledParents.size > 0) {
+            const orphaned = animJobs.filter(j => j.parent_job_id && aCancelledParents.has(j.parent_job_id));
+            if (orphaned.length > 0) {
+              await supabase.from('generation_jobs').update({ status: 'cancelled' }).in('id', orphaned.map(j => j.id));
+            }
+          }
+          const validAnim = animJobs
+            .filter(j => !processingJobIds.has(j.id))
+            .filter(j => !j.parent_job_id || !aCancelledParents.has(j.parent_job_id));
+
+          for (const job of validAnim) {
+            if (activeAnimatorJobs >= MAX_CONCURRENT_ANIMATOR) break;
+            const { data: claimed, error: claimError } = await supabase
+              .from('generation_jobs')
+              .update({ status: 'processing', updated_at: new Date().toISOString() })
+              .eq('id', job.id)
+              .eq('status', 'pending')
+              .select('id')
+              .single();
+            if (claimError || !claimed) continue;
+
+            processingJobIds.add(job.id);
+            activeAnimatorJobs++;
+            log(`[animator] Claimed animator_scene job ${job.id.substring(0,8)} (${activeAnimatorJobs}/${MAX_CONCURRENT_ANIMATOR})`);
+
+            processAnimatorSceneJob(job)
+              .catch(async (err) => {
+                logError(`[animator] Job ${job.id.substring(0,8)} failed:`, err.message);
+                await supabase.from('generation_jobs').update({ status: 'failed', error_message: err.message, completed_at: new Date().toISOString() }).eq('id', job.id);
+              })
+              .finally(() => { activeAnimatorJobs--; processingJobIds.delete(job.id); });
           }
         }
       }
