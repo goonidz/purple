@@ -112,6 +112,10 @@ ${extraPrompt ? `\nExtra instructions:\n${extraPrompt}` : ''}`;
   }
 }
 
+function googleFontImportName(fontName) {
+  return fontName.replace(/\s+/g, '');
+}
+
 function buildWrapper(componentName, segments, audioFilename, fps, componentsCode, brandingConfig) {
   const p = brandingConfig?.palette || {};
   const bg = p.bg || '#111118';
@@ -119,15 +123,23 @@ function buildWrapper(componentName, segments, audioFilename, fps, componentsCod
   const accentDim = p.accentDim || 'rgba(239,68,68,0.25)';
   const text = p.text || '#f0f0f0';
   const textDim = p.textDim || 'rgba(240,240,240,0.35)';
-  const fontFamily = brandingConfig?.typography?.fontFamily || 'system-ui, sans-serif';
+  const configuredFont = brandingConfig?.typography?.fontFamily || 'system-ui, sans-serif';
+  const isGoogleFont = configuredFont !== 'system-ui, sans-serif' && !configuredFont.includes(',');
+  const googleFontModule = isGoogleFont ? googleFontImportName(configuredFont) : null;
+  const fontFamily = isGoogleFont ? configuredFont : configuredFont;
 
   const segNames = segments.map((_, i) => `Seg${i + 1}`);
   const segmentsArr = segments.map(s =>
     `  { start: ${s.start}, end: ${s.end}, text: ${JSON.stringify(s.text || '')} }`
   ).join(',\n');
 
+  const googleFontImport = googleFontModule
+    ? `import { loadFont } from "@remotion/google-fonts/${googleFontModule}";\nconst { fontFamily: FONT_FAMILY } = loadFont();\n`
+    : '';
+
   return `import { AbsoluteFill, Audio, interpolate, spring, Sequence, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
 import React from "react";
+${googleFontImport}
 
 const BG = "${bg}";
 const ACCENT = "${accent}";
@@ -168,7 +180,7 @@ const SEGMENT_COMPONENTS: React.FC[] = [${segNames.join(', ')}];
 export const ${componentName} = () => {
   const { fps } = useVideoConfig();
   return (
-    <AbsoluteFill style={{ background: BG, fontFamily: "${fontFamily}" }}>
+    <AbsoluteFill style={{ background: BG, fontFamily: ${googleFontModule ? 'FONT_FAMILY' : `"${fontFamily}"`} }}>
       <AbsoluteFill><Grid /></AbsoluteFill>
 ${audioFilename ? `      <Audio src={staticFile(${JSON.stringify(audioFilename)})} />\n` : ''}      {SEGMENTS.map((seg, i) => {
         const Comp = SEGMENT_COMPONENTS[i];

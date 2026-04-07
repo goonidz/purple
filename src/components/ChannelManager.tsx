@@ -920,6 +920,46 @@ function PresetConfigDialog({
                   </div>
 
                   <div className="space-y-1">
+                    <Label className="text-xs">Police (Google Fonts)</Label>
+                    <select
+                      value={animatorBranding.typography.fontFamily}
+                      onChange={(e) => setAnimatorBranding(prev => ({
+                        ...prev,
+                        typography: { ...prev.typography, fontFamily: e.target.value }
+                      }))}
+                      className="w-full h-8 rounded-md border border-input bg-background px-2 text-xs"
+                    >
+                      <option value="system-ui, sans-serif">System UI (défaut)</option>
+                      <optgroup label="Serif">
+                        <option value="Playfair Display">Playfair Display</option>
+                        <option value="Domine">Domine</option>
+                        <option value="Merriweather">Merriweather</option>
+                        <option value="Lora">Lora</option>
+                        <option value="EB Garamond">EB Garamond</option>
+                      </optgroup>
+                      <optgroup label="Sans-serif">
+                        <option value="Inter">Inter</option>
+                        <option value="Montserrat">Montserrat</option>
+                        <option value="Poppins">Poppins</option>
+                        <option value="Raleway">Raleway</option>
+                        <option value="Outfit">Outfit</option>
+                        <option value="Space Grotesk">Space Grotesk</option>
+                      </optgroup>
+                      <optgroup label="Display">
+                        <option value="Bebas Neue">Bebas Neue</option>
+                        <option value="Oswald">Oswald</option>
+                        <option value="Anton">Anton</option>
+                        <option value="Righteous">Righteous</option>
+                      </optgroup>
+                      <optgroup label="Monospace">
+                        <option value="JetBrains Mono">JetBrains Mono</option>
+                        <option value="Fira Code">Fira Code</option>
+                        <option value="Space Mono">Space Mono</option>
+                      </optgroup>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
                     <div className="flex items-center justify-between">
                       <Label className="text-sm">Branding & Style (Markdown)</Label>
                       {!animatorBrandingMarkdown && (
