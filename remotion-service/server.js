@@ -1369,7 +1369,8 @@ Do NOT add comments explaining your changes.`;
 });
 
 // --- QA Screenshots: capture one frame per scene at 80% ---
-// Optional: pass sceneIndex to re-capture a single scene only
+// Per-scene caching: only re-renders scenes whose code actually changed.
+// Optional: pass sceneIndex to re-capture a single scene only.
 app.post('/animator/qa-screenshots', async (req, res) => {
   const { projectId, sceneIndex: singleSceneIndex } = req.body;
   const singleMode = singleSceneIndex != null;
@@ -1397,6 +1398,12 @@ app.post('/animator/qa-screenshots', async (req, res) => {
     const durationInFrames = Math.ceil(totalDuration * fps);
     const allCode = sceneRows.map(s => s.animator_code).join('\n\n');
 
+    // Per-scene code hashes for incremental caching
+    const sceneHashes = {};
+    for (const row of sceneRows) {
+      sceneHashes[row.scene_index] = crypto.createHash('md5').update(row.animator_code).digest('hex').slice(0, 10);
+    }
+
     // Branding config from channel preset
     const { data: calEntry } = await supabase
       .from('content_calendar').select('channel_id')
@@ -1410,24 +1417,34 @@ app.post('/animator/qa-screenshots', async (req, res) => {
       }
     }
 
-    const codeHash = crypto.createHash('md5').update(allCode).digest('hex').slice(0, 12);
-    const qaDir = path.join(PREVIEW_DIR, `${codeHash}-qa`);
+    // Stable QA directory per project (not per code hash)
+    const shortProjectId = projectId.slice(0, 8);
+    const qaDir = path.join(PREVIEW_DIR, `${shortProjectId}-qa`);
     const manifestPath = path.join(qaDir, 'manifest.json');
+    const pngsDir = path.join(qaDir, 'pngs');
 
-    // For full mode only: check cache
-    if (!singleMode && fs.existsSync(manifestPath)) {
+    // Load previous manifest for per-scene cache comparison
+    let prevHashes = {};
+    if (fs.existsSync(manifestPath)) {
       try {
-        const cached = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
-        if (cached.screenshots?.length === sceneRows.length) {
-          console.log(`[QA] Cache hit for ${projectId} (${codeHash})`);
-          return res.json(cached);
+        const prev = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+        prevHashes = prev.sceneHashes || {};
+
+        // Full mode: if ALL scene hashes match and count matches, return cached result immediately
+        if (!singleMode && prev.screenshots?.length === sceneRows.length) {
+          const allMatch = sceneRows.every(r => prevHashes[r.scene_index] === sceneHashes[r.scene_index]);
+          if (allMatch) {
+            console.log(`[QA] Full cache hit for ${projectId} (all ${sceneRows.length} scenes unchanged)`);
+            return res.json(prev);
+          }
         }
-      } catch (e) { /* ignore corrupt cache */ }
+      } catch (e) { /* ignore corrupt manifest */ }
     }
 
-    if (!fs.existsSync(qaDir)) fs.mkdirSync(qaDir, { recursive: true });
+    if (!fs.existsSync(pngsDir)) fs.mkdirSync(pngsDir, { recursive: true });
 
-    // Build composition (no audio needed for screenshots)
+    // Composition must always be rebuilt (code may have changed)
+    const codeHash = crypto.createHash('md5').update(allCode).digest('hex').slice(0, 12);
     const compName = `QAComp${codeHash}`;
     const compositionId = compName;
     const compositionCode = buildWrapper(compName, segments, null, fps, allCode, brandingConfig);
@@ -1468,13 +1485,13 @@ registerRoot(Root);
       ? PUBLIC_BASE_URL.replace('/remotion-renders', '/remotion-preview')
       : `http://localhost:${PORT}/preview-bundles`;
 
-    // --- Single scene mode ---
-    if (singleMode) {
-      const seg = segments[singleSceneIndex];
-      if (!seg) return res.status(400).json({ error: `Scene ${singleSceneIndex} not found in segments` });
+    // Helper: render one scene screenshot
+    async function captureScene(sceneIndex) {
+      const seg = segments[sceneIndex];
+      if (!seg) return { sceneIndex, timestamp: 0, success: false, error: 'Segment not found' };
       const targetTime = seg.start + (seg.end - seg.start) * 0.8;
       const targetFrame = Math.min(Math.round(targetTime * fps), durationInFrames - 1);
-      const outputFile = path.join(qaDir, `scene_${String(singleSceneIndex).padStart(3, '0')}.png`);
+      const outputFile = path.join(pngsDir, `scene_${String(sceneIndex).padStart(3, '0')}.png`);
 
       try {
         await renderStill({
@@ -1485,61 +1502,90 @@ registerRoot(Root);
           imageFormat: 'png',
           scale: 0.5,
         });
-        const url = `${baseUrl}/${codeHash}-qa/scene_${String(singleSceneIndex).padStart(3, '0')}.png?t=${Date.now()}`;
-        console.log(`[QA] Single screenshot done for scene ${singleSceneIndex}`);
-        return res.json({ success: true, screenshot: { sceneIndex: singleSceneIndex, timestamp: targetTime, success: true, url } });
+        return { sceneIndex, timestamp: targetTime, success: true };
       } catch (err) {
-        console.warn(`[QA] Single scene ${singleSceneIndex} screenshot failed: ${err.message}`);
-        return res.json({ success: true, screenshot: { sceneIndex: singleSceneIndex, timestamp: targetTime, success: false, url: null, error: err.message } });
+        console.warn(`[QA] Scene ${sceneIndex} screenshot failed: ${err.message}`);
+        return { sceneIndex, timestamp: targetTime, success: false, error: err.message };
       }
     }
 
-    // --- Full mode: capture all scenes ---
-    const screenshots = [];
-    const BATCH_SIZE = 5;
+    // --- Single scene mode ---
+    if (singleMode) {
+      const result = await captureScene(singleSceneIndex);
+      const url = result.success
+        ? `${baseUrl}/${shortProjectId}-qa/pngs/scene_${String(singleSceneIndex).padStart(3, '0')}.png?t=${Date.now()}`
+        : null;
 
-    for (let batchStart = 0; batchStart < segments.length; batchStart += BATCH_SIZE) {
-      const batch = segments.slice(batchStart, batchStart + BATCH_SIZE);
-      const batchPromises = batch.map(async (seg, batchIdx) => {
-        const sceneIndex = batchStart + batchIdx;
-        const targetTime = seg.start + (seg.end - seg.start) * 0.8;
-        const targetFrame = Math.min(Math.round(targetTime * fps), durationInFrames - 1);
-        const outputFile = path.join(qaDir, `scene_${String(sceneIndex).padStart(3, '0')}.png`);
-
+      // Update manifest with new hash for this scene
+      prevHashes[singleSceneIndex] = sceneHashes[singleSceneIndex];
+      if (fs.existsSync(manifestPath)) {
         try {
-          await renderStill({
-            composition: { ...composition, durationInFrames, fps, width: 1920, height: 1080 },
-            serveUrl: qaBundlePath,
-            frame: targetFrame,
-            output: outputFile,
-            imageFormat: 'png',
-            scale: 0.5,
-          });
-          return { sceneIndex, timestamp: targetTime, success: true };
-        } catch (err) {
-          console.warn(`[QA] Scene ${sceneIndex} screenshot failed: ${err.message}`);
-          return { sceneIndex, timestamp: targetTime, success: false, error: err.message };
-        }
-      });
-      const batchResults = await Promise.all(batchPromises);
+          const prev = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+          prev.sceneHashes = { ...prev.sceneHashes, ...prevHashes };
+          if (prev.screenshots) {
+            const idx = prev.screenshots.findIndex(s => s.sceneIndex === singleSceneIndex);
+            const updated = { ...result, url };
+            if (idx >= 0) prev.screenshots[idx] = updated;
+            else prev.screenshots.push(updated);
+          }
+          fs.writeFileSync(manifestPath, JSON.stringify(prev), 'utf-8');
+        } catch (e) { /* ignore */ }
+      }
+
+      console.log(`[QA] Single screenshot done for scene ${singleSceneIndex}`);
+      return res.json({ success: true, screenshot: { ...result, url } });
+    }
+
+    // --- Full mode: only re-render changed scenes ---
+    const scenesToRender = [];
+    const scenesToSkip = [];
+    for (const row of sceneRows) {
+      const si = row.scene_index;
+      const pngFile = path.join(pngsDir, `scene_${String(si).padStart(3, '0')}.png`);
+      if (prevHashes[si] === sceneHashes[si] && fs.existsSync(pngFile)) {
+        scenesToSkip.push(si);
+      } else {
+        scenesToRender.push(si);
+      }
+    }
+
+    console.log(`[QA] ${scenesToSkip.length} cached, ${scenesToRender.length} to render`);
+
+    const screenshots = [];
+
+    // Add cached scenes (no renderStill needed)
+    for (const si of scenesToSkip) {
+      const seg = segments[si];
+      const targetTime = seg ? seg.start + (seg.end - seg.start) * 0.8 : 0;
+      screenshots.push({ sceneIndex: si, timestamp: targetTime, success: true });
+    }
+
+    // Render changed scenes in batches
+    const BATCH_SIZE = 5;
+    for (let batchStart = 0; batchStart < scenesToRender.length; batchStart += BATCH_SIZE) {
+      const batch = scenesToRender.slice(batchStart, batchStart + BATCH_SIZE);
+      const batchResults = await Promise.all(batch.map(si => captureScene(si)));
       screenshots.push(...batchResults);
     }
+
+    // Sort by scene index
+    screenshots.sort((a, b) => a.sceneIndex - b.sceneIndex);
 
     const result = {
       success: true,
       total: screenshots.length,
       completed: screenshots.filter(s => s.success).length,
       failed: screenshots.filter(s => !s.success).length,
+      sceneHashes,
       screenshots: screenshots.map(s => ({
         ...s,
-        url: s.success ? `${baseUrl}/${codeHash}-qa/scene_${String(s.sceneIndex).padStart(3, '0')}.png` : null,
+        url: s.success ? `${baseUrl}/${shortProjectId}-qa/pngs/scene_${String(s.sceneIndex).padStart(3, '0')}.png` : null,
       })),
     };
 
-    // Save manifest for caching
     fs.writeFileSync(manifestPath, JSON.stringify(result), 'utf-8');
 
-    console.log(`[QA] Screenshots done for ${projectId}: ${result.completed}/${result.total} OK`);
+    console.log(`[QA] Screenshots done for ${projectId}: ${result.completed}/${result.total} OK (${scenesToSkip.length} cached, ${scenesToRender.length} rendered)`);
     res.json(result);
   } catch (err) {
     console.error(`[QA] Failed:`, err.message);
