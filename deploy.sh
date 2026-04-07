@@ -80,13 +80,16 @@ if [ -f setup-ssl-auto.sh ] && [ ! -f /etc/letsencrypt/live/purpleai.duckdns.org
 fi
 
 # Restart services with env reload (pm2 restart does NOT reload .env files)
+# Uses --cwd so dotenv finds the .env in each service's own directory
 restart_service() {
     local name=$1
     local script=$2
+    local dir
+    dir="$(dirname "$script")"
     if pm2 describe "$name" > /dev/null 2>&1; then
         pm2 delete "$name" 2>/dev/null
-        pm2 start "$script" --name "$name"
-        echo -e "${GREEN}✅ $name restarted (env reloaded)${NC}"
+        pm2 start "$script" --name "$name" --cwd "$dir"
+        echo -e "${GREEN}✅ $name restarted (env reloaded, cwd=$dir)${NC}"
     else
         echo -e "${YELLOW}⚠️  $name not found in PM2 (skipped)${NC}"
     fi
