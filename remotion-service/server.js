@@ -977,6 +977,7 @@ createRoot(container).render(<App />);
     const bundlePath = await bundle({
       entryPoint: path.join(srcDir, 'player-entry.jsx'),
       webpackOverride: (config) => config,
+      ignoreRegisterRootWarning: true,
     });
 
     const bundleFiles = fs.readdirSync(bundlePath);
