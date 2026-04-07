@@ -946,27 +946,36 @@ app.post('/animator/preview-bundle', async (req, res) => {
 
     fs.writeFileSync(path.join(srcDir, `${compName}.tsx`), compositionCode, 'utf-8');
 
-    fs.writeFileSync(path.join(srcDir, 'Root.jsx'), `
+    // Player entry: renders @remotion/player with the composition component
+    fs.writeFileSync(path.join(srcDir, 'player-entry.jsx'), `
 import React from 'react';
-import { Composition } from 'remotion';
+import { createRoot } from 'react-dom/client';
+import { Player } from '@remotion/player';
 import { ${compName} } from './${compName}';
 
-export const RemotionRoot = () => (
-  <>
-    <Composition id="${compName}" component={${compName}} durationInFrames={${durationInFrames}} fps={${fps}} width={1920} height={1080} defaultProps={{}} />
-  </>
+const App = () => (
+  <div style={{ width: '100vw', height: '100vh', background: '#0a0a0f', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+    <Player
+      component={${compName}}
+      durationInFrames={${durationInFrames}}
+      fps={${fps}}
+      compositionWidth={1920}
+      compositionHeight={1080}
+      style={{ width: '100%', maxHeight: '100vh' }}
+      controls
+      autoPlay
+      loop
+    />
+  </div>
 );
+
+const container = document.getElementById('container') || document.getElementById('root') || document.body;
+createRoot(container).render(<App />);
 `, 'utf-8');
 
-    fs.writeFileSync(path.join(srcDir, 'index.js'), `
-import { registerRoot } from 'remotion';
-import { RemotionRoot } from './Root';
-registerRoot(RemotionRoot);
-`, 'utf-8');
-
-    console.log(`[Preview] Bundling preview for ${projectId} (${codeHash})...`);
+    console.log(`[Preview] Bundling player for ${projectId} (${codeHash})...`);
     const bundlePath = await bundle({
-      entryPoint: path.join(srcDir, 'index.js'),
+      entryPoint: path.join(srcDir, 'player-entry.jsx'),
       webpackOverride: (config) => config,
     });
 
@@ -981,7 +990,7 @@ registerRoot(RemotionRoot);
       }
     }
 
-    // Rewrite index.html: absolute paths → relative so it works in a subdirectory
+    // Rewrite index.html: absolute → relative paths for subdirectory serving
     const indexPath = path.join(previewDir, 'index.html');
     let indexHtml = fs.readFileSync(indexPath, 'utf-8');
     indexHtml = indexHtml
