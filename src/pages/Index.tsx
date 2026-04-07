@@ -920,6 +920,7 @@ const Index = () => {
       ]);
       if (cancelled) return;
       const data = pipelineRes.data;
+      console.log('[animator-poll] pipeline:', data, 'video_url:', projRes.data?.animator_video_url, 'error:', projRes.error);
       setAnimatorPipelineStatus(data || null);
       if (data?.current_step === 'completed' || data?.step_status === 'completed') {
         setIsAnimatorGenerating(false);
@@ -1256,11 +1257,8 @@ const Index = () => {
       if (parsedUrls.length > 0) {
         setUploadedStyleImageUrl(parsedUrls[0]);
       }
-      if (data.animator_video_url) {
-        setAnimatorVideoUrl(data.animator_video_url);
-      } else {
-        setAnimatorVideoUrl(null);
-      }
+      console.log('[loadProjectData] animator_video_url from DB:', data.animator_video_url);
+      setAnimatorVideoUrl(data.animator_video_url || null);
       if (data.audio_url) {
         setAudioUrl(data.audio_url);
       } else if (existingScenes.length > 0) {
@@ -4399,7 +4397,7 @@ const Index = () => {
                 </div>
                 )}
 
-                {(scenes.length > 0 || generatedPrompts.length > 0) && (
+                {!isAnimatorChannel && (scenes.length > 0 || generatedPrompts.length > 0) && (
                   <Card className="p-6">
                     <div className="space-y-4">
                       {/* Header avec titre et boutons */}
