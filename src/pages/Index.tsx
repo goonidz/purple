@@ -4343,42 +4343,48 @@ const Index = () => {
                 })()}
 
                 {/* Per-scene animator code status */}
-                {isAnimatorChannel && animatorSceneStatuses.length > 0 && (
+                {isAnimatorChannel && scenes.length > 0 && (
                   <Card className="p-4 border border-purple-500/20 bg-purple-500/5 mb-6">
                     <div className="flex items-center justify-between mb-3">
                       <h3 className="text-sm font-medium flex items-center gap-2">
                         <Sparkles className="h-4 w-4 text-purple-500" />
-                        Scènes Animator ({animatorSceneStatuses.filter(s => s.animator_code_status === 'completed').length}/{animatorSceneStatuses.length})
+                        Scènes Animator
+                        {animatorSceneStatuses.length > 0 && (
+                          <span className="text-muted-foreground font-normal">
+                            — {animatorSceneStatuses.filter(s => s.animator_code_status === 'completed').length}/{scenes.length} générées
+                          </span>
+                        )}
                       </h3>
                       <Button
                         size="sm"
                         variant="ghost"
                         className="text-xs text-muted-foreground"
                         onClick={() => {
-                          if (expandedAnimatorScenes.size === animatorSceneStatuses.length) {
+                          if (expandedAnimatorScenes.size === scenes.length) {
                             setExpandedAnimatorScenes(new Set());
                           } else {
-                            setExpandedAnimatorScenes(new Set(animatorSceneStatuses.map(s => s.scene_index)));
+                            setExpandedAnimatorScenes(new Set(scenes.map((_, i) => i)));
                           }
                         }}
                       >
-                        {expandedAnimatorScenes.size === animatorSceneStatuses.length ? 'Tout replier' : 'Tout déplier'}
+                        {expandedAnimatorScenes.size === scenes.length ? 'Tout replier' : 'Tout déplier'}
                       </Button>
                     </div>
                     <div className="space-y-2">
-                      {animatorSceneStatuses.map((sceneStatus) => {
-                        const scene = scenes[sceneStatus.scene_index];
-                        const status = sceneStatus.animator_code_status;
+                      {scenes.map((scene, index) => {
+                        const sceneStatus = animatorSceneStatuses.find(s => s.scene_index === index);
+                        const status = sceneStatus?.animator_code_status || null;
                         const isFailed = status === 'failed';
                         const isCompleted = status === 'completed';
                         const isGenerating = status === 'generating' || status === 'pending';
-                        const isRetrying = isRetryingScene === sceneStatus.scene_index;
-                        const isExpanded = expandedAnimatorScenes.has(sceneStatus.scene_index);
-                        const duration = scene ? (scene.endTime - scene.startTime).toFixed(1) : '?';
+                        const hasCode = !!sceneStatus?.animator_code;
+                        const isRetrying = isRetryingScene === index;
+                        const isExpanded = expandedAnimatorScenes.has(index);
+                        const duration = (scene.endTime - scene.startTime).toFixed(1);
 
                         return (
                           <div
-                            key={sceneStatus.scene_index}
+                            key={index}
                             className={`rounded-lg border overflow-hidden ${
                               isCompleted ? 'border-green-500/20' :
                               isFailed ? 'border-red-500/20' :
@@ -4397,14 +4403,14 @@ const Index = () => {
                               onClick={() => {
                                 setExpandedAnimatorScenes(prev => {
                                   const next = new Set(prev);
-                                  if (next.has(sceneStatus.scene_index)) next.delete(sceneStatus.scene_index);
-                                  else next.add(sceneStatus.scene_index);
+                                  if (next.has(index)) next.delete(index);
+                                  else next.add(index);
                                   return next;
                                 });
                               }}
                             >
                               {/* Status icon */}
-                              <div className="flex-shrink-0">
+                              <div className="flex-shrink-0 w-4">
                                 {isRetrying && <Loader2 className="h-4 w-4 animate-spin text-purple-500" />}
                                 {!isRetrying && isCompleted && <Check className="h-4 w-4 text-green-500" />}
                                 {!isRetrying && isFailed && <X className="h-4 w-4 text-red-500" />}
@@ -4412,15 +4418,15 @@ const Index = () => {
                               </div>
 
                               {/* Scene number + timing */}
-                              <span className="font-bold text-sm text-primary w-8">#{sceneStatus.scene_index + 1}</span>
-                              <span className="text-xs text-muted-foreground font-mono w-20 flex-shrink-0">
-                                {scene ? `${formatTimecode(scene.startTime)} → ${formatTimecode(scene.endTime)}` : '—'}
+                              <span className="font-bold text-sm text-primary w-8">#{index + 1}</span>
+                              <span className="text-xs text-muted-foreground font-mono w-24 flex-shrink-0">
+                                {formatTimecode(scene.startTime)} → {formatTimecode(scene.endTime)}
                               </span>
                               <span className="text-xs text-muted-foreground w-10 flex-shrink-0">{duration}s</span>
 
                               {/* Scene text preview */}
                               <span className="text-xs text-foreground/80 truncate flex-1 min-w-0">
-                                {scene?.text || '—'}
+                                {scene.text || '—'}
                               </span>
 
                               {/* Actions */}
@@ -4431,8 +4437,8 @@ const Index = () => {
                                     variant="ghost"
                                     className="h-6 px-2 text-xs text-red-500 hover:text-red-600 hover:bg-red-500/10"
                                     onClick={async () => {
-                                      if (!currentProjectId || !scene) return;
-                                      setIsRetryingScene(sceneStatus.scene_index);
+                                      if (!currentProjectId) return;
+                                      setIsRetryingScene(index);
                                       try {
                                         const { data: calEntry } = await supabase
                                           .from("content_calendar")
@@ -4454,9 +4460,9 @@ const Index = () => {
                                           key_name: 'anthropic',
                                         });
 
-                                        const prevScene = sceneStatus.scene_index > 0 ? scenes[sceneStatus.scene_index - 1] : null;
-                                        const nextScene = sceneStatus.scene_index < scenes.length - 1 ? scenes[sceneStatus.scene_index + 1] : null;
-                                        const prevCompleted = animatorSceneStatuses.find(s => s.scene_index === sceneStatus.scene_index - 1 && s.animator_code_status === 'completed');
+                                        const prevScene = index > 0 ? scenes[index - 1] : null;
+                                        const nextScene = index < scenes.length - 1 ? scenes[index + 1] : null;
+                                        const prevCompleted = animatorSceneStatuses.find(s => s.scene_index === index - 1 && s.animator_code_status === 'completed');
 
                                         let prevCode = null;
                                         if (prevCompleted) {
@@ -4469,7 +4475,7 @@ const Index = () => {
                                           body: JSON.stringify({
                                             anthropicKey: keyData,
                                             segment: { start: scene.startTime, end: scene.endTime, text: scene.text },
-                                            segIndex: sceneStatus.scene_index,
+                                            segIndex: index,
                                             totalSegments: scenes.length,
                                             brandingConfig: presetConfig.branding_config || null,
                                             brandingMarkdown: presetConfig.branding_markdown || '',
@@ -4486,9 +4492,9 @@ const Index = () => {
                                         });
                                         const result = await resp.json();
                                         if (result.success) {
-                                          toast.success(`Scène ${sceneStatus.scene_index + 1} régénérée`);
+                                          toast.success(`Scène ${index + 1} régénérée`);
                                         } else {
-                                          toast.error(`Scène ${sceneStatus.scene_index + 1}: ${result.error}`);
+                                          toast.error(`Scène ${index + 1}: ${result.error}`);
                                         }
                                       } catch (e: any) {
                                         toast.error(`Erreur: ${e.message}`);
@@ -4509,14 +4515,12 @@ const Index = () => {
                             {isExpanded && (
                               <div className="border-t border-inherit">
                                 {/* Scene text */}
-                                {scene?.text && (
-                                  <div className="px-3 py-2 bg-muted/5 border-b border-inherit">
-                                    <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Texte</span>
-                                    <p className="text-sm mt-1 text-foreground/90 leading-relaxed">{scene.text}</p>
-                                  </div>
-                                )}
+                                <div className="px-3 py-2 bg-muted/5 border-b border-inherit">
+                                  <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Texte</span>
+                                  <p className="text-sm mt-1 text-foreground/90 leading-relaxed">{scene.text}</p>
+                                </div>
                                 {/* Animator code */}
-                                {sceneStatus.animator_code && (
+                                {hasCode && (
                                   <div className="px-3 py-2">
                                     <div className="flex items-center justify-between mb-1">
                                       <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
@@ -4529,7 +4533,7 @@ const Index = () => {
                                           className="h-5 px-1.5 text-[10px]"
                                           onClick={(e) => {
                                             e.stopPropagation();
-                                            navigator.clipboard.writeText(sceneStatus.animator_code || '');
+                                            navigator.clipboard.writeText(sceneStatus?.animator_code || '');
                                             toast.success('Code copié');
                                           }}
                                         >
@@ -4541,14 +4545,19 @@ const Index = () => {
                                     <pre className={`text-xs font-mono p-3 rounded-md overflow-x-auto max-h-[400px] overflow-y-auto whitespace-pre-wrap break-all ${
                                       isFailed ? 'bg-red-500/5 text-red-400' : 'bg-zinc-950 text-zinc-300'
                                     }`}>
-                                      {sceneStatus.animator_code}
+                                      {sceneStatus?.animator_code}
                                     </pre>
                                   </div>
                                 )}
-                                {!sceneStatus.animator_code && isGenerating && (
+                                {!hasCode && isGenerating && (
                                   <div className="px-3 py-4 text-center text-xs text-muted-foreground">
                                     <Loader2 className="h-4 w-4 animate-spin mx-auto mb-1" />
                                     Génération en cours...
+                                  </div>
+                                )}
+                                {!hasCode && !isGenerating && !status && (
+                                  <div className="px-3 py-3 text-center text-xs text-muted-foreground italic">
+                                    Pas encore généré
                                   </div>
                                 )}
                               </div>
