@@ -906,7 +906,7 @@ async function stepAnimatorGenerate(pipeline) {
 }
 
 async function stepWaitAnimatorGenerate(pipeline) {
-  const { id, metadata } = pipeline;
+  const { id, project_id, metadata } = pipeline;
   const jobId = metadata?.animatorJobId;
   if (!jobId) throw new Error('No animatorJobId in metadata');
 
@@ -920,6 +920,12 @@ async function stepWaitAnimatorGenerate(pipeline) {
 
   if (job.status === 'completed' && job.video_url) {
     console.log(`[orchestrator] [${id}] Animator render completed: ${job.video_url}`);
+    const { error: urlErr } = await supabase
+      .from('projects')
+      .update({ animator_video_url: job.video_url })
+      .eq('id', pipeline.project_id);
+    if (urlErr) console.error(`[orchestrator] [${id}] Failed to set animator_video_url:`, urlErr);
+    else console.log(`[orchestrator] [${id}] Set animator_video_url on project ${pipeline.project_id}`);
     await advancePipeline(id, 'completed', { step_status: 'completed' });
   } else if (job.status === 'failed') {
     throw new Error(`Animator render failed: ${job.error_message || 'unknown'}`);
