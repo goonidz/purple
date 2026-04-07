@@ -869,111 +869,72 @@ async function getAnimatorPresetConfig(channel_id) {
 }
 
 async function stepAnimatorGenerate(pipeline) {
-  const { id, project_id, user_id, channel_id } = pipeline;
+  const { id, project_id, user_id } = pipeline;
 
-  const { data: project } = await supabase
-    .from('projects')
-    .select('scenes, audio_url, name')
-    .eq('id', project_id)
-    .single();
+  console.log(`[orchestrator] [${id}] Creating animator_scenes job via Edge Function`);
 
-  if (!project?.scenes?.length) {
-    throw new Error('No scenes in project for animator generation');
-  }
-
-  const segments = project.scenes.map(s => ({
-    start: s.startTime,
-    end: s.endTime,
-    text: s.text,
-  }));
-
-  const anthropicKey = await getUserApiKey(user_id, 'anthropic');
-  const presetConfig = await getAnimatorPresetConfig(channel_id);
-
-  const safeName = (project.name || 'Composition')
-    .replace(/[^a-zA-Z0-9]/g, '')
-    .substring(0, 40);
-  const componentName = `Anim${safeName}${Date.now().toString(36)}`;
-
-  console.log(`[orchestrator] [${id}] Starting per-scene animator generation: ${componentName} (${segments.length} scenes)`);
-
-  const resp = await fetch(`${REMOTION_SERVICE_URL}/animator/generate-all-scenes`, {
+  const resp = await fetch(`${SUPABASE_URL}/functions/v1/start-generation-job`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+      'Content-Type': 'application/json',
+    },
     body: JSON.stringify({
-      anthropicKey,
-      segments,
-      componentName,
-      audioUrl: project.audio_url || null,
-      ...presetConfig,
-      fps: 30,
-      width: 1920,
-      height: 1080,
       projectId: project_id,
+      jobType: 'animator_scenes',
       userId: user_id,
     }),
   });
 
   if (!resp.ok) {
     const errText = await resp.text();
-    throw new Error(`Animator generate-all-scenes failed: ${errText}`);
+    throw new Error(`Failed to create animator_scenes job: ${errText}`);
   }
 
   const { jobId } = await resp.json();
-  console.log(`[orchestrator] [${id}] Animator per-scene job created: ${jobId} (componentName: ${componentName})`);
+  console.log(`[orchestrator] [${id}] Animator scenes job created: ${jobId}`);
   await advancePipeline(id, 'wait_animator_scenes', {
-    metadata: { ...pipeline.metadata, animatorJobId: jobId, animatorComponentName: componentName },
+    metadata: { ...pipeline.metadata, animatorScenesJobId: jobId },
   });
 }
 
 async function stepWaitAnimatorScenes(pipeline) {
   const { id, project_id, metadata } = pipeline;
-  const jobId = metadata?.animatorJobId;
-  if (!jobId) throw new Error('No animatorJobId in metadata');
+  const jobId = metadata?.animatorScenesJobId || metadata?.animatorJobId;
+  if (!jobId) throw new Error('No animatorScenesJobId in metadata');
 
-  // Poll remotion-service in-memory job status
-  let job;
-  try {
-    const resp = await fetch(`${REMOTION_SERVICE_URL}/render/${jobId}`);
-    if (resp.status === 404) {
-      // Job not in memory — check DB for scene status directly
-      const { data: scenes } = await supabase
-        .from('project_scenes')
-        .select('scene_index, animator_code_status')
-        .eq('project_id', project_id)
-        .not('animator_code_status', 'is', null);
-      if (!scenes?.length) return;
-      const completed = scenes.filter(s => s.animator_code_status === 'completed').length;
-      const failed = scenes.filter(s => s.animator_code_status === 'failed').length;
-      const total = scenes.length;
-      if (completed + failed >= total) {
-        if (failed > 0) {
-          throw new Error(`${failed}/${total} scene(s) failed generation`);
-        }
-        console.log(`[orchestrator] [${id}] All ${total} scenes generated (from DB fallback)`);
-        await advancePipeline(id, 'animator_render', { metadata: pipeline.metadata });
-        return;
-      }
-      return;
-    }
-    if (!resp.ok) return;
-    job = await resp.json();
-  } catch (e) {
-    if (e.message.includes('scene(s) failed')) throw e;
-    console.warn(`[orchestrator] [${id}] Failed to poll remotion-service: ${e.message}`);
+  // Poll generation_jobs parent status
+  const { data: parentJob } = await supabase
+    .from('generation_jobs')
+    .select('status, progress, total')
+    .eq('id', jobId)
+    .single();
+
+  if (!parentJob) {
+    console.warn(`[orchestrator] [${id}] Animator parent job ${jobId} not found`);
     return;
   }
 
-  if (job.status === 'scenes_ready') {
-    console.log(`[orchestrator] [${id}] All scenes generated: ${job.completedScenes}/${job.totalScenes}`);
+  if (parentJob.status === 'completed') {
+    // Check if all scenes actually succeeded
+    const { count: failedCount } = await supabase
+      .from('project_scenes')
+      .select('id', { count: 'exact', head: true })
+      .eq('project_id', project_id)
+      .eq('animator_code_status', 'failed');
+
+    if (failedCount > 0) {
+      throw new Error(`${failedCount} scene(s) failed generation`);
+    }
+
+    console.log(`[orchestrator] [${id}] All animator scenes generated (${parentJob.progress}/${parentJob.total})`);
     await advancePipeline(id, 'animator_render', { metadata: pipeline.metadata });
-  } else if (job.status === 'partial') {
-    throw new Error(`${job.failedScenes}/${job.totalScenes} scene(s) failed generation`);
-  } else if (job.status === 'failed') {
-    throw new Error(`Scene generation failed: ${job.error || 'unknown'}`);
+  } else if (parentJob.status === 'failed') {
+    throw new Error('Animator scene generation failed');
+  } else if (parentJob.status === 'cancelled') {
+    throw new Error('Animator scene generation was cancelled');
   } else {
-    const completed = (job.completedScenes || 0) + (job.failedScenes || 0);
-    console.log(`[orchestrator] [${id}] Scenes generating: ${completed}/${job.totalScenes || '?'} (${job.progress || 0}%)`);
+    console.log(`[orchestrator] [${id}] Animator scenes: ${parentJob.progress || 0}/${parentJob.total || '?'} (status: ${parentJob.status})`);
   }
 }
 

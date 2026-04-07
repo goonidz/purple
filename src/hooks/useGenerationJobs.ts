@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
-export type JobType = 'transcription' | 'prompts' | 'images' | 'thumbnails' | 'thumbnails_v2' | 'test_images' | 'single_prompt' | 'single_image' | 'upscale' | 'single_animation' | 'qa' | 'qa_regen' | 'audio_generation' | 'idea_generation';
+export type JobType = 'transcription' | 'prompts' | 'images' | 'thumbnails' | 'thumbnails_v2' | 'test_images' | 'single_prompt' | 'single_image' | 'upscale' | 'single_animation' | 'qa' | 'qa_regen' | 'audio_generation' | 'idea_generation' | 'animator_scenes' | 'animator_scene';
 export type JobStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled';
 
 export interface GenerationJob {
@@ -137,16 +137,17 @@ export function useGenerationJobs({ projectId, onJobComplete, onJobFailed, autoR
           .order('created_at', { ascending: false });
 
         if (error) throw error;
-        // Filter out child jobs (single_prompt, single_image, single_qa, single_upscale) client-side
+        // Filter out child jobs client-side
+        const CHILD_JOB_TYPES = ['single_prompt', 'single_image', 'single_qa', 'single_upscale', 'animator_scene'];
         const filteredJobs = (data || []).filter(
-          (job: any) => job.job_type !== 'single_prompt' && job.job_type !== 'single_image' && job.job_type !== 'single_qa' && job.job_type !== 'single_upscale'
+          (job: any) => !CHILD_JOB_TYPES.includes(job.job_type)
         );
         
         // IMPORTANT: Merge with existing single_* jobs to avoid losing them during periodic refetch
         // This fixes the bug where regenerating prompt spinner never stops
         setActiveJobs(prev => {
           const existingSingleJobs = prev.filter(
-            j => j.job_type === 'single_prompt' || j.job_type === 'single_image' || j.job_type === 'single_qa' || j.job_type === 'single_upscale'
+            j => CHILD_JOB_TYPES.includes(j.job_type)
           );
           // Merge: keep existing single jobs + add fetched parent jobs (avoiding duplicates)
           const mergedJobs = [...existingSingleJobs];
@@ -178,10 +179,10 @@ export function useGenerationJobs({ projectId, onJobComplete, onJobFailed, autoR
         (payload) => {
           console.log('Job update received:', payload);
           
+          const CHILD_TYPES = ['single_prompt', 'single_image', 'single_qa', 'single_upscale', 'animator_scene'];
           if (payload.eventType === 'INSERT') {
             const newJob = payload.new as GenerationJob;
-            // Ignore individual child jobs
-            if (newJob.job_type === 'single_prompt' || newJob.job_type === 'single_image' || newJob.job_type === 'single_qa' || newJob.job_type === 'single_upscale') return;
+            if (CHILD_TYPES.includes(newJob.job_type)) return;
             setActiveJobs(prev => {
               // Check if job already exists
               if (prev.find(j => j.id === newJob.id)) return prev;
@@ -189,8 +190,7 @@ export function useGenerationJobs({ projectId, onJobComplete, onJobFailed, autoR
             });
           } else if (payload.eventType === 'UPDATE') {
             const updatedJob = payload.new as GenerationJob;
-            // Ignore individual child jobs
-            if (updatedJob.job_type === 'single_prompt' || updatedJob.job_type === 'single_image' || updatedJob.job_type === 'single_qa' || updatedJob.job_type === 'single_upscale') return;
+            if (CHILD_TYPES.includes(updatedJob.job_type)) return;
             
             setActiveJobs(prev => {
               // If we no longer track this job (already removed), ignore the update
@@ -360,15 +360,14 @@ export function useGenerationJobs({ projectId, onJobComplete, onJobFailed, autoR
 
       if (error) throw error;
 
-      // Filter out child jobs (single_prompt, single_image, single_qa, single_upscale) client-side
+      const CHILD_JOB_TYPES = ['single_prompt', 'single_image', 'single_qa', 'single_upscale', 'animator_scene'];
       const filteredJobs = (data || []).filter(
-        (job: any) => job.job_type !== 'single_prompt' && job.job_type !== 'single_image' && job.job_type !== 'single_qa' && job.job_type !== 'single_upscale'
+        (job: any) => !CHILD_JOB_TYPES.includes(job.job_type)
       );
       
-      // IMPORTANT: Merge with existing single_* jobs to avoid losing them
       setActiveJobs(prev => {
         const existingSingleJobs = prev.filter(
-          j => j.job_type === 'single_prompt' || j.job_type === 'single_image' || j.job_type === 'single_qa' || j.job_type === 'single_upscale'
+          j => CHILD_JOB_TYPES.includes(j.job_type)
         );
         const mergedJobs = [...existingSingleJobs];
         for (const job of filteredJobs) {
@@ -541,6 +540,10 @@ function getJobStartMessage(jobType: JobType): string {
       return "Régénération des images rejetées démarrée en arrière-plan";
     case 'audio_generation':
       return "Génération audio TTS démarrée en arrière-plan";
+    case 'animator_scenes':
+      return "Génération des scènes Animator démarrée en arrière-plan";
+    case 'animator_scene':
+      return "Regénération de la scène Animator démarrée";
     default:
       return "Génération démarrée en arrière-plan";
   }

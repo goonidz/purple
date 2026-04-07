@@ -15,6 +15,7 @@ const API_KEY_CACHE_TTL_MS = 5 * 60 * 1000;
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const REMOTION_SERVICE_URL = process.env.REMOTION_SERVICE_URL || 'http://localhost:3002';
 
 if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
   console.error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY');
@@ -2361,6 +2362,145 @@ async function notifyParentJobProgress(parentJobId) {
 }
 
 // ============================================================================
+// ANIMATOR SCENE JOB (calls remotion-service /animator/generate-scene)
+// ============================================================================
+
+async function processAnimatorSceneJob(job) {
+  const { id: jobId, project_id: projectId, user_id: userId, parent_job_id: parentJobId, metadata } = job;
+  const sceneIndex = metadata?.sceneIndex;
+  const segment = metadata?.segment;
+  const MAX_RETRIES = 2;
+
+  log(`Processing animator scene ${sceneIndex} (job ${jobId.substring(0, 8)}...)`);
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      if (attempt > 0) {
+        const delay = attempt * 5000;
+        log(`  Animator scene ${sceneIndex} retry ${attempt}/${MAX_RETRIES} (waiting ${delay}ms)`);
+        await new Promise(r => setTimeout(r, delay));
+        await supabase.from('generation_jobs')
+          .update({ status: 'processing', error_message: null })
+          .eq('id', jobId);
+      }
+
+      const anthropicKey = await getUserApiKey(userId, 'anthropic');
+
+      // Load branding config from channel preset
+      let brandingConfig = null, brandingMarkdown = '', extraPrompt = '', selectedSkills = null, model = 'claude-sonnet-4-6';
+      const { data: calEntry } = await supabase
+        .from('content_calendar')
+        .select('channel_id')
+        .eq('project_id', projectId)
+        .not('channel_id', 'is', null)
+        .limit(1)
+        .single();
+
+      if (calEntry?.channel_id) {
+        const { data: ch } = await supabase
+          .from('channels')
+          .select('animator_preset_id')
+          .eq('id', calEntry.channel_id)
+          .single();
+        if (ch?.animator_preset_id) {
+          const { data: preset } = await supabase
+            .from('animator_presets')
+            .select('*')
+            .eq('id', ch.animator_preset_id)
+            .single();
+          if (preset) {
+            brandingConfig = preset.branding_config;
+            brandingMarkdown = preset.branding_markdown || '';
+            extraPrompt = preset.extra_prompt || '';
+            selectedSkills = preset.selected_skills || null;
+            model = preset.model || 'claude-sonnet-4-6';
+          }
+        }
+      }
+
+      // Build neighbor context from project_scenes
+      const { data: allScenes } = await supabase
+        .from('project_scenes')
+        .select('scene_index, animator_code, animator_code_status')
+        .eq('project_id', projectId)
+        .order('scene_index');
+
+      const prevScene = allScenes?.find(s => s.scene_index === sceneIndex - 1);
+      const nextScene = allScenes?.find(s => s.scene_index === sceneIndex + 1);
+      const { data: projectData } = await supabase
+        .from('projects')
+        .select('scenes')
+        .eq('id', projectId)
+        .single();
+      const scenes = (projectData?.scenes || []);
+      const prevSceneData = sceneIndex > 0 ? scenes[sceneIndex - 1] : null;
+      const nextSceneData = sceneIndex < scenes.length - 1 ? scenes[sceneIndex + 1] : null;
+
+      const neighborContext = {
+        prevTexts: prevSceneData ? [prevSceneData.text] : [],
+        nextTexts: nextSceneData ? [nextSceneData.text] : [],
+        prevCode: prevScene?.animator_code_status === 'completed' ? prevScene.animator_code : null,
+      };
+
+      const resp = await fetch(`${REMOTION_SERVICE_URL}/animator/generate-scene`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          anthropicKey,
+          segment,
+          segIndex: sceneIndex,
+          totalSegments: scenes.length,
+          brandingConfig,
+          brandingMarkdown,
+          extraPrompt,
+          selectedSkills,
+          model,
+          projectId,
+          neighborContext,
+        }),
+      });
+
+      if (!resp.ok) {
+        const errText = await resp.text();
+        throw new Error(`Remotion service error: ${resp.status} - ${errText.substring(0, 200)}`);
+      }
+
+      const result = await resp.json();
+      if (!result.success) {
+        throw new Error(result.error || 'Generation failed');
+      }
+
+      // Mark job as completed
+      await supabase.from('generation_jobs')
+        .update({ status: 'completed', progress: 1, completed_at: new Date().toISOString() })
+        .eq('id', jobId);
+
+      log(`  Animator scene ${sceneIndex} completed (${result.code?.length || 0} chars)`);
+
+      if (parentJobId) {
+        try { await notifyParentJobProgress(parentJobId); } catch (e) { logError(`Failed to notify parent:`, e.message); }
+      }
+      return;
+
+    } catch (error) {
+      if (attempt < MAX_RETRIES) {
+        logError(`Animator scene ${sceneIndex} attempt ${attempt + 1} failed:`, error.message);
+        continue;
+      }
+
+      logError(`Animator scene ${sceneIndex} FAILED after ${MAX_RETRIES + 1} attempts:`, error.message);
+      await supabase.from('generation_jobs')
+        .update({ status: 'failed', error_message: error.message?.substring(0, 500), completed_at: new Date().toISOString() })
+        .eq('id', jobId);
+
+      if (parentJobId) {
+        try { await notifyParentJobProgress(parentJobId); } catch (e) { logError(`Failed to notify parent:`, e.message); }
+      }
+    }
+  }
+}
+
+// ============================================================================
 // STUCK PARENT CLEANUP (safety net for parents stuck in processing)
 // ============================================================================
 
@@ -2377,7 +2517,7 @@ async function cleanupStuckParents() {
     const { data: stuckParents } = await supabase
       .from('generation_jobs')
       .select('id, job_type, total, project_id, metadata, user_id')
-      .in('job_type', ['prompts', 'images'])
+      .in('job_type', ['prompts', 'images', 'animator_scenes'])
       .eq('status', 'processing')
       .lt('updated_at', FIVE_MINUTES_AGO)
       .limit(10);
@@ -4410,7 +4550,7 @@ async function recoverStaleJobs() {
       .from('generation_jobs')
       .select('*')
       .eq('status', 'processing')
-      .in('job_type', ['single_image', 'thumbnails', 'thumbnails_v2', 'single_prompt', 'audio_generation', 'idea_generation'])
+      .in('job_type', ['single_image', 'thumbnails', 'thumbnails_v2', 'single_prompt', 'animator_scene', 'audio_generation', 'idea_generation'])
       .lt('updated_at', cutoff)
       .limit(200);
 
@@ -4718,7 +4858,7 @@ async function mainLoop() {
       await checkDiskUsage();
       await cleanupStuckParents();
       // ── PRIORITY PASS: audio, prompt, idea, thumbnail jobs run outside image concurrency ──
-      const PRIORITY_TYPES = ['audio_generation', 'single_prompt', 'idea_generation', 'thumbnails', 'thumbnails_v2'];
+      const PRIORITY_TYPES = ['audio_generation', 'single_prompt', 'animator_scene', 'idea_generation', 'thumbnails', 'thumbnails_v2'];
       {
         const { data: priorityJobs } = await supabase
           .from('generation_jobs')
@@ -4761,6 +4901,7 @@ async function mainLoop() {
             if (job.job_type === 'thumbnails') pipeline = processThumbnailsPipeline(job);
             else if (job.job_type === 'thumbnails_v2') pipeline = processThumbnailsV2Pipeline(job);
             else if (job.job_type === 'single_prompt') pipeline = processPromptJob(job);
+            else if (job.job_type === 'animator_scene') pipeline = processAnimatorSceneJob(job);
             else if (job.job_type === 'audio_generation') {
               if (job.metadata?.provider === 'genaipro') pipeline = processGenaiproAudioPipeline(job);
               else if (job.metadata?.provider === 'ai33') pipeline = processAi33AudioPipeline(job);

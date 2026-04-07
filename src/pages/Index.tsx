@@ -907,7 +907,12 @@ const Index = () => {
     return () => clearInterval(pollInterval);
   }, [currentProjectId]);
 
-  // Poll animator pipeline status + video URL + per-scene code statuses
+  // Sync animator generating state with generation_jobs
+  useEffect(() => {
+    setIsAnimatorGenerating(hasActiveJob('animator_scenes' as any));
+  }, [activeJobs, hasActiveJob]);
+
+  // Poll animator video URL + per-scene code statuses
   useEffect(() => {
     if (!currentProjectId || !isAnimatorChannel) {
       setAnimatorPipelineStatus(null);
@@ -915,16 +920,8 @@ const Index = () => {
       return;
     }
     let cancelled = false;
-    let failureToasted = false;
     const poll = async () => {
-      const [pipelineRes, projRes, scenesRes] = await Promise.all([
-        (supabase.from("auto_pipelines" as any) as any)
-          .select("current_step, step_status, error")
-          .eq("project_id", currentProjectId)
-          .neq("current_step", "cancelled")
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .single(),
+      const [projRes, scenesRes] = await Promise.all([
         supabase.from('projects').select('animator_video_url, animator_tokens, animator_cost_usd').eq('id', currentProjectId).single(),
         supabase.from('project_scenes')
           .select('scene_index, animator_code_status, animator_code')
@@ -933,20 +930,6 @@ const Index = () => {
           .order('scene_index', { ascending: true }),
       ]);
       if (cancelled) return;
-      const data = pipelineRes.data;
-      setAnimatorPipelineStatus(data || null);
-      if (data?.current_step === 'completed' || data?.step_status === 'completed') {
-        setIsAnimatorGenerating(false);
-      } else if (data?.step_status === 'failed') {
-        if (!failureToasted) {
-          failureToasted = true;
-          toast.error("Pipeline Animator échoué: " + String(data?.error || 'erreur inconnue').slice(0, 200));
-        }
-        setIsAnimatorGenerating(false);
-      } else if (data && data.current_step !== 'completed') {
-        setIsAnimatorGenerating(true);
-        failureToasted = false;
-      }
       if (projRes.data?.animator_video_url) {
         setAnimatorVideoUrl(projRes.data.animator_video_url);
       }
@@ -4278,47 +4261,14 @@ const Index = () => {
                               <Button
                                 size="lg"
                                 className="bg-purple-600 hover:bg-purple-700"
+                                disabled={isAnimatorGenerating}
                                 onClick={async () => {
                                   if (!currentProjectId) return;
                                   setIsAnimatorGenerating(true);
                                   try {
-                                    const { data: calEntry } = await supabase
-                                      .from("content_calendar")
-                                      .select("id, channel_id")
-                                      .eq("project_id", currentProjectId)
-                                      .not("channel_id", "is", null)
-                                      .limit(1)
-                                      .single();
-                                    const channelId = calEntry?.channel_id;
-                                    const calendarEntryId = calEntry?.id;
-                                    if (!channelId || !calendarEntryId) { toast.error("Pas de chaîne liée"); return; }
-                                    const userId = (await supabase.auth.getUser()).data.user?.id;
-
-                                    const { data: existing } = await supabase
-                                      .from("auto_pipelines" as any)
-                                      .select("id, step_status")
-                                      .eq("project_id", currentProjectId)
-                                      .order("created_at", { ascending: false })
-                                      .limit(1);
-                                    if ((existing as any)?.[0]?.step_status === 'running' || (existing as any)?.[0]?.step_status === 'pending') {
-                                      toast.info("Le pipeline est déjà en cours");
-                                      return;
-                                    }
-
-                                    const { error } = await (supabase.from("auto_pipelines" as any) as any).insert({
-                                      project_id: currentProjectId,
-                                      user_id: userId,
-                                      channel_id: channelId,
-                                      calendar_entry_id: calendarEntryId,
-                                      step_status: "pending",
-                                      current_step: "animator_generate",
-                                      metadata: {},
-                                    });
-                                    if (error) throw error;
-                                    toast.success("Pipeline Animator lancé !");
+                                    await startJob('animator_scenes' as any);
                                   } catch (e: any) {
                                     toast.error("Erreur: " + e.message);
-                                  } finally {
                                     setIsAnimatorGenerating(false);
                                   }
                                 }}
@@ -4343,54 +4293,40 @@ const Index = () => {
                 })()}
 
 
-                {isAnimatorChannel && isAnimatorGenerating && animatorPipelineStatus && animatorPipelineStatus.current_step !== 'completed' && animatorPipelineStatus.step_status !== 'failed' && (() => {
-                  const cs = animatorPipelineStatus.current_step;
-                  const steps = ['create_project', 'generate_script', 'wait_script', 'generate_audio', 'wait_audio', 'transcribe', 'wait_transcription', 'create_scenes', 'animator_generate', 'wait_animator_scenes', 'animator_render', 'wait_animator_render'];
-                  const labels = ['Projet', 'Script', 'Script...', 'Audio', 'Audio...', 'Transcription', 'Transcription...', 'Scènes', 'Génération', 'Génération...', 'Rendu', 'Rendu...'];
-                  const currentIdx = steps.indexOf(cs);
+                {isAnimatorChannel && isAnimatorGenerating && (() => {
+                  const animatorJob = getJobByType('animator_scenes' as any);
                   const scenesDone = animatorSceneStatuses.filter(s => s.animator_code_status === 'completed').length;
-                  const scenesTotal = animatorSceneStatuses.length;
-                  const desc: Record<string, string> = {
-                    create_project: 'Création du projet...',
-                    generate_script: 'Génération du script...',
-                    wait_script: 'Génération du script...',
-                    generate_audio: 'Génération audio...',
-                    wait_audio: 'Génération audio...',
-                    transcribe: 'Transcription en cours...',
-                    wait_transcription: 'Transcription en cours...',
-                    create_scenes: 'Création des scènes...',
-                    animator_generate: 'Génération du code par Claude...',
-                    wait_animator_scenes: scenesTotal > 0 ? `Génération des scènes... (${scenesDone}/${scenesTotal})` : 'Génération des scènes...',
-                    animator_render: 'Assemblage et rendu...',
-                    wait_animator_render: 'Rendu Remotion en cours...',
-                  };
+                  const scenesFailed = animatorSceneStatuses.filter(s => s.animator_code_status === 'failed').length;
+                  const scenesTotal = animatorJob?.total || animatorSceneStatuses.length || scenes.length;
+                  const pct = scenesTotal > 0 ? Math.round(((scenesDone + scenesFailed) / scenesTotal) * 100) : 0;
                   return (
                     <Card className="p-4 border-2 border-purple-500/30 bg-purple-500/5 mb-6">
-                      <div className="flex items-center gap-2 mb-2">
-                        <Loader2 className="h-4 w-4 animate-spin text-purple-500" />
-                        <span className="text-sm font-medium">Pipeline Animator en cours</span>
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <Loader2 className="h-4 w-4 animate-spin text-purple-500" />
+                          <span className="text-sm font-medium">Génération Animator en cours</span>
+                        </div>
+                        {animatorJob && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 px-2 text-xs text-muted-foreground hover:text-red-500"
+                            onClick={() => animatorJob && cancelJob(animatorJob.id)}
+                          >
+                            <X className="h-3 w-3 mr-1" />
+                            Annuler
+                          </Button>
+                        )}
                       </div>
-                      <div className="flex gap-1 mb-1">
-                        {steps.map((step, i) => (
-                          <div key={step} className="flex-1" title={labels[i]}>
-                            <div className={`h-1.5 rounded-full transition-all ${i < currentIdx ? 'bg-purple-500' : i === currentIdx ? 'bg-purple-500/50 animate-pulse' : 'bg-muted'}`} />
-                          </div>
-                        ))}
+                      <div className="w-full bg-muted rounded-full h-1.5 mb-1">
+                        <div className="bg-purple-500 h-1.5 rounded-full transition-all" style={{ width: `${pct}%` }} />
                       </div>
-                      <p className="text-xs text-muted-foreground">{desc[cs] || cs}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {scenesDone}/{scenesTotal} scènes générées{scenesFailed > 0 ? ` (${scenesFailed} échouée${scenesFailed > 1 ? 's' : ''})` : ''}
+                      </p>
                     </Card>
                   );
                 })()}
-
-                {isAnimatorChannel && animatorPipelineStatus?.step_status === 'failed' && (
-                  <Card className="p-4 border-2 border-red-500/30 bg-red-500/5 mb-6">
-                    <div className="flex items-center gap-2 mb-2">
-                      <X className="h-4 w-4 text-red-500" />
-                      <span className="text-sm font-medium text-red-500">Pipeline Animator échoué</span>
-                    </div>
-                    <p className="text-xs text-muted-foreground break-all">{(animatorPipelineStatus as any)?.error?.slice(0, 300) || 'Erreur inconnue'}</p>
-                  </Card>
-                )}
 
                 <div className={`grid gap-4 md:gap-6 ${isAnimatorChannel ? 'grid-cols-1' : 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3'}`}>
                   {/* Configuration des scènes */}
@@ -5386,59 +5322,10 @@ const Index = () => {
                                       if (!currentProjectId) return;
                                       setIsRetryingScene(index);
                                       try {
-                                        const { data: calEntry } = await supabase
-                                          .from("content_calendar")
-                                          .select("channel_id")
-                                          .eq("project_id", currentProjectId)
-                                          .not("channel_id", "is", null)
-                                          .limit(1)
-                                          .single();
-                                        let presetConfig: any = {};
-                                        if (calEntry?.channel_id) {
-                                          const { data: ch } = await (supabase.from("channels") as any).select("animator_preset_id").eq("id", calEntry.channel_id).single();
-                                          if (ch?.animator_preset_id) {
-                                            const { data: preset } = await (supabase.from("animator_presets" as any) as any).select("*").eq("id", ch.animator_preset_id).single();
-                                            if (preset) presetConfig = preset;
-                                          }
-                                        }
-                                        const { data: keyData } = await supabase.rpc('get_user_api_key_for_service', {
-                                          target_user_id: (await supabase.auth.getUser()).data.user?.id,
-                                          key_name: 'anthropic',
+                                        await startJob('animator_scene' as any, {
+                                          sceneIndex: index,
+                                          segment: { start: scene.startTime, end: scene.endTime, text: scene.text },
                                         });
-                                        const prevScene = index > 0 ? scenes[index - 1] : null;
-                                        const nextScene = index < scenes.length - 1 ? scenes[index + 1] : null;
-                                        const prevCompleted = animatorSceneStatuses.find(s => s.scene_index === index - 1 && s.animator_code_status === 'completed');
-                                        let prevCode = null;
-                                        if (prevCompleted) {
-                                          prevCode = prevCompleted.animator_code || null;
-                                        }
-                                        const resp = await fetch(`${import.meta.env.VITE_REMOTION_SERVICE_URL || ''}/animator/generate-scene`, {
-                                          method: 'POST',
-                                          headers: { 'Content-Type': 'application/json' },
-                                          body: JSON.stringify({
-                                            anthropicKey: keyData,
-                                            segment: { start: scene.startTime, end: scene.endTime, text: scene.text },
-                                            segIndex: index,
-                                            totalSegments: scenes.length,
-                                            brandingConfig: presetConfig.branding_config || null,
-                                            brandingMarkdown: presetConfig.branding_markdown || '',
-                                            extraPrompt: presetConfig.extra_prompt || '',
-                                            selectedSkills: presetConfig.selected_skills || null,
-                                            model: presetConfig.model || 'claude-sonnet-4-6',
-                                            projectId: currentProjectId,
-                                            neighborContext: {
-                                              prevTexts: prevScene ? [prevScene.text] : [],
-                                              nextTexts: nextScene ? [nextScene.text] : [],
-                                              prevCode,
-                                            },
-                                          }),
-                                        });
-                                        const result = await resp.json();
-                                        if (result.success) {
-                                          toast.success(`Scène ${index + 1} régénérée`);
-                                        } else {
-                                          toast.error(`Scène ${index + 1}: ${result.error}`);
-                                        }
                                       } catch (e: any) {
                                         toast.error(`Erreur: ${e.message}`);
                                       } finally {

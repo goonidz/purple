@@ -308,6 +308,11 @@ serve(async (req) => {
       // Count rejected images to regenerate
       const prompts = (project?.prompts as any[]) || [];
       total = prompts.filter((p: any) => p && p.qa_status === 'REJECT' && p.qa_regeneration_prompt).length;
+    } else if (jobType === 'animator_scenes') {
+      const scenes = (project?.scenes as any[]) || [];
+      total = scenes.length;
+    } else if (jobType === 'animator_scene') {
+      total = 1;
     }
 
     // Create the job record (use null for project_id in standalone mode)
@@ -429,6 +434,23 @@ async function processJob(
       await processQAJob(jobId, projectId, userId, metadata, authHeader, adminClient);
     } else if (jobType === 'qa_regen') {
       await processQARegenJob(jobId, projectId, userId, metadata, authHeader, adminClient);
+    } else if (jobType === 'animator_scenes') {
+      await processAnimatorScenesJob(jobId, projectId, userId, metadata, authHeader, adminClient);
+    } else if (jobType === 'animator_scene') {
+      // Single scene: leave pending for VPS worker
+      await adminClient
+        .from('generation_jobs')
+        .update({ status: 'pending' })
+        .eq('id', jobId);
+      const sceneIndex = metadata.sceneIndex as number;
+      if (sceneIndex !== undefined && sceneIndex !== null) {
+        await adminClient
+          .from('project_scenes')
+          .update({ animator_code_status: 'pending', animator_code: null })
+          .eq('project_id', projectId)
+          .eq('scene_index', sceneIndex);
+      }
+      throw new Error('WEBHOOK_MODE_ACTIVE');
     }
 
     // Handle prompts chunk continuation
@@ -552,8 +574,8 @@ async function processJob(
         })
         .eq('id', jobId);
       
-      // For child jobs (single_prompt, single_image), notify the parent so it can detect completion
-      if (currentJobType === 'single_prompt' || currentJobType === 'single_image') {
+      // For child jobs (single_prompt, single_image, animator_scene), notify the parent so it can detect completion
+      if (currentJobType === 'single_prompt' || currentJobType === 'single_image' || currentJobType === 'animator_scene') {
         try {
           const { data: failedJob } = await adminClient
             .from('generation_jobs')
@@ -6123,4 +6145,89 @@ async function processQARegenJob(
   
   // Throw special error to indicate webhook mode (like other jobs)
   throw new Error("WEBHOOK_MODE_ACTIVE");
+}
+
+// ============================================================================
+// ANIMATOR SCENES JOB (parent: creates child animator_scene jobs for VPS worker)
+// ============================================================================
+async function processAnimatorScenesJob(
+  jobId: string,
+  projectId: string,
+  userId: string,
+  metadata: Record<string, any>,
+  _authHeader: string,
+  adminClient: any
+) {
+  const { data: project } = await adminClient
+    .from('projects')
+    .select('scenes')
+    .eq('id', projectId)
+    .single();
+
+  if (!project?.scenes?.length) {
+    throw new Error('No scenes in project for animator generation');
+  }
+
+  const scenes = project.scenes as any[];
+
+  // Upsert project_scenes rows to 'pending'
+  for (let i = 0; i < scenes.length; i++) {
+    const { data: existing } = await adminClient
+      .from('project_scenes')
+      .select('id')
+      .eq('project_id', projectId)
+      .eq('scene_index', i)
+      .single();
+
+    if (existing) {
+      await adminClient
+        .from('project_scenes')
+        .update({ animator_code_status: 'pending', animator_code: null })
+        .eq('id', existing.id);
+    } else {
+      await adminClient
+        .from('project_scenes')
+        .insert({ project_id: projectId, scene_index: i, animator_code_status: 'pending' });
+    }
+  }
+
+  // Create child animator_scene jobs
+  const childJobs = scenes.map((scene: any, index: number) => ({
+    project_id: projectId,
+    user_id: userId,
+    job_type: 'animator_scene',
+    status: 'pending',
+    scene_index: index,
+    total: 1,
+    progress: 0,
+    parent_job_id: jobId,
+    metadata: {
+      sceneIndex: index,
+      segment: {
+        start: scene.startTime,
+        end: scene.endTime,
+        text: scene.text || '',
+      },
+    },
+  }));
+
+  const { error: insertError } = await adminClient
+    .from('generation_jobs')
+    .insert(childJobs);
+
+  if (insertError) {
+    throw new Error(`Failed to create animator_scene jobs: ${insertError.message}`);
+  }
+
+  // Update parent total
+  await adminClient
+    .from('generation_jobs')
+    .update({
+      total: scenes.length,
+      metadata: { ...metadata, totalScenes: scenes.length },
+    })
+    .eq('id', jobId);
+
+  console.log(`[processAnimatorScenesJob] Created ${scenes.length} animator_scene jobs for project ${projectId}`);
+  throw new Error('WEBHOOK_MODE_ACTIVE');
 }
