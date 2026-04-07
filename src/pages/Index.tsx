@@ -900,7 +900,7 @@ const Index = () => {
     return () => clearInterval(pollInterval);
   }, [currentProjectId]);
 
-  // Poll animator pipeline status
+  // Poll animator pipeline status + video URL
   useEffect(() => {
     if (!currentProjectId || !isAnimatorChannel) {
       setAnimatorPipelineStatus(null);
@@ -908,25 +908,26 @@ const Index = () => {
     }
     let cancelled = false;
     const poll = async () => {
-      const { data } = await (supabase.from("auto_pipelines" as any) as any)
-        .select("current_step, step_status")
-        .eq("project_id", currentProjectId)
-        .neq("current_step", "cancelled")
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .single();
-      if (!cancelled) {
-        setAnimatorPipelineStatus(data || null);
-        if (data?.current_step === 'completed' && data?.step_status === 'completed') {
-          setIsAnimatorGenerating(false);
-        } else if (data && data.step_status !== 'failed' && data.current_step !== 'completed') {
-          setIsAnimatorGenerating(true);
-        }
-        // Always refresh video URL when pipeline is done or no pipeline exists
-        if (!data || data.current_step === 'completed') {
-          const { data: proj } = await supabase.from('projects').select('animator_video_url').eq('id', currentProjectId!).single();
-          if (!cancelled && proj?.animator_video_url) setAnimatorVideoUrl(proj.animator_video_url);
-        }
+      const [pipelineRes, projRes] = await Promise.all([
+        (supabase.from("auto_pipelines" as any) as any)
+          .select("current_step, step_status")
+          .eq("project_id", currentProjectId)
+          .neq("current_step", "cancelled")
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .single(),
+        supabase.from('projects').select('animator_video_url').eq('id', currentProjectId).single(),
+      ]);
+      if (cancelled) return;
+      const data = pipelineRes.data;
+      setAnimatorPipelineStatus(data || null);
+      if (data?.current_step === 'completed' || data?.step_status === 'completed') {
+        setIsAnimatorGenerating(false);
+      } else if (data && data.step_status !== 'failed' && data.current_step !== 'completed') {
+        setIsAnimatorGenerating(true);
+      }
+      if (projRes.data?.animator_video_url) {
+        setAnimatorVideoUrl(projRes.data.animator_video_url);
       }
     };
     poll();
