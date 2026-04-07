@@ -503,6 +503,7 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
                       } transition-all`}
                       onClick={() => {
                         if (shot.success) {
+                          seekToScene(shot.sceneIndex);
                           if (expandedScreenshot === shot.sceneIndex) {
                             setExpandedScreenshot(null);
                           } else {
