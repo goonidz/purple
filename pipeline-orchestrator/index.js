@@ -910,19 +910,32 @@ async function stepWaitAnimatorGenerate(pipeline) {
   const jobId = metadata?.animatorJobId;
   if (!jobId) throw new Error('No animatorJobId in metadata');
 
-  const { data: job } = await supabase
-    .from('remotion_render_jobs')
-    .select('status, video_url, error_message, progress, tokens, cost_usd')
-    .eq('id', jobId)
-    .single();
+  // Poll remotion-service HTTP API (activeJobs in memory) — avoids UUID mismatch with remotion_render_jobs table
+  let job;
+  try {
+    const resp = await fetch(`${REMOTION_SERVICE_URL}/render/${jobId}`);
+    if (resp.status === 404) {
+      // Job not in memory — check if video was already written to projects (service may have restarted)
+      const { data: proj } = await supabase.from('projects').select('animator_video_url, animator_tokens, animator_cost_usd').eq('id', project_id).single();
+      if (proj?.animator_video_url) {
+        console.log(`[orchestrator] [${id}] Animator video already on project: ${proj.animator_video_url}`);
+        await advancePipeline(id, 'completed', { step_status: 'completed' });
+        return;
+      }
+      return; // Job not found anywhere, keep waiting
+    }
+    if (!resp.ok) return;
+    job = await resp.json();
+  } catch (e) {
+    console.warn(`[orchestrator] [${id}] Failed to poll remotion-service: ${e.message}`);
+    return;
+  }
 
-  if (!job) return;
-
-  if (job.status === 'completed' && job.video_url) {
-    console.log(`[orchestrator] [${id}] Animator render completed: ${job.video_url}`);
-    const projectUpdate = { animator_video_url: job.video_url };
+  if (job.status === 'completed' && job.videoUrl) {
+    console.log(`[orchestrator] [${id}] Animator render completed: ${job.videoUrl}`);
+    const projectUpdate = { animator_video_url: job.videoUrl };
     if (job.tokens) projectUpdate.animator_tokens = job.tokens;
-    if (job.cost_usd != null) projectUpdate.animator_cost_usd = job.cost_usd;
+    if (job.costUsd != null) projectUpdate.animator_cost_usd = job.costUsd;
     const { error: urlErr } = await supabase
       .from('projects')
       .update(projectUpdate)
@@ -931,7 +944,7 @@ async function stepWaitAnimatorGenerate(pipeline) {
     else console.log(`[orchestrator] [${id}] Updated project ${project_id} (video + cost)`);
     await advancePipeline(id, 'completed', { step_status: 'completed' });
   } else if (job.status === 'failed') {
-    throw new Error(`Animator render failed: ${job.error_message || 'unknown'}`);
+    throw new Error(`Animator render failed: ${job.error || 'unknown'}`);
   } else {
     if (job.progress) {
       console.log(`[orchestrator] [${id}] Animator job ${jobId}: ${job.status} (${job.progress}%)`);
