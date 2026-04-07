@@ -4277,15 +4277,19 @@ const Index = () => {
                         <summary className="text-xs font-medium cursor-pointer text-muted-foreground hover:text-foreground">
                           Segments Groq ({animatorSegments.length})
                         </summary>
-                        <div className="mt-2 max-h-[300px] overflow-y-auto space-y-1">
-                          {animatorSegments.map((seg, i) => (
-                            <div key={i} className="flex gap-2 text-xs py-1 border-b border-border/50 last:border-0">
-                              <span className="text-muted-foreground font-mono whitespace-nowrap w-[90px] shrink-0">
-                                {seg.start.toFixed(2)}s → {seg.end.toFixed(2)}s
-                              </span>
-                              <span className="text-foreground">{seg.text}</span>
-                            </div>
-                          ))}
+                        <div className="mt-2 max-h-[300px] overflow-y-auto">
+                          <table className="w-full text-xs">
+                            <tbody>
+                              {animatorSegments.map((seg, i) => (
+                                <tr key={i} className="border-b border-border/30 last:border-0">
+                                  <td className="text-muted-foreground font-mono whitespace-nowrap py-1.5 pr-4 align-top" style={{ width: '120px' }}>
+                                    {seg.start.toFixed(2)}s → {seg.end.toFixed(2)}s
+                                  </td>
+                                  <td className="text-foreground py-1.5">{seg.text}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
                         </div>
                       </details>
                     )}
