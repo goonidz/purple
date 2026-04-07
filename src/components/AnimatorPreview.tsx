@@ -65,6 +65,15 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
   const [expandedScreenshot, setExpandedScreenshot] = useState<number | null>(null);
   const [qaFixInput, setQaFixInput] = useState("");
 
+  const seekToScene = useCallback((sceneIndex: number) => {
+    if (!previewMeta || !segments[sceneIndex]) return;
+    const seg = segments[sceneIndex];
+    const targetTime = seg.start + (seg.end - seg.start) * 0.8;
+    const frame = Math.round(targetTime * previewMeta.fps);
+    iframeRef.current?.contentWindow?.postMessage({ type: "remotion-seek", frame }, "*");
+    iframeRef.current?.contentWindow?.postMessage({ type: "remotion-pause" }, "*");
+  }, [previewMeta, segments]);
+
   const navigateScreenshot = useCallback((direction: "next" | "prev") => {
     if (qaScreenshots.length === 0 || expandedScreenshot == null) return;
     const newIdx = direction === "next"
@@ -250,15 +259,6 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
       setIsLoadingQA(false);
     }
   }, [projectId, isLoadingQA]);
-
-  const seekToScene = useCallback((sceneIndex: number) => {
-    if (!previewMeta || !segments[sceneIndex]) return;
-    const seg = segments[sceneIndex];
-    const targetTime = seg.start + (seg.end - seg.start) * 0.8;
-    const frame = Math.round(targetTime * previewMeta.fps);
-    iframeRef.current?.contentWindow?.postMessage({ type: "remotion-seek", frame }, "*");
-    iframeRef.current?.contentWindow?.postMessage({ type: "remotion-pause" }, "*");
-  }, [previewMeta, segments]);
 
   if (!hasCompletedScenes) {
     return (
