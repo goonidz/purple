@@ -639,11 +639,14 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
                         disabled={isEditing || !shot.url}
                         onClick={() => {
                           if (shot.url) {
+                            const base = "Fix the visual issues in this scene. Ensure text is readable, properly positioned, and doesn't overlap. Fix any layout or animation problems visible in the screenshot, usually by repositioning or resizing element.";
+                            const instruction = qaFixInput.trim() ? `${base}\n\nAdditional context: ${qaFixInput.trim()}` : base;
                             sendEdit({
                               overrideSceneIndex: shot.sceneIndex,
-                              overrideInstruction: "Fix the visual issues in this scene. Ensure text is readable, properly positioned, and doesn't overlap. Fix any layout or animation problems visible in the screenshot, usually by repositioning or resizing element.",
+                              overrideInstruction: instruction,
                               screenshotUrl: shot.url,
                             });
+                            setQaFixInput("");
                           }
                         }}
                       >
