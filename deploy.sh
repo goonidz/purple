@@ -79,9 +79,23 @@ if [ -f setup-ssl-auto.sh ] && [ ! -f /etc/letsencrypt/live/purpleai.duckdns.org
     ./setup-ssl-auto.sh || echo -e "${YELLOW}⚠️  Configuration SSL échouée, exécutez manuellement: ./setup-ssl-auto.sh${NC}"
 fi
 
-# Restart image-worker if running (picks up updated index.js from git pull)
-echo "🔄 Restarting image-worker..."
-pm2 restart image-worker 2>/dev/null && echo -e "${GREEN}✅ image-worker restarted${NC}" || echo -e "${YELLOW}⚠️  image-worker not found in PM2 (skipped)${NC}"
+# Restart services with env reload (pm2 restart does NOT reload .env files)
+restart_service() {
+    local name=$1
+    local script=$2
+    if pm2 describe "$name" > /dev/null 2>&1; then
+        pm2 delete "$name" 2>/dev/null
+        pm2 start "$script" --name "$name"
+        echo -e "${GREEN}✅ $name restarted (env reloaded)${NC}"
+    else
+        echo -e "${YELLOW}⚠️  $name not found in PM2 (skipped)${NC}"
+    fi
+}
+
+echo "🔄 Restarting services..."
+restart_service "image-worker" "$HOME/purple/image-worker/index.js"
+restart_service "pipeline-orchestrator" "$HOME/purple/pipeline-orchestrator/index.js"
+restart_service "remotion-service" "$HOME/purple/remotion-service/server.js"
 
 echo -e "${GREEN}✅ Deployment complete!${NC}"
 echo ""

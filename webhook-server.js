@@ -55,7 +55,7 @@ function deploy() {
       // Copy video-render-service files to the PM2 location if it exists
       '[ -d ~/video-render-service ] && cp -r video-render-service/* ~/video-render-service/ || true',
       // Restart video-render-service if it's running
-      'pm2 restart video-render-service 2>/dev/null || true',
+      'pm2 describe video-render-service >/dev/null 2>&1 && pm2 delete video-render-service && pm2 start ~/purple/video-render-service/server.js --name video-render-service || true',
       // Configurer DuckDNS automatiquement si pas déjà fait (en arrière-plan pour ne pas bloquer)
       '[ ! -f ~/.duckdns ] && [ -f setup-duckdns.sh ] && (nohup ./setup-duckdns.sh > ~/duckdns-setup.log 2>&1 &) || true',
       './deploy.sh'
