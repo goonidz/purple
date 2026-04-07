@@ -65,24 +65,25 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
   const [expandedScreenshot, setExpandedScreenshot] = useState<number | null>(null);
   const [qaFixInput, setQaFixInput] = useState("");
 
+  const navigateScreenshot = useCallback((direction: "next" | "prev") => {
+    if (qaScreenshots.length === 0 || expandedScreenshot == null) return;
+    const newIdx = direction === "next"
+      ? (expandedScreenshot + 1) % qaScreenshots.length
+      : (expandedScreenshot - 1 + qaScreenshots.length) % qaScreenshots.length;
+    setExpandedScreenshot(newIdx);
+    seekToScene(newIdx);
+  }, [expandedScreenshot, qaScreenshots.length, seekToScene]);
+
   // Keyboard navigation for QA grid
   useEffect(() => {
     if (!showQAGrid || expandedScreenshot == null || qaScreenshots.length === 0) return;
     const handler = (e: KeyboardEvent) => {
       if (e.key === "ArrowRight") {
         e.preventDefault();
-        setExpandedScreenshot((prev) => {
-          const next = (prev ?? 0) + 1;
-          return next < qaScreenshots.length ? next : 0;
-        });
+        navigateScreenshot("next");
       } else if (e.key === "ArrowLeft") {
         e.preventDefault();
-        setExpandedScreenshot((prev) => {
-          const next = (prev ?? 0) - 1;
-          return next >= 0 ? next : qaScreenshots.length - 1;
-        });
-      } else if (e.key === "Escape") {
-        setExpandedScreenshot(null);
+        navigateScreenshot("prev");
       }
     };
     window.addEventListener("keydown", handler);
@@ -504,11 +505,7 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
                       onClick={() => {
                         if (shot.success) {
                           seekToScene(shot.sceneIndex);
-                          if (expandedScreenshot === shot.sceneIndex) {
-                            setExpandedScreenshot(null);
-                          } else {
-                            setExpandedScreenshot(shot.sceneIndex);
-                          }
+                          setExpandedScreenshot(shot.sceneIndex);
                         }
                       }}
                     >
@@ -564,7 +561,7 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
                           size="sm"
                           variant="ghost"
                           className="h-7 w-7 p-0"
-                          onClick={() => setExpandedScreenshot(prev => (prev ?? 0) > 0 ? (prev ?? 0) - 1 : qaScreenshots.length - 1)}
+                          onClick={() => navigateScreenshot("prev")}
                         >
                           <ChevronLeft className="h-4 w-4" />
                         </Button>
@@ -575,29 +572,13 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
                           size="sm"
                           variant="ghost"
                           className="h-7 w-7 p-0"
-                          onClick={() => setExpandedScreenshot(prev => (prev ?? 0) < qaScreenshots.length - 1 ? (prev ?? 0) + 1 : 0)}
+                          onClick={() => navigateScreenshot("next")}
                         >
                           <ChevronRight className="h-4 w-4" />
                         </Button>
                         <span className="text-[10px] text-muted-foreground/50">← →</span>
                       </div>
                       <div className="flex gap-1">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-7 text-xs"
-                          onClick={() => seekToScene(shot.sceneIndex)}
-                        >
-                          Aller à la scène
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-7 px-2"
-                          onClick={() => setExpandedScreenshot(null)}
-                        >
-                          <X className="h-3 w-3" />
-                        </Button>
                       </div>
                     </div>
                     {shot.url ? (
