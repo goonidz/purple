@@ -54,6 +54,7 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { VideoPreview } from "@/components/VideoPreview";
+import { AnimatorPreview } from "@/components/AnimatorPreview";
 import { PresetManager } from "@/components/PresetManager";
 import { ThumbnailGenerator } from "@/components/ThumbnailGenerator";
 import { ThumbnailGeneratorV2 } from "@/components/ThumbnailGeneratorV2";
@@ -5668,7 +5669,12 @@ const Index = () => {
 
               <TabsContent value="preview" className="m-0">
                 <div className="max-w-6xl mx-auto">
-                  {audioUrl && generatedPrompts.length > 0 ? (
+                  {isAnimatorChannel ? (
+                    <AnimatorPreview
+                      projectId={currentProjectId || ""}
+                      hasCompletedScenes={animatorSceneStatuses.some(s => s.animator_code_status === 'completed')}
+                    />
+                  ) : audioUrl && generatedPrompts.length > 0 ? (
                     <VideoPreview
                       audioUrl={audioUrl}
                       prompts={generatedPrompts}

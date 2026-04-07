@@ -880,6 +880,136 @@ app.post('/animator/render-assembled', async (req, res) => {
   }
 });
 
+// --- Preview bundle: serve Remotion Player in browser ---
+const crypto = require('crypto');
+const PREVIEW_DIR = path.join(__dirname, 'preview-bundles');
+if (!fs.existsSync(PREVIEW_DIR)) fs.mkdirSync(PREVIEW_DIR, { recursive: true });
+app.use('/preview-bundles', express.static(PREVIEW_DIR));
+
+const previewCache = new Map();
+
+app.post('/animator/preview-bundle', async (req, res) => {
+  const { projectId } = req.body;
+  if (!projectId) return res.status(400).json({ error: 'projectId is required' });
+  if (!supabase) return res.status(503).json({ error: 'Supabase not configured' });
+
+  try {
+    const { data: sceneRows, error: sceneErr } = await supabase
+      .from('project_scenes')
+      .select('scene_index, animator_code, animator_code_status')
+      .eq('project_id', projectId)
+      .eq('animator_code_status', 'completed')
+      .order('scene_index', { ascending: true });
+
+    if (sceneErr || !sceneRows?.length) {
+      return res.status(400).json({ error: 'No completed animator scenes found' });
+    }
+
+    const { data: project } = await supabase.from('projects').select('scenes, audio_url').eq('id', projectId).single();
+    const segments = (project?.scenes || []).map(s => ({ start: s.startTime, end: s.endTime, text: s.text || '' }));
+    if (segments.length === 0) return res.status(400).json({ error: 'No scenes in project' });
+
+    const allCode = sceneRows.map(s => s.animator_code).join('\n\n');
+    const codeHash = crypto.createHash('md5').update(allCode).digest('hex').slice(0, 12);
+
+    const cached = previewCache.get(projectId);
+    if (cached && cached.hash === codeHash) {
+      console.log(`[Preview] Cache hit for ${projectId} (${codeHash})`);
+      return res.json(cached.result);
+    }
+
+    const compName = `Preview_${codeHash}`;
+    const fps = 30;
+    const totalDuration = segments[segments.length - 1].end;
+    const durationInFrames = Math.ceil(totalDuration * fps);
+
+    const { data: calEntry } = await supabase
+      .from('content_calendar').select('channel_id')
+      .eq('project_id', projectId).not('channel_id', 'is', null).limit(1).single();
+    let brandingConfig = null;
+    if (calEntry?.channel_id) {
+      const { data: ch } = await supabase.from('channels').select('animator_preset_id').eq('id', calEntry.channel_id).single();
+      if (ch?.animator_preset_id) {
+        const { data: preset } = await supabase.from('animator_presets').select('branding_config').eq('id', ch.animator_preset_id).single();
+        if (preset) brandingConfig = preset.branding_config;
+      }
+    }
+
+    const compositionCode = buildWrapper(compName, segments, null, fps, allCode, brandingConfig);
+
+    const previewDir = path.join(PREVIEW_DIR, codeHash);
+    if (!fs.existsSync(previewDir)) fs.mkdirSync(previewDir, { recursive: true });
+
+    const srcDir = path.join(previewDir, 'src');
+    if (!fs.existsSync(srcDir)) fs.mkdirSync(srcDir, { recursive: true });
+
+    fs.writeFileSync(path.join(srcDir, `${compName}.tsx`), compositionCode, 'utf-8');
+
+    fs.writeFileSync(path.join(srcDir, 'Root.jsx'), `
+import React from 'react';
+import { Composition } from 'remotion';
+import { ${compName} } from './${compName}';
+
+export const RemotionRoot = () => (
+  <>
+    <Composition id="${compName}" component={${compName}} durationInFrames={${durationInFrames}} fps={${fps}} width={1920} height={1080} defaultProps={{}} />
+  </>
+);
+`, 'utf-8');
+
+    fs.writeFileSync(path.join(srcDir, 'index.js'), `
+import { registerRoot } from 'remotion';
+import { RemotionRoot } from './Root';
+registerRoot(RemotionRoot);
+`, 'utf-8');
+
+    console.log(`[Preview] Bundling preview for ${projectId} (${codeHash})...`);
+    const bundlePath = await bundle({
+      entryPoint: path.join(srcDir, 'index.js'),
+      webpackOverride: (config) => config,
+    });
+
+    const bundleFiles = fs.readdirSync(bundlePath);
+    for (const f of bundleFiles) {
+      const src = path.join(bundlePath, f);
+      const dest = path.join(previewDir, f);
+      if (fs.lstatSync(src).isFile()) {
+        fs.copyFileSync(src, dest);
+      } else if (fs.lstatSync(src).isDirectory()) {
+        fs.cpSync(src, dest, { recursive: true });
+      }
+    }
+
+    const playerHtml = `<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Animator Preview</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #0a0a0f; }
+  iframe { width: 100%; height: 100%; border: none; }
+</style>
+</head><body>
+<iframe src="index.html?compositionId=${compName}" allow="autoplay"></iframe>
+</body></html>`;
+
+    fs.writeFileSync(path.join(previewDir, 'player.html'), playerHtml, 'utf-8');
+
+    const baseUrl = PUBLIC_BASE_URL
+      ? PUBLIC_BASE_URL.replace('/remotion-renders', '/remotion-preview')
+      : `http://localhost:${PORT}/preview-bundles`;
+    const previewUrl = `${baseUrl}/${codeHash}/player.html`;
+
+    const result = { success: true, previewUrl, hash: codeHash, durationInFrames, fps, totalDuration };
+    previewCache.set(projectId, { hash: codeHash, result });
+    console.log(`[Preview] Bundle ready: ${previewUrl}`);
+    res.json(result);
+  } catch (err) {
+    console.error(`[Preview] Bundle failed:`, err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // --- Worker mode: poll Supabase for pending remotion jobs ---
 let workerInterval = null;
 const WORKER_POLL_MS = parseInt(process.env.WORKER_POLL_MS || '5000', 10);
