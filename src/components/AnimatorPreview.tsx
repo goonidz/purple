@@ -659,7 +659,7 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
                           if (shot.url) {
                             sendEdit({
                               overrideSceneIndex: shot.sceneIndex,
-                              overrideInstruction: "Fix the visual issues in this scene. Ensure text is readable, properly positioned, and doesn't overlap. Fix any layout or animation problems visible in the screenshot.",
+                              overrideInstruction: "Fix the visual issues in this scene. Ensure text is readable, properly positioned, and doesn't overlap. Fix any layout or animation problems visible in the screenshot, usually by repositioning or resizing element.",
                               screenshotUrl: shot.url,
                             });
                           }
