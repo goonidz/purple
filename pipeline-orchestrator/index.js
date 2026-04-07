@@ -920,7 +920,7 @@ async function stepWaitAnimatorGenerate(pipeline) {
 
   if (job.status === 'completed' && job.video_url) {
     console.log(`[orchestrator] [${id}] Animator render completed: ${job.video_url}`);
-    await advancePipeline(id, 'completed');
+    await advancePipeline(id, 'completed', { step_status: 'completed' });
   } else if (job.status === 'failed') {
     throw new Error(`Animator render failed: ${job.error_message || 'unknown'}`);
   } else {
