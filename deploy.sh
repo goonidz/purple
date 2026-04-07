@@ -41,11 +41,13 @@ if [ "$FORCE_REBUILD" = "true" ]; then
     sudo docker build --no-cache \
         --build-arg VITE_SUPABASE_URL="$VITE_SUPABASE_URL" \
         --build-arg VITE_SUPABASE_PUBLISHABLE_KEY="$VITE_SUPABASE_PUBLISHABLE_KEY" \
+        --build-arg VITE_REMOTION_SERVICE_URL="${VITE_REMOTION_SERVICE_URL:-https://purpleai.duckdns.org/remotion-api}" \
         -t videoflow:latest .
 else
     sudo docker build \
         --build-arg VITE_SUPABASE_URL="$VITE_SUPABASE_URL" \
         --build-arg VITE_SUPABASE_PUBLISHABLE_KEY="$VITE_SUPABASE_PUBLISHABLE_KEY" \
+        --build-arg VITE_REMOTION_SERVICE_URL="${VITE_REMOTION_SERVICE_URL:-https://purpleai.duckdns.org/remotion-api}" \
         -t videoflow:latest .
 fi
 
