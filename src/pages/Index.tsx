@@ -912,7 +912,7 @@ const Index = () => {
     setIsAnimatorGenerating(hasActiveJob('animator_scenes' as any));
   }, [activeJobs, hasActiveJob]);
 
-  // Poll animator video URL + per-scene code statuses
+  // Poll animator pipeline status (render steps) + video URL + per-scene code statuses
   useEffect(() => {
     if (!currentProjectId || !isAnimatorChannel) {
       setAnimatorPipelineStatus(null);
@@ -920,8 +920,16 @@ const Index = () => {
       return;
     }
     let cancelled = false;
+    let failureToasted = false;
     const poll = async () => {
-      const [projRes, scenesRes] = await Promise.all([
+      const [pipelineRes, projRes, scenesRes] = await Promise.all([
+        (supabase.from("auto_pipelines" as any) as any)
+          .select("current_step, step_status, error")
+          .eq("project_id", currentProjectId)
+          .in("current_step", ["animator_render", "wait_animator_render", "completed"])
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .single(),
         supabase.from('projects').select('animator_video_url, animator_tokens, animator_cost_usd').eq('id', currentProjectId).single(),
         supabase.from('project_scenes')
           .select('scene_index, animator_code_status, animator_code')
@@ -930,6 +938,16 @@ const Index = () => {
           .order('scene_index', { ascending: true }),
       ]);
       if (cancelled) return;
+      const data = pipelineRes.data;
+      setAnimatorPipelineStatus(data || null);
+      if (data?.step_status === 'failed') {
+        if (!failureToasted) {
+          failureToasted = true;
+          toast.error("Rendu Animator échoué: " + String(data?.error || 'erreur inconnue').slice(0, 200));
+        }
+      } else if (data && data.step_status !== 'failed') {
+        failureToasted = false;
+      }
       if (projRes.data?.animator_video_url) {
         setAnimatorVideoUrl(projRes.data.animator_video_url);
       }
@@ -4327,6 +4345,29 @@ const Index = () => {
                     </Card>
                   );
                 })()}
+
+                {isAnimatorChannel && !isAnimatorGenerating && animatorPipelineStatus && ['animator_render', 'wait_animator_render'].includes(animatorPipelineStatus.current_step) && animatorPipelineStatus.step_status !== 'failed' && (
+                  <Card className="p-4 border-2 border-green-500/30 bg-green-500/5 mb-6">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Loader2 className="h-4 w-4 animate-spin text-green-500" />
+                      <span className="text-sm font-medium">Rendu Animator en cours...</span>
+                    </div>
+                    <div className="w-full bg-muted rounded-full h-1.5">
+                      <div className="bg-green-500 h-1.5 rounded-full transition-all animate-pulse" style={{ width: '60%' }} />
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">Assemblage et rendu Remotion en cours</p>
+                  </Card>
+                )}
+
+                {isAnimatorChannel && animatorPipelineStatus?.step_status === 'failed' && (
+                  <Card className="p-4 border-2 border-red-500/30 bg-red-500/5 mb-6">
+                    <div className="flex items-center gap-2 mb-2">
+                      <X className="h-4 w-4 text-red-500" />
+                      <span className="text-sm font-medium text-red-500">Rendu Animator échoué</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground break-all">{(animatorPipelineStatus as any)?.error?.slice(0, 300) || 'Erreur inconnue'}</p>
+                  </Card>
+                )}
 
                 <div className={`grid gap-4 md:gap-6 ${isAnimatorChannel ? 'grid-cols-1' : 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3'}`}>
                   {/* Configuration des scènes */}
