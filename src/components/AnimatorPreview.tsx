@@ -3,7 +3,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Play, RefreshCw, ExternalLink, Send, Sparkles } from "lucide-react";
+import { Loader2, Play, RefreshCw, ExternalLink, Send, Sparkles, Camera, X, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 
 const REMOTION_SERVICE_URL =
@@ -20,6 +20,14 @@ interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   sceneIndex?: number;
+}
+
+interface QAScreenshot {
+  sceneIndex: number;
+  timestamp: number;
+  success: boolean;
+  url: string | null;
+  error?: string;
 }
 
 interface AnimatorPreviewProps {
@@ -49,6 +57,12 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
   const chatEndRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const resumeFrameRef = useRef<number | null>(null);
+
+  // QA Screenshots
+  const [qaScreenshots, setQaScreenshots] = useState<QAScreenshot[]>([]);
+  const [isLoadingQA, setIsLoadingQA] = useState(false);
+  const [showQAGrid, setShowQAGrid] = useState(false);
+  const [expandedScreenshot, setExpandedScreenshot] = useState<number | null>(null);
 
   // Listen for frame updates from the iframe
   useEffect(() => {
@@ -163,6 +177,42 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
     }
   }, [chatInput, activeSceneIndex, isEditing, projectId, loadPreview]);
 
+  const loadQAScreenshots = useCallback(async () => {
+    if (!projectId || isLoadingQA) return;
+    setIsLoadingQA(true);
+    setShowQAGrid(true);
+    try {
+      const resp = await fetch(`${REMOTION_SERVICE_URL}/animator/qa-screenshots`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || "QA screenshots failed");
+      setQaScreenshots(data.screenshots || []);
+      const failed = data.failed || 0;
+      if (failed > 0) {
+        toast.warning(`${data.completed}/${data.total} screenshots générés (${failed} en erreur)`);
+      } else {
+        toast.success(`${data.total} screenshots générés`);
+      }
+    } catch (err: any) {
+      console.error("[AnimatorPreview] QA error:", err);
+      toast.error(`Erreur QA: ${err.message}`);
+    } finally {
+      setIsLoadingQA(false);
+    }
+  }, [projectId, isLoadingQA]);
+
+  const seekToScene = useCallback((sceneIndex: number) => {
+    if (!previewMeta || !segments[sceneIndex]) return;
+    const seg = segments[sceneIndex];
+    const targetTime = seg.start + (seg.end - seg.start) * 0.8;
+    const frame = Math.round(targetTime * previewMeta.fps);
+    iframeRef.current?.contentWindow?.postMessage({ type: "remotion-seek", frame }, "*");
+    iframeRef.current?.contentWindow?.postMessage({ type: "remotion-pause" }, "*");
+  }, [previewMeta, segments]);
+
   if (!hasCompletedScenes) {
     return (
       <Card className="p-12 text-center">
@@ -220,6 +270,16 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
               )}
             </div>
             <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={loadQAScreenshots}
+                disabled={isLoadingQA}
+                className="gap-1.5"
+              >
+                {isLoadingQA ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Camera className="h-3.5 w-3.5" />}
+                QA Visuel
+              </Button>
               <Button variant="outline" size="sm" onClick={loadPreview} className="gap-1.5">
                 <RefreshCw className="h-3.5 w-3.5" />
                 Recharger
@@ -352,6 +412,133 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
               </Button>
             </div>
           </Card>
+
+          {/* QA Screenshot Grid */}
+          {showQAGrid && (
+            <Card className="border border-border overflow-hidden">
+              <div className="flex items-center justify-between p-3 border-b border-border">
+                <div className="flex items-center gap-2">
+                  <Camera className="h-4 w-4 text-purple-400" />
+                  <span className="text-sm font-medium">QA Visuel</span>
+                  {qaScreenshots.length > 0 && (
+                    <span className="text-xs text-muted-foreground">
+                      {qaScreenshots.filter(s => s.success).length}/{qaScreenshots.length} scenes
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-1">
+                  {qaScreenshots.length > 0 && (
+                    <Button variant="ghost" size="sm" onClick={loadQAScreenshots} disabled={isLoadingQA} className="h-7 px-2">
+                      <RefreshCw className={`h-3 w-3 ${isLoadingQA ? "animate-spin" : ""}`} />
+                    </Button>
+                  )}
+                  <Button variant="ghost" size="sm" onClick={() => setShowQAGrid(false)} className="h-7 px-2">
+                    <X className="h-3 w-3" />
+                  </Button>
+                </div>
+              </div>
+
+              {isLoadingQA && qaScreenshots.length === 0 && (
+                <div className="p-8 text-center">
+                  <Loader2 className="h-8 w-8 animate-spin text-purple-500 mx-auto mb-3" />
+                  <p className="text-sm text-muted-foreground">Capture des screenshots en cours...</p>
+                  <p className="text-xs text-muted-foreground/60 mt-1">~1s par scène</p>
+                </div>
+              )}
+
+              {qaScreenshots.length > 0 && (
+                <div className="p-2 grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 gap-1.5 max-h-[500px] overflow-y-auto">
+                  {qaScreenshots.map((shot) => (
+                    <div
+                      key={shot.sceneIndex}
+                      className={`relative group cursor-pointer rounded overflow-hidden border ${
+                        shot.success ? "border-border hover:border-purple-500/50" : "border-red-500/30 bg-red-500/5"
+                      } transition-all`}
+                      onClick={() => {
+                        if (shot.success) {
+                          if (expandedScreenshot === shot.sceneIndex) {
+                            setExpandedScreenshot(null);
+                          } else {
+                            setExpandedScreenshot(shot.sceneIndex);
+                          }
+                        }
+                      }}
+                    >
+                      {shot.success && shot.url ? (
+                        <img
+                          src={shot.url}
+                          alt={`Scene ${shot.sceneIndex + 1}`}
+                          className="w-full aspect-video object-cover"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <div className="w-full aspect-video flex items-center justify-center">
+                          <AlertTriangle className="h-4 w-4 text-red-400" />
+                        </div>
+                      )}
+                      <div className="absolute bottom-0 left-0 right-0 bg-black/70 px-1.5 py-0.5 text-[10px] text-white/80 flex justify-between">
+                        <span>{shot.sceneIndex + 1}</span>
+                        <span>{shot.timestamp.toFixed(1)}s</span>
+                      </div>
+                      {shot.success && (
+                        <div className="absolute inset-0 bg-purple-500/0 group-hover:bg-purple-500/10 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            className="h-6 text-[10px] px-2"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              seekToScene(shot.sceneIndex);
+                            }}
+                          >
+                            Voir
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Expanded screenshot */}
+              {expandedScreenshot != null && (() => {
+                const shot = qaScreenshots.find(s => s.sceneIndex === expandedScreenshot);
+                if (!shot?.url) return null;
+                return (
+                  <div className="p-3 border-t border-border">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm font-medium">
+                        Scene {shot.sceneIndex + 1} — {shot.timestamp.toFixed(1)}s
+                      </span>
+                      <div className="flex gap-1">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs"
+                          onClick={() => seekToScene(shot.sceneIndex)}
+                        >
+                          Aller à la scène
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 px-2"
+                          onClick={() => setExpandedScreenshot(null)}
+                        >
+                          <X className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    </div>
+                    <img
+                      src={shot.url}
+                      alt={`Scene ${shot.sceneIndex + 1}`}
+                      className="w-full rounded border border-border"
+                    />
+                  </div>
+                );
+              })()}
+            </Card>
+          )}
         </div>
       )}
     </div>

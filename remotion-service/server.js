@@ -7,7 +7,7 @@ const { createClient } = require('@supabase/supabase-js');
 require('dotenv').config();
 
 const { bundle } = require('@remotion/bundler');
-const { renderMedia, selectComposition, getCompositions, ensureBrowser } = require('@remotion/renderer');
+const { renderMedia, renderStill, selectComposition, getCompositions, ensureBrowser } = require('@remotion/renderer');
 
 const app = express();
 const PORT = process.env.PORT || 3002;
@@ -1316,6 +1316,157 @@ Follow these rules:
     res.json({ success: true, sceneIndex, codeLength: newCode.length, tokens: editTokens });
   } catch (err) {
     console.error(`[Edit] Failed:`, err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- QA Screenshots: capture one frame per scene at 80% ---
+app.post('/animator/qa-screenshots', async (req, res) => {
+  const { projectId } = req.body;
+  if (!projectId) return res.status(400).json({ error: 'projectId is required' });
+  if (!supabase) return res.status(503).json({ error: 'Supabase not configured' });
+
+  try {
+    const { data: sceneRows, error: sceneErr } = await supabase
+      .from('project_scenes')
+      .select('scene_index, animator_code, animator_code_status')
+      .eq('project_id', projectId)
+      .eq('animator_code_status', 'completed')
+      .order('scene_index', { ascending: true });
+
+    if (sceneErr || !sceneRows?.length) {
+      return res.status(400).json({ error: 'No completed animator scenes found' });
+    }
+
+    const { data: project } = await supabase.from('projects').select('scenes').eq('id', projectId).single();
+    const segments = (project?.scenes || []).map(s => ({ start: s.startTime, end: s.endTime, text: s.text || '' }));
+    if (segments.length === 0) return res.status(400).json({ error: 'No scenes in project' });
+
+    const fps = 30;
+    const totalDuration = segments[segments.length - 1].end;
+    const durationInFrames = Math.ceil(totalDuration * fps);
+    const allCode = sceneRows.map(s => s.animator_code).join('\n\n');
+
+    // Branding config from channel preset
+    const { data: calEntry } = await supabase
+      .from('content_calendar').select('channel_id')
+      .eq('project_id', projectId).not('channel_id', 'is', null).limit(1).single();
+    let brandingConfig = null;
+    if (calEntry?.channel_id) {
+      const { data: ch } = await supabase.from('channels').select('animator_preset_id').eq('id', calEntry.channel_id).single();
+      if (ch?.animator_preset_id) {
+        const { data: preset } = await supabase.from('animator_presets').select('branding_config').eq('id', ch.animator_preset_id).single();
+        if (preset) brandingConfig = preset.branding_config;
+      }
+    }
+
+    // Check cache
+    const codeHash = crypto.createHash('md5').update(allCode).digest('hex').slice(0, 12);
+    const qaDir = path.join(PREVIEW_DIR, `${codeHash}-qa`);
+    const manifestPath = path.join(qaDir, 'manifest.json');
+    if (fs.existsSync(manifestPath)) {
+      try {
+        const cached = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+        if (cached.screenshots?.length === sceneRows.length) {
+          console.log(`[QA] Cache hit for ${projectId} (${codeHash})`);
+          return res.json(cached);
+        }
+      } catch (e) { /* ignore corrupt cache */ }
+    }
+
+    if (!fs.existsSync(qaDir)) fs.mkdirSync(qaDir, { recursive: true });
+
+    // Build composition (no audio needed for screenshots)
+    const compName = `QAComp${codeHash}`;
+    const compositionId = compName;
+    const compositionCode = buildWrapper(compName, segments, null, fps, allCode, brandingConfig);
+
+    const srcDir = path.join(qaDir, 'src');
+    if (!fs.existsSync(srcDir)) fs.mkdirSync(srcDir, { recursive: true });
+    fs.writeFileSync(path.join(srcDir, `${compName}.tsx`), compositionCode, 'utf-8');
+
+    // Minimal entry that registers the composition for renderStill
+    fs.writeFileSync(path.join(srcDir, 'index.js'), `
+import { registerRoot } from 'remotion';
+import { Composition } from 'remotion';
+import React from 'react';
+import { ${compName} } from './${compName}';
+
+const Root = () => (
+  <>
+    <Composition id="${compositionId}" component={${compName}} durationInFrames={${durationInFrames}} fps={${fps}} width={1920} height={1080} />
+  </>
+);
+
+registerRoot(Root);
+`, 'utf-8');
+
+    console.log(`[QA] Bundling composition for ${projectId} (${sceneRows.length} scenes)...`);
+    const qaBundlePath = await bundle({
+      entryPoint: path.join(srcDir, 'index.js'),
+      webpackOverride: (config) => config,
+      rootDir: qaDir,
+    });
+
+    const composition = await selectComposition({
+      serveUrl: qaBundlePath,
+      id: compositionId,
+      inputProps: {},
+    });
+
+    // Capture screenshots at 80% of each scene, in batches of 5
+    const screenshots = [];
+    const BATCH_SIZE = 5;
+
+    for (let batchStart = 0; batchStart < segments.length; batchStart += BATCH_SIZE) {
+      const batch = segments.slice(batchStart, batchStart + BATCH_SIZE);
+      const batchPromises = batch.map(async (seg, batchIdx) => {
+        const sceneIndex = batchStart + batchIdx;
+        const targetTime = seg.start + (seg.end - seg.start) * 0.8;
+        const targetFrame = Math.min(Math.round(targetTime * fps), durationInFrames - 1);
+        const outputFile = path.join(qaDir, `scene_${String(sceneIndex).padStart(3, '0')}.png`);
+
+        try {
+          await renderStill({
+            composition: { ...composition, durationInFrames, fps, width: 1920, height: 1080 },
+            serveUrl: qaBundlePath,
+            frame: targetFrame,
+            output: outputFile,
+            imageFormat: 'png',
+            scale: 0.5,
+          });
+          return { sceneIndex, timestamp: targetTime, success: true };
+        } catch (err) {
+          console.warn(`[QA] Scene ${sceneIndex} screenshot failed: ${err.message}`);
+          return { sceneIndex, timestamp: targetTime, success: false, error: err.message };
+        }
+      });
+      const batchResults = await Promise.all(batchPromises);
+      screenshots.push(...batchResults);
+    }
+
+    // Build URLs
+    const baseUrl = PUBLIC_BASE_URL
+      ? PUBLIC_BASE_URL.replace('/remotion-renders', '/remotion-preview')
+      : `http://localhost:${PORT}/preview-bundles`;
+    const result = {
+      success: true,
+      total: screenshots.length,
+      completed: screenshots.filter(s => s.success).length,
+      failed: screenshots.filter(s => !s.success).length,
+      screenshots: screenshots.map(s => ({
+        ...s,
+        url: s.success ? `${baseUrl}/${codeHash}-qa/scene_${String(s.sceneIndex).padStart(3, '0')}.png` : null,
+      })),
+    };
+
+    // Save manifest for caching
+    fs.writeFileSync(manifestPath, JSON.stringify(result), 'utf-8');
+
+    console.log(`[QA] Screenshots done for ${projectId}: ${result.completed}/${result.total} OK`);
+    res.json(result);
+  } catch (err) {
+    console.error(`[QA] Failed:`, err.message);
     res.status(500).json({ error: err.message });
   }
 });
