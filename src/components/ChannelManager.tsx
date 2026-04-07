@@ -867,7 +867,7 @@ function PresetConfigDialog({
                       <SelectContent>
                         <SelectItem value="claude-sonnet-4-6">Claude Sonnet 4.6</SelectItem>
                         <SelectItem value="claude-sonnet-4-5-20250620">Claude Sonnet 4.5</SelectItem>
-                        <SelectItem value="gemini-3.1-flash-lite-preview">Gemini 3.1 Flash Lite</SelectItem>
+                        <SelectItem value="gemini-3-flash-preview">Gemini 3 Flash</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>

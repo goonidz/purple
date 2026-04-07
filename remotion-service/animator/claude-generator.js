@@ -4,7 +4,7 @@ const { buildSystemPrompt } = require('./prompt-builder');
 
 const CHUNK_SIZE_DEFAULT = 25;
 const CLAUDE_PRICES = { input: 3, output: 15, cacheWrite: 3.75, cacheRead: 0.30 };
-const GEMINI_PRICES = { 'gemini-3.1-flash-lite-preview': { input: 0.25, output: 1.50 } };
+const GEMINI_PRICES = { 'gemini-3-flash-preview': { input: 0.50, output: 3.00 } };
 
 function isGeminiModel(model) {
   return model && model.startsWith('gemini-');
