@@ -1357,8 +1357,10 @@ Follow these rules:
 });
 
 // --- QA Screenshots: capture one frame per scene at 80% ---
+// Optional: pass sceneIndex to re-capture a single scene only
 app.post('/animator/qa-screenshots', async (req, res) => {
-  const { projectId } = req.body;
+  const { projectId, sceneIndex: singleSceneIndex } = req.body;
+  const singleMode = singleSceneIndex != null;
   if (!projectId) return res.status(400).json({ error: 'projectId is required' });
   if (!supabase) return res.status(503).json({ error: 'Supabase not configured' });
 
@@ -1396,11 +1398,12 @@ app.post('/animator/qa-screenshots', async (req, res) => {
       }
     }
 
-    // Check cache
     const codeHash = crypto.createHash('md5').update(allCode).digest('hex').slice(0, 12);
     const qaDir = path.join(PREVIEW_DIR, `${codeHash}-qa`);
     const manifestPath = path.join(qaDir, 'manifest.json');
-    if (fs.existsSync(manifestPath)) {
+
+    // For full mode only: check cache
+    if (!singleMode && fs.existsSync(manifestPath)) {
       try {
         const cached = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
         if (cached.screenshots?.length === sceneRows.length) {
@@ -1421,7 +1424,6 @@ app.post('/animator/qa-screenshots', async (req, res) => {
     if (!fs.existsSync(srcDir)) fs.mkdirSync(srcDir, { recursive: true });
     fs.writeFileSync(path.join(srcDir, `${compName}.tsx`), compositionCode, 'utf-8');
 
-    // Minimal entry that registers the composition for renderStill
     fs.writeFileSync(path.join(srcDir, 'index.js'), `
 import { registerRoot } from 'remotion';
 import { Composition } from 'remotion';
@@ -1437,7 +1439,7 @@ const Root = () => (
 registerRoot(Root);
 `, 'utf-8');
 
-    console.log(`[QA] Bundling composition for ${projectId} (${sceneRows.length} scenes)...`);
+    console.log(`[QA] Bundling composition for ${projectId} (${singleMode ? `scene ${singleSceneIndex}` : `${sceneRows.length} scenes`})...`);
     const qaBundlePath = await bundle({
       entryPoint: path.join(srcDir, 'index.js'),
       webpackOverride: (config) => config,
@@ -1450,7 +1452,37 @@ registerRoot(Root);
       inputProps: {},
     });
 
-    // Capture screenshots at 80% of each scene, in batches of 5
+    const baseUrl = PUBLIC_BASE_URL
+      ? PUBLIC_BASE_URL.replace('/remotion-renders', '/remotion-preview')
+      : `http://localhost:${PORT}/preview-bundles`;
+
+    // --- Single scene mode ---
+    if (singleMode) {
+      const seg = segments[singleSceneIndex];
+      if (!seg) return res.status(400).json({ error: `Scene ${singleSceneIndex} not found in segments` });
+      const targetTime = seg.start + (seg.end - seg.start) * 0.8;
+      const targetFrame = Math.min(Math.round(targetTime * fps), durationInFrames - 1);
+      const outputFile = path.join(qaDir, `scene_${String(singleSceneIndex).padStart(3, '0')}.png`);
+
+      try {
+        await renderStill({
+          composition: { ...composition, durationInFrames, fps, width: 1920, height: 1080 },
+          serveUrl: qaBundlePath,
+          frame: targetFrame,
+          output: outputFile,
+          imageFormat: 'png',
+          scale: 0.5,
+        });
+        const url = `${baseUrl}/${codeHash}-qa/scene_${String(singleSceneIndex).padStart(3, '0')}.png?t=${Date.now()}`;
+        console.log(`[QA] Single screenshot done for scene ${singleSceneIndex}`);
+        return res.json({ success: true, screenshot: { sceneIndex: singleSceneIndex, timestamp: targetTime, success: true, url } });
+      } catch (err) {
+        console.warn(`[QA] Single scene ${singleSceneIndex} screenshot failed: ${err.message}`);
+        return res.json({ success: true, screenshot: { sceneIndex: singleSceneIndex, timestamp: targetTime, success: false, url: null, error: err.message } });
+      }
+    }
+
+    // --- Full mode: capture all scenes ---
     const screenshots = [];
     const BATCH_SIZE = 5;
 
@@ -1481,10 +1513,6 @@ registerRoot(Root);
       screenshots.push(...batchResults);
     }
 
-    // Build URLs
-    const baseUrl = PUBLIC_BASE_URL
-      ? PUBLIC_BASE_URL.replace('/remotion-renders', '/remotion-preview')
-      : `http://localhost:${PORT}/preview-bundles`;
     const result = {
       success: true,
       total: screenshots.length,

@@ -188,6 +188,29 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
       } finally {
         setIsRebuilding(false);
       }
+
+      // If this was a QA edit, refresh that scene's screenshot
+      if (opts?.screenshotUrl && qaScreenshots.length > 0) {
+        setQaScreenshots((prev) =>
+          prev.map((s) => s.sceneIndex === sceneIdx ? { ...s, success: true, url: null, error: undefined } : s)
+        );
+        try {
+          const resp3 = await fetch(`${REMOTION_SERVICE_URL}/animator/qa-screenshots`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ projectId, sceneIndex: sceneIdx }),
+          });
+          const data3 = await resp3.json();
+          if (data3.screenshot) {
+            setQaScreenshots((prev) =>
+              prev.map((s) => s.sceneIndex === sceneIdx ? data3.screenshot : s)
+            );
+            toast.success(`Screenshot scène ${sceneIdx + 1} mis à jour`);
+          }
+        } catch (e) {
+          console.warn("[AnimatorPreview] Screenshot refresh failed:", e);
+        }
+      }
     } catch (err: any) {
       console.error("[AnimatorPreview] Edit error:", err);
       setChatMessages((prev) => [
@@ -198,7 +221,7 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
     } finally {
       setIsEditing(false);
     }
-  }, [chatInput, activeSceneIndex, isEditing, projectId, currentFrame]);
+  }, [chatInput, activeSceneIndex, isEditing, projectId, currentFrame, qaScreenshots.length]);
 
   const loadQAScreenshots = useCallback(async () => {
     if (!projectId || isLoadingQA) return;
@@ -495,6 +518,10 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
                           className="w-full aspect-video object-cover"
                           loading="lazy"
                         />
+                      ) : shot.success && !shot.url ? (
+                        <div className="w-full aspect-video flex items-center justify-center bg-purple-500/5">
+                          <Loader2 className="h-4 w-4 animate-spin text-purple-400" />
+                        </div>
                       ) : (
                         <div className="w-full aspect-video flex items-center justify-center">
                           <AlertTriangle className="h-4 w-4 text-red-400" />
@@ -527,7 +554,7 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
               {/* Expanded screenshot with nav */}
               {expandedScreenshot != null && (() => {
                 const shot = qaScreenshots.find(s => s.sceneIndex === expandedScreenshot);
-                if (!shot?.url) return null;
+                if (!shot) return null;
                 return (
                   <div className="p-3 border-t border-border">
                     <div className="flex items-center justify-between mb-2">
@@ -572,42 +599,51 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
                         </Button>
                       </div>
                     </div>
-                    <img
-                      src={shot.url}
-                      alt={`Scene ${shot.sceneIndex + 1}`}
-                      className="w-full rounded border border-border"
-                    />
+                    {shot.url ? (
+                      <img
+                        src={shot.url}
+                        alt={`Scene ${shot.sceneIndex + 1}`}
+                        className="w-full rounded border border-border"
+                      />
+                    ) : (
+                      <div className="w-full rounded border border-border bg-muted/30 flex items-center justify-center" style={{ aspectRatio: "16/9" }}>
+                        <div className="flex flex-col items-center gap-2">
+                          <Loader2 className="h-6 w-6 animate-spin text-purple-400" />
+                          <span className="text-xs text-muted-foreground">Capture en cours...</span>
+                        </div>
+                      </div>
+                    )}
                     {/* AI Fix area */}
                     <div className="mt-2 flex gap-2">
                       <Input
                         value={qaFixInput}
                         onChange={(e) => setQaFixInput(e.target.value)}
                         onKeyDown={(e) => {
-                          if (e.key === "Enter" && !e.shiftKey && qaFixInput.trim()) {
+                          if (e.key === "Enter" && !e.shiftKey && qaFixInput.trim() && shot.url) {
                             e.preventDefault();
                             sendEdit({
                               overrideSceneIndex: shot.sceneIndex,
                               overrideInstruction: qaFixInput.trim(),
-                              screenshotUrl: shot.url!,
+                              screenshotUrl: shot.url,
                             });
                             setQaFixInput("");
                           }
                         }}
                         placeholder="Décrivez le problème à corriger..."
-                        disabled={isEditing}
+                        disabled={isEditing || !shot.url}
                         className="text-sm h-9"
                       />
                       <Button
                         size="sm"
                         variant="outline"
                         className="h-9 px-3 gap-1.5 shrink-0"
-                        disabled={isEditing || !qaFixInput.trim()}
+                        disabled={isEditing || !qaFixInput.trim() || !shot.url}
                         onClick={() => {
-                          if (qaFixInput.trim()) {
+                          if (qaFixInput.trim() && shot.url) {
                             sendEdit({
                               overrideSceneIndex: shot.sceneIndex,
                               overrideInstruction: qaFixInput.trim(),
-                              screenshotUrl: shot.url!,
+                              screenshotUrl: shot.url,
                             });
                             setQaFixInput("");
                           }
@@ -618,13 +654,15 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
                       <Button
                         size="sm"
                         className="h-9 px-3 gap-1.5 shrink-0 bg-purple-600 hover:bg-purple-700"
-                        disabled={isEditing}
+                        disabled={isEditing || !shot.url}
                         onClick={() => {
-                          sendEdit({
-                            overrideSceneIndex: shot.sceneIndex,
-                            overrideInstruction: "Fix the visual issues in this scene. Ensure text is readable, properly positioned, and doesn't overlap. Fix any layout or animation problems visible in the screenshot.",
-                            screenshotUrl: shot.url!,
-                          });
+                          if (shot.url) {
+                            sendEdit({
+                              overrideSceneIndex: shot.sceneIndex,
+                              overrideInstruction: "Fix the visual issues in this scene. Ensure text is readable, properly positioned, and doesn't overlap. Fix any layout or animation problems visible in the screenshot.",
+                              screenshotUrl: shot.url,
+                            });
+                          }
                         }}
                       >
                         {isEditing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wrench className="h-3.5 w-3.5" />}
