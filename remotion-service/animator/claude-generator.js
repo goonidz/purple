@@ -1,8 +1,25 @@
 const Anthropic = require('@anthropic-ai/sdk');
+const esbuild = require('esbuild');
 const { buildSystemPrompt } = require('./prompt-builder');
 
 const CHUNK_SIZE_DEFAULT = 25;
 const PRICES = { input: 3, output: 15, cacheWrite: 3.75, cacheRead: 0.30 };
+
+function countDelimiters(line) {
+  let braces = 0, parens = 0;
+  let inStr = false, strChar = '';
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (inStr) { if (c === '\\') { i++; continue; } if (c === strChar) inStr = false; continue; }
+    if (c === '/' && line[i + 1] === '/') break;
+    if (c === '"' || c === "'" || c === '`') { inStr = true; strChar = c; continue; }
+    if (c === '{') braces++;
+    else if (c === '}') braces--;
+    else if (c === '(') parens++;
+    else if (c === ')') parens--;
+  }
+  return { braces, parens };
+}
 
 function stripSharedDeclarations(code) {
   const SHARED = ['BG', 'ACCENT', 'ACCENT_DIM', 'TEXT_PRIMARY', 'TEXT_DIM', 'RED', 'RED_DIM', 'WHITE', 'WHITE_DIM', 'useFade', 'Grid', 'GRID_STYLE'];
@@ -20,27 +37,17 @@ function stripSharedDeclarations(code) {
       stripping = true;
       braceDepth = 0;
       parenDepth = 0;
-      for (const ch of line) {
-        if (ch === '{') braceDepth++;
-        else if (ch === '}') braceDepth--;
-        else if (ch === '(') parenDepth++;
-        else if (ch === ')') parenDepth--;
-      }
-      if (braceDepth <= 0 && parenDepth <= 0) {
-        stripping = false;
-      }
+      const d = countDelimiters(line);
+      braceDepth += d.braces;
+      parenDepth += d.parens;
+      if (braceDepth <= 0 && parenDepth <= 0) stripping = false;
       continue;
     }
     if (stripping) {
-      for (const ch of line) {
-        if (ch === '{') braceDepth++;
-        else if (ch === '}') braceDepth--;
-        else if (ch === '(') parenDepth++;
-        else if (ch === ')') parenDepth--;
-      }
-      if (braceDepth <= 0 && parenDepth <= 0) {
-        stripping = false;
-      }
+      const d = countDelimiters(line);
+      braceDepth += d.braces;
+      parenDepth += d.parens;
+      if (braceDepth <= 0 && parenDepth <= 0) stripping = false;
       continue;
     }
     result.push(line);
@@ -210,22 +217,19 @@ function validateComponentCode(code, segName) {
   const hasDecl = new RegExp(`(?:function|const)\\s+${segName}\\b`).test(code);
   if (!hasDecl) return { valid: false, error: `Missing declaration for ${segName}` };
 
-  let braces = 0, parens = 0, brackets = 0;
-  const inString = { active: false, char: '' };
-  for (let i = 0; i < code.length; i++) {
-    const c = code[i];
-    if (inString.active) { if (c === inString.char && code[i - 1] !== '\\') inString.active = false; continue; }
-    if (c === '"' || c === "'" || c === '`') { inString.active = true; inString.char = c; continue; }
-    if (c === '{') braces++;
-    else if (c === '}') braces--;
-    else if (c === '(') parens++;
-    else if (c === ')') parens--;
-    else if (c === '[') brackets++;
-    else if (c === ']') brackets--;
+  // Use esbuild to validate JSX syntax — handles apostrophes in JSX text,
+  // template literals, and all other edge cases that naive char counting misses.
+  try {
+    esbuild.transformSync(code, {
+      loader: 'jsx',
+      jsx: 'preserve',
+      logLevel: 'silent',
+    });
+  } catch (e) {
+    const firstError = e.errors?.[0];
+    const loc = firstError?.location ? ` (line ${firstError.location.line})` : '';
+    return { valid: false, error: `Syntax error${loc}: ${firstError?.text || e.message}` };
   }
-  if (braces !== 0) return { valid: false, error: `Unbalanced braces (${braces > 0 ? 'missing }' : 'extra }'})` };
-  if (parens !== 0) return { valid: false, error: `Unbalanced parentheses (${parens > 0 ? 'missing )' : 'extra )'})` };
-  if (brackets !== 0) return { valid: false, error: `Unbalanced brackets (${brackets > 0 ? 'missing ]' : 'extra ]'})` };
 
   return { valid: true };
 }
