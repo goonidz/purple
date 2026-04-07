@@ -4342,248 +4342,6 @@ const Index = () => {
                   );
                 })()}
 
-                {/* Per-scene animator code status */}
-                {isAnimatorChannel && scenes.length > 0 && (
-                  <Card className="p-4 border border-purple-500/20 bg-purple-500/5 mb-6">
-                    <div className="flex items-center justify-between mb-3">
-                      <h3 className="text-sm font-medium flex items-center gap-2 flex-wrap">
-                        <Sparkles className="h-4 w-4 text-purple-500" />
-                        Scènes Animator
-                        {animatorSceneStatuses.length > 0 && (
-                          <span className="text-muted-foreground font-normal">
-                            — {animatorSceneStatuses.filter(s => s.animator_code_status === 'completed').length}/{scenes.length} générées
-                          </span>
-                        )}
-                        {(animatorTokens || animatorCostUsd != null) && (
-                          <span className="text-[11px] text-muted-foreground font-normal flex items-center gap-2 ml-1">
-                            {animatorTokens && (
-                              <>
-                                <span>In: <strong className="text-foreground/70">{animatorTokens.input?.toLocaleString()}</strong></span>
-                                <span>Out: <strong className="text-foreground/70">{animatorTokens.output?.toLocaleString()}</strong></span>
-                                {animatorTokens.cacheCreated > 0 && <span>Cache W: <strong className="text-foreground/70">{animatorTokens.cacheCreated?.toLocaleString()}</strong></span>}
-                                {animatorTokens.cacheRead > 0 && <span>Cache R: <strong className="text-foreground/70">{animatorTokens.cacheRead?.toLocaleString()}</strong></span>}
-                              </>
-                            )}
-                            {animatorCostUsd != null && (
-                              <span className="font-medium text-purple-400">≈ ${animatorCostUsd.toFixed(4)}</span>
-                            )}
-                          </span>
-                        )}
-                      </h3>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="text-xs text-muted-foreground"
-                        onClick={() => {
-                          if (expandedAnimatorScenes.size === scenes.length) {
-                            setExpandedAnimatorScenes(new Set());
-                          } else {
-                            setExpandedAnimatorScenes(new Set(scenes.map((_, i) => i)));
-                          }
-                        }}
-                      >
-                        {expandedAnimatorScenes.size === scenes.length ? 'Tout replier' : 'Tout déplier'}
-                      </Button>
-                    </div>
-                    <div className="space-y-2">
-                      {scenes.map((scene, index) => {
-                        const sceneStatus = animatorSceneStatuses.find(s => s.scene_index === index);
-                        const status = sceneStatus?.animator_code_status || null;
-                        const isFailed = status === 'failed';
-                        const isCompleted = status === 'completed';
-                        const isGenerating = status === 'generating' || status === 'pending';
-                        const hasCode = !!sceneStatus?.animator_code;
-                        const isRetrying = isRetryingScene === index;
-                        const isExpanded = expandedAnimatorScenes.has(index);
-                        const duration = (scene.endTime - scene.startTime).toFixed(1);
-
-                        return (
-                          <div
-                            key={index}
-                            className={`rounded-lg border overflow-hidden ${
-                              isCompleted ? 'border-green-500/20' :
-                              isFailed ? 'border-red-500/20' :
-                              isGenerating ? 'border-purple-500/20' :
-                              'border-muted'
-                            }`}
-                          >
-                            {/* Scene header row */}
-                            <div
-                              className={`flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-muted/30 transition-colors ${
-                                isCompleted ? 'bg-green-500/5' :
-                                isFailed ? 'bg-red-500/5' :
-                                isGenerating ? 'bg-purple-500/5' :
-                                'bg-muted/10'
-                              }`}
-                              onClick={() => {
-                                setExpandedAnimatorScenes(prev => {
-                                  const next = new Set(prev);
-                                  if (next.has(index)) next.delete(index);
-                                  else next.add(index);
-                                  return next;
-                                });
-                              }}
-                            >
-                              {/* Status icon */}
-                              <div className="flex-shrink-0 w-4">
-                                {isRetrying && <Loader2 className="h-4 w-4 animate-spin text-purple-500" />}
-                                {!isRetrying && isCompleted && <Check className="h-4 w-4 text-green-500" />}
-                                {!isRetrying && isFailed && <X className="h-4 w-4 text-red-500" />}
-                                {!isRetrying && isGenerating && <Loader2 className="h-4 w-4 animate-spin text-purple-500" />}
-                              </div>
-
-                              {/* Scene number + timing */}
-                              <span className="font-bold text-sm text-primary w-8">#{index + 1}</span>
-                              <span className="text-xs text-muted-foreground font-mono w-24 flex-shrink-0">
-                                {formatTimecode(scene.startTime)} → {formatTimecode(scene.endTime)}
-                              </span>
-                              <span className="text-xs text-muted-foreground w-10 flex-shrink-0">{duration}s</span>
-
-                              {/* Scene text preview */}
-                              <span className="text-xs text-foreground/80 truncate flex-1 min-w-0">
-                                {scene.text || '—'}
-                              </span>
-
-                              {/* Actions */}
-                              <div className="flex items-center gap-1 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
-                                {isFailed && !isRetrying && (
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    className="h-6 px-2 text-xs text-red-500 hover:text-red-600 hover:bg-red-500/10"
-                                    onClick={async () => {
-                                      if (!currentProjectId) return;
-                                      setIsRetryingScene(index);
-                                      try {
-                                        const { data: calEntry } = await supabase
-                                          .from("content_calendar")
-                                          .select("channel_id")
-                                          .eq("project_id", currentProjectId)
-                                          .not("channel_id", "is", null)
-                                          .limit(1)
-                                          .single();
-                                        let presetConfig: any = {};
-                                        if (calEntry?.channel_id) {
-                                          const { data: ch } = await (supabase.from("channels") as any).select("animator_preset_id").eq("id", calEntry.channel_id).single();
-                                          if (ch?.animator_preset_id) {
-                                            const { data: preset } = await (supabase.from("animator_presets" as any) as any).select("*").eq("id", ch.animator_preset_id).single();
-                                            if (preset) presetConfig = preset;
-                                          }
-                                        }
-                                        const { data: keyData } = await supabase.rpc('get_user_api_key_for_service', {
-                                          target_user_id: (await supabase.auth.getUser()).data.user?.id,
-                                          key_name: 'anthropic',
-                                        });
-
-                                        const prevScene = index > 0 ? scenes[index - 1] : null;
-                                        const nextScene = index < scenes.length - 1 ? scenes[index + 1] : null;
-                                        const prevCompleted = animatorSceneStatuses.find(s => s.scene_index === index - 1 && s.animator_code_status === 'completed');
-
-                                        let prevCode = null;
-                                        if (prevCompleted) {
-                                          prevCode = prevCompleted.animator_code || null;
-                                        }
-
-                                        const resp = await fetch(`${import.meta.env.VITE_REMOTION_SERVICE_URL || ''}/animator/generate-scene`, {
-                                          method: 'POST',
-                                          headers: { 'Content-Type': 'application/json' },
-                                          body: JSON.stringify({
-                                            anthropicKey: keyData,
-                                            segment: { start: scene.startTime, end: scene.endTime, text: scene.text },
-                                            segIndex: index,
-                                            totalSegments: scenes.length,
-                                            brandingConfig: presetConfig.branding_config || null,
-                                            brandingMarkdown: presetConfig.branding_markdown || '',
-                                            extraPrompt: presetConfig.extra_prompt || '',
-                                            selectedSkills: presetConfig.selected_skills || null,
-                                            model: presetConfig.model || 'claude-sonnet-4-6',
-                                            projectId: currentProjectId,
-                                            neighborContext: {
-                                              prevTexts: prevScene ? [prevScene.text] : [],
-                                              nextTexts: nextScene ? [nextScene.text] : [],
-                                              prevCode,
-                                            },
-                                          }),
-                                        });
-                                        const result = await resp.json();
-                                        if (result.success) {
-                                          toast.success(`Scène ${index + 1} régénérée`);
-                                        } else {
-                                          toast.error(`Scène ${index + 1}: ${result.error}`);
-                                        }
-                                      } catch (e: any) {
-                                        toast.error(`Erreur: ${e.message}`);
-                                      } finally {
-                                        setIsRetryingScene(null);
-                                      }
-                                    }}
-                                  >
-                                    <RotateCcw className="h-3 w-3 mr-1" />
-                                    Retry
-                                  </Button>
-                                )}
-                                {isExpanded ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
-                              </div>
-                            </div>
-
-                            {/* Expanded content: scene text + animator code */}
-                            {isExpanded && (
-                              <div className="border-t border-inherit">
-                                {/* Scene text */}
-                                <div className="px-3 py-2 bg-muted/5 border-b border-inherit">
-                                  <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Texte</span>
-                                  <p className="text-sm mt-1 text-foreground/90 leading-relaxed">{scene.text}</p>
-                                </div>
-                                {/* Animator code */}
-                                {hasCode && (
-                                  <div className="px-3 py-2">
-                                    <div className="flex items-center justify-between mb-1">
-                                      <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
-                                        {isCompleted ? 'Code Remotion' : 'Erreur'}
-                                      </span>
-                                      {isCompleted && (
-                                        <Button
-                                          size="sm"
-                                          variant="ghost"
-                                          className="h-5 px-1.5 text-[10px]"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            navigator.clipboard.writeText(sceneStatus?.animator_code || '');
-                                            toast.success('Code copié');
-                                          }}
-                                        >
-                                          <Copy className="h-3 w-3 mr-1" />
-                                          Copier
-                                        </Button>
-                                      )}
-                                    </div>
-                                    <pre className={`text-xs font-mono p-3 rounded-md overflow-x-auto max-h-[400px] overflow-y-auto whitespace-pre-wrap break-all ${
-                                      isFailed ? 'bg-red-500/5 text-red-400' : 'bg-zinc-950 text-zinc-300'
-                                    }`}>
-                                      {sceneStatus?.animator_code}
-                                    </pre>
-                                  </div>
-                                )}
-                                {!hasCode && isGenerating && (
-                                  <div className="px-3 py-4 text-center text-xs text-muted-foreground">
-                                    <Loader2 className="h-4 w-4 animate-spin mx-auto mb-1" />
-                                    Génération en cours...
-                                  </div>
-                                )}
-                                {!hasCode && !isGenerating && !status && (
-                                  <div className="px-3 py-3 text-center text-xs text-muted-foreground italic">
-                                    Pas encore généré
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </Card>
-                )}
-
                 {/* Animator video preview — standalone block for animator channels */}
                 {isAnimatorChannel && animatorVideoUrl && (
                   <Card className="p-6 border-2 border-purple-500/30 bg-purple-500/5 mb-6">
@@ -5666,6 +5424,233 @@ const Index = () => {
                       onAnimateScene={(index) => setConfirmAnimateScene(index)}
                       visualContinuityEnabled={visualContinuityEnabled}
                     />
+                  </Card>
+                )}
+
+                {/* Per-scene animator code status — at bottom like SceneGrid */}
+                {isAnimatorChannel && scenes.length > 0 && (
+                  <Card className="p-4 border border-purple-500/20 bg-purple-500/5">
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-sm font-medium flex items-center gap-2 flex-wrap">
+                        <Sparkles className="h-4 w-4 text-purple-500" />
+                        Scènes Animator
+                        {animatorSceneStatuses.length > 0 && (
+                          <span className="text-muted-foreground font-normal">
+                            — {animatorSceneStatuses.filter(s => s.animator_code_status === 'completed').length}/{scenes.length} générées
+                          </span>
+                        )}
+                        {(animatorTokens || animatorCostUsd != null) && (
+                          <span className="text-[11px] text-muted-foreground font-normal flex items-center gap-2 ml-1">
+                            {animatorTokens && (
+                              <>
+                                <span>In: <strong className="text-foreground/70">{animatorTokens.input?.toLocaleString()}</strong></span>
+                                <span>Out: <strong className="text-foreground/70">{animatorTokens.output?.toLocaleString()}</strong></span>
+                                {animatorTokens.cacheCreated > 0 && <span>Cache W: <strong className="text-foreground/70">{animatorTokens.cacheCreated?.toLocaleString()}</strong></span>}
+                                {animatorTokens.cacheRead > 0 && <span>Cache R: <strong className="text-foreground/70">{animatorTokens.cacheRead?.toLocaleString()}</strong></span>}
+                              </>
+                            )}
+                            {animatorCostUsd != null && (
+                              <span className="font-medium text-purple-400">≈ ${animatorCostUsd.toFixed(4)}</span>
+                            )}
+                          </span>
+                        )}
+                      </h3>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-xs text-muted-foreground"
+                        onClick={() => {
+                          if (expandedAnimatorScenes.size === scenes.length) {
+                            setExpandedAnimatorScenes(new Set());
+                          } else {
+                            setExpandedAnimatorScenes(new Set(scenes.map((_, i) => i)));
+                          }
+                        }}
+                      >
+                        {expandedAnimatorScenes.size === scenes.length ? 'Tout replier' : 'Tout déplier'}
+                      </Button>
+                    </div>
+                    <div className="space-y-2">
+                      {scenes.map((scene, index) => {
+                        const sceneStatus = animatorSceneStatuses.find(s => s.scene_index === index);
+                        const status = sceneStatus?.animator_code_status || null;
+                        const isFailed = status === 'failed';
+                        const isCompleted = status === 'completed';
+                        const isGenerating = status === 'generating' || status === 'pending';
+                        const hasCode = !!sceneStatus?.animator_code;
+                        const isRetrying = isRetryingScene === index;
+                        const isExpanded = expandedAnimatorScenes.has(index);
+                        const duration = (scene.endTime - scene.startTime).toFixed(1);
+
+                        return (
+                          <div
+                            key={index}
+                            className={`rounded-lg border overflow-hidden ${
+                              isCompleted ? 'border-green-500/20' :
+                              isFailed ? 'border-red-500/20' :
+                              isGenerating ? 'border-purple-500/20' :
+                              'border-muted'
+                            }`}
+                          >
+                            <div
+                              className={`flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-muted/30 transition-colors ${
+                                isCompleted ? 'bg-green-500/5' :
+                                isFailed ? 'bg-red-500/5' :
+                                isGenerating ? 'bg-purple-500/5' :
+                                'bg-muted/10'
+                              }`}
+                              onClick={() => {
+                                setExpandedAnimatorScenes(prev => {
+                                  const next = new Set(prev);
+                                  if (next.has(index)) next.delete(index);
+                                  else next.add(index);
+                                  return next;
+                                });
+                              }}
+                            >
+                              <div className="flex-shrink-0 w-4">
+                                {isRetrying && <Loader2 className="h-4 w-4 animate-spin text-purple-500" />}
+                                {!isRetrying && isCompleted && <Check className="h-4 w-4 text-green-500" />}
+                                {!isRetrying && isFailed && <X className="h-4 w-4 text-red-500" />}
+                                {!isRetrying && isGenerating && <Loader2 className="h-4 w-4 animate-spin text-purple-500" />}
+                              </div>
+                              <span className="font-bold text-sm text-primary w-8">#{index + 1}</span>
+                              <span className="text-xs text-muted-foreground font-mono w-24 flex-shrink-0">
+                                {formatTimecode(scene.startTime)} → {formatTimecode(scene.endTime)}
+                              </span>
+                              <span className="text-xs text-muted-foreground w-10 flex-shrink-0">{duration}s</span>
+                              <span className="text-xs text-foreground/80 truncate flex-1 min-w-0">
+                                {scene.text || '—'}
+                              </span>
+                              <div className="flex items-center gap-1 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                                {isFailed && !isRetrying && (
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-6 px-2 text-xs text-red-500 hover:text-red-600 hover:bg-red-500/10"
+                                    onClick={async () => {
+                                      if (!currentProjectId) return;
+                                      setIsRetryingScene(index);
+                                      try {
+                                        const { data: calEntry } = await supabase
+                                          .from("content_calendar")
+                                          .select("channel_id")
+                                          .eq("project_id", currentProjectId)
+                                          .not("channel_id", "is", null)
+                                          .limit(1)
+                                          .single();
+                                        let presetConfig: any = {};
+                                        if (calEntry?.channel_id) {
+                                          const { data: ch } = await (supabase.from("channels") as any).select("animator_preset_id").eq("id", calEntry.channel_id).single();
+                                          if (ch?.animator_preset_id) {
+                                            const { data: preset } = await (supabase.from("animator_presets" as any) as any).select("*").eq("id", ch.animator_preset_id).single();
+                                            if (preset) presetConfig = preset;
+                                          }
+                                        }
+                                        const { data: keyData } = await supabase.rpc('get_user_api_key_for_service', {
+                                          target_user_id: (await supabase.auth.getUser()).data.user?.id,
+                                          key_name: 'anthropic',
+                                        });
+                                        const prevScene = index > 0 ? scenes[index - 1] : null;
+                                        const nextScene = index < scenes.length - 1 ? scenes[index + 1] : null;
+                                        const prevCompleted = animatorSceneStatuses.find(s => s.scene_index === index - 1 && s.animator_code_status === 'completed');
+                                        let prevCode = null;
+                                        if (prevCompleted) {
+                                          prevCode = prevCompleted.animator_code || null;
+                                        }
+                                        const resp = await fetch(`${import.meta.env.VITE_REMOTION_SERVICE_URL || ''}/animator/generate-scene`, {
+                                          method: 'POST',
+                                          headers: { 'Content-Type': 'application/json' },
+                                          body: JSON.stringify({
+                                            anthropicKey: keyData,
+                                            segment: { start: scene.startTime, end: scene.endTime, text: scene.text },
+                                            segIndex: index,
+                                            totalSegments: scenes.length,
+                                            brandingConfig: presetConfig.branding_config || null,
+                                            brandingMarkdown: presetConfig.branding_markdown || '',
+                                            extraPrompt: presetConfig.extra_prompt || '',
+                                            selectedSkills: presetConfig.selected_skills || null,
+                                            model: presetConfig.model || 'claude-sonnet-4-6',
+                                            projectId: currentProjectId,
+                                            neighborContext: {
+                                              prevTexts: prevScene ? [prevScene.text] : [],
+                                              nextTexts: nextScene ? [nextScene.text] : [],
+                                              prevCode,
+                                            },
+                                          }),
+                                        });
+                                        const result = await resp.json();
+                                        if (result.success) {
+                                          toast.success(`Scène ${index + 1} régénérée`);
+                                        } else {
+                                          toast.error(`Scène ${index + 1}: ${result.error}`);
+                                        }
+                                      } catch (e: any) {
+                                        toast.error(`Erreur: ${e.message}`);
+                                      } finally {
+                                        setIsRetryingScene(null);
+                                      }
+                                    }}
+                                  >
+                                    <RotateCcw className="h-3 w-3 mr-1" />
+                                    Retry
+                                  </Button>
+                                )}
+                                {isExpanded ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+                              </div>
+                            </div>
+                            {isExpanded && (
+                              <div className="border-t border-inherit">
+                                <div className="px-3 py-2 bg-muted/5 border-b border-inherit">
+                                  <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Texte</span>
+                                  <p className="text-sm mt-1 text-foreground/90 leading-relaxed">{scene.text}</p>
+                                </div>
+                                {hasCode && (
+                                  <div className="px-3 py-2">
+                                    <div className="flex items-center justify-between mb-1">
+                                      <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
+                                        {isCompleted ? 'Code Remotion' : 'Erreur'}
+                                      </span>
+                                      {isCompleted && (
+                                        <Button
+                                          size="sm"
+                                          variant="ghost"
+                                          className="h-5 px-1.5 text-[10px]"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            navigator.clipboard.writeText(sceneStatus?.animator_code || '');
+                                            toast.success('Code copié');
+                                          }}
+                                        >
+                                          <Copy className="h-3 w-3 mr-1" />
+                                          Copier
+                                        </Button>
+                                      )}
+                                    </div>
+                                    <pre className={`text-xs font-mono p-3 rounded-md overflow-x-auto max-h-[400px] overflow-y-auto whitespace-pre-wrap break-all ${
+                                      isFailed ? 'bg-red-500/5 text-red-400' : 'bg-zinc-950 text-zinc-300'
+                                    }`}>
+                                      {sceneStatus?.animator_code}
+                                    </pre>
+                                  </div>
+                                )}
+                                {!hasCode && isGenerating && (
+                                  <div className="px-3 py-4 text-center text-xs text-muted-foreground">
+                                    <Loader2 className="h-4 w-4 animate-spin mx-auto mb-1" />
+                                    Génération en cours...
+                                  </div>
+                                )}
+                                {!hasCode && !isGenerating && !status && (
+                                  <div className="px-3 py-3 text-center text-xs text-muted-foreground italic">
+                                    Pas encore généré
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
                   </Card>
                 )}
               </TabsContent>
