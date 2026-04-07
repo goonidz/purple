@@ -829,6 +829,26 @@ app.post('/animator/generate-scene', async (req, res) => {
       await supabase.from('project_scenes').update({
         animator_code_status: 'completed', animator_code: result.code,
       }).eq('project_id', projectId).eq('scene_index', segIndex);
+
+      const { data: proj } = await supabase.from('projects').select('animator_tokens, animator_cost_usd').eq('id', projectId).single();
+      const prev = proj?.animator_tokens || { input: 0, output: 0, cacheRead: 0, cacheCreated: 0 };
+      const t = result.tokens;
+      const merged = {
+        input: (prev.input || 0) + t.input,
+        output: (prev.output || 0) + t.output,
+        cacheRead: (prev.cacheRead || 0) + t.cacheRead,
+        cacheCreated: (prev.cacheCreated || 0) + t.cacheCreated,
+      };
+      const PRICES = { input: 3, output: 15, cacheWrite: 3.75, cacheRead: 0.30 };
+      const newCost =
+        (merged.input * PRICES.input / 1_000_000) +
+        (merged.output * PRICES.output / 1_000_000) +
+        (merged.cacheCreated * PRICES.cacheWrite / 1_000_000) +
+        (merged.cacheRead * PRICES.cacheRead / 1_000_000);
+      await supabase.from('projects').update({
+        animator_tokens: merged,
+        animator_cost_usd: newCost,
+      }).eq('id', projectId);
     }
 
     res.json({ success: true, code: result.code, segName: result.segName, tokens: result.tokens });

@@ -295,7 +295,7 @@ ${extraPrompt ? `\nExtra instructions:\n${extraPrompt}` : ''}`;
       return { error: `Scene ${segIndex} validation: ${validation.error}`, code };
     }
 
-    console.log(`  [Animator] Scene ${segIndex}/${totalSegments} | ${segName} | ${code.length} chars | in:${u.input_tokens} out:${u.output_tokens}`);
+    console.log(`  [Animator] Scene ${segIndex}/${totalSegments} | ${segName} | ${code.length} chars | in:${u.input_tokens} out:${u.output_tokens} cacheRead:${u.cache_read_input_tokens ?? 0} cacheWrite:${u.cache_creation_input_tokens ?? 0}`);
 
     return {
       code,

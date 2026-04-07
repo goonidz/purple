@@ -4360,7 +4360,8 @@ const Index = () => {
                               <>
                                 <span>In: <strong className="text-foreground/70">{animatorTokens.input?.toLocaleString()}</strong></span>
                                 <span>Out: <strong className="text-foreground/70">{animatorTokens.output?.toLocaleString()}</strong></span>
-                                {animatorTokens.cacheRead > 0 && <span>Cache: <strong className="text-foreground/70">{animatorTokens.cacheRead?.toLocaleString()}</strong></span>}
+                                {animatorTokens.cacheCreated > 0 && <span>Cache W: <strong className="text-foreground/70">{animatorTokens.cacheCreated?.toLocaleString()}</strong></span>}
+                                {animatorTokens.cacheRead > 0 && <span>Cache R: <strong className="text-foreground/70">{animatorTokens.cacheRead?.toLocaleString()}</strong></span>}
                               </>
                             )}
                             {animatorCostUsd != null && (
