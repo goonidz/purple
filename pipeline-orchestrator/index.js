@@ -912,7 +912,7 @@ async function stepWaitAnimatorGenerate(pipeline) {
 
   const { data: job } = await supabase
     .from('remotion_render_jobs')
-    .select('status, video_url, error_message, progress')
+    .select('status, video_url, error_message, progress, tokens, cost_usd')
     .eq('id', jobId)
     .single();
 
@@ -920,12 +920,15 @@ async function stepWaitAnimatorGenerate(pipeline) {
 
   if (job.status === 'completed' && job.video_url) {
     console.log(`[orchestrator] [${id}] Animator render completed: ${job.video_url}`);
+    const projectUpdate = { animator_video_url: job.video_url };
+    if (job.tokens) projectUpdate.animator_tokens = job.tokens;
+    if (job.cost_usd != null) projectUpdate.animator_cost_usd = job.cost_usd;
     const { error: urlErr } = await supabase
       .from('projects')
-      .update({ animator_video_url: job.video_url })
-      .eq('id', pipeline.project_id);
-    if (urlErr) console.error(`[orchestrator] [${id}] Failed to set animator_video_url:`, urlErr);
-    else console.log(`[orchestrator] [${id}] Set animator_video_url on project ${pipeline.project_id}`);
+      .update(projectUpdate)
+      .eq('id', project_id);
+    if (urlErr) console.error(`[orchestrator] [${id}] Failed to update project:`, urlErr);
+    else console.log(`[orchestrator] [${id}] Updated project ${project_id} (video + cost)`);
     await advancePipeline(id, 'completed', { step_status: 'completed' });
   } else if (job.status === 'failed') {
     throw new Error(`Animator render failed: ${job.error_message || 'unknown'}`);

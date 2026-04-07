@@ -582,10 +582,13 @@ app.post('/animator/generate-and-render', async (req, res) => {
           status: 'completed', progress: 100, video_url: videoUrl, completed_at: new Date().toISOString(),
         }).eq('id', jobId);
         if (projectId) {
-          await supabase.from('projects').update({ animator_video_url: videoUrl }).eq('id', projectId);
+          const projectUpdate = { animator_video_url: videoUrl };
+          if (result.tokens) projectUpdate.animator_tokens = result.tokens;
+          if (result.costUsd != null) projectUpdate.animator_cost_usd = result.costUsd;
+          await supabase.from('projects').update(projectUpdate).eq('id', projectId);
         }
       }
-      console.log(`[Animator] Full pipeline complete: ${jobId} -> ${videoUrl}`);
+      console.log(`[Animator] Full pipeline complete: ${jobId} -> ${videoUrl} | cost: $${result.costUsd?.toFixed(4) || '?'}`);
     } catch (err) {
       console.error(`[Animator] Pipeline failed for ${jobId}:`, err.message);
       const j = activeJobs.get(jobId);

@@ -275,6 +275,10 @@ const Index = () => {
   const [isAnimatorGenerating, setIsAnimatorGenerating] = useState(false);
   const [isAnimatorChannel, setIsAnimatorChannel] = useState(false);
   const [animatorPipelineStatus, setAnimatorPipelineStatus] = useState<{ current_step: string; step_status: string } | null>(null);
+  const [animatorTokens, setAnimatorTokens] = useState<{ input: number; output: number; cacheRead: number; cacheCreated: number } | null>(null);
+  const [animatorCostUsd, setAnimatorCostUsd] = useState<number | null>(null);
+  const [animatorTokens, setAnimatorTokens] = useState<{ input: number; output: number; cacheRead: number; cacheCreated: number } | null>(null);
+  const [animatorCostUsd, setAnimatorCostUsd] = useState<number | null>(null);
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [isUploadingAudio, setIsUploadingAudio] = useState(false);
   const [isDraggingAudio, setIsDraggingAudio] = useState(false);
@@ -916,7 +920,7 @@ const Index = () => {
           .order("created_at", { ascending: false })
           .limit(1)
           .single(),
-        supabase.from('projects').select('animator_video_url').eq('id', currentProjectId).single(),
+        supabase.from('projects').select('animator_video_url, animator_tokens, animator_cost_usd').eq('id', currentProjectId).single(),
       ]);
       if (cancelled) return;
       const data = pipelineRes.data;
@@ -930,6 +934,8 @@ const Index = () => {
       if (projRes.data?.animator_video_url) {
         setAnimatorVideoUrl(projRes.data.animator_video_url);
       }
+      if (projRes.data?.animator_tokens) setAnimatorTokens(projRes.data.animator_tokens);
+      if (projRes.data?.animator_cost_usd != null) setAnimatorCostUsd(Number(projRes.data.animator_cost_usd));
     };
     poll();
     const iv = setInterval(poll, 3_000);
@@ -1259,6 +1265,8 @@ const Index = () => {
       }
       console.log('[loadProjectData] animator_video_url from DB:', data.animator_video_url);
       setAnimatorVideoUrl(data.animator_video_url || null);
+      if (data.animator_tokens) setAnimatorTokens(data.animator_tokens);
+      if (data.animator_cost_usd != null) setAnimatorCostUsd(Number(data.animator_cost_usd));
       if (data.audio_url) {
         setAudioUrl(data.audio_url);
       } else if (existingScenes.length > 0) {
@@ -4249,6 +4257,21 @@ const Index = () => {
                       </div>
                     </div>
                     <video src={animatorVideoUrl!} controls className="w-full rounded-lg max-h-[500px]" />
+                    {(animatorTokens || animatorCostUsd != null) && (
+                      <div className="flex flex-wrap gap-3 mt-3 text-xs text-muted-foreground border-t pt-3">
+                        {animatorTokens && (
+                          <>
+                            <span>In: <strong className="text-foreground">{animatorTokens.input?.toLocaleString()}</strong></span>
+                            <span>Out: <strong className="text-foreground">{animatorTokens.output?.toLocaleString()}</strong></span>
+                            {animatorTokens.cacheRead > 0 && <span>Cache read: <strong className="text-foreground">{animatorTokens.cacheRead?.toLocaleString()}</strong></span>}
+                            {animatorTokens.cacheCreated > 0 && <span>Cache write: <strong className="text-foreground">{animatorTokens.cacheCreated?.toLocaleString()}</strong></span>}
+                          </>
+                        )}
+                        {animatorCostUsd != null && (
+                          <span className="ml-auto font-medium text-foreground">≈ ${animatorCostUsd.toFixed(4)}</span>
+                        )}
+                      </div>
+                    )}
                   </Card>
                 )}
 
