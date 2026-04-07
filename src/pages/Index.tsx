@@ -5734,9 +5734,20 @@ const Index = () => {
                     <h2 className="text-lg font-semibold mb-4">Historique des rendus</h2>
                     {(() => {
                       // Merge VPS and GPU jobs, add type marker, and sort by date
-                      const allJobs = [
+                      const hasAnimatorInJobs = allVideoRenderJobs.some(j => j.metadata && typeof j.metadata === 'object' && (j.metadata as any).type === 'animator');
+                      const allJobs: Array<any> = [
                         ...allVideoRenderJobs.map(j => ({ ...j, type: 'vps' as const })),
-                        ...allGpuRenderJobs.map(j => ({ ...j, type: 'gpu' as const }))
+                        ...allGpuRenderJobs.map(j => ({ ...j, type: 'gpu' as const })),
+                        // Show existing animator video as virtual entry if no video_render_jobs row exists yet
+                        ...(!hasAnimatorInJobs && animatorVideoUrl ? [{
+                          id: 'animator-legacy',
+                          type: 'vps' as const,
+                          status: 'completed',
+                          progress: 100,
+                          video_url: animatorVideoUrl,
+                          created_at: new Date().toISOString(),
+                          metadata: { type: 'animator' },
+                        }] : []),
                       ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
                       if (allJobs.length === 0) {
