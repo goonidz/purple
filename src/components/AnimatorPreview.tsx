@@ -45,8 +45,10 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [isEditing, setIsEditing] = useState(false);
+  const [isRebuilding, setIsRebuilding] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const resumeFrameRef = useRef<number | null>(null);
 
   // Listen for frame updates from the iframe
   useEffect(() => {
@@ -128,12 +130,27 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
         ...prev,
         {
           role: "assistant",
-          content: `Scene ${sceneIdx + 1} modifiée. Rechargement de la preview...`,
+          content: `Scene ${sceneIdx + 1} modifiée. Mise à jour...`,
           sceneIndex: sceneIdx,
         },
       ]);
 
-      await loadPreview();
+      // Save playback position and rebuild without hiding the player
+      resumeFrameRef.current = currentFrame;
+      setIsRebuilding(true);
+      try {
+        const resp2 = await fetch(`${REMOTION_SERVICE_URL}/animator/preview-bundle`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ projectId }),
+        });
+        const data2 = await resp2.json();
+        if (!resp2.ok) throw new Error(data2.error || "Preview rebuild failed");
+        setPreviewUrl(data2.previewUrl);
+        if (data2.segments) setSegments(data2.segments);
+      } finally {
+        setIsRebuilding(false);
+      }
     } catch (err: any) {
       console.error("[AnimatorPreview] Edit error:", err);
       setChatMessages((prev) => [
@@ -221,12 +238,31 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
 
           {/* Player iframe */}
           <div className="relative w-full rounded-xl overflow-hidden border border-border bg-black" style={{ aspectRatio: "16/9" }}>
+            {isRebuilding && (
+              <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/40 backdrop-blur-sm rounded-xl">
+                <div className="flex items-center gap-2 bg-black/70 px-4 py-2 rounded-lg">
+                  <Loader2 className="h-4 w-4 animate-spin text-purple-400" />
+                  <span className="text-sm text-white/80">Mise à jour...</span>
+                </div>
+              </div>
+            )}
             <iframe
               ref={iframeRef}
               src={previewUrl}
               className="w-full h-full border-0"
               allow="autoplay"
               title="Animator Preview"
+              onLoad={() => {
+                if (resumeFrameRef.current != null && iframeRef.current?.contentWindow) {
+                  const frame = resumeFrameRef.current;
+                  resumeFrameRef.current = null;
+                  // Small delay to let the Player mount
+                  setTimeout(() => {
+                    iframeRef.current?.contentWindow?.postMessage({ type: "remotion-seek", frame }, "*");
+                    iframeRef.current?.contentWindow?.postMessage({ type: "remotion-pause" }, "*");
+                  }, 500);
+                }
+              }}
             />
           </div>
 

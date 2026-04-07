@@ -1004,6 +1004,22 @@ const App = () => {
     return () => cancelAnimationFrame(id);
   }, []);
 
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.data?.type === 'remotion-seek' && typeof e.data.frame === 'number') {
+        playerRef.current?.seekTo?.(e.data.frame);
+      }
+      if (e.data?.type === 'remotion-pause') {
+        playerRef.current?.pause?.();
+      }
+      if (e.data?.type === 'remotion-play') {
+        playerRef.current?.play?.();
+      }
+    };
+    window.addEventListener('message', handler);
+    return () => window.removeEventListener('message', handler);
+  }, []);
+
   const cycleSpeed = useCallback(() => {
     setSpeed(prev => {
       const idx = SPEEDS.indexOf(prev);
