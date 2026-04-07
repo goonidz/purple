@@ -709,7 +709,7 @@ app.post('/animator/generate-all-scenes', async (req, res) => {
           if (supabase) {
             await supabase.from('project_scenes').update({
               animator_code_status: 'failed',
-              animator_code: result.error,
+              animator_code: result.code || result.error,
             }).eq('project_id', projectId).eq('scene_index', idx);
           }
           if (job) job.failedScenes = (job.failedScenes || 0) + 1;
@@ -819,7 +819,7 @@ app.post('/animator/generate-scene', async (req, res) => {
     if (result.error) {
       if (supabase && projectId) {
         await supabase.from('project_scenes').update({
-          animator_code_status: 'failed', animator_code: result.error,
+          animator_code_status: 'failed', animator_code: result.code || result.error,
         }).eq('project_id', projectId).eq('scene_index', segIndex);
       }
       return res.status(422).json({ success: false, error: result.error, code: result.code || null });

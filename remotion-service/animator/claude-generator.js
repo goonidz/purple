@@ -14,15 +14,19 @@ function stripSharedDeclarations(code) {
   const result = [];
   let stripping = false;
   let braceDepth = 0;
+  let parenDepth = 0;
   for (const line of lines) {
     if (!stripping && declPattern.test(line)) {
       stripping = true;
       braceDepth = 0;
+      parenDepth = 0;
       for (const ch of line) {
         if (ch === '{') braceDepth++;
-        if (ch === '}') braceDepth--;
+        else if (ch === '}') braceDepth--;
+        else if (ch === '(') parenDepth++;
+        else if (ch === ')') parenDepth--;
       }
-      if (braceDepth <= 0) {
+      if (braceDepth <= 0 && parenDepth <= 0) {
         stripping = false;
       }
       continue;
@@ -30,9 +34,11 @@ function stripSharedDeclarations(code) {
     if (stripping) {
       for (const ch of line) {
         if (ch === '{') braceDepth++;
-        if (ch === '}') braceDepth--;
+        else if (ch === '}') braceDepth--;
+        else if (ch === '(') parenDepth++;
+        else if (ch === ')') parenDepth--;
       }
-      if (braceDepth <= 0) {
+      if (braceDepth <= 0 && parenDepth <= 0) {
         stripping = false;
       }
       continue;
