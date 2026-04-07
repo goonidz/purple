@@ -4312,9 +4312,11 @@ const Index = () => {
                                       .eq('project_id', currentProjectId);
                                     await supabase
                                       .from('projects')
-                                      .update({ animator_video_url: null })
+                                      .update({ animator_video_url: null, animator_tokens: null, animator_cost_usd: null })
                                       .eq('id', currentProjectId);
                                     setAnimatorVideoUrl(null);
+                                    setAnimatorTokens(null);
+                                    setAnimatorCostUsd(null);
                                     setAnimatorSceneStatuses([]);
                                     await startJob('animator_scenes' as any);
                                   } catch (e: any) {
