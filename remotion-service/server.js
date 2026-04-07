@@ -1037,6 +1037,13 @@ const SPEEDS = [0.5, 1, 2, 4];
 const App = () => {
   const playerRef = useRef(null);
   const [speed, setSpeed] = useState(1);
+  const [hovering, setHovering] = useState(false);
+
+  const skip = useCallback((seconds) => {
+    const current = playerRef.current?.getCurrentFrame?.() ?? 0;
+    const target = Math.max(0, Math.min(current + Math.round(seconds * ${fps}), ${durationInFrames} - 1));
+    playerRef.current?.seekTo?.(target);
+  }, []);
 
   useEffect(() => {
     let last = -1;
@@ -1078,7 +1085,11 @@ const App = () => {
 
   return (
     <div style={{ width: '100vw', height: '100vh', background: '#0a0a0f', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }}>
-      <div style={{ position: 'relative', width: '100%', flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div
+        style={{ position: 'relative', width: '100%', flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+        onMouseEnter={() => setHovering(true)}
+        onMouseLeave={() => setHovering(false)}
+      >
         <Player
           ref={playerRef}
           component={${compName}}
@@ -1103,6 +1114,30 @@ const App = () => {
             </div>
           )}
         />
+        {hovering && (
+          <>
+            <button
+              onClick={() => skip(-5)}
+              style={{
+                position: 'absolute', left: 18, top: '50%', transform: 'translateY(-50%)',
+                background: 'rgba(0,0,0,0.4)', color: 'rgba(255,255,255,0.7)',
+                border: 'none', borderRadius: 10, padding: '10px 14px',
+                fontSize: 15, fontWeight: 600, cursor: 'pointer', zIndex: 10,
+                backdropFilter: 'blur(4px)', transition: 'opacity 0.15s',
+              }}
+            >-5s</button>
+            <button
+              onClick={() => skip(5)}
+              style={{
+                position: 'absolute', right: 18, top: '50%', transform: 'translateY(-50%)',
+                background: 'rgba(0,0,0,0.4)', color: 'rgba(255,255,255,0.7)',
+                border: 'none', borderRadius: 10, padding: '10px 14px',
+                fontSize: 15, fontWeight: 600, cursor: 'pointer', zIndex: 10,
+                backdropFilter: 'blur(4px)', transition: 'opacity 0.15s',
+              }}
+            >+5s</button>
+          </>
+        )}
         <div style={{
           position: 'absolute', top: 8, right: 8, display: 'flex', gap: 4, zIndex: 10,
         }}>
