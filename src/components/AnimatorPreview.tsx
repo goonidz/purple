@@ -3,7 +3,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Play, RefreshCw, ExternalLink, Send, Sparkles, Camera, X, AlertTriangle } from "lucide-react";
+import { Loader2, Play, RefreshCw, ExternalLink, Send, Sparkles, Camera, X, AlertTriangle, ChevronLeft, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 
 const REMOTION_SERVICE_URL =
@@ -63,6 +63,30 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
   const [isLoadingQA, setIsLoadingQA] = useState(false);
   const [showQAGrid, setShowQAGrid] = useState(false);
   const [expandedScreenshot, setExpandedScreenshot] = useState<number | null>(null);
+
+  // Keyboard navigation for QA grid
+  useEffect(() => {
+    if (!showQAGrid || expandedScreenshot == null || qaScreenshots.length === 0) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "ArrowRight") {
+        e.preventDefault();
+        setExpandedScreenshot((prev) => {
+          const next = (prev ?? 0) + 1;
+          return next < qaScreenshots.length ? next : 0;
+        });
+      } else if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        setExpandedScreenshot((prev) => {
+          const next = (prev ?? 0) - 1;
+          return next >= 0 ? next : qaScreenshots.length - 1;
+        });
+      } else if (e.key === "Escape") {
+        setExpandedScreenshot(null);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [showQAGrid, expandedScreenshot, qaScreenshots.length]);
 
   // Listen for frame updates from the iframe
   useEffect(() => {
@@ -452,6 +476,7 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
                     <div
                       key={shot.sceneIndex}
                       className={`relative group cursor-pointer rounded overflow-hidden border ${
+                        expandedScreenshot === shot.sceneIndex ? "border-purple-500 ring-1 ring-purple-500/50" :
                         shot.success ? "border-border hover:border-purple-500/50" : "border-red-500/30 bg-red-500/5"
                       } transition-all`}
                       onClick={() => {
@@ -500,16 +525,35 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
                 </div>
               )}
 
-              {/* Expanded screenshot */}
+              {/* Expanded screenshot with nav */}
               {expandedScreenshot != null && (() => {
                 const shot = qaScreenshots.find(s => s.sceneIndex === expandedScreenshot);
                 if (!shot?.url) return null;
                 return (
                   <div className="p-3 border-t border-border">
                     <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm font-medium">
-                        Scene {shot.sceneIndex + 1} — {shot.timestamp.toFixed(1)}s
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 w-7 p-0"
+                          onClick={() => setExpandedScreenshot(prev => (prev ?? 0) > 0 ? (prev ?? 0) - 1 : qaScreenshots.length - 1)}
+                        >
+                          <ChevronLeft className="h-4 w-4" />
+                        </Button>
+                        <span className="text-sm font-medium">
+                          Scene {shot.sceneIndex + 1}/{qaScreenshots.length} — {shot.timestamp.toFixed(1)}s
+                        </span>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 w-7 p-0"
+                          onClick={() => setExpandedScreenshot(prev => (prev ?? 0) < qaScreenshots.length - 1 ? (prev ?? 0) + 1 : 0)}
+                        >
+                          <ChevronRight className="h-4 w-4" />
+                        </Button>
+                        <span className="text-[10px] text-muted-foreground/50">← →</span>
+                      </div>
                       <div className="flex gap-1">
                         <Button
                           size="sm"
