@@ -198,6 +198,115 @@ ${audioFilename ? `      <Audio src={staticFile(${JSON.stringify(audioFilename)}
 `;
 }
 
+function validateComponentCode(code, segName) {
+  if (!code || code.trim().length === 0) return { valid: false, error: 'Empty code' };
+
+  const hasDecl = new RegExp(`(?:function|const)\\s+${segName}\\b`).test(code);
+  if (!hasDecl) return { valid: false, error: `Missing declaration for ${segName}` };
+
+  let braces = 0, parens = 0, brackets = 0;
+  const inString = { active: false, char: '' };
+  for (let i = 0; i < code.length; i++) {
+    const c = code[i];
+    if (inString.active) { if (c === inString.char && code[i - 1] !== '\\') inString.active = false; continue; }
+    if (c === '"' || c === "'" || c === '`') { inString.active = true; inString.char = c; continue; }
+    if (c === '{') braces++;
+    else if (c === '}') braces--;
+    else if (c === '(') parens++;
+    else if (c === ')') parens--;
+    else if (c === '[') brackets++;
+    else if (c === ']') brackets--;
+  }
+  if (braces !== 0) return { valid: false, error: `Unbalanced braces (${braces > 0 ? 'missing }' : 'extra }'})` };
+  if (parens !== 0) return { valid: false, error: `Unbalanced parentheses (${parens > 0 ? 'missing )' : 'extra )'})` };
+  if (brackets !== 0) return { valid: false, error: `Unbalanced brackets (${brackets > 0 ? 'missing ]' : 'extra ]'})` };
+
+  return { valid: true };
+}
+
+async function generateSingleScene(client, model, systemPrompt, segment, segIndex, totalSegments, extraPrompt, neighborContext) {
+  const segName = `Seg${segIndex}`;
+  const segEntry = { name: segName, start: segment.start, end: segment.end, text: segment.text || '' };
+
+  let contextBlock = '';
+  if (neighborContext) {
+    const parts = [];
+    if (neighborContext.prevTexts?.length) parts.push(`Previous scenes: ${JSON.stringify(neighborContext.prevTexts)}`);
+    if (neighborContext.nextTexts?.length) parts.push(`Next scenes: ${JSON.stringify(neighborContext.nextTexts)}`);
+    if (neighborContext.prevCode) parts.push(`Previous scene code (for style reference):\n${neighborContext.prevCode.slice(0, 2000)}`);
+    if (parts.length) contextBlock = `\n\nContext (for narrative/style coherence):\n${parts.join('\n')}`;
+  }
+
+  const userMessage =
+`Generate ONE component function: ${segName}.
+NO imports. NO exports. Plain function declaration only.
+This is scene ${segIndex} of ${totalSegments}.
+
+Segment:
+${JSON.stringify(segEntry, null, 2)}${contextBlock}
+${extraPrompt ? `\nExtra instructions:\n${extraPrompt}` : ''}`;
+
+  try {
+    const stream = client.messages.stream({
+      model,
+      max_tokens: 16000,
+      system: [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }],
+      messages: [{ role: 'user', content: userMessage }],
+      tools: [{
+        name: 'write_segment_components',
+        description: 'Write ONE Remotion segment component function (no imports, no exports)',
+        input_schema: {
+          type: 'object',
+          properties: {
+            components_code: {
+              type: 'string',
+              description: 'A single component function definition. No import or export statements.',
+            },
+          },
+          required: ['components_code'],
+        },
+      }],
+      tool_choice: { type: 'tool', name: 'write_segment_components' },
+    });
+    const response = await stream.finalMessage();
+
+    if (response.stop_reason === 'max_tokens') {
+      console.warn(`  [Animator] Scene ${segIndex}/${totalSegments} hit max_tokens!`);
+    }
+
+    const toolBlock = response.content.find(c => c.type === 'tool_use');
+    if (!toolBlock) {
+      return { error: `Scene ${segIndex}: no tool_use block returned` };
+    }
+
+    const raw = toolBlock.input?.components_code?.trim() ?? '';
+    const code = stripSharedDeclarations(raw);
+    const u = response.usage ?? {};
+
+    const validation = validateComponentCode(code, segName);
+    if (!validation.valid) {
+      console.warn(`  [Animator] Scene ${segIndex}/${totalSegments} validation failed: ${validation.error}`);
+      return { error: `Scene ${segIndex} validation: ${validation.error}`, code };
+    }
+
+    console.log(`  [Animator] Scene ${segIndex}/${totalSegments} | ${segName} | ${code.length} chars | in:${u.input_tokens} out:${u.output_tokens}`);
+
+    return {
+      code,
+      segName,
+      tokens: {
+        input: u.input_tokens ?? 0,
+        output: u.output_tokens ?? 0,
+        cacheRead: u.cache_read_input_tokens ?? 0,
+        cacheCreated: u.cache_creation_input_tokens ?? 0,
+      },
+    };
+  } catch (err) {
+    console.error(`  [Animator] Scene ${segIndex}/${totalSegments} error:`, err.message);
+    return { error: `Scene ${segIndex}: ${err.message}` };
+  }
+}
+
 async function generateComposition({
   anthropicKey,
   segments,
@@ -278,4 +387,4 @@ async function generateComposition({
   };
 }
 
-module.exports = { generateComposition, buildWrapper, stripSharedDeclarations };
+module.exports = { generateComposition, generateSingleScene, validateComponentCode, buildWrapper, stripSharedDeclarations };

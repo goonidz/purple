@@ -216,7 +216,9 @@ app.delete('/render/:jobId', (req, res) => {
 });
 
 // --- Animator: Claude generation + Remotion render ---
-const { generateComposition } = require('./animator/claude-generator');
+const { generateComposition, generateSingleScene, validateComponentCode, buildWrapper, stripSharedDeclarations } = require('./animator/claude-generator');
+const { buildSystemPrompt } = require('./animator/prompt-builder');
+const Anthropic = require('@anthropic-ai/sdk');
 
 app.post('/animator/generate', async (req, res) => {
   const {
@@ -616,6 +618,396 @@ app.post('/animator/generate-and-render', async (req, res) => {
       }
     }
   })();
+});
+
+// --- Animator: per-scene generation ---
+
+const SCENE_CONCURRENCY = parseInt(process.env.SCENE_CONCURRENCY || '5', 10);
+
+app.post('/animator/generate-all-scenes', async (req, res) => {
+  const {
+    anthropicKey,
+    segments,
+    componentName,
+    audioUrl,
+    brandingConfig,
+    brandingMarkdown,
+    extraPrompt,
+    selectedSkills,
+    model,
+    fps = 30,
+    width = 1920,
+    height = 1080,
+    projectId,
+    userId,
+  } = req.body;
+
+  if (!anthropicKey) return res.status(400).json({ error: 'anthropicKey is required' });
+  if (!segments || segments.length === 0) return res.status(400).json({ error: 'segments are required' });
+  if (!projectId) return res.status(400).json({ error: 'projectId is required' });
+
+  const jobId = `animator-scenes-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const effectiveName = componentName || `Anim${jobId.replace(/[^a-zA-Z0-9]/g, '')}`;
+  const effectiveModel = model || 'claude-sonnet-4-6';
+
+  activeJobs.set(jobId, { status: 'generating', progress: 0, startedAt: Date.now(), totalScenes: segments.length, completedScenes: 0, failedScenes: 0 });
+
+  if (supabase && userId) {
+    await supabase.from('remotion_render_jobs').insert({
+      id: jobId, user_id: userId, project_id: projectId,
+      status: 'generating', composition_id: effectiveName,
+      input_props: { segments, brandingConfig, extraPrompt }, fps, width, height,
+    }).then(() => {});
+  }
+
+  res.json({ success: true, jobId, status: 'generating', totalScenes: segments.length });
+
+  (async () => {
+    try {
+      const { systemPrompt, skillsLoaded } = buildSystemPrompt(brandingConfig, extraPrompt, brandingMarkdown, selectedSkills);
+      const client = new Anthropic({ apiKey: anthropicKey });
+
+      console.log(`[Animator] Per-scene generation "${effectiveName}" | ${segments.length} scenes | model: ${effectiveModel} | concurrency: ${SCENE_CONCURRENCY}`);
+      console.log(`  Skills: ${skillsLoaded.join(', ')}`);
+
+      if (supabase) {
+        const upserts = segments.map((_, i) => ({
+          project_id: projectId, scene_index: i,
+          animator_code_status: 'pending', animator_code: null,
+        }));
+        for (const u of upserts) {
+          await supabase.from('project_scenes').upsert(u, { onConflict: 'project_id,scene_index' });
+        }
+      }
+
+      const results = new Array(segments.length).fill(null);
+      const totalTokens = { input: 0, output: 0, cacheRead: 0, cacheCreated: 0 };
+
+      async function processScene(idx) {
+        const seg = segments[idx];
+        const segIndex = idx + 1;
+
+        if (supabase) {
+          await supabase.from('project_scenes').update({ animator_code_status: 'generating' })
+            .eq('project_id', projectId).eq('scene_index', idx);
+        }
+
+        const neighborContext = {
+          prevTexts: segments.slice(Math.max(0, idx - 2), idx).map(s => s.text),
+          nextTexts: segments.slice(idx + 1, idx + 3).map(s => s.text),
+          prevCode: idx > 0 && results[idx - 1]?.code ? results[idx - 1].code : null,
+        };
+
+        const result = await generateSingleScene(
+          client, effectiveModel, systemPrompt, seg, segIndex, segments.length, extraPrompt, neighborContext
+        );
+
+        results[idx] = result;
+
+        const job = activeJobs.get(jobId);
+        if (result.error) {
+          if (supabase) {
+            await supabase.from('project_scenes').update({
+              animator_code_status: 'failed',
+              animator_code: result.error,
+            }).eq('project_id', projectId).eq('scene_index', idx);
+          }
+          if (job) job.failedScenes = (job.failedScenes || 0) + 1;
+        } else {
+          if (supabase) {
+            await supabase.from('project_scenes').update({
+              animator_code_status: 'completed',
+              animator_code: result.code,
+            }).eq('project_id', projectId).eq('scene_index', idx);
+          }
+          if (job) job.completedScenes = (job.completedScenes || 0) + 1;
+          totalTokens.input += result.tokens.input;
+          totalTokens.output += result.tokens.output;
+          totalTokens.cacheRead += result.tokens.cacheRead;
+          totalTokens.cacheCreated += result.tokens.cacheCreated;
+        }
+        if (job) job.progress = Math.round(((job.completedScenes || 0) + (job.failedScenes || 0)) / segments.length * 100);
+      }
+
+      // Process with concurrency limit — sequential batches for style coherence
+      for (let i = 0; i < segments.length; i += SCENE_CONCURRENCY) {
+        const batch = [];
+        for (let j = i; j < Math.min(i + SCENE_CONCURRENCY, segments.length); j++) {
+          batch.push(processScene(j));
+        }
+        await Promise.all(batch);
+      }
+
+      const PRICES = { input: 3, output: 15, cacheWrite: 3.75, cacheRead: 0.30 };
+      const costUsd =
+        (totalTokens.input * PRICES.input / 1_000_000) +
+        (totalTokens.output * PRICES.output / 1_000_000) +
+        (totalTokens.cacheCreated * PRICES.cacheWrite / 1_000_000) +
+        (totalTokens.cacheRead * PRICES.cacheRead / 1_000_000);
+
+      const completedCount = results.filter(r => r && !r.error).length;
+      const failedCount = results.filter(r => r && r.error).length;
+
+      const job = activeJobs.get(jobId);
+      if (job) {
+        job.status = failedCount > 0 ? 'partial' : 'scenes_ready';
+        job.tokens = totalTokens;
+        job.costUsd = costUsd;
+        job.completedScenes = completedCount;
+        job.failedScenes = failedCount;
+      }
+
+      if (supabase && userId) {
+        await supabase.from('remotion_render_jobs').update({
+          status: failedCount > 0 ? 'partial' : 'scenes_ready',
+          cost_usd: costUsd,
+          tokens: totalTokens,
+        }).eq('id', jobId);
+        if (projectId) {
+          await supabase.from('projects').update({
+            animator_tokens: totalTokens,
+            animator_cost_usd: costUsd,
+          }).eq('id', projectId);
+        }
+      }
+
+      console.log(`[Animator] Per-scene generation done: ${completedCount}/${segments.length} OK, ${failedCount} failed | $${costUsd.toFixed(4)}`);
+    } catch (err) {
+      console.error(`[Animator] Per-scene generation fatal error for ${jobId}:`, err.message);
+      const job = activeJobs.get(jobId);
+      if (job) { job.status = 'failed'; job.error = err.message; }
+      if (supabase && projectId) {
+        await supabase.from('remotion_render_jobs').update({ status: 'failed', error_message: err.message }).eq('id', jobId);
+      }
+    }
+  })();
+});
+
+app.post('/animator/generate-scene', async (req, res) => {
+  const {
+    anthropicKey,
+    segment,
+    segIndex,
+    totalSegments,
+    brandingConfig,
+    brandingMarkdown,
+    extraPrompt,
+    selectedSkills,
+    model,
+    projectId,
+    neighborContext,
+  } = req.body;
+
+  if (!anthropicKey) return res.status(400).json({ error: 'anthropicKey is required' });
+  if (!segment) return res.status(400).json({ error: 'segment is required' });
+  if (segIndex == null) return res.status(400).json({ error: 'segIndex is required' });
+
+  try {
+    const effectiveModel = model || 'claude-sonnet-4-6';
+    const { systemPrompt } = buildSystemPrompt(brandingConfig, extraPrompt, brandingMarkdown, selectedSkills);
+    const client = new Anthropic({ apiKey: anthropicKey });
+
+    if (supabase && projectId) {
+      await supabase.from('project_scenes').update({ animator_code_status: 'generating' })
+        .eq('project_id', projectId).eq('scene_index', segIndex);
+    }
+
+    const result = await generateSingleScene(
+      client, effectiveModel, systemPrompt, segment, segIndex + 1, totalSegments || 1, extraPrompt, neighborContext
+    );
+
+    if (result.error) {
+      if (supabase && projectId) {
+        await supabase.from('project_scenes').update({
+          animator_code_status: 'failed', animator_code: result.error,
+        }).eq('project_id', projectId).eq('scene_index', segIndex);
+      }
+      return res.status(422).json({ success: false, error: result.error, code: result.code || null });
+    }
+
+    if (supabase && projectId) {
+      await supabase.from('project_scenes').update({
+        animator_code_status: 'completed', animator_code: result.code,
+      }).eq('project_id', projectId).eq('scene_index', segIndex);
+    }
+
+    res.json({ success: true, code: result.code, segName: result.segName, tokens: result.tokens });
+  } catch (err) {
+    console.error(`[Animator] Single scene generation error:`, err.message);
+    if (supabase && projectId) {
+      await supabase.from('project_scenes').update({
+        animator_code_status: 'failed', animator_code: err.message,
+      }).eq('project_id', projectId).eq('scene_index', segIndex);
+    }
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/animator/render-assembled', async (req, res) => {
+  const {
+    projectId,
+    userId,
+    componentName,
+    audioUrl,
+    brandingConfig,
+    fps = 30,
+    width = 1920,
+    height = 1080,
+    codec = 'h264',
+    crf,
+  } = req.body;
+
+  if (!projectId) return res.status(400).json({ error: 'projectId is required' });
+  if (!supabase) return res.status(503).json({ error: 'Supabase not configured' });
+  if (!bundleLocation) return res.status(503).json({ error: 'Bundle not ready' });
+
+  const jobId = `animator-render-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const effectiveName = componentName || `AnimAssembled${Date.now().toString(36)}`;
+  const compositionId = effectiveName.replace(/_/g, '-');
+
+  try {
+    const { data: sceneRows, error: sceneErr } = await supabase
+      .from('project_scenes')
+      .select('scene_index, animator_code, animator_code_status')
+      .eq('project_id', projectId)
+      .not('animator_code_status', 'is', null)
+      .order('scene_index', { ascending: true });
+
+    if (sceneErr || !sceneRows?.length) {
+      return res.status(400).json({ error: 'No animator scene codes found for this project' });
+    }
+
+    const incomplete = sceneRows.filter(s => s.animator_code_status !== 'completed');
+    if (incomplete.length > 0) {
+      return res.status(400).json({
+        error: `${incomplete.length} scene(s) not yet completed`,
+        incompleteScenes: incomplete.map(s => ({ scene_index: s.scene_index, status: s.animator_code_status })),
+      });
+    }
+
+    const { data: project } = await supabase.from('projects').select('scenes, audio_url').eq('id', projectId).single();
+    const segments = (project?.scenes || []).map(s => ({ start: s.startTime, end: s.endTime, text: s.text || '' }));
+    if (segments.length === 0) {
+      return res.status(400).json({ error: 'No scenes found in project' });
+    }
+
+    const allComponentsCode = sceneRows.map(s => s.animator_code).join('\n\n');
+    let resolvedAudioFilename = null;
+    const audioSource = audioUrl || project?.audio_url;
+    if (audioSource) {
+      try {
+        const audioResp = await fetch(audioSource);
+        if (audioResp.ok) {
+          const audioBuffer = Buffer.from(await audioResp.arrayBuffer());
+          resolvedAudioFilename = `${jobId}-audio.mp3`;
+          const publicDir = path.join(__dirname, 'public');
+          if (!fs.existsSync(publicDir)) fs.mkdirSync(publicDir, { recursive: true });
+          fs.writeFileSync(path.join(publicDir, resolvedAudioFilename), audioBuffer);
+        }
+      } catch (e) {
+        console.warn(`[Animator] Failed to download audio: ${e.message}`);
+      }
+    }
+
+    const totalDuration = segments[segments.length - 1].end;
+    const durationInFrames = Math.ceil(totalDuration * fps);
+    const finalCode = buildWrapper(effectiveName, segments, resolvedAudioFilename, fps, allComponentsCode, brandingConfig);
+
+    if (userId) {
+      await supabase.from('remotion_render_jobs').insert({
+        id: jobId, user_id: userId, project_id: projectId,
+        status: 'rendering', composition_id: effectiveName,
+        generated_code: finalCode, duration_in_frames: durationInFrames, fps, width, height,
+      }).then(() => {});
+    }
+
+    activeJobs.set(jobId, { status: 'rendering', progress: 0, startedAt: Date.now(), compositionId });
+
+    res.json({ success: true, jobId, status: 'rendering', durationInFrames });
+
+    (async () => {
+      try {
+        const srcDir = path.join(__dirname, 'src');
+
+        const namePrefix = effectiveName.replace(/[a-z0-9]{6,12}$/i, '');
+        if (namePrefix.length >= 8) {
+          const oldFiles = fs.readdirSync(srcDir).filter(f => f.startsWith(namePrefix) && f.endsWith('.tsx') && f !== `${effectiveName}.tsx`);
+          if (oldFiles.length > 0) {
+            const rootPath = path.join(srcDir, 'Root.jsx');
+            let rootClean = fs.readFileSync(rootPath, 'utf-8');
+            for (const f of oldFiles) {
+              const oldName = f.replace('.tsx', '');
+              fs.unlinkSync(path.join(srcDir, f));
+              rootClean = rootClean.split('\n').filter(line => !line.includes(oldName)).join('\n');
+            }
+            fs.writeFileSync(rootPath, rootClean, 'utf-8');
+          }
+        }
+
+        fs.writeFileSync(path.join(srcDir, `${effectiveName}.tsx`), finalCode, 'utf-8');
+
+        const rootPath = path.join(srcDir, 'Root.jsx');
+        let rootContent = fs.readFileSync(rootPath, 'utf-8');
+        const importLine = `import { ${effectiveName} } from './${effectiveName}';`;
+        if (!rootContent.includes(importLine)) {
+          const lastImportIdx = rootContent.lastIndexOf('import ');
+          const lineEnd = rootContent.indexOf('\n', lastImportIdx);
+          rootContent = rootContent.slice(0, lineEnd + 1) + importLine + '\n' + rootContent.slice(lineEnd + 1);
+        }
+        const compBlock = `      <Composition id="${compositionId}" component={${effectiveName}} durationInFrames={${durationInFrames}} fps={${fps}} width={${width}} height={${height}} defaultProps={{}} />`;
+        if (!rootContent.includes(`id="${compositionId}"`)) {
+          const closingIdx = rootContent.lastIndexOf('    </>');
+          if (closingIdx !== -1) rootContent = rootContent.slice(0, closingIdx) + compBlock + '\n' + rootContent.slice(closingIdx);
+        }
+        fs.writeFileSync(rootPath, rootContent, 'utf-8');
+
+        console.log(`[Animator] Re-bundling assembled composition: ${effectiveName}`);
+        const entryPoint = path.join(srcDir, 'index.js');
+        const newBundle = await bundle({ entryPoint, webpackOverride: (config) => config });
+
+        const outputFile = path.join(__dirname, 'temp', `${jobId}.mp4`);
+        const composition = await selectComposition({ serveUrl: newBundle, id: compositionId, inputProps: {} });
+
+        await renderMedia({
+          composition: { ...composition, durationInFrames, fps, width, height },
+          serveUrl: newBundle, codec, outputLocation: outputFile, inputProps: {},
+          ...(crf !== undefined ? { crf } : {}),
+          onProgress: ({ progress }) => {
+            const pct = Math.round(progress * 100);
+            const j = activeJobs.get(jobId);
+            if (j) j.progress = pct;
+            if (pct % 10 === 0 && supabase) {
+              supabase.from('remotion_render_jobs').update({ progress: pct }).eq('id', jobId).then(() => {});
+            }
+          },
+        });
+
+        const videoUrl = buildVideoUrl(`${jobId}.mp4`);
+        const j = activeJobs.get(jobId);
+        if (j) { j.status = 'completed'; j.progress = 100; j.videoUrl = videoUrl; j.completedAt = Date.now(); }
+
+        if (supabase) {
+          await supabase.from('remotion_render_jobs').update({
+            status: 'completed', progress: 100, video_url: videoUrl, completed_at: new Date().toISOString(),
+          }).eq('id', jobId);
+          if (projectId) {
+            await supabase.from('projects').update({ animator_video_url: videoUrl }).eq('id', projectId);
+          }
+        }
+        console.log(`[Animator] Assembled render complete: ${jobId} -> ${videoUrl}`);
+      } catch (err) {
+        console.error(`[Animator] Assembled render failed for ${jobId}:`, err.message);
+        const j = activeJobs.get(jobId);
+        if (j) { j.status = 'failed'; j.error = err.message; }
+        if (supabase) {
+          await supabase.from('remotion_render_jobs').update({ status: 'failed', error_message: err.message }).eq('id', jobId);
+        }
+      }
+    })();
+  } catch (err) {
+    console.error(`[Animator] Render-assembled setup failed:`, err.message);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // --- Worker mode: poll Supabase for pending remotion jobs ---
