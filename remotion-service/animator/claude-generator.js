@@ -206,6 +206,7 @@ async function generateComposition({
   brandingConfig,
   brandingMarkdown,
   extraPrompt,
+  selectedSkills,
   model,
   chunkSize,
   fps,
@@ -220,7 +221,7 @@ async function generateComposition({
   const effectiveName = componentName || `Composition_${Date.now()}`;
   const effectiveFps = fps || 30;
 
-  const { systemPrompt, skillsLoaded } = buildSystemPrompt(brandingConfig, extraPrompt, brandingMarkdown);
+  const { systemPrompt, skillsLoaded } = buildSystemPrompt(brandingConfig, extraPrompt, brandingMarkdown, selectedSkills);
 
   const chunks = [];
   for (let i = 0; i < segments.length; i += effectiveChunkSize) {

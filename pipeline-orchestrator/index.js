@@ -838,6 +838,7 @@ async function stepAnimatorGenerate(pipeline) {
   let brandingConfig = null;
   let brandingMarkdown = '';
   let extraPrompt = '';
+  let selectedSkills = null;
   let model = 'claude-sonnet-4-6';
   let chunkSize = 25;
 
@@ -857,6 +858,7 @@ async function stepAnimatorGenerate(pipeline) {
         brandingConfig = preset.branding_config;
         brandingMarkdown = preset.branding_markdown || '';
         extraPrompt = preset.extra_prompt || '';
+        selectedSkills = preset.selected_skills || null;
         model = preset.model || 'claude-sonnet-4-6';
         chunkSize = preset.chunk_size || 25;
       }
@@ -882,6 +884,7 @@ async function stepAnimatorGenerate(pipeline) {
       brandingConfig,
       brandingMarkdown,
       extraPrompt,
+      selectedSkills,
       model,
       chunkSize,
       fps: 30,

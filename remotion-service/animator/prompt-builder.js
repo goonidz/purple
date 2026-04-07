@@ -73,7 +73,7 @@ No other colors allowed. Hierarchy via opacity and font weight only.
 `;
 }
 
-function buildSystemPrompt(brandingConfig, extraPrompt, brandingMarkdown) {
+function buildSystemPrompt(brandingConfig, extraPrompt, brandingMarkdown, selectedSkills) {
   const parts = [];
   const skillsLoaded = [];
 
@@ -88,7 +88,11 @@ function buildSystemPrompt(brandingConfig, extraPrompt, brandingMarkdown) {
     skillsLoaded.push('default-branding.md');
   }
 
-  for (const rule of ALWAYS_RULES) {
+  const skillFiles = selectedSkills && selectedSkills.length > 0
+    ? selectedSkills
+    : ALWAYS_RULES;
+
+  for (const rule of skillFiles) {
     const p = path.join(SKILLS_DIR, rule);
     if (fs.existsSync(p)) {
       parts.push(fs.readFileSync(p, 'utf8'));
@@ -96,13 +100,15 @@ function buildSystemPrompt(brandingConfig, extraPrompt, brandingMarkdown) {
     }
   }
 
-  const lc = (extraPrompt || '').toLowerCase();
-  for (const { kw, file } of CONDITIONAL) {
-    if (kw.some(k => lc.includes(k))) {
-      const p = path.join(SKILLS_DIR, file);
-      if (fs.existsSync(p)) {
-        parts.push(fs.readFileSync(p, 'utf8'));
-        skillsLoaded.push(file);
+  if (!selectedSkills || selectedSkills.length === 0) {
+    const lc = (extraPrompt || '').toLowerCase();
+    for (const { kw, file } of CONDITIONAL) {
+      if (kw.some(k => lc.includes(k))) {
+        const p = path.join(SKILLS_DIR, file);
+        if (fs.existsSync(p)) {
+          parts.push(fs.readFileSync(p, 'utf8'));
+          skillsLoaded.push(file);
+        }
       }
     }
   }

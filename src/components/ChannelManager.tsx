@@ -115,6 +115,9 @@ export default function ChannelManager({
   const [animatorModel, setAnimatorModel] = useState('claude-sonnet-4-6');
   const [animatorPresetId, setAnimatorPresetId] = useState<string | null>(null);
   const [animatorBrandingMarkdown, setAnimatorBrandingMarkdown] = useState('');
+  const [animatorSelectedSkills, setAnimatorSelectedSkills] = useState<string[]>([
+    'animations.md', 'timing.md', 'sequencing.md', 'charts.md', 'text-animations.md',
+  ]);
 
   useEffect(() => {
     if (isOpen) {
@@ -298,6 +301,7 @@ export default function ChannelManager({
         setAnimatorExtraPrompt((preset as any).extra_prompt || '');
         setAnimatorModel((preset as any).model || 'claude-sonnet-4-6');
         setAnimatorBrandingMarkdown((preset as any).branding_markdown || '');
+        setAnimatorSelectedSkills((preset as any).selected_skills || ['animations.md', 'timing.md', 'sequencing.md', 'charts.md', 'text-animations.md']);
         return;
       }
     }
@@ -326,6 +330,7 @@ export default function ChannelManager({
           branding_markdown: animatorBrandingMarkdown,
           extra_prompt: animatorExtraPrompt,
           model: animatorModel,
+          selected_skills: animatorSelectedSkills,
           updated_at: new Date().toISOString(),
         };
 
@@ -957,6 +962,46 @@ function PresetConfigDialog({
                         <option value="Space Mono">Space Mono</option>
                       </optgroup>
                     </select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-sm">Skills Claude</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Cochez les compétences envoyées à Claude pour guider la génération des animations.
+                    </p>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {[
+                        { file: 'animations.md', label: 'Animations', desc: 'Springs, interpolations, fades' },
+                        { file: 'timing.md', label: 'Timing', desc: 'Durées, rythme des segments' },
+                        { file: 'sequencing.md', label: 'Sequencing', desc: 'Ordre et enchaînement' },
+                        { file: 'charts.md', label: 'Charts', desc: 'Graphiques SVG, data-viz' },
+                        { file: 'text-animations.md', label: 'Text Animations', desc: 'Effets texte, compteurs' },
+                        { file: '3d.md', label: '3D', desc: 'Effets 3D, perspective' },
+                        { file: 'audio.md', label: 'Audio', desc: 'Synchronisation audio' },
+                        { file: 'fonts.md', label: 'Fonts', desc: 'Chargement de polices' },
+                        { file: 'transitions.md', label: 'Transitions', desc: 'Wipes, slides, fades' },
+                        { file: 'subtitles.md', label: 'Subtitles', desc: 'Sous-titres animés' },
+                      ].map(skill => (
+                        <label key={skill.file} className="flex items-start gap-2 p-1.5 rounded hover:bg-muted/50 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={animatorSelectedSkills.includes(skill.file)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setAnimatorSelectedSkills(prev => [...prev, skill.file]);
+                              } else {
+                                setAnimatorSelectedSkills(prev => prev.filter(s => s !== skill.file));
+                              }
+                            }}
+                            className="mt-0.5 rounded border-input"
+                          />
+                          <div className="min-w-0">
+                            <span className="text-xs font-medium">{skill.label}</span>
+                            <p className="text-[10px] text-muted-foreground leading-tight">{skill.desc}</p>
+                          </div>
+                        </label>
+                      ))}
+                    </div>
                   </div>
 
                   <div className="space-y-1">

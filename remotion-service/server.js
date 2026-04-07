@@ -227,6 +227,7 @@ app.post('/animator/generate', async (req, res) => {
     brandingConfig,
     brandingMarkdown,
     extraPrompt,
+    selectedSkills,
     model,
     chunkSize,
     fps = 30,
@@ -263,6 +264,7 @@ app.post('/animator/generate', async (req, res) => {
       brandingConfig,
       brandingMarkdown,
       extraPrompt,
+      selectedSkills,
       model,
       chunkSize,
       fps,
@@ -457,6 +459,7 @@ app.post('/animator/generate-and-render', async (req, res) => {
     brandingConfig,
     brandingMarkdown,
     extraPrompt,
+    selectedSkills,
     model,
     chunkSize,
     fps = 30,
@@ -513,7 +516,7 @@ app.post('/animator/generate-and-render', async (req, res) => {
     try {
       const result = await generateComposition({
         anthropicKey, segments, componentName: effectiveName,
-        audioFilename: resolvedAudioFilename, brandingConfig, brandingMarkdown, extraPrompt, model, chunkSize, fps, width, height,
+        audioFilename: resolvedAudioFilename, brandingConfig, brandingMarkdown, extraPrompt, selectedSkills, model, chunkSize, fps, width, height,
       });
 
       if (supabase && projectId) {
