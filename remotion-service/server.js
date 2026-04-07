@@ -1144,6 +1144,8 @@ Follow these rules:
     console.log(`[Edit] Editing scene ${sceneIndex} for ${projectId} with ${resolvedModel}`);
 
     let newCode;
+    let editTokens = { input: 0, output: 0, cacheRead: 0, cacheCreated: 0 };
+
     if (useGemini) {
       const response = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${resolvedModel}:generateContent?key=${geminiKey}`,
@@ -1174,6 +1176,11 @@ Follow these rules:
       const fnCall = data.candidates?.[0]?.content?.parts?.find(p => p.functionCall);
       if (!fnCall) throw new Error('Gemini returned no function call');
       newCode = fnCall.functionCall.args.components_code;
+      const usage = data.usageMetadata;
+      if (usage) {
+        editTokens.input = usage.promptTokenCount || 0;
+        editTokens.output = usage.candidatesTokenCount || 0;
+      }
     } else {
       const client = new Anthropic({ apiKey: anthropicKey });
       const stream = client.messages.stream({
@@ -1196,6 +1203,12 @@ Follow these rules:
       const toolBlock = response.content.find(b => b.type === 'tool_use');
       if (!toolBlock?.input?.components_code) throw new Error('Claude returned no tool call');
       newCode = toolBlock.input.components_code;
+      if (response.usage) {
+        editTokens.input = response.usage.input_tokens || 0;
+        editTokens.output = response.usage.output_tokens || 0;
+        editTokens.cacheRead = response.usage.cache_read_input_tokens || 0;
+        editTokens.cacheCreated = response.usage.cache_creation_input_tokens || 0;
+      }
     }
 
     // Strip markdown fences if present
@@ -1211,11 +1224,32 @@ Follow these rules:
       animator_code_status: 'completed',
     }).eq('project_id', projectId).eq('scene_index', sceneIndex);
 
+    // Update tokens + cost (merge with existing)
+    const { data: projCost } = await supabase.from('projects').select('animator_tokens, animator_cost_usd').eq('id', projectId).single();
+    const prev = projCost?.animator_tokens || { input: 0, output: 0, cacheRead: 0, cacheCreated: 0 };
+    const merged = {
+      input: (prev.input || 0) + editTokens.input,
+      output: (prev.output || 0) + editTokens.output,
+      cacheRead: (prev.cacheRead || 0) + editTokens.cacheRead,
+      cacheCreated: (prev.cacheCreated || 0) + editTokens.cacheCreated,
+    };
+    const prices = getModelPrices(resolvedModel);
+    const newCost = useGemini
+      ? (merged.input * prices.input / 1_000_000) + (merged.output * prices.output / 1_000_000)
+      : (merged.input * prices.input / 1_000_000) +
+        (merged.output * prices.output / 1_000_000) +
+        (merged.cacheCreated * prices.cacheWrite / 1_000_000) +
+        (merged.cacheRead * prices.cacheRead / 1_000_000);
+    await supabase.from('projects').update({
+      animator_tokens: merged,
+      animator_cost_usd: newCost,
+    }).eq('id', projectId);
+
     // Invalidate preview cache
     previewCache.delete(projectId);
 
-    console.log(`[Edit] Scene ${sceneIndex} updated for ${projectId} (${newCode.length} chars)`);
-    res.json({ success: true, sceneIndex, codeLength: newCode.length });
+    console.log(`[Edit] Scene ${sceneIndex} updated for ${projectId} (${newCode.length} chars, +${editTokens.input}/${editTokens.output} tokens)`);
+    res.json({ success: true, sceneIndex, codeLength: newCode.length, tokens: editTokens });
   } catch (err) {
     console.error(`[Edit] Failed:`, err.message);
     res.status(500).json({ error: err.message });
