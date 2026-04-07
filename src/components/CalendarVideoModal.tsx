@@ -1405,9 +1405,9 @@ export default function CalendarVideoModal({
         {/* Auto-pipeline status banner */}
         {pipelineStatus && pipelineStatus.current_step !== 'completed' && pipelineStatus.step_status !== 'failed' && (() => {
           const cs = pipelineStatus.current_step;
-          const isAnimator = cs?.startsWith('animator_') || cs === 'wait_animator_render';
+          const isAnimator = cs?.includes('animator');
           const steps = isAnimator
-            ? ['create_project', 'generate_script', 'wait_script', 'generate_audio', 'wait_audio', 'animator_transcribe', 'wait_animator_transcription', 'animator_generate', 'wait_animator_render']
+            ? ['create_project', 'generate_script', 'wait_script', 'generate_audio', 'wait_audio', 'animator_transcribe', 'wait_animator_transcribe', 'animator_generate', 'wait_animator_generate']
             : ['create_project', 'generate_script', 'wait_script', 'generate_audio', 'wait_audio', 'transcribe', 'wait_transcription', 'create_scenes', 'generate_prompts', 'wait_prompts', 'generate_images', 'wait_images'];
           const labels = isAnimator
             ? ['Projet', 'Script', 'Script...', 'Audio', 'Audio...', 'Transcription', 'Transcription...', 'Animation', 'Rendu...']
@@ -1427,9 +1427,9 @@ export default function CalendarVideoModal({
             generate_images: 'Génération des images...',
             wait_images: 'Génération des images...',
             animator_transcribe: 'Transcription Groq (segments)...',
-            wait_animator_transcription: 'Transcription Groq (segments)...',
+            wait_animator_transcribe: 'Transcription Groq (segments)...',
             animator_generate: 'Génération animation Claude + rendu Remotion...',
-            wait_animator_render: 'Rendu Remotion en cours...',
+            wait_animator_generate: 'Rendu Remotion en cours...',
           };
           return (
             <div className="mx-4 mb-2 p-3 rounded-lg border border-primary/20 bg-primary/5">
