@@ -278,6 +278,7 @@ const Index = () => {
   const [animatorTokens, setAnimatorTokens] = useState<{ input: number; output: number; cacheRead: number; cacheCreated: number } | null>(null);
   const [animatorCostUsd, setAnimatorCostUsd] = useState<number | null>(null);
   const [animatorSegments, setAnimatorSegments] = useState<{ start: number; end: number; text: string }[] | null>(null);
+  const [animatorSegmentsProcessed, setAnimatorSegmentsProcessed] = useState<{ start: number; end: number; text: string }[] | null>(null);
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [isUploadingAudio, setIsUploadingAudio] = useState(false);
   const [isDraggingAudio, setIsDraggingAudio] = useState(false);
@@ -1267,6 +1268,7 @@ const Index = () => {
       if (data.animator_tokens) setAnimatorTokens(data.animator_tokens);
       if (data.animator_cost_usd != null) setAnimatorCostUsd(Number(data.animator_cost_usd));
       if (data.animator_segments?.segments) setAnimatorSegments(data.animator_segments.segments);
+      if ((data as any).animator_segments_processed?.segments) setAnimatorSegmentsProcessed((data as any).animator_segments_processed.segments);
       if (data.audio_url) {
         setAudioUrl(data.audio_url);
       } else if (existingScenes.length > 0) {
@@ -4162,8 +4164,8 @@ const Index = () => {
                   </Card>
                 )}
 
-                {/* CTA for Remotion Animator channels */}
-                {transcriptData && isAnimatorChannel && !animatorVideoUrl && !isAnimatorGenerating && (
+                {/* CTA for Remotion Animator channels — no scenes yet → configure first */}
+                {transcriptData && isAnimatorChannel && scenes.length === 0 && !animatorVideoUrl && !isAnimatorGenerating && (
                   <Card className="p-6 border-2 border-purple-500/50 bg-purple-500/5 mb-6">
                     <div className="flex items-start gap-4">
                       <div className="rounded-full bg-purple-500/10 p-3">
@@ -4172,62 +4174,96 @@ const Index = () => {
                       <div className="flex-1">
                         <h3 className="font-semibold text-lg mb-1">Transcription prête — Mode Remotion Animator</h3>
                         <p className="text-sm text-muted-foreground mb-4">
-                          Les segments audio seront utilisés pour générer une animation Remotion via Claude.
-                          Lancez le pipeline pour démarrer la génération automatique.
+                          Configurez les durées de scènes puis lancez la génération Remotion via Claude.
                         </p>
                         <Button
                           size="lg"
                           className="bg-purple-600 hover:bg-purple-700"
-                          onClick={async () => {
-                            if (!currentProjectId) return;
-                            setIsAnimatorGenerating(true);
-                            try {
-                              const { data: calEntry } = await supabase
-                                .from("content_calendar")
-                                .select("id, channel_id")
-                                .eq("project_id", currentProjectId)
-                                .not("channel_id", "is", null)
-                                .limit(1)
-                                .single();
-                              const channelId = calEntry?.channel_id;
-                              const calendarEntryId = calEntry?.id;
-                              if (!channelId || !calendarEntryId) { toast.error("Pas de chaîne liée"); return; }
-
-                              const userId = (await supabase.auth.getUser()).data.user?.id;
-
-                              const { data: existing } = await supabase
-                                .from("auto_pipelines" as any)
-                                .select("id, step_status")
-                                .eq("project_id", currentProjectId)
-                                .order("created_at", { ascending: false })
-                                .limit(1);
-
-                              if ((existing as any)?.[0]?.step_status === 'running' || (existing as any)?.[0]?.step_status === 'pending') {
-                                toast.info("Le pipeline est déjà en cours");
-                                return;
-                              }
-
-                              const { error } = await (supabase.from("auto_pipelines" as any) as any).insert({
-                                project_id: currentProjectId,
-                                user_id: userId,
-                                channel_id: channelId,
-                                calendar_entry_id: calendarEntryId,
-                                step_status: "pending",
-                                current_step: "animator_transcribe",
-                                metadata: { skipped_steps: ["generate_script", "generate_audio", "wait_audio", "transcription", "wait_transcription"] },
-                              });
-                              if (error) throw error;
-                              toast.success("Pipeline Animator lancé !");
-                            } catch (e: any) {
-                              toast.error("Erreur: " + e.message);
-                            } finally {
-                              setIsAnimatorGenerating(false);
-                            }
-                          }}
+                          onClick={() => setShowConfigurationModal(true)}
                         >
-                          <Sparkles className="mr-2 h-4 w-4" />
-                          Lancer le pipeline Animator
+                          <Settings className="mr-2 h-4 w-4" />
+                          Configurer les scènes
                         </Button>
+                      </div>
+                    </div>
+                  </Card>
+                )}
+
+                {/* CTA for Remotion Animator channels — scenes exist → launch animator */}
+                {transcriptData && isAnimatorChannel && scenes.length > 0 && !animatorVideoUrl && !isAnimatorGenerating && (
+                  <Card className="p-6 border-2 border-purple-500/50 bg-purple-500/5 mb-6">
+                    <div className="flex items-start gap-4">
+                      <div className="rounded-full bg-purple-500/10 p-3">
+                        <Sparkles className="h-6 w-6 text-purple-500" />
+                      </div>
+                      <div className="flex-1">
+                        <h3 className="font-semibold text-lg mb-1">{scenes.length} scènes prêtes — Mode Remotion Animator</h3>
+                        <p className="text-sm text-muted-foreground mb-4">
+                          Les scènes seront envoyées à Claude pour générer l'animation Remotion.
+                        </p>
+                        <div className="flex gap-2">
+                          <Button
+                            size="lg"
+                            className="bg-purple-600 hover:bg-purple-700"
+                            onClick={async () => {
+                              if (!currentProjectId) return;
+                              setIsAnimatorGenerating(true);
+                              try {
+                                const { data: calEntry } = await supabase
+                                  .from("content_calendar")
+                                  .select("id, channel_id")
+                                  .eq("project_id", currentProjectId)
+                                  .not("channel_id", "is", null)
+                                  .limit(1)
+                                  .single();
+                                const channelId = calEntry?.channel_id;
+                                const calendarEntryId = calEntry?.id;
+                                if (!channelId || !calendarEntryId) { toast.error("Pas de chaîne liée"); return; }
+
+                                const userId = (await supabase.auth.getUser()).data.user?.id;
+
+                                const { data: existing } = await supabase
+                                  .from("auto_pipelines" as any)
+                                  .select("id, step_status")
+                                  .eq("project_id", currentProjectId)
+                                  .order("created_at", { ascending: false })
+                                  .limit(1);
+
+                                if ((existing as any)?.[0]?.step_status === 'running' || (existing as any)?.[0]?.step_status === 'pending') {
+                                  toast.info("Le pipeline est déjà en cours");
+                                  return;
+                                }
+
+                                const { error } = await (supabase.from("auto_pipelines" as any) as any).insert({
+                                  project_id: currentProjectId,
+                                  user_id: userId,
+                                  channel_id: channelId,
+                                  calendar_entry_id: calendarEntryId,
+                                  step_status: "pending",
+                                  current_step: "animator_generate",
+                                  metadata: {},
+                                });
+                                if (error) throw error;
+                                toast.success("Pipeline Animator lancé !");
+                              } catch (e: any) {
+                                toast.error("Erreur: " + e.message);
+                              } finally {
+                                setIsAnimatorGenerating(false);
+                              }
+                            }}
+                          >
+                            <Sparkles className="mr-2 h-4 w-4" />
+                            Lancer l'Animator
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="lg"
+                            onClick={() => setShowConfigurationModal(true)}
+                          >
+                            <Settings className="mr-2 h-4 w-4" />
+                            Reconfigurer les scènes
+                          </Button>
+                        </div>
                       </div>
                     </div>
                   </Card>
@@ -4275,12 +4311,36 @@ const Index = () => {
                     {animatorSegments && animatorSegments.length > 0 && (
                       <details className="mt-3 border-t pt-3">
                         <summary className="text-xs font-medium cursor-pointer text-muted-foreground hover:text-foreground">
-                          Segments Groq ({animatorSegments.length})
+                          Segments bruts Groq ({animatorSegments.length})
                         </summary>
                         <div className="mt-2 max-h-[300px] overflow-y-auto">
                           <table className="w-full text-xs">
                             <tbody>
                               {animatorSegments.map((seg, i) => (
+                                <tr key={i} className="border-b border-border/30 last:border-0">
+                                  <td className="text-muted-foreground font-mono whitespace-nowrap py-1.5 pr-4 align-top" style={{ width: '120px' }}>
+                                    {seg.start.toFixed(2)}s → {seg.end.toFixed(2)}s
+                                  </td>
+                                  <td className="text-foreground py-1.5">{seg.text}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </details>
+                    )}
+                    {animatorSegmentsProcessed && animatorSegmentsProcessed.length > 0 && (
+                      <details className="mt-2 border-t pt-3">
+                        <summary className="text-xs font-medium cursor-pointer text-muted-foreground hover:text-foreground">
+                          Segments fusionnés ({animatorSegmentsProcessed.length}
+                          {animatorSegments && animatorSegmentsProcessed.length < animatorSegments.length && (
+                            <span className="text-amber-400 ml-1">← {animatorSegments.length - animatorSegmentsProcessed.length} fusionné(s)</span>
+                          )})
+                        </summary>
+                        <div className="mt-2 max-h-[300px] overflow-y-auto">
+                          <table className="w-full text-xs">
+                            <tbody>
+                              {animatorSegmentsProcessed.map((seg, i) => (
                                 <tr key={i} className="border-b border-border/30 last:border-0">
                                   <td className="text-muted-foreground font-mono whitespace-nowrap py-1.5 pr-4 align-top" style={{ width: '120px' }}>
                                     {seg.start.toFixed(2)}s → {seg.end.toFixed(2)}s
@@ -4330,8 +4390,7 @@ const Index = () => {
                   );
                 })()}
 
-                {!isAnimatorChannel && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 md:gap-6">
+                <div className={`grid gap-4 md:gap-6 ${isAnimatorChannel ? 'grid-cols-1' : 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3'}`}>
                   {/* Configuration des scènes */}
                   <Card className="p-4 bg-muted/30 border-primary/20">
                     <div className="flex items-center justify-between mb-2">
@@ -4382,6 +4441,8 @@ const Index = () => {
                     )}
                   </Card>
 
+                  {!isAnimatorChannel && (
+                  <>
                   {/* Configuration des prompts */}
                   <Card className="p-4 bg-muted/30 border-primary/20">
                     <div className="flex items-center justify-between mb-2">
@@ -4420,14 +4481,12 @@ const Index = () => {
                     <div className="space-y-1 text-xs text-muted-foreground">
                       <div>
                         {(() => {
-                          // Calculate effective dimensions for Z-Image Turbo models
                           const isZImageTurbo = imageModel === 'z-image-turbo' || imageModel === 'z-image-turbo-lora';
                           if (isZImageTurbo && (imageWidth > 1440 || imageHeight > 1440)) {
                             const MAX_DIM = 1440;
                             const scale = Math.min(MAX_DIM / imageWidth, MAX_DIM / imageHeight);
                             let effectiveWidth = Math.floor(imageWidth * scale);
                             let effectiveHeight = Math.floor(imageHeight * scale);
-                            // Round to multiples of 16
                             effectiveWidth = Math.ceil(effectiveWidth / 16) * 16;
                             effectiveHeight = Math.ceil(effectiveHeight / 16) * 16;
                             return `${effectiveWidth}x${effectiveHeight} (${aspectRatio})`;
@@ -4438,10 +4497,11 @@ const Index = () => {
                       <div>{styleReferenceUrls.length > 0 ? `${styleReferenceUrls.length} image(s) de référence` : "Pas de référence"}</div>
                     </div>
                   </Card>
+                  </>
+                  )}
                 </div>
-                )}
 
-                {!isAnimatorChannel && (scenes.length > 0 || generatedPrompts.length > 0) && (
+                {(scenes.length > 0 || generatedPrompts.length > 0) && (
                   <Card className="p-6">
                     <div className="space-y-4">
                       {/* Header avec titre et boutons */}
@@ -4564,35 +4624,29 @@ const Index = () => {
                                     if (!currentProjectId || isAnimatorGenerating) return;
                                     setIsAnimatorGenerating(true);
                                     try {
-                                      const { data: proj } = await supabase.from("projects").select("animator_segments, audio_url, channel_id").eq("id", currentProjectId).single();
-                                      if (!proj?.animator_segments?.segments?.length) {
-                                        toast.error("Pas de segments animator pour ce projet");
+                                      const { data: proj } = await supabase.from("projects").select("scenes, channel_id").eq("id", currentProjectId).single();
+                                      if (!proj?.scenes?.length) {
+                                        toast.error("Pas de scènes pour ce projet");
                                         return;
                                       }
-                                      const { data: apiKey } = await supabase.rpc("get_user_api_key", { key_name: "anthropic" });
-                                      if (!apiKey) { toast.error("Clé Anthropic non configurée"); return; }
-
-                                      let brandingConfig = null;
-                                      if (proj.channel_id) {
-                                        const { data: ch } = await supabase.from("channels").select("animator_preset_id").eq("id", proj.channel_id).single();
-                                        if ((ch as any)?.animator_preset_id) {
-                                          const { data: preset } = await (supabase.from("animator_presets" as any) as any).select("*").eq("id", (ch as any).animator_preset_id).single();
-                                          if (preset) brandingConfig = (preset as any).branding_config;
-                                        }
-                                      }
-
-                                      const resp = await fetch(`${import.meta.env.VITE_VPS_URL || ""}/remotion/animator/generate-and-render`, {
-                                        method: "POST",
-                                        headers: { "Content-Type": "application/json" },
-                                        body: JSON.stringify({
-                                          anthropicKey: apiKey,
-                                          segments: proj.animator_segments.segments,
-                                          projectId: currentProjectId,
-                                          userId: (await supabase.auth.getUser()).data.user?.id,
-                                          brandingConfig,
-                                        }),
+                                      const userId = (await supabase.auth.getUser()).data.user?.id;
+                                      const { data: calEntry } = await supabase
+                                        .from("content_calendar")
+                                        .select("id")
+                                        .eq("project_id", currentProjectId)
+                                        .order("created_at", { ascending: false })
+                                        .limit(1)
+                                        .single();
+                                      const { error } = await (supabase.from("auto_pipelines" as any) as any).insert({
+                                        project_id: currentProjectId,
+                                        user_id: userId,
+                                        channel_id: proj.channel_id || null,
+                                        calendar_entry_id: calEntry?.id || null,
+                                        step_status: "pending",
+                                        current_step: "animator_generate",
+                                        metadata: {},
                                       });
-                                      if (!resp.ok) throw new Error(await resp.text());
+                                      if (error) throw error;
                                       toast.success("Régénération Animator lancée !");
                                     } catch (err: any) {
                                       toast.error("Erreur Animator: " + (err.message || err));
@@ -6881,6 +6935,7 @@ Remember: Use temporal context to understand the topic, but the query must be PR
               <ProjectConfigurationModal
                 transcriptData={transcriptData}
                 currentProjectId={currentProjectId}
+                isAnimatorChannel={isAnimatorChannel}
                 onComplete={async (semiAutoMode: boolean) => {
                   setShowConfigurationModal(false);
                   
@@ -6972,8 +7027,8 @@ Remember: Use temporal context to understand the topic, but the query must be PR
                     
                     toast.success(`${generatedScenes.length} scènes générées !`);
                     
-                    // If semi-auto mode, start automatic generation pipeline
-                    if (semiAutoMode) {
+                    // If semi-auto mode (not for animator channels), start automatic generation pipeline
+                    if (semiAutoMode && !isAnimatorChannel) {
                       console.log("Semi-auto mode: Starting prompts generation...");
                       console.log("Scenes count:", generatedScenes.length);
                       console.log("Verified scenes in DB:", (verifyProject.scenes as any[]).length);

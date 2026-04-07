@@ -47,6 +47,7 @@ interface ProjectConfigurationModalProps {
   currentProjectId: string;
   onComplete: (semiAutoMode: boolean) => void;
   onCancel: () => void;
+  isAnimatorChannel?: boolean;
 }
 
 export const ProjectConfigurationModal = ({
@@ -54,8 +55,12 @@ export const ProjectConfigurationModal = ({
   currentProjectId,
   onComplete,
   onCancel,
+  isAnimatorChannel = false,
 }: ProjectConfigurationModalProps) => {
   const [step, setStep] = useState<"review" | "scene-config" | "prompt-config" | "image-config">("review");
+  const steps: Array<"review" | "scene-config" | "prompt-config" | "image-config"> = isAnimatorChannel
+    ? ["review", "scene-config"]
+    : ["review", "scene-config", "prompt-config", "image-config"];
   const [durationRanges, setDurationRanges] = useState<DurationRange[]>(DEFAULT_DURATION_RANGES);
   const [sceneFormat, setSceneFormat] = useState<"long" | "short">("long");
   const [examplePrompts, setExamplePrompts] = useState<string[]>(["", "", ""]);
@@ -1361,11 +1366,10 @@ export const ProjectConfigurationModal = ({
           Annuler
         </Button>
         <div className="flex gap-2">
-          {step !== "review" && (
+          {step !== steps[0] && (
             <Button
               variant="outline"
               onClick={() => {
-                const steps: Array<"review" | "scene-config" | "prompt-config" | "image-config"> = ["review", "scene-config", "prompt-config", "image-config"];
                 const currentIndex = steps.indexOf(step);
                 if (currentIndex > 0) {
                   setStep(steps[currentIndex - 1]);
@@ -1375,10 +1379,9 @@ export const ProjectConfigurationModal = ({
               Précédent
             </Button>
           )}
-          {step !== "image-config" ? (
+          {step !== steps[steps.length - 1] ? (
             <Button
               onClick={() => {
-                const steps: Array<"review" | "scene-config" | "prompt-config" | "image-config"> = ["review", "scene-config", "prompt-config", "image-config"];
                 const currentIndex = steps.indexOf(step);
                 if (currentIndex < steps.length - 1) {
                   setStep(steps[currentIndex + 1]);
@@ -1395,7 +1398,7 @@ export const ProjectConfigurationModal = ({
                   Enregistrement...
                 </>
               ) : (
-                "Valider et continuer"
+                "Créer le projet"
               )}
             </Button>
           )}

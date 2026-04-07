@@ -450,27 +450,19 @@ async function stepWaitTranscription(pipeline) {
   }
 }
 
-async function getNextStepAfterTranscription(pipeline) {
-  if (pipeline.channel_id) {
-    try {
-      const { data: ch } = await supabase
-        .from('channels')
-        .select('animator_preset_id')
-        .eq('id', pipeline.channel_id)
-        .single();
-      if (ch?.animator_preset_id) {
-        const { data: preset } = await supabase
-          .from('animator_presets')
-          .select('enabled')
-          .eq('id', ch.animator_preset_id)
-          .single();
-        if (preset?.enabled) {
-          console.log(`[orchestrator] [${pipeline.id}] Animator enabled for channel, branching to animator flow`);
-          return 'animator_transcribe';
-        }
-      }
-    } catch (_) {}
+async function isAnimatorEnabled(channelId) {
+  if (!channelId) return false;
+  try {
+    const { data: ch } = await supabase.from('channels').select('animator_preset_id').eq('id', channelId).single();
+    if (!ch?.animator_preset_id) return false;
+    const { data: preset } = await supabase.from('animator_presets').select('enabled').eq('id', ch.animator_preset_id).single();
+    return !!preset?.enabled;
+  } catch (_) {
+    return false;
   }
+}
+
+async function getNextStepAfterTranscription(pipeline) {
   return 'create_scenes';
 }
 
@@ -481,12 +473,17 @@ async function stepCreateScenes(pipeline) {
   const { data: project } = await supabase.from('projects').select('transcript_json, scenes').eq('id', project_id).single();
   if (!project?.transcript_json) throw new Error('No transcript_json in project');
 
-  const projectConfig = config.project || {};
+  const projectConfig = config?.project || {};
   const isGameplay = projectConfig.visual_mode === 'gameplay';
+
+  const animatorEnabled = await isAnimatorEnabled(pipeline.channel_id);
 
   // Check if scenes already exist (idempotent)
   if (project.scenes && Array.isArray(project.scenes) && project.scenes.length > 0) {
-    const nextStep = isGameplay ? 'render_video' : 'generate_prompts';
+    let nextStep;
+    if (isGameplay) nextStep = 'render_video';
+    else if (animatorEnabled) nextStep = 'animator_generate';
+    else nextStep = 'generate_prompts';
     console.log(`[orchestrator] [${id}] Scenes already exist (${project.scenes.length}), advancing to ${nextStep}`);
     await advancePipeline(id, nextStep);
     return;
@@ -519,7 +516,10 @@ async function stepCreateScenes(pipeline) {
   const { error } = await supabase.from('projects').update(updatePayload).eq('id', project_id);
   if (error) throw new Error(`Failed to save scenes: ${error.message}`);
 
-  const nextStep = isGameplay ? 'render_video' : 'generate_prompts';
+  let nextStep;
+  if (isGameplay) nextStep = 'render_video';
+  else if (animatorEnabled) nextStep = 'animator_generate';
+  else nextStep = 'generate_prompts';
   console.log(`[orchestrator] [${id}] Created ${scenes.length} scenes, advancing to ${nextStep}`);
   await advancePipeline(id, nextStep);
 }
@@ -845,13 +845,19 @@ async function stepAnimatorGenerate(pipeline) {
 
   const { data: project } = await supabase
     .from('projects')
-    .select('animator_segments, audio_url, name')
+    .select('scenes, audio_url, name')
     .eq('id', project_id)
     .single();
 
-  if (!project?.animator_segments?.segments?.length) {
-    throw new Error('No animator_segments in project');
+  if (!project?.scenes?.length) {
+    throw new Error('No scenes in project for animator generation');
   }
+
+  const segments = project.scenes.map(s => ({
+    start: s.startTime,
+    end: s.endTime,
+    text: s.text,
+  }));
 
   const anthropicKey = await getUserApiKey(user_id, 'anthropic');
 
@@ -861,7 +867,6 @@ async function stepAnimatorGenerate(pipeline) {
   let selectedSkills = null;
   let model = 'claude-sonnet-4-6';
   let chunkSize = 25;
-  let minSegDuration = 0;
 
   if (channel_id) {
     const { data: ch } = await supabase
@@ -882,15 +887,8 @@ async function stepAnimatorGenerate(pipeline) {
         selectedSkills = preset.selected_skills || null;
         model = preset.model || 'claude-sonnet-4-6';
         chunkSize = preset.chunk_size || 25;
-        minSegDuration = preset.min_segment_duration || 0;
       }
     }
-  }
-
-  const rawSegments = project.animator_segments.segments;
-  const finalSegments = mergeShortSegments(rawSegments, minSegDuration);
-  if (finalSegments.length !== rawSegments.length) {
-    console.log(`[orchestrator] [${id}] Merged short segments: ${rawSegments.length} -> ${finalSegments.length} (min ${minSegDuration}s)`);
   }
 
   const safeName = (project.name || 'Composition')
@@ -898,14 +896,14 @@ async function stepAnimatorGenerate(pipeline) {
     .substring(0, 40);
   const componentName = `Anim${safeName}${Date.now().toString(36)}`;
 
-  console.log(`[orchestrator] [${id}] Starting animator generation: ${componentName} (${finalSegments.length} segments)`);
+  console.log(`[orchestrator] [${id}] Starting animator generation from scenes: ${componentName} (${segments.length} segments)`);
 
   const resp = await fetch(`${REMOTION_SERVICE_URL}/animator/generate-and-render`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       anthropicKey,
-      segments: finalSegments,
+      segments,
       componentName,
       audioUrl: project.audio_url || null,
       audioFilename: null,
