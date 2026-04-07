@@ -911,10 +911,11 @@ const Index = () => {
       return;
     }
     let cancelled = false;
+    let failureToasted = false;
     const poll = async () => {
       const [pipelineRes, projRes] = await Promise.all([
         (supabase.from("auto_pipelines" as any) as any)
-          .select("current_step, step_status")
+          .select("current_step, step_status, error")
           .eq("project_id", currentProjectId)
           .neq("current_step", "cancelled")
           .order("created_at", { ascending: false })
@@ -928,8 +929,15 @@ const Index = () => {
       setAnimatorPipelineStatus(data || null);
       if (data?.current_step === 'completed' || data?.step_status === 'completed') {
         setIsAnimatorGenerating(false);
-      } else if (data && data.step_status !== 'failed' && data.current_step !== 'completed') {
+      } else if (data?.step_status === 'failed') {
+        if (!failureToasted) {
+          failureToasted = true;
+          toast.error("Pipeline Animator échoué: " + String(data?.error || 'erreur inconnue').slice(0, 200));
+        }
+        setIsAnimatorGenerating(false);
+      } else if (data && data.current_step !== 'completed') {
         setIsAnimatorGenerating(true);
+        failureToasted = false;
       }
       if (projRes.data?.animator_video_url) {
         setAnimatorVideoUrl(projRes.data.animator_video_url);
@@ -4358,8 +4366,8 @@ const Index = () => {
 
                 {isAnimatorChannel && isAnimatorGenerating && animatorPipelineStatus && animatorPipelineStatus.current_step !== 'completed' && animatorPipelineStatus.step_status !== 'failed' && (() => {
                   const cs = animatorPipelineStatus.current_step;
-                  const steps = ['create_project', 'generate_script', 'wait_script', 'generate_audio', 'wait_audio', 'animator_transcribe', 'wait_animator_transcribe', 'animator_generate', 'wait_animator_generate'];
-                  const labels = ['Projet', 'Script', 'Script...', 'Audio', 'Audio...', 'Transcription', 'Transcription...', 'Animation', 'Rendu...'];
+                  const steps = ['create_project', 'generate_script', 'wait_script', 'generate_audio', 'wait_audio', 'transcribe', 'wait_transcription', 'create_scenes', 'animator_generate', 'wait_animator_generate'];
+                  const labels = ['Projet', 'Script', 'Script...', 'Audio', 'Audio...', 'Transcription', 'Transcription...', 'Scènes', 'Animation', 'Rendu...'];
                   const currentIdx = steps.indexOf(cs);
                   const desc: Record<string, string> = {
                     create_project: 'Création du projet...',
@@ -4367,8 +4375,9 @@ const Index = () => {
                     wait_script: 'Génération du script...',
                     generate_audio: 'Génération audio...',
                     wait_audio: 'Génération audio...',
-                    animator_transcribe: 'Transcription Groq (segments)...',
-                    wait_animator_transcribe: 'Transcription Groq (segments)...',
+                    transcribe: 'Transcription en cours...',
+                    wait_transcription: 'Transcription en cours...',
+                    create_scenes: 'Création des scènes...',
                     animator_generate: 'Génération du code par Claude...',
                     wait_animator_generate: 'Rendu Remotion en cours...',
                   };
@@ -4389,6 +4398,16 @@ const Index = () => {
                     </Card>
                   );
                 })()}
+
+                {isAnimatorChannel && animatorPipelineStatus?.step_status === 'failed' && (
+                  <Card className="p-4 border-2 border-red-500/30 bg-red-500/5 mb-6">
+                    <div className="flex items-center gap-2 mb-2">
+                      <X className="h-4 w-4 text-red-500" />
+                      <span className="text-sm font-medium text-red-500">Pipeline Animator échoué</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground break-all">{(animatorPipelineStatus as any)?.error?.slice(0, 300) || 'Erreur inconnue'}</p>
+                  </Card>
+                )}
 
                 <div className={`grid gap-4 md:gap-6 ${isAnimatorChannel ? 'grid-cols-1' : 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3'}`}>
                   {/* Configuration des scènes */}
