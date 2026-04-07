@@ -859,7 +859,7 @@ function PresetConfigDialog({
               {animatorEnabled && (
                 <div className="space-y-3 pl-2 border-l-2 border-primary/20">
                   <div className="space-y-1">
-                    <Label className="text-sm">Modèle Claude</Label>
+                    <Label className="text-sm">Modèle Animator</Label>
                     <Select value={animatorModel} onValueChange={setAnimatorModel}>
                       <SelectTrigger>
                         <SelectValue />
@@ -867,6 +867,7 @@ function PresetConfigDialog({
                       <SelectContent>
                         <SelectItem value="claude-sonnet-4-6">Claude Sonnet 4.6</SelectItem>
                         <SelectItem value="claude-sonnet-4-5-20250620">Claude Sonnet 4.5</SelectItem>
+                        <SelectItem value="gemini-2.5-flash-lite">Gemini 2.5 Flash Lite</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>

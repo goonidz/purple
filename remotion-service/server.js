@@ -216,7 +216,7 @@ app.delete('/render/:jobId', (req, res) => {
 });
 
 // --- Animator: Claude generation + Remotion render ---
-const { generateComposition, generateSingleScene, validateComponentCode, buildWrapper, stripSharedDeclarations } = require('./animator/claude-generator');
+const { generateComposition, generateSingleScene, generateSingleSceneGemini, validateComponentCode, buildWrapper, stripSharedDeclarations, isGeminiModel, getModelPrices } = require('./animator/claude-generator');
 const { buildSystemPrompt } = require('./animator/prompt-builder');
 const Anthropic = require('@anthropic-ai/sdk');
 
@@ -623,6 +623,7 @@ app.post('/animator/generate-and-render', async (req, res) => {
 app.post('/animator/generate-scene', async (req, res) => {
   const {
     anthropicKey,
+    geminiKey,
     segment,
     segIndex,
     totalSegments,
@@ -635,23 +636,34 @@ app.post('/animator/generate-scene', async (req, res) => {
     neighborContext,
   } = req.body;
 
-  if (!anthropicKey) return res.status(400).json({ error: 'anthropicKey is required' });
   if (!segment) return res.status(400).json({ error: 'segment is required' });
   if (segIndex == null) return res.status(400).json({ error: 'segIndex is required' });
 
+  const effectiveModel = model || 'claude-sonnet-4-6';
+  const useGemini = effectiveModel.startsWith('gemini-');
+
+  if (useGemini && !geminiKey) return res.status(400).json({ error: 'geminiKey is required for Gemini models' });
+  if (!useGemini && !anthropicKey) return res.status(400).json({ error: 'anthropicKey is required' });
+
   try {
-    const effectiveModel = model || 'claude-sonnet-4-6';
     const { systemPrompt } = buildSystemPrompt(brandingConfig, extraPrompt, brandingMarkdown, selectedSkills);
-    const client = new Anthropic({ apiKey: anthropicKey });
 
     if (supabase && projectId) {
       await supabase.from('project_scenes').update({ animator_code_status: 'generating' })
         .eq('project_id', projectId).eq('scene_index', segIndex);
     }
 
-    const result = await generateSingleScene(
-      client, effectiveModel, systemPrompt, segment, segIndex + 1, totalSegments || 1, extraPrompt, neighborContext
-    );
+    let result;
+    if (useGemini) {
+      result = await generateSingleSceneGemini(
+        geminiKey, effectiveModel, systemPrompt, segment, segIndex + 1, totalSegments || 1, extraPrompt, neighborContext
+      );
+    } else {
+      const client = new Anthropic({ apiKey: anthropicKey });
+      result = await generateSingleScene(
+        client, effectiveModel, systemPrompt, segment, segIndex + 1, totalSegments || 1, extraPrompt, neighborContext
+      );
+    }
 
     if (result.error) {
       if (supabase && projectId) {
@@ -676,12 +688,13 @@ app.post('/animator/generate-scene', async (req, res) => {
         cacheRead: (prev.cacheRead || 0) + t.cacheRead,
         cacheCreated: (prev.cacheCreated || 0) + t.cacheCreated,
       };
-      const PRICES = { input: 3, output: 15, cacheWrite: 3.75, cacheRead: 0.30 };
-      const newCost =
-        (merged.input * PRICES.input / 1_000_000) +
-        (merged.output * PRICES.output / 1_000_000) +
-        (merged.cacheCreated * PRICES.cacheWrite / 1_000_000) +
-        (merged.cacheRead * PRICES.cacheRead / 1_000_000);
+      const prices = getModelPrices(effectiveModel);
+      const newCost = useGemini
+        ? (merged.input * prices.input / 1_000_000) + (merged.output * prices.output / 1_000_000)
+        : (merged.input * prices.input / 1_000_000) +
+          (merged.output * prices.output / 1_000_000) +
+          (merged.cacheCreated * prices.cacheWrite / 1_000_000) +
+          (merged.cacheRead * prices.cacheRead / 1_000_000);
       await supabase.from('projects').update({
         animator_tokens: merged,
         animator_cost_usd: newCost,

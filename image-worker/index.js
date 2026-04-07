@@ -2384,8 +2384,6 @@ async function processAnimatorSceneJob(job) {
           .eq('id', jobId);
       }
 
-      const anthropicKey = await getUserApiKey(userId, 'anthropic');
-
       // Load branding config from channel preset
       let brandingConfig = null, brandingMarkdown = '', extraPrompt = '', selectedSkills = null, model = 'claude-sonnet-4-6';
       const { data: calEntry } = await supabase
@@ -2442,11 +2440,20 @@ async function processAnimatorSceneJob(job) {
         prevCode: prevScene?.animator_code_status === 'completed' ? prevScene.animator_code : null,
       };
 
+      const useGemini = model && model.startsWith('gemini-');
+      let anthropicKey = null, geminiKey = null;
+      if (useGemini) {
+        geminiKey = await getUserApiKey(userId, 'gemini');
+      } else {
+        anthropicKey = await getUserApiKey(userId, 'anthropic');
+      }
+
       const resp = await fetch(`${REMOTION_SERVICE_URL}/animator/generate-scene`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           anthropicKey,
+          geminiKey,
           segment,
           segIndex: sceneIndex,
           totalSegments: scenes.length,
