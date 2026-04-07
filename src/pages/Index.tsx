@@ -4722,7 +4722,7 @@ const Index = () => {
                   )}
                 </div>
 
-                {(scenes.length > 0 || generatedPrompts.length > 0) && (
+                {!isAnimatorChannel && (scenes.length > 0 || generatedPrompts.length > 0) && (
                   <Card className="p-6">
                     <div className="space-y-4">
                       {/* Header avec titre et boutons */}
