@@ -713,6 +713,55 @@ app.post('/animator/generate-scene', async (req, res) => {
   }
 });
 
+// --- Validate animator scene code with esbuild ---
+app.post('/animator/validate-scenes', async (req, res) => {
+  const { projectId } = req.body;
+  if (!projectId) return res.status(400).json({ error: 'projectId is required' });
+  if (!supabase) return res.status(503).json({ error: 'Supabase not configured' });
+
+  try {
+    const { data: sceneRows, error: sceneErr } = await supabase
+      .from('project_scenes')
+      .select('scene_index, animator_code, animator_code_status')
+      .eq('project_id', projectId)
+      .eq('animator_code_status', 'completed')
+      .order('scene_index', { ascending: true });
+
+    if (sceneErr || !sceneRows?.length) {
+      return res.json({ total: 0, valid: 0, invalid: 0, errors: [] });
+    }
+
+    const errors = [];
+    for (const row of sceneRows) {
+      const segName = `Seg${row.scene_index + 1}`;
+      const validation = validateComponentCode(row.animator_code, segName);
+      if (!validation.valid) {
+        errors.push({ sceneIndex: row.scene_index, error: validation.error });
+      }
+    }
+
+    // Mark invalid scenes as failed in DB so they can be regenerated
+    if (errors.length > 0) {
+      for (const err of errors) {
+        await supabase.from('project_scenes').update({
+          animator_code_status: 'failed',
+        }).eq('project_id', projectId).eq('scene_index', err.sceneIndex);
+      }
+      console.log(`[Validate] ${errors.length} invalid scenes marked as failed for ${projectId}`);
+    }
+
+    res.json({
+      total: sceneRows.length,
+      valid: sceneRows.length - errors.length,
+      invalid: errors.length,
+      errors,
+    });
+  } catch (err) {
+    console.error(`[Validate] Failed:`, err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.post('/animator/render-assembled', async (req, res) => {
   const {
     projectId,

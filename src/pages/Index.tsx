@@ -5327,27 +5327,64 @@ const Index = () => {
                             size="sm"
                             variant="outline"
                             className="text-xs"
-                            onClick={() => {
+                            onClick={async () => {
                               const completed = animatorSceneStatuses.filter(s => s.animator_code_status === 'completed');
                               const failed = animatorSceneStatuses.filter(s => s.animator_code_status === 'failed');
                               const pending = scenes.length - completed.length - failed.length;
-                              if (failed.length > 0) {
-                                const failedIndices = failed.map(s => s.scene_index + 1);
-                                toast.error(
-                                  `⚠️ ${failed.length} scène(s) en erreur : ${failedIndices.slice(0, 15).join(", ")}${failedIndices.length > 15 ? '...' : ''}`,
-                                  { duration: 10000 }
-                                );
-                              } else if (pending > 0) {
-                                const missingIndices = scenes
-                                  .map((_, i) => i)
-                                  .filter(i => !animatorSceneStatuses.find(s => s.scene_index === i && s.animator_code_status === 'completed'))
-                                  .map(i => i + 1);
-                                toast.warning(
-                                  `⏳ ${missingIndices.length} scène(s) non terminée(s) : ${missingIndices.slice(0, 15).join(", ")}${missingIndices.length > 15 ? '...' : ''}`,
-                                  { duration: 8000 }
-                                );
-                              } else {
-                                toast.success(`✅ Toutes les ${completed.length} scènes Animator sont générées !`);
+
+                              // Run esbuild validation on completed scenes
+                              let syntaxErrors = 0;
+                              if (completed.length > 0 && currentProjectId) {
+                                try {
+                                  const remotionUrl = (import.meta as any).env?.VITE_REMOTION_SERVICE_URL || "https://purpleai.duckdns.org/remotion-api";
+                                  const resp = await fetch(`${remotionUrl}/animator/validate-scenes`, {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({ projectId: currentProjectId }),
+                                  });
+                                  const data = await resp.json();
+                                  if (data.invalid > 0) {
+                                    syntaxErrors = data.invalid;
+                                    const errIndices = data.errors.map((e: any) => e.sceneIndex + 1);
+                                    toast.error(
+                                      `🔴 ${data.invalid} scène(s) avec code invalide (marquées en erreur) : ${errIndices.slice(0, 15).join(", ")}${errIndices.length > 15 ? '...' : ''}`,
+                                      { duration: 10000 }
+                                    );
+                                    // Refresh scene statuses
+                                    if (currentProjectId) {
+                                      const { data: refreshed } = await supabase
+                                        .from('project_scenes')
+                                        .select('scene_index, animator_code_status, animator_code')
+                                        .eq('project_id', currentProjectId)
+                                        .not('animator_code_status', 'is', null)
+                                        .order('scene_index');
+                                      if (refreshed) setAnimatorSceneStatuses(refreshed);
+                                    }
+                                  }
+                                } catch (e) {
+                                  console.warn("Validation check failed:", e);
+                                }
+                              }
+
+                              if (syntaxErrors === 0) {
+                                if (failed.length > 0) {
+                                  const failedIndices = failed.map(s => s.scene_index + 1);
+                                  toast.error(
+                                    `⚠️ ${failed.length} scène(s) en erreur : ${failedIndices.slice(0, 15).join(", ")}${failedIndices.length > 15 ? '...' : ''}`,
+                                    { duration: 10000 }
+                                  );
+                                } else if (pending > 0) {
+                                  const missingIndices = scenes
+                                    .map((_, i) => i)
+                                    .filter(i => !animatorSceneStatuses.find(s => s.scene_index === i && s.animator_code_status === 'completed'))
+                                    .map(i => i + 1);
+                                  toast.warning(
+                                    `⏳ ${missingIndices.length} scène(s) non terminée(s) : ${missingIndices.slice(0, 15).join(", ")}${missingIndices.length > 15 ? '...' : ''}`,
+                                    { duration: 8000 }
+                                  );
+                                } else {
+                                  toast.success(`✅ Toutes les ${completed.length} scènes Animator sont valides !`);
+                                }
                               }
                             }}
                           >
