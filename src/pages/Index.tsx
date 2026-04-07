@@ -4346,12 +4346,26 @@ const Index = () => {
                 {isAnimatorChannel && scenes.length > 0 && (
                   <Card className="p-4 border border-purple-500/20 bg-purple-500/5 mb-6">
                     <div className="flex items-center justify-between mb-3">
-                      <h3 className="text-sm font-medium flex items-center gap-2">
+                      <h3 className="text-sm font-medium flex items-center gap-2 flex-wrap">
                         <Sparkles className="h-4 w-4 text-purple-500" />
                         Scènes Animator
                         {animatorSceneStatuses.length > 0 && (
                           <span className="text-muted-foreground font-normal">
                             — {animatorSceneStatuses.filter(s => s.animator_code_status === 'completed').length}/{scenes.length} générées
+                          </span>
+                        )}
+                        {(animatorTokens || animatorCostUsd != null) && (
+                          <span className="text-[11px] text-muted-foreground font-normal flex items-center gap-2 ml-1">
+                            {animatorTokens && (
+                              <>
+                                <span>In: <strong className="text-foreground/70">{animatorTokens.input?.toLocaleString()}</strong></span>
+                                <span>Out: <strong className="text-foreground/70">{animatorTokens.output?.toLocaleString()}</strong></span>
+                                {animatorTokens.cacheRead > 0 && <span>Cache: <strong className="text-foreground/70">{animatorTokens.cacheRead?.toLocaleString()}</strong></span>}
+                              </>
+                            )}
+                            {animatorCostUsd != null && (
+                              <span className="font-medium text-purple-400">≈ ${animatorCostUsd.toFixed(4)}</span>
+                            )}
                           </span>
                         )}
                       </h3>
@@ -4566,21 +4580,6 @@ const Index = () => {
                         );
                       })}
                     </div>
-                    {(animatorTokens || animatorCostUsd != null) && (
-                      <div className="flex flex-wrap gap-3 mt-3 text-xs text-muted-foreground border-t border-purple-500/10 pt-3">
-                        {animatorTokens && (
-                          <>
-                            <span>In: <strong className="text-foreground">{animatorTokens.input?.toLocaleString()}</strong></span>
-                            <span>Out: <strong className="text-foreground">{animatorTokens.output?.toLocaleString()}</strong></span>
-                            {animatorTokens.cacheRead > 0 && <span>Cache read: <strong className="text-foreground">{animatorTokens.cacheRead?.toLocaleString()}</strong></span>}
-                            {animatorTokens.cacheCreated > 0 && <span>Cache write: <strong className="text-foreground">{animatorTokens.cacheCreated?.toLocaleString()}</strong></span>}
-                          </>
-                        )}
-                        {animatorCostUsd != null && (
-                          <span className="ml-auto font-medium text-foreground">≈ ${animatorCostUsd.toFixed(4)}</span>
-                        )}
-                      </div>
-                    )}
                   </Card>
                 )}
 
