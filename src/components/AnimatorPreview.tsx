@@ -3,7 +3,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Play, RefreshCw, ExternalLink, Send, Sparkles, Camera, X, AlertTriangle, ChevronLeft, ChevronRight } from "lucide-react";
+import { Loader2, Play, RefreshCw, ExternalLink, Send, Sparkles, Camera, X, AlertTriangle, ChevronLeft, ChevronRight, Wrench } from "lucide-react";
 import { toast } from "sonner";
 
 const REMOTION_SERVICE_URL =
@@ -63,6 +63,7 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
   const [isLoadingQA, setIsLoadingQA] = useState(false);
   const [showQAGrid, setShowQAGrid] = useState(false);
   const [expandedScreenshot, setExpandedScreenshot] = useState<number | null>(null);
+  const [qaFixInput, setQaFixInput] = useState("");
 
   // Keyboard navigation for QA grid
   useEffect(() => {
@@ -139,27 +140,25 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
     }
   }, [projectId]);
 
-  const sendEdit = useCallback(async () => {
-    if (!chatInput.trim() || activeSceneIndex == null || isEditing) return;
+  const sendEdit = useCallback(async (opts?: { screenshotUrl?: string; overrideInstruction?: string; overrideSceneIndex?: number }) => {
+    const instruction = opts?.overrideInstruction || chatInput.trim();
+    const sceneIdx = opts?.overrideSceneIndex ?? activeSceneIndex;
+    if (!instruction || sceneIdx == null || isEditing) return;
 
-    const instruction = chatInput.trim();
-    const sceneIdx = activeSceneIndex;
-    setChatInput("");
+    if (!opts?.overrideInstruction) setChatInput("");
     setChatMessages((prev) => [
       ...prev,
-      { role: "user", content: instruction, sceneIndex: sceneIdx },
+      { role: "user", content: instruction + (opts?.screenshotUrl ? " 📷" : ""), sceneIndex: sceneIdx },
     ]);
     setIsEditing(true);
 
     try {
+      const body: any = { projectId, sceneIndex: sceneIdx, instruction };
+      if (opts?.screenshotUrl) body.screenshotUrl = opts.screenshotUrl;
       const resp = await fetch(`${REMOTION_SERVICE_URL}/animator/edit-scene`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          projectId,
-          sceneIndex: sceneIdx,
-          instruction,
-        }),
+        body: JSON.stringify(body),
       });
       const data = await resp.json();
       if (!resp.ok) throw new Error(data.error || "Edit failed");
@@ -199,7 +198,7 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
     } finally {
       setIsEditing(false);
     }
-  }, [chatInput, activeSceneIndex, isEditing, projectId, loadPreview]);
+  }, [chatInput, activeSceneIndex, isEditing, projectId, currentFrame]);
 
   const loadQAScreenshots = useCallback(async () => {
     if (!projectId || isLoadingQA) return;
@@ -578,6 +577,60 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
                       alt={`Scene ${shot.sceneIndex + 1}`}
                       className="w-full rounded border border-border"
                     />
+                    {/* AI Fix area */}
+                    <div className="mt-2 flex gap-2">
+                      <Input
+                        value={qaFixInput}
+                        onChange={(e) => setQaFixInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && !e.shiftKey && qaFixInput.trim()) {
+                            e.preventDefault();
+                            sendEdit({
+                              overrideSceneIndex: shot.sceneIndex,
+                              overrideInstruction: qaFixInput.trim(),
+                              screenshotUrl: shot.url!,
+                            });
+                            setQaFixInput("");
+                          }
+                        }}
+                        placeholder="Décrivez le problème à corriger..."
+                        disabled={isEditing}
+                        className="text-sm h-9"
+                      />
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-9 px-3 gap-1.5 shrink-0"
+                        disabled={isEditing || !qaFixInput.trim()}
+                        onClick={() => {
+                          if (qaFixInput.trim()) {
+                            sendEdit({
+                              overrideSceneIndex: shot.sceneIndex,
+                              overrideInstruction: qaFixInput.trim(),
+                              screenshotUrl: shot.url!,
+                            });
+                            setQaFixInput("");
+                          }
+                        }}
+                      >
+                        {isEditing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                      </Button>
+                      <Button
+                        size="sm"
+                        className="h-9 px-3 gap-1.5 shrink-0 bg-purple-600 hover:bg-purple-700"
+                        disabled={isEditing}
+                        onClick={() => {
+                          sendEdit({
+                            overrideSceneIndex: shot.sceneIndex,
+                            overrideInstruction: "Fix the visual issues in this scene. Ensure text is readable, properly positioned, and doesn't overlap. Fix any layout or animation problems visible in the screenshot.",
+                            screenshotUrl: shot.url!,
+                          });
+                        }}
+                      >
+                        {isEditing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wrench className="h-3.5 w-3.5" />}
+                        Fix it
+                      </Button>
+                    </div>
                   </div>
                 );
               })()}

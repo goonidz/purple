@@ -1137,7 +1137,7 @@ createRoot(container).render(<App />);
 
 // --- Edit scene via AI chat ---
 app.post('/animator/edit-scene', async (req, res) => {
-  const { projectId, sceneIndex, instruction, model } = req.body;
+  const { projectId, sceneIndex, instruction, model, screenshotUrl } = req.body;
   if (!projectId) return res.status(400).json({ error: 'projectId is required' });
   if (sceneIndex == null) return res.status(400).json({ error: 'sceneIndex is required' });
   if (!instruction) return res.status(400).json({ error: 'instruction is required' });
@@ -1205,12 +1205,35 @@ Follow these rules:
 
     const userMessage = `Current code for ${segName}:\n\`\`\`\n${scene.animator_code}\n\`\`\`\n\nInstruction: ${instruction}`;
 
-    console.log(`[Edit] Editing scene ${sceneIndex} for ${projectId} with ${resolvedModel}`);
+    // Download screenshot for vision if provided
+    let screenshotBase64 = null;
+    let screenshotMime = 'image/png';
+    if (screenshotUrl) {
+      try {
+        const imgResp = await fetch(screenshotUrl);
+        if (imgResp.ok) {
+          const buf = Buffer.from(await imgResp.arrayBuffer());
+          screenshotBase64 = buf.toString('base64');
+          screenshotMime = imgResp.headers.get('content-type') || 'image/png';
+        }
+      } catch (e) {
+        console.warn(`[Edit] Failed to download screenshot: ${e.message}`);
+      }
+    }
+
+    console.log(`[Edit] Editing scene ${sceneIndex} for ${projectId} with ${resolvedModel}${screenshotBase64 ? ' + screenshot' : ''}`);
 
     let newCode;
     let editTokens = { input: 0, output: 0, cacheRead: 0, cacheCreated: 0 };
 
     if (useGemini) {
+      const userParts = [];
+      if (screenshotBase64) {
+        userParts.push({ inlineData: { mimeType: screenshotMime, data: screenshotBase64 } });
+        userParts.push({ text: 'Above is a screenshot of the current animation render. Use it to understand the visual issue.\n\n' + userMessage });
+      } else {
+        userParts.push({ text: userMessage });
+      }
       const response = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${resolvedModel}:generateContent?key=${geminiKey}`,
         {
@@ -1218,7 +1241,7 @@ Follow these rules:
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             systemInstruction: { parts: [{ text: editSystemPrompt }] },
-            contents: [{ role: 'user', parts: [{ text: userMessage }] }],
+            contents: [{ role: 'user', parts: userParts }],
             tools: [{
               functionDeclarations: [{
                 name: 'write_segment_components',
@@ -1247,11 +1270,24 @@ Follow these rules:
       }
     } else {
       const client = new Anthropic({ apiKey: anthropicKey });
+      const userContent = [];
+      if (screenshotBase64) {
+        userContent.push({
+          type: 'image',
+          source: { type: 'base64', media_type: screenshotMime, data: screenshotBase64 },
+        });
+        userContent.push({
+          type: 'text',
+          text: 'Above is a screenshot of the current animation render. Use it to understand the visual issue.\n\n' + userMessage,
+        });
+      } else {
+        userContent.push({ type: 'text', text: userMessage });
+      }
       const stream = client.messages.stream({
         model: resolvedModel,
         max_tokens: 16000,
         system: [{ type: 'text', text: editSystemPrompt }],
-        messages: [{ role: 'user', content: userMessage }],
+        messages: [{ role: 'user', content: userContent }],
         tools: [{
           name: 'write_segment_components',
           description: 'Write the modified Remotion segment component function',
