@@ -137,7 +137,7 @@ function buildWrapper(componentName, segments, audioFilename, fps, componentsCod
     ? `import { loadFont } from "@remotion/google-fonts/${googleFontModule}";\nconst { fontFamily: FONT_FAMILY } = loadFont();\n`
     : '';
 
-  return `import { AbsoluteFill, Audio, interpolate, spring, Sequence, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
+  return `import { AbsoluteFill, Audio, Easing, interpolate, spring, Sequence, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
 import React from "react";
 ${googleFontImport}
 
