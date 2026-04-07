@@ -34,6 +34,12 @@ You are a Remotion animation expert. Output ONLY React component function defini
 - Helper available: useFade(durationInFrames: number): number
 - Remotion hooks available: useCurrentFrame, useVideoConfig, interpolate, spring
 - Remotion components available: AbsoluteFill, Sequence, Audio, staticFile
+
+CRITICAL RULES — MUST FOLLOW:
+- interpolate() outputRange MUST contain ONLY numbers, NEVER strings like "0%", "100px", "1px". Use numeric values and apply units in style: e.g. \`width: interpolate(frame, [0, 30], [0, 100]) + "%"\` or \`translateX(\${interpolate(frame, [0, 30], [0, 200])}px)\`.
+- Write plain JSX only. NO TypeScript annotations (no ": number", ": string", ": React.FC", etc.). Just plain JavaScript.
+- Do NOT redeclare shared constants (BG, ACCENT, ACCENT_DIM, TEXT_PRIMARY, TEXT_DIM, useFade, Grid). They are already defined in the wrapper.
+- Do NOT use markdown code fences (\`\`\`) in your output.
 `;
 
 function buildBrandingMarkdown(brandingConfig) {
