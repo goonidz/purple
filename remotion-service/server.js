@@ -913,7 +913,8 @@ app.post('/animator/preview-bundle', async (req, res) => {
     const codeHash = crypto.createHash('md5').update(allCode).digest('hex').slice(0, 12);
 
     const cached = previewCache.get(projectId);
-    if (cached && cached.hash === codeHash) {
+    const cachedIndexExists = cached && fs.existsSync(path.join(PREVIEW_DIR, cached.hash, 'index.html'));
+    if (cached && cached.hash === codeHash && cachedIndexExists) {
       console.log(`[Preview] Cache hit for ${projectId} (${codeHash})`);
       return res.json(cached.result);
     }
@@ -980,25 +981,20 @@ registerRoot(RemotionRoot);
       }
     }
 
-    const playerHtml = `<!DOCTYPE html>
-<html><head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Animator Preview</title>
-<style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  html, body { width: 100%; height: 100%; overflow: hidden; background: #0a0a0f; }
-  iframe { width: 100%; height: 100%; border: none; }
-</style>
-</head><body>
-<iframe src="index.html?compositionId=${compName}" allow="autoplay"></iframe>
-</body></html>`;
-
-    fs.writeFileSync(path.join(previewDir, 'player.html'), playerHtml, 'utf-8');
+    // Rewrite index.html: absolute paths → relative so it works in a subdirectory
+    const indexPath = path.join(previewDir, 'index.html');
+    let indexHtml = fs.readFileSync(indexPath, 'utf-8');
+    indexHtml = indexHtml
+      .replace(/href="\//g, 'href="./')
+      .replace(/src="\//g, 'src="./')
+      .replace(/window\.remotion_publicPath\s*=\s*"\/"/g, 'window.remotion_publicPath = "./"')
+      .replace(/window\.remotion_publicFolderExists\s*=\s*"\/public"/g, 'window.remotion_publicFolderExists = "./public"');
+    fs.writeFileSync(indexPath, indexHtml, 'utf-8');
 
     const baseUrl = PUBLIC_BASE_URL
       ? PUBLIC_BASE_URL.replace('/remotion-renders', '/remotion-preview')
       : `http://localhost:${PORT}/preview-bundles`;
-    const previewUrl = `${baseUrl}/${codeHash}/player.html`;
+    const previewUrl = `${baseUrl}/${codeHash}/index.html`;
 
     const result = { success: true, previewUrl, hash: codeHash, durationInFrames, fps, totalDuration };
     previewCache.set(projectId, { hash: codeHash, result });
