@@ -958,7 +958,18 @@ app.post('/animator/preview-bundle', async (req, res) => {
       }
     }
 
-    const compositionCode = buildWrapper(compName, segments, audioFilename, fps, allCode, brandingConfig);
+    let compositionCode = buildWrapper(compName, segments, audioFilename, fps, allCode, brandingConfig);
+
+    // Replace staticFile() with absolute URL so audio works reliably in the iframe Player
+    if (audioFilename) {
+      const audioAbsoluteUrl = `${PUBLIC_BASE_URL
+        ? PUBLIC_BASE_URL.replace('/remotion-renders', '/remotion-preview')
+        : `http://localhost:${PORT}/preview-bundles`}/${codeHash}/public/${audioFilename}`;
+      compositionCode = compositionCode.replace(
+        `staticFile(${JSON.stringify(audioFilename)})`,
+        JSON.stringify(audioAbsoluteUrl)
+      );
+    }
 
     const srcDir = path.join(previewDir, 'src');
     if (!fs.existsSync(srcDir)) fs.mkdirSync(srcDir, { recursive: true });
