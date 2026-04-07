@@ -919,10 +919,13 @@ const Index = () => {
         setAnimatorPipelineStatus(data || null);
         if (data?.current_step === 'completed' && data?.step_status === 'completed') {
           setIsAnimatorGenerating(false);
-          const { data: proj } = await supabase.from('projects').select('animator_video_url').eq('id', currentProjectId).single();
-          if (proj?.animator_video_url) setAnimatorVideoUrl(proj.animator_video_url);
         } else if (data && data.step_status !== 'failed' && data.current_step !== 'completed') {
           setIsAnimatorGenerating(true);
+        }
+        // Always refresh video URL when pipeline is done or no pipeline exists
+        if (!data || data.current_step === 'completed') {
+          const { data: proj } = await supabase.from('projects').select('animator_video_url').eq('id', currentProjectId!).single();
+          if (!cancelled && proj?.animator_video_url) setAnimatorVideoUrl(proj.animator_video_url);
         }
       }
     };
