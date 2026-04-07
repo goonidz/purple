@@ -5321,20 +5321,55 @@ const Index = () => {
                           </span>
                         )}
                       </h3>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="text-xs text-muted-foreground"
-                        onClick={() => {
-                          if (expandedAnimatorScenes.size === scenes.length) {
-                            setExpandedAnimatorScenes(new Set());
-                          } else {
-                            setExpandedAnimatorScenes(new Set(scenes.map((_, i) => i)));
-                          }
-                        }}
-                      >
-                        {expandedAnimatorScenes.size === scenes.length ? 'Tout replier' : 'Tout déplier'}
-                      </Button>
+                      <div className="flex items-center gap-1">
+                        {!isAnimatorGenerating && animatorSceneStatuses.length > 0 && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-xs"
+                            onClick={() => {
+                              const completed = animatorSceneStatuses.filter(s => s.animator_code_status === 'completed');
+                              const failed = animatorSceneStatuses.filter(s => s.animator_code_status === 'failed');
+                              const pending = scenes.length - completed.length - failed.length;
+                              if (failed.length > 0) {
+                                const failedIndices = failed.map(s => s.scene_index + 1);
+                                toast.error(
+                                  `⚠️ ${failed.length} scène(s) en erreur : ${failedIndices.slice(0, 15).join(", ")}${failedIndices.length > 15 ? '...' : ''}`,
+                                  { duration: 10000 }
+                                );
+                              } else if (pending > 0) {
+                                const missingIndices = scenes
+                                  .map((_, i) => i)
+                                  .filter(i => !animatorSceneStatuses.find(s => s.scene_index === i && s.animator_code_status === 'completed'))
+                                  .map(i => i + 1);
+                                toast.warning(
+                                  `⏳ ${missingIndices.length} scène(s) non terminée(s) : ${missingIndices.slice(0, 15).join(", ")}${missingIndices.length > 15 ? '...' : ''}`,
+                                  { duration: 8000 }
+                                );
+                              } else {
+                                toast.success(`✅ Toutes les ${completed.length} scènes Animator sont générées !`);
+                              }
+                            }}
+                          >
+                            <Check className="mr-1 h-3.5 w-3.5" />
+                            Vérifier
+                          </Button>
+                        )}
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="text-xs text-muted-foreground"
+                          onClick={() => {
+                            if (expandedAnimatorScenes.size === scenes.length) {
+                              setExpandedAnimatorScenes(new Set());
+                            } else {
+                              setExpandedAnimatorScenes(new Set(scenes.map((_, i) => i)));
+                            }
+                          }}
+                        >
+                          {expandedAnimatorScenes.size === scenes.length ? 'Tout replier' : 'Tout déplier'}
+                        </Button>
+                      </div>
                     </div>
                     <div className="space-y-2">
                       {scenes.map((scene, index) => {
