@@ -277,8 +277,6 @@ const Index = () => {
   const [animatorPipelineStatus, setAnimatorPipelineStatus] = useState<{ current_step: string; step_status: string } | null>(null);
   const [animatorTokens, setAnimatorTokens] = useState<{ input: number; output: number; cacheRead: number; cacheCreated: number } | null>(null);
   const [animatorCostUsd, setAnimatorCostUsd] = useState<number | null>(null);
-  const [animatorTokens, setAnimatorTokens] = useState<{ input: number; output: number; cacheRead: number; cacheCreated: number } | null>(null);
-  const [animatorCostUsd, setAnimatorCostUsd] = useState<number | null>(null);
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [isUploadingAudio, setIsUploadingAudio] = useState(false);
   const [isDraggingAudio, setIsDraggingAudio] = useState(false);
