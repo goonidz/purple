@@ -201,6 +201,24 @@ const Grid = () => (
 
 ${componentsCode}
 
+class SceneErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(error) { return { error }; }
+  render() {
+    if (this.state.error) {
+      return (
+        <AbsoluteFill style={{ background: BG, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 8 }}>
+          <div style={{ color: "#f59e0b", fontSize: 18 }}>⚠ Scene {this.props.index + 1}</div>
+          <div style={{ color: "#666", fontSize: 12, maxWidth: 600, textAlign: "center" }}>
+            {String(this.state.error?.message || "Erreur de rendu").substring(0, 150)}
+          </div>
+        </AbsoluteFill>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 const SEGMENT_COMPONENTS: React.FC[] = [${segNames.join(', ')}];
 
 export const ${componentName} = () => {
@@ -214,7 +232,7 @@ ${audioFilename ? `      <Audio src={staticFile(${JSON.stringify(audioFilename)}
         const dur = Math.max(1, Math.round(seg.end * fps) - startFrame);
         return (
           <Sequence key={i} from={startFrame} durationInFrames={dur} premountFor={15}>
-            <Comp />
+            <SceneErrorBoundary index={i}><Comp /></SceneErrorBoundary>
           </Sequence>
         );
       })}

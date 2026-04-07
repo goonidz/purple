@@ -1042,6 +1042,17 @@ const App = () => {
           autoPlay
           loop
           playbackRate={speed}
+          renderLoading={({ width, height }) => (
+            <div style={{ width, height, background: '#0a0a0f', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <div style={{ color: '#a855f7', fontSize: 14 }}>Chargement...</div>
+            </div>
+          )}
+          errorFallback={({ error }) => (
+            <div style={{ width: '100%', height: '100%', background: '#0a0a0f', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 8 }}>
+              <div style={{ color: '#f59e0b', fontSize: 14 }}>Erreur de rendu</div>
+              <div style={{ color: '#666', fontSize: 11, maxWidth: 400, textAlign: 'center', wordBreak: 'break-word' }}>{error?.message?.substring(0, 120) || 'Erreur inconnue'}</div>
+            </div>
+          )}
         />
         <div style={{
           position: 'absolute', top: 8, right: 8, display: 'flex', gap: 4, zIndex: 10,
