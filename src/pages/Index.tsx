@@ -279,8 +279,9 @@ const Index = () => {
   const [animatorCostUsd, setAnimatorCostUsd] = useState<number | null>(null);
   const [animatorSegments, setAnimatorSegments] = useState<{ start: number; end: number; text: string }[] | null>(null);
   const [animatorSegmentsProcessed, setAnimatorSegmentsProcessed] = useState<{ start: number; end: number; text: string }[] | null>(null);
-  const [animatorSceneStatuses, setAnimatorSceneStatuses] = useState<{ scene_index: number; animator_code_status: string | null }[]>([]);
+  const [animatorSceneStatuses, setAnimatorSceneStatuses] = useState<{ scene_index: number; animator_code_status: string | null; animator_code: string | null }[]>([]);
   const [isRetryingScene, setIsRetryingScene] = useState<number | null>(null);
+  const [expandedAnimatorScenes, setExpandedAnimatorScenes] = useState<Set<number>>(new Set());
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [isUploadingAudio, setIsUploadingAudio] = useState(false);
   const [isDraggingAudio, setIsDraggingAudio] = useState(false);
@@ -926,7 +927,7 @@ const Index = () => {
           .single(),
         supabase.from('projects').select('animator_video_url, animator_tokens, animator_cost_usd').eq('id', currentProjectId).single(),
         supabase.from('project_scenes')
-          .select('scene_index, animator_code_status')
+          .select('scene_index, animator_code_status, animator_code')
           .eq('project_id', currentProjectId)
           .not('animator_code_status', 'is', null)
           .order('scene_index', { ascending: true }),
@@ -4349,8 +4350,22 @@ const Index = () => {
                         <Sparkles className="h-4 w-4 text-purple-500" />
                         Scènes Animator ({animatorSceneStatuses.filter(s => s.animator_code_status === 'completed').length}/{animatorSceneStatuses.length})
                       </h3>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-xs text-muted-foreground"
+                        onClick={() => {
+                          if (expandedAnimatorScenes.size === animatorSceneStatuses.length) {
+                            setExpandedAnimatorScenes(new Set());
+                          } else {
+                            setExpandedAnimatorScenes(new Set(animatorSceneStatuses.map(s => s.scene_index)));
+                          }
+                        }}
+                      >
+                        {expandedAnimatorScenes.size === animatorSceneStatuses.length ? 'Tout replier' : 'Tout déplier'}
+                      </Button>
                     </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2">
+                    <div className="space-y-2">
                       {animatorSceneStatuses.map((sceneStatus) => {
                         const scene = scenes[sceneStatus.scene_index];
                         const status = sceneStatus.animator_code_status;
@@ -4358,114 +4373,184 @@ const Index = () => {
                         const isCompleted = status === 'completed';
                         const isGenerating = status === 'generating' || status === 'pending';
                         const isRetrying = isRetryingScene === sceneStatus.scene_index;
+                        const isExpanded = expandedAnimatorScenes.has(sceneStatus.scene_index);
+                        const duration = scene ? (scene.endTime - scene.startTime).toFixed(1) : '?';
 
                         return (
                           <div
                             key={sceneStatus.scene_index}
-                            className={`relative p-2 rounded-md border text-center text-xs ${
-                              isCompleted ? 'border-green-500/30 bg-green-500/5' :
-                              isFailed ? 'border-red-500/30 bg-red-500/5' :
-                              isGenerating ? 'border-purple-500/30 bg-purple-500/5' :
-                              'border-muted bg-muted/20'
+                            className={`rounded-lg border overflow-hidden ${
+                              isCompleted ? 'border-green-500/20' :
+                              isFailed ? 'border-red-500/20' :
+                              isGenerating ? 'border-purple-500/20' :
+                              'border-muted'
                             }`}
-                            title={scene?.text?.slice(0, 100) || `Scene ${sceneStatus.scene_index}`}
                           >
-                            <div className="font-mono font-bold mb-1">
-                              {sceneStatus.scene_index + 1}
-                            </div>
-                            <div className={`text-[10px] ${
-                              isCompleted ? 'text-green-500' :
-                              isFailed ? 'text-red-500' :
-                              isGenerating ? 'text-purple-500' :
-                              'text-muted-foreground'
-                            }`}>
-                              {isCompleted && <Check className="h-3 w-3 mx-auto" />}
-                              {isFailed && <X className="h-3 w-3 mx-auto" />}
-                              {isGenerating && <Loader2 className="h-3 w-3 mx-auto animate-spin" />}
-                            </div>
-                            {isFailed && !isRetrying && (
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="absolute -top-1 -right-1 h-5 w-5 p-0 rounded-full bg-red-500/20 hover:bg-red-500/40"
-                                onClick={async () => {
-                                  if (!currentProjectId || !scene) return;
-                                  setIsRetryingScene(sceneStatus.scene_index);
-                                  try {
-                                    const { data: calEntry } = await supabase
-                                      .from("content_calendar")
-                                      .select("channel_id")
-                                      .eq("project_id", currentProjectId)
-                                      .not("channel_id", "is", null)
-                                      .limit(1)
-                                      .single();
-                                    let presetConfig: any = {};
-                                    if (calEntry?.channel_id) {
-                                      const { data: ch } = await (supabase.from("channels") as any).select("animator_preset_id").eq("id", calEntry.channel_id).single();
-                                      if (ch?.animator_preset_id) {
-                                        const { data: preset } = await (supabase.from("animator_presets" as any) as any).select("*").eq("id", ch.animator_preset_id).single();
-                                        if (preset) presetConfig = preset;
+                            {/* Scene header row */}
+                            <div
+                              className={`flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-muted/30 transition-colors ${
+                                isCompleted ? 'bg-green-500/5' :
+                                isFailed ? 'bg-red-500/5' :
+                                isGenerating ? 'bg-purple-500/5' :
+                                'bg-muted/10'
+                              }`}
+                              onClick={() => {
+                                setExpandedAnimatorScenes(prev => {
+                                  const next = new Set(prev);
+                                  if (next.has(sceneStatus.scene_index)) next.delete(sceneStatus.scene_index);
+                                  else next.add(sceneStatus.scene_index);
+                                  return next;
+                                });
+                              }}
+                            >
+                              {/* Status icon */}
+                              <div className="flex-shrink-0">
+                                {isRetrying && <Loader2 className="h-4 w-4 animate-spin text-purple-500" />}
+                                {!isRetrying && isCompleted && <Check className="h-4 w-4 text-green-500" />}
+                                {!isRetrying && isFailed && <X className="h-4 w-4 text-red-500" />}
+                                {!isRetrying && isGenerating && <Loader2 className="h-4 w-4 animate-spin text-purple-500" />}
+                              </div>
+
+                              {/* Scene number + timing */}
+                              <span className="font-bold text-sm text-primary w-8">#{sceneStatus.scene_index + 1}</span>
+                              <span className="text-xs text-muted-foreground font-mono w-20 flex-shrink-0">
+                                {scene ? `${formatTimecode(scene.startTime)} → ${formatTimecode(scene.endTime)}` : '—'}
+                              </span>
+                              <span className="text-xs text-muted-foreground w-10 flex-shrink-0">{duration}s</span>
+
+                              {/* Scene text preview */}
+                              <span className="text-xs text-foreground/80 truncate flex-1 min-w-0">
+                                {scene?.text || '—'}
+                              </span>
+
+                              {/* Actions */}
+                              <div className="flex items-center gap-1 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                                {isFailed && !isRetrying && (
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-6 px-2 text-xs text-red-500 hover:text-red-600 hover:bg-red-500/10"
+                                    onClick={async () => {
+                                      if (!currentProjectId || !scene) return;
+                                      setIsRetryingScene(sceneStatus.scene_index);
+                                      try {
+                                        const { data: calEntry } = await supabase
+                                          .from("content_calendar")
+                                          .select("channel_id")
+                                          .eq("project_id", currentProjectId)
+                                          .not("channel_id", "is", null)
+                                          .limit(1)
+                                          .single();
+                                        let presetConfig: any = {};
+                                        if (calEntry?.channel_id) {
+                                          const { data: ch } = await (supabase.from("channels") as any).select("animator_preset_id").eq("id", calEntry.channel_id).single();
+                                          if (ch?.animator_preset_id) {
+                                            const { data: preset } = await (supabase.from("animator_presets" as any) as any).select("*").eq("id", ch.animator_preset_id).single();
+                                            if (preset) presetConfig = preset;
+                                          }
+                                        }
+                                        const { data: keyData } = await supabase.rpc('get_user_api_key_for_service', {
+                                          target_user_id: (await supabase.auth.getUser()).data.user?.id,
+                                          key_name: 'anthropic',
+                                        });
+
+                                        const prevScene = sceneStatus.scene_index > 0 ? scenes[sceneStatus.scene_index - 1] : null;
+                                        const nextScene = sceneStatus.scene_index < scenes.length - 1 ? scenes[sceneStatus.scene_index + 1] : null;
+                                        const prevCompleted = animatorSceneStatuses.find(s => s.scene_index === sceneStatus.scene_index - 1 && s.animator_code_status === 'completed');
+
+                                        let prevCode = null;
+                                        if (prevCompleted) {
+                                          prevCode = prevCompleted.animator_code || null;
+                                        }
+
+                                        const resp = await fetch(`${import.meta.env.VITE_REMOTION_SERVICE_URL || ''}/animator/generate-scene`, {
+                                          method: 'POST',
+                                          headers: { 'Content-Type': 'application/json' },
+                                          body: JSON.stringify({
+                                            anthropicKey: keyData,
+                                            segment: { start: scene.startTime, end: scene.endTime, text: scene.text },
+                                            segIndex: sceneStatus.scene_index,
+                                            totalSegments: scenes.length,
+                                            brandingConfig: presetConfig.branding_config || null,
+                                            brandingMarkdown: presetConfig.branding_markdown || '',
+                                            extraPrompt: presetConfig.extra_prompt || '',
+                                            selectedSkills: presetConfig.selected_skills || null,
+                                            model: presetConfig.model || 'claude-sonnet-4-6',
+                                            projectId: currentProjectId,
+                                            neighborContext: {
+                                              prevTexts: prevScene ? [prevScene.text] : [],
+                                              nextTexts: nextScene ? [nextScene.text] : [],
+                                              prevCode,
+                                            },
+                                          }),
+                                        });
+                                        const result = await resp.json();
+                                        if (result.success) {
+                                          toast.success(`Scène ${sceneStatus.scene_index + 1} régénérée`);
+                                        } else {
+                                          toast.error(`Scène ${sceneStatus.scene_index + 1}: ${result.error}`);
+                                        }
+                                      } catch (e: any) {
+                                        toast.error(`Erreur: ${e.message}`);
+                                      } finally {
+                                        setIsRetryingScene(null);
                                       }
-                                    }
-                                    const { data: keyData } = await supabase.rpc('get_user_api_key_for_service', {
-                                      target_user_id: (await supabase.auth.getUser()).data.user?.id,
-                                      key_name: 'anthropic',
-                                    });
+                                    }}
+                                  >
+                                    <RotateCcw className="h-3 w-3 mr-1" />
+                                    Retry
+                                  </Button>
+                                )}
+                                {isExpanded ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+                              </div>
+                            </div>
 
-                                    const prevScene = sceneStatus.scene_index > 0 ? scenes[sceneStatus.scene_index - 1] : null;
-                                    const nextScene = sceneStatus.scene_index < scenes.length - 1 ? scenes[sceneStatus.scene_index + 1] : null;
-                                    const prevCompleted = animatorSceneStatuses.find(s => s.scene_index === sceneStatus.scene_index - 1 && s.animator_code_status === 'completed');
-
-                                    let prevCode = null;
-                                    if (prevCompleted) {
-                                      const { data: prevRow } = await supabase.from('project_scenes')
-                                        .select('animator_code')
-                                        .eq('project_id', currentProjectId)
-                                        .eq('scene_index', sceneStatus.scene_index - 1)
-                                        .single();
-                                      prevCode = prevRow?.animator_code || null;
-                                    }
-
-                                    const resp = await fetch(`${import.meta.env.VITE_REMOTION_SERVICE_URL || ''}/animator/generate-scene`, {
-                                      method: 'POST',
-                                      headers: { 'Content-Type': 'application/json' },
-                                      body: JSON.stringify({
-                                        anthropicKey: keyData,
-                                        segment: { start: scene.startTime, end: scene.endTime, text: scene.text },
-                                        segIndex: sceneStatus.scene_index,
-                                        totalSegments: scenes.length,
-                                        brandingConfig: presetConfig.branding_config || null,
-                                        brandingMarkdown: presetConfig.branding_markdown || '',
-                                        extraPrompt: presetConfig.extra_prompt || '',
-                                        selectedSkills: presetConfig.selected_skills || null,
-                                        model: presetConfig.model || 'claude-sonnet-4-6',
-                                        projectId: currentProjectId,
-                                        neighborContext: {
-                                          prevTexts: prevScene ? [prevScene.text] : [],
-                                          nextTexts: nextScene ? [nextScene.text] : [],
-                                          prevCode,
-                                        },
-                                      }),
-                                    });
-                                    const result = await resp.json();
-                                    if (result.success) {
-                                      toast.success(`Scène ${sceneStatus.scene_index + 1} régénérée`);
-                                    } else {
-                                      toast.error(`Scène ${sceneStatus.scene_index + 1}: ${result.error}`);
-                                    }
-                                  } catch (e: any) {
-                                    toast.error(`Erreur: ${e.message}`);
-                                  } finally {
-                                    setIsRetryingScene(null);
-                                  }
-                                }}
-                              >
-                                <RotateCcw className="h-3 w-3 text-red-500" />
-                              </Button>
-                            )}
-                            {isRetrying && (
-                              <div className="absolute inset-0 flex items-center justify-center bg-background/80 rounded-md">
-                                <Loader2 className="h-4 w-4 animate-spin text-purple-500" />
+                            {/* Expanded content: scene text + animator code */}
+                            {isExpanded && (
+                              <div className="border-t border-inherit">
+                                {/* Scene text */}
+                                {scene?.text && (
+                                  <div className="px-3 py-2 bg-muted/5 border-b border-inherit">
+                                    <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Texte</span>
+                                    <p className="text-sm mt-1 text-foreground/90 leading-relaxed">{scene.text}</p>
+                                  </div>
+                                )}
+                                {/* Animator code */}
+                                {sceneStatus.animator_code && (
+                                  <div className="px-3 py-2">
+                                    <div className="flex items-center justify-between mb-1">
+                                      <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
+                                        {isCompleted ? 'Code Remotion' : 'Erreur'}
+                                      </span>
+                                      {isCompleted && (
+                                        <Button
+                                          size="sm"
+                                          variant="ghost"
+                                          className="h-5 px-1.5 text-[10px]"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            navigator.clipboard.writeText(sceneStatus.animator_code || '');
+                                            toast.success('Code copié');
+                                          }}
+                                        >
+                                          <Copy className="h-3 w-3 mr-1" />
+                                          Copier
+                                        </Button>
+                                      )}
+                                    </div>
+                                    <pre className={`text-xs font-mono p-3 rounded-md overflow-x-auto max-h-[400px] overflow-y-auto whitespace-pre-wrap break-all ${
+                                      isFailed ? 'bg-red-500/5 text-red-400' : 'bg-zinc-950 text-zinc-300'
+                                    }`}>
+                                      {sceneStatus.animator_code}
+                                    </pre>
+                                  </div>
+                                )}
+                                {!sceneStatus.animator_code && isGenerating && (
+                                  <div className="px-3 py-4 text-center text-xs text-muted-foreground">
+                                    <Loader2 className="h-4 w-4 animate-spin mx-auto mb-1" />
+                                    Génération en cours...
+                                  </div>
+                                )}
                               </div>
                             )}
                           </div>
