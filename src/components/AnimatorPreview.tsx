@@ -284,9 +284,10 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
     }
   }, [projectId, isLoadingQA]);
 
-  // Auto-scroll agent log
+  // Auto-scroll agent log (only within its container, not the page)
   useEffect(() => {
-    agentLogEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    const el = agentLogEndRef.current?.parentElement;
+    if (el) el.scrollTop = el.scrollHeight;
   }, [agentLog]);
 
   const MODEL_PRICES: Record<string, { input: number; output: number }> = {
