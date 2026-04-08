@@ -792,48 +792,53 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
                   </div>
                 )}
 
-                {/* Live log from child jobs */}
-                {qaChildJobs.length > 0 && (
-                  <div className="p-2 max-h-60 overflow-y-auto space-y-0.5">
-                    {qaChildJobs.map((job) => {
-                      const si = job.metadata?.sceneIndex ?? 0;
-                      const isPassing = job.status === 'completed' && job.metadata?.pass;
-                      const isFixed = job.status === 'completed' && job.metadata?.fixed;
-                      const isFailed = job.status === 'completed' && job.metadata?.pass === false;
-                      const isError = job.status === 'failed';
-                      const isProcessing = job.status === 'processing';
-                      const isPending = job.status === 'pending';
-
-                      return (
-                        <div key={job.id} className="flex items-start gap-1.5 text-[11px] py-0.5 px-1.5 rounded hover:bg-muted/30">
-                          {isPending && <div className="h-3 w-3 mt-0.5 rounded-full border border-muted-foreground/30 shrink-0" />}
-                          {isProcessing && <Loader2 className="h-3 w-3 mt-0.5 animate-spin text-purple-400 shrink-0" />}
-                          {isPassing && !isFixed && <Check className="h-3 w-3 mt-0.5 text-green-400 shrink-0" />}
-                          {isFixed && <Check className="h-3 w-3 mt-0.5 text-blue-400 shrink-0" />}
-                          {isFailed && <AlertTriangle className="h-3 w-3 mt-0.5 text-orange-400 shrink-0" />}
-                          {isError && <XCircle className="h-3 w-3 mt-0.5 text-red-400 shrink-0" />}
-                          <span className={`${
-                            isPassing && !isFixed ? "text-green-400/80" :
-                            isFixed ? "text-blue-400/80" :
-                            isFailed ? "text-orange-400/80" :
-                            isError ? "text-red-400/80" :
-                            isProcessing ? "text-purple-400/80" :
-                            "text-muted-foreground/50"
-                          }`}>
-                            Scène {si + 1}
-                            {isPassing && !isFixed && " — OK"}
-                            {isFixed && ` — Corrigée (${job.metadata?.attempts} tentatives)`}
-                            {isFailed && ` — ${job.metadata?.issue || "Non corrigée"}`}
-                            {isError && " — Erreur"}
-                            {isProcessing && " — Analyse..."}
-                            {isPending && " — En attente"}
-                          </span>
+                {/* Live log from child jobs — only show notable events */}
+                {qaChildJobs.length > 0 && (() => {
+                  const notable = qaChildJobs.filter(j =>
+                    j.status === 'processing' ||
+                    j.status === 'failed' ||
+                    (j.status === 'completed' && j.metadata?.fixed) ||
+                    (j.status === 'completed' && j.metadata?.pass === false)
+                  );
+                  return (
+                    <div className="p-2 max-h-60 overflow-y-auto space-y-0.5">
+                      {notable.length === 0 && done > 0 && (
+                        <div className="text-[11px] text-muted-foreground/60 px-1.5 py-0.5">
+                          Aucun problème détecté pour l'instant...
                         </div>
-                      );
-                    })}
-                    <div ref={qaLogEndRef} />
-                  </div>
-                )}
+                      )}
+                      {notable.map((job) => {
+                        const si = job.metadata?.sceneIndex ?? 0;
+                        const isFixed = job.status === 'completed' && job.metadata?.fixed;
+                        const isFailed = job.status === 'completed' && job.metadata?.pass === false;
+                        const isError = job.status === 'failed';
+                        const isProcessing = job.status === 'processing';
+
+                        return (
+                          <div key={job.id} className="flex items-start gap-1.5 text-[11px] py-0.5 px-1.5 rounded hover:bg-muted/30">
+                            {isProcessing && <Loader2 className="h-3 w-3 mt-0.5 animate-spin text-purple-400 shrink-0" />}
+                            {isFixed && <Check className="h-3 w-3 mt-0.5 text-blue-400 shrink-0" />}
+                            {isFailed && <AlertTriangle className="h-3 w-3 mt-0.5 text-orange-400 shrink-0" />}
+                            {isError && <XCircle className="h-3 w-3 mt-0.5 text-red-400 shrink-0" />}
+                            <span className={`${
+                              isFixed ? "text-blue-400/80" :
+                              isFailed ? "text-orange-400/80" :
+                              isError ? "text-red-400/80" :
+                              "text-purple-400/80"
+                            }`}>
+                              Scène {si + 1}
+                              {isFixed && ` — Corrigée: ${job.metadata?.issue || "fix appliqué"}`}
+                              {isFailed && ` — ${job.metadata?.issue || "Non corrigée"}`}
+                              {isError && ` — Erreur: ${job.error_message || "screenshot indisponible"}`}
+                              {isProcessing && " — Analyse..."}
+                            </span>
+                          </div>
+                        );
+                      })}
+                      <div ref={qaLogEndRef} />
+                    </div>
+                  );
+                })()}
 
                 {/* Token tracker */}
                 {(qaTokens.input > 0 || qaTokens.output > 0) && (
