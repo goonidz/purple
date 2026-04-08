@@ -313,6 +313,15 @@ serve(async (req) => {
       total = scenes.length;
     } else if (jobType === 'animator_scene') {
       total = 1;
+    } else if (jobType === 'qa_scenes') {
+      const { count } = await adminClient
+        .from('project_scenes')
+        .select('id', { count: 'exact', head: true })
+        .eq('project_id', projectId)
+        .eq('animator_code_status', 'completed');
+      total = count || 0;
+    } else if (jobType === 'qa_scene') {
+      total = 1;
     }
 
     // Create the job record (use null for project_id in standalone mode)
@@ -450,6 +459,15 @@ async function processJob(
           .eq('project_id', projectId)
           .eq('scene_index', sceneIndex);
       }
+      throw new Error('WEBHOOK_MODE_ACTIVE');
+    } else if (jobType === 'qa_scenes') {
+      await processQaScenesJob(jobId, projectId, userId, metadata, adminClient);
+    } else if (jobType === 'qa_scene') {
+      // Single scene QA: leave pending for VPS worker
+      await adminClient
+        .from('generation_jobs')
+        .update({ status: 'pending' })
+        .eq('id', jobId);
       throw new Error('WEBHOOK_MODE_ACTIVE');
     }
 
@@ -6229,5 +6247,62 @@ async function processAnimatorScenesJob(
     .eq('id', jobId);
 
   console.log(`[processAnimatorScenesJob] Created ${scenes.length} animator_scene jobs for project ${projectId}`);
+  throw new Error('WEBHOOK_MODE_ACTIVE');
+}
+
+// ============================================================================
+// QA SCENES JOB (parent: creates child qa_scene jobs for VPS worker)
+// ============================================================================
+async function processQaScenesJob(
+  jobId: string,
+  projectId: string,
+  userId: string,
+  metadata: Record<string, any>,
+  adminClient: any
+) {
+  // Get all completed animator scenes
+  const { data: sceneRows, error: sceneErr } = await adminClient
+    .from('project_scenes')
+    .select('scene_index')
+    .eq('project_id', projectId)
+    .eq('animator_code_status', 'completed')
+    .order('scene_index');
+
+  if (sceneErr || !sceneRows?.length) {
+    throw new Error('No completed animator scenes found for QA');
+  }
+
+  // Create child qa_scene jobs
+  const childJobs = sceneRows.map((row: any) => ({
+    project_id: projectId,
+    user_id: userId,
+    job_type: 'qa_scene',
+    status: 'pending',
+    total: 1,
+    progress: 0,
+    parent_job_id: jobId,
+    metadata: {
+      sceneIndex: row.scene_index,
+    },
+  }));
+
+  const { error: insertError } = await adminClient
+    .from('generation_jobs')
+    .insert(childJobs);
+
+  if (insertError) {
+    throw new Error(`Failed to create qa_scene jobs: ${insertError.message}`);
+  }
+
+  // Update parent total
+  await adminClient
+    .from('generation_jobs')
+    .update({
+      total: sceneRows.length,
+      metadata: { ...metadata, totalScenes: sceneRows.length, tokens: { input: 0, output: 0 }, cost: 0 },
+    })
+    .eq('id', jobId);
+
+  console.log(`[processQaScenesJob] Created ${sceneRows.length} qa_scene jobs for project ${projectId}`);
   throw new Error('WEBHOOK_MODE_ACTIVE');
 }

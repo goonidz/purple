@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
-export type JobType = 'transcription' | 'prompts' | 'images' | 'thumbnails' | 'thumbnails_v2' | 'test_images' | 'single_prompt' | 'single_image' | 'upscale' | 'single_animation' | 'qa' | 'qa_regen' | 'audio_generation' | 'idea_generation' | 'animator_scenes' | 'animator_scene';
+export type JobType = 'transcription' | 'prompts' | 'images' | 'thumbnails' | 'thumbnails_v2' | 'test_images' | 'single_prompt' | 'single_image' | 'upscale' | 'single_animation' | 'qa' | 'qa_regen' | 'audio_generation' | 'idea_generation' | 'animator_scenes' | 'animator_scene' | 'qa_scenes' | 'qa_scene';
 export type JobStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled';
 
 export interface GenerationJob {
@@ -138,7 +138,7 @@ export function useGenerationJobs({ projectId, onJobComplete, onJobFailed, autoR
 
         if (error) throw error;
         // Filter out child jobs client-side
-        const CHILD_JOB_TYPES = ['single_prompt', 'single_image', 'single_qa', 'single_upscale', 'animator_scene'];
+        const CHILD_JOB_TYPES = ['single_prompt', 'single_image', 'single_qa', 'single_upscale', 'animator_scene', 'qa_scene'];
         const filteredJobs = (data || []).filter(
           (job: any) => !CHILD_JOB_TYPES.includes(job.job_type)
         );
@@ -179,7 +179,7 @@ export function useGenerationJobs({ projectId, onJobComplete, onJobFailed, autoR
         (payload) => {
           console.log('Job update received:', payload);
           
-          const CHILD_TYPES = ['single_prompt', 'single_image', 'single_qa', 'single_upscale', 'animator_scene'];
+          const CHILD_TYPES = ['single_prompt', 'single_image', 'single_qa', 'single_upscale', 'animator_scene', 'qa_scene'];
           if (payload.eventType === 'INSERT') {
             const newJob = payload.new as GenerationJob;
             if (CHILD_TYPES.includes(newJob.job_type)) return;
@@ -360,7 +360,7 @@ export function useGenerationJobs({ projectId, onJobComplete, onJobFailed, autoR
 
       if (error) throw error;
 
-      const CHILD_JOB_TYPES = ['single_prompt', 'single_image', 'single_qa', 'single_upscale', 'animator_scene'];
+      const CHILD_JOB_TYPES = ['single_prompt', 'single_image', 'single_qa', 'single_upscale', 'animator_scene', 'qa_scene'];
       const filteredJobs = (data || []).filter(
         (job: any) => !CHILD_JOB_TYPES.includes(job.job_type)
       );
@@ -544,6 +544,10 @@ function getJobStartMessage(jobType: JobType): string {
       return "Génération des scènes Animator démarrée en arrière-plan";
     case 'animator_scene':
       return "Regénération de la scène Animator démarrée";
+    case 'qa_scenes':
+      return "QA visuel démarré en arrière-plan. Les scènes sont analysées en parallèle.";
+    case 'qa_scene':
+      return "QA scène démarrée";
     default:
       return "Génération démarrée en arrière-plan";
   }

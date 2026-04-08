@@ -9,6 +9,7 @@ const sharp = require('sharp');
 const MAX_CONCURRENT_DEFAULT = 20;
 const MAX_CONCURRENT_AI33 = 40;
 const MAX_CONCURRENT_ANIMATOR = 50;
+const MAX_CONCURRENT_QA = 20;
 const POLL_INTERVAL_MS = 3000;
 const REPLICATE_POLL_MS = 2000;
 const REPLICATE_TIMEOUT_MS = 5 * 60 * 1000;
@@ -30,6 +31,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 // ============================================================================
 let activeJobs = 0;
 let activeAnimatorJobs = 0;
+let activeQaJobs = 0;
 const apiKeyCache = new Map();
 const processingJobIds = new Set();
 
@@ -2510,6 +2512,161 @@ async function processAnimatorSceneJob(job) {
 }
 
 // ============================================================================
+// QA SCENE JOB (analyze screenshot + auto-fix if needed)
+// ============================================================================
+async function processQaSceneJob(job) {
+  const { id: jobId, project_id: projectId, user_id: userId, parent_job_id: parentJobId, metadata } = job;
+  const sceneIndex = metadata?.sceneIndex;
+  const MAX_FIX_RETRIES = 2;
+
+  log(`[QA] Processing scene ${sceneIndex} (job ${jobId.substring(0, 8)}...)`);
+
+  try {
+    // Step 1: Get/generate screenshot for this scene
+    let screenshotUrl = null;
+    try {
+      const ssResp = await fetch(`${REMOTION_SERVICE_URL}/animator/qa-screenshots`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId, sceneIndex }),
+      });
+      const ssData = await ssResp.json();
+      if (ssResp.ok && ssData.screenshot?.url) {
+        screenshotUrl = ssData.screenshot.url;
+      } else if (ssResp.ok && ssData.screenshots) {
+        const shot = ssData.screenshots.find(s => s.sceneIndex === sceneIndex);
+        if (shot?.url) screenshotUrl = shot.url;
+      }
+    } catch (e) {
+      log(`[QA] Screenshot fetch failed for scene ${sceneIndex}: ${e.message}`);
+    }
+
+    if (!screenshotUrl) {
+      throw new Error(`No screenshot available for scene ${sceneIndex}`);
+    }
+
+    // Step 2: Analyze with vision
+    const analyzeResp = await fetch(`${REMOTION_SERVICE_URL}/animator/qa-analyze`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectId, sceneIndex, screenshotUrl }),
+    });
+    const analyzeResult = await analyzeResp.json();
+    if (!analyzeResp.ok) throw new Error(analyzeResult.error || 'QA analyze failed');
+
+    // Track tokens on parent
+    if (analyzeResult.tokens && parentJobId) {
+      await accumulateQaTokens(parentJobId, analyzeResult.tokens);
+    }
+
+    if (analyzeResult.pass) {
+      log(`[QA] Scene ${sceneIndex}: PASS`);
+      await supabase.from('generation_jobs')
+        .update({ status: 'completed', progress: 1, completed_at: new Date().toISOString(), metadata: { ...metadata, pass: true } })
+        .eq('id', jobId);
+      if (parentJobId) await notifyParentJobProgress(parentJobId);
+      return;
+    }
+
+    // Step 3: Issue detected — attempt fixes
+    const issue = analyzeResult.issue || 'Visual issue detected';
+    log(`[QA] Scene ${sceneIndex}: FAIL — ${issue}`);
+
+    for (let attempt = 1; attempt <= MAX_FIX_RETRIES; attempt++) {
+      log(`[QA] Scene ${sceneIndex}: fix attempt ${attempt}/${MAX_FIX_RETRIES}`);
+
+      // Fix via edit-scene
+      const editResp = await fetch(`${REMOTION_SERVICE_URL}/animator/edit-scene`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectId,
+          sceneIndex,
+          instruction: `Fix this visual issue: ${issue}. Ensure text is readable, properly positioned, and doesn't overlap. Fix any layout or animation problems, usually by repositioning or resizing elements.`,
+          screenshotUrl,
+          agentMode: true,
+        }),
+      });
+      const editData = await editResp.json();
+
+      if (editData.tokens && parentJobId) {
+        await accumulateQaTokens(parentJobId, editData.tokens);
+      }
+
+      if (!editResp.ok) {
+        log(`[QA] Scene ${sceneIndex}: edit failed — ${editData.error || 'unknown'}`);
+        continue;
+      }
+
+      // Re-take screenshot
+      await new Promise(r => setTimeout(r, 1000));
+      try {
+        const ssResp2 = await fetch(`${REMOTION_SERVICE_URL}/animator/qa-screenshots`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ projectId, sceneIndex }),
+        });
+        const ssData2 = await ssResp2.json();
+        if (ssData2.screenshot?.url) screenshotUrl = ssData2.screenshot.url;
+      } catch (e) { /* keep old URL */ }
+
+      // Re-analyze
+      const reResp = await fetch(`${REMOTION_SERVICE_URL}/animator/qa-analyze`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId, sceneIndex, screenshotUrl }),
+      });
+      const recheck = await reResp.json();
+
+      if (recheck.tokens && parentJobId) {
+        await accumulateQaTokens(parentJobId, recheck.tokens);
+      }
+
+      if (recheck.pass) {
+        log(`[QA] Scene ${sceneIndex}: FIXED after attempt ${attempt}`);
+        await supabase.from('generation_jobs')
+          .update({ status: 'completed', progress: 1, completed_at: new Date().toISOString(), metadata: { ...metadata, pass: true, fixed: true, attempts: attempt } })
+          .eq('id', jobId);
+        if (parentJobId) await notifyParentJobProgress(parentJobId);
+        return;
+      }
+    }
+
+    // Gave up after retries
+    log(`[QA] Scene ${sceneIndex}: gave up after ${MAX_FIX_RETRIES} attempts`);
+    await supabase.from('generation_jobs')
+      .update({ status: 'completed', progress: 1, completed_at: new Date().toISOString(), metadata: { ...metadata, pass: false, issue, attempts: MAX_FIX_RETRIES } })
+      .eq('id', jobId);
+    if (parentJobId) await notifyParentJobProgress(parentJobId);
+
+  } catch (error) {
+    logError(`[QA] Scene ${sceneIndex} error:`, error.message);
+    await supabase.from('generation_jobs')
+      .update({ status: 'failed', error_message: error.message?.substring(0, 500), completed_at: new Date().toISOString() })
+      .eq('id', jobId);
+    if (parentJobId) {
+      try { await notifyParentJobProgress(parentJobId); } catch (e) { /* */ }
+    }
+  }
+}
+
+async function accumulateQaTokens(parentJobId, tokens) {
+  try {
+    const { data: parent } = await supabase.from('generation_jobs')
+      .select('metadata')
+      .eq('id', parentJobId)
+      .single();
+    if (!parent) return;
+    const meta = parent.metadata || {};
+    const prevTokens = meta.tokens || { input: 0, output: 0 };
+    const newTokens = { input: prevTokens.input + (tokens.input || 0), output: prevTokens.output + (tokens.output || 0) };
+    await supabase.from('generation_jobs')
+      .update({ metadata: { ...meta, tokens: newTokens } })
+      .eq('id', parentJobId);
+  } catch (e) { /* best effort */ }
+}
+
+// ============================================================================
 // STUCK PARENT CLEANUP (safety net for parents stuck in processing)
 // ============================================================================
 
@@ -4984,6 +5141,59 @@ async function mainLoop() {
                 await supabase.from('generation_jobs').update({ status: 'failed', error_message: err.message, completed_at: new Date().toISOString() }).eq('id', job.id);
               })
               .finally(() => { activeAnimatorJobs--; processingJobIds.delete(job.id); });
+          }
+        }
+      }
+
+      // ── QA PASS: limited to MAX_CONCURRENT_QA ──
+      const qaSlots = MAX_CONCURRENT_QA - activeQaJobs;
+      if (qaSlots > 0) {
+        const { data: qaJobs } = await supabase
+          .from('generation_jobs')
+          .select('*')
+          .eq('status', 'pending')
+          .eq('job_type', 'qa_scene')
+          .order('created_at', { ascending: true })
+          .limit(Math.min(qaSlots, 20));
+
+        if (qaJobs && qaJobs.length > 0) {
+          const qParentIds = [...new Set(qaJobs.map(j => j.parent_job_id).filter(Boolean))];
+          const qCancelledParents = new Set();
+          if (qParentIds.length > 0) {
+            const { data: qp } = await supabase.from('generation_jobs').select('id, status').in('id', qParentIds).eq('status', 'cancelled');
+            if (qp) qp.forEach(p => qCancelledParents.add(p.id));
+          }
+          if (qCancelledParents.size > 0) {
+            const orphaned = qaJobs.filter(j => j.parent_job_id && qCancelledParents.has(j.parent_job_id));
+            if (orphaned.length > 0) {
+              await supabase.from('generation_jobs').update({ status: 'cancelled' }).in('id', orphaned.map(j => j.id));
+            }
+          }
+          const validQa = qaJobs
+            .filter(j => !processingJobIds.has(j.id))
+            .filter(j => !j.parent_job_id || !qCancelledParents.has(j.parent_job_id));
+
+          for (const job of validQa) {
+            if (activeQaJobs >= MAX_CONCURRENT_QA) break;
+            const { data: claimed, error: claimError } = await supabase
+              .from('generation_jobs')
+              .update({ status: 'processing', updated_at: new Date().toISOString() })
+              .eq('id', job.id)
+              .eq('status', 'pending')
+              .select('id')
+              .single();
+            if (claimError || !claimed) continue;
+
+            processingJobIds.add(job.id);
+            activeQaJobs++;
+            log(`[qa] Claimed qa_scene job ${job.id.substring(0,8)} scene ${job.metadata?.sceneIndex} (${activeQaJobs}/${MAX_CONCURRENT_QA})`);
+
+            processQaSceneJob(job)
+              .catch(async (err) => {
+                logError(`[qa] Job ${job.id.substring(0,8)} failed:`, err.message);
+                await supabase.from('generation_jobs').update({ status: 'failed', error_message: err.message, completed_at: new Date().toISOString() }).eq('id', job.id);
+              })
+              .finally(() => { activeQaJobs--; processingJobIds.delete(job.id); });
           }
         }
       }
