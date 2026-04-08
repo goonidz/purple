@@ -1297,7 +1297,7 @@ Then on a new line, provide your verdict as a JSON object (no markdown, no code 
               { inlineData: { mimeType: screenshotMime, data: screenshotBase64 } },
               { text: `Analyze this screenshot of animation scene ${sceneIndex + 1}. Is it visually acceptable?` },
             ]}],
-            generationConfig: { maxOutputTokens: 512, temperature: 1, thinkingConfig: { thinkingLevel: "minimal" } },
+            generationConfig: { maxOutputTokens: 512, temperature: 1, thinkingConfig: { thinkingLevel: "high" } },
           }),
         }
       );
@@ -1489,7 +1489,7 @@ Do NOT add comments explaining your changes.`;
               }],
             }],
             toolConfig: { functionCallingConfig: { mode: 'ANY', allowedFunctionNames: ['write_segment_components'] } },
-            generationConfig: { maxOutputTokens: 16000, thinkingConfig: { thinkingLevel: "low" } },
+            generationConfig: { maxOutputTokens: 16000, thinkingConfig: { thinkingLevel: "high" } },
           }),
         }
       );
