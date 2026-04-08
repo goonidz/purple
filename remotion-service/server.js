@@ -1262,19 +1262,24 @@ app.post('/animator/qa-analyze', async (req, res) => {
     const screenshotBase64 = buf.toString('base64');
     const screenshotMime = imgResp.headers.get('content-type') || 'image/png';
 
-    const qaSystemPrompt = `You are a visual QA inspector for animated video scenes rendered with Remotion.
-Analyze the screenshot and check for visual issues:
-- Overlapping or colliding text elements
-- Text cut off or extending beyond the frame
-- Empty or fully black/blank frames with no content
-- Misaligned or broken layouts
-- Unreadable text (too small, bad contrast)
-- Elements stacked on top of each other
-- Error messages or warning triangles visible
+    const qaSystemPrompt = `You are a strict visual QA inspector for animated video scenes rendered with Remotion.
 
-Respond with ONLY a JSON object (no markdown, no code fences):
-{"pass": true, "issue": null} if the scene looks acceptable
-{"pass": false, "issue": "brief description of the problem"} if there is a visual issue`;
+Analyze the screenshot carefully. Look for ANY of these issues:
+- Overlapping or colliding text elements
+- Text partially hidden, cut off, or extending beyond the frame
+- Empty or fully black/blank frames with no visible content
+- Misaligned or broken layouts
+- Unreadable text (too small, bad contrast, obscured)
+- Elements stacked on top of each other or clipping
+- Error messages or warning triangles visible
+- Numbers or words partially covered by other elements
+
+Be STRICT. If ANY text is partially hidden, cut off, overlapping, or if any element covers another, mark it as FAIL. When in doubt, FAIL.
+
+First, briefly describe what you see in the screenshot (1-2 sentences).
+Then on a new line, provide your verdict as a JSON object (no markdown, no code fences):
+{"pass": true, "issue": null} if the scene looks fully acceptable
+{"pass": false, "issue": "brief description of the problem"} if there is ANY visual issue`;
 
     let tokens = { input: 0, output: 0 };
     let responseText = '';
@@ -1291,7 +1296,7 @@ Respond with ONLY a JSON object (no markdown, no code fences):
               { inlineData: { mimeType: screenshotMime, data: screenshotBase64 } },
               { text: `Analyze this screenshot of animation scene ${sceneIndex + 1}. Is it visually acceptable?` },
             ]}],
-            generationConfig: { maxOutputTokens: 256, temperature: 0.1 },
+            generationConfig: { maxOutputTokens: 512, temperature: 1 },
           }),
         }
       );
@@ -1314,8 +1319,8 @@ Respond with ONLY a JSON object (no markdown, no code fences):
         },
         body: JSON.stringify({
           model: resolvedModel,
-          max_tokens: 256,
-          temperature: 0.1,
+          max_tokens: 512,
+          temperature: 1,
           system: qaSystemPrompt,
           messages: [{ role: 'user', content: [
             { type: 'image', source: { type: 'base64', media_type: screenshotMime, data: screenshotBase64 } },
