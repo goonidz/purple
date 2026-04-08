@@ -2606,7 +2606,7 @@ async function processQaSceneJob(job) {
         body: JSON.stringify({
           projectId,
           sceneIndex,
-          instruction: `Fix this visual issue: ${issue}. Ensure text is readable, properly positioned, and doesn't overlap. Fix any layout or animation problems, usually by repositioning or resizing elements.`,
+          instruction: `Fix this visual issue: ${issue}.\n\nFix ALL visual issues visible in the screenshot. Carefully compare the screenshot with the code and address every problem:\n- If text is overlapping, cut off, or extending beyond the frame: reposition, resize, or reduce font size so everything fits within the 1920×1080 frame with safe margins (at least 60px from edges).\n- If elements are stacked on top of each other or clipping: adjust positions, add proper spacing, or use flexbox/column layout to separate them.\n- If text is unreadable (too small, bad contrast, obscured by other elements): increase font size, improve contrast, or move obstructing elements.\n- If the layout is misaligned or off-center (elements bunched to one side): center the composition using flexbox (alignItems/justifyContent center) or adjust absolute positions.\n- If the frame appears empty, blank, or shows error messages: ensure content is visible and properly rendered at this point in the animation timeline.\n- If numbers or data are partially covered: ensure all numerical values and labels are fully visible and unobstructed.\nPrioritize readability and clean visual composition. Keep all existing animations and timing intact — only fix positioning, sizing, and layout issues.`,
           screenshotUrl,
           agentMode: true,
         }),
