@@ -8,6 +8,27 @@ require('dotenv').config();
 
 const { bundle } = require('@remotion/bundler');
 const { renderMedia, renderStill, selectComposition, getCompositions, ensureBrowser } = require('@remotion/renderer');
+const { execSync } = require('child_process');
+
+// Lambda rendering (optional — falls back to local if not configured)
+let deploySite, renderMediaOnLambda, getRenderProgress, getOrCreateBucket;
+const LAMBDA_ENABLED = !!(process.env.REMOTION_AWS_ACCESS_KEY_ID && process.env.REMOTION_AWS_SECRET_ACCESS_KEY);
+if (LAMBDA_ENABLED) {
+  try {
+    const lambdaMod = require('@remotion/lambda');
+    deploySite = lambdaMod.deploySite;
+    renderMediaOnLambda = lambdaMod.renderMediaOnLambda;
+    getRenderProgress = lambdaMod.getRenderProgress;
+    getOrCreateBucket = lambdaMod.getOrCreateBucket;
+    console.log('[Lambda] AWS Lambda rendering enabled');
+  } catch (e) {
+    console.warn('[Lambda] @remotion/lambda not installed, using local rendering');
+  }
+}
+const LAMBDA_REGION = process.env.REMOTION_AWS_REGION || 'eu-west-1';
+const LAMBDA_FUNCTION_NAME = process.env.REMOTION_LAMBDA_FUNCTION_NAME || '';
+const LAMBDA_FRAMES_PER_LAMBDA = parseInt(process.env.LAMBDA_FRAMES_PER_LAMBDA || '20', 10);
+const LAMBDA_MAX_SINGLE_DURATION_MIN = 70;
 
 const app = express();
 const PORT = process.env.PORT || 3002;
@@ -762,6 +783,202 @@ app.post('/animator/validate-scenes', async (req, res) => {
   }
 });
 
+// ============================================================================
+// RENDER HELPERS: Lambda (distributed) and Local (fallback)
+// ============================================================================
+
+async function renderLocally({ jobId, compositionId, newBundle, durationInFrames, fps, width, height, codec, crf, projectId }) {
+  console.log(`[Animator] Rendering locally: ${jobId} (${durationInFrames} frames)`);
+  const outputFile = path.join(__dirname, 'temp', `${jobId}.mp4`);
+  const composition = await selectComposition({ serveUrl: newBundle, id: compositionId, inputProps: {} });
+
+  await renderMedia({
+    composition: { ...composition, durationInFrames, fps, width, height },
+    serveUrl: newBundle, codec, outputLocation: outputFile, inputProps: {},
+    ...(crf !== undefined ? { crf } : {}),
+    onProgress: ({ progress }) => {
+      const pct = Math.round(progress * 100);
+      const j = activeJobs.get(jobId);
+      if (j) j.progress = pct;
+      if (pct % 10 === 0 && supabase) {
+        supabase.from('remotion_render_jobs').update({ progress: pct }).eq('id', jobId).then(() => {});
+      }
+    },
+  });
+
+  const videoUrl = buildVideoUrl(`${jobId}.mp4`);
+  await finishRenderJob(jobId, videoUrl, projectId);
+}
+
+async function renderViaLambda({ jobId, compositionId, newBundle, durationInFrames, fps, width, height, codec, crf, projectId }) {
+  const totalMinutes = durationInFrames / fps / 60;
+  const needsSegmentation = totalMinutes > LAMBDA_MAX_SINGLE_DURATION_MIN;
+
+  console.log(`[Lambda] Uploading bundle to S3 for ${jobId}...`);
+  const { bucketName } = await getOrCreateBucket({ region: LAMBDA_REGION });
+  const { serveUrl } = await deploySite({
+    bucketName,
+    region: LAMBDA_REGION,
+    entryPoint: newBundle,
+    siteName: `animator-${jobId.slice(-10)}`,
+  });
+  console.log(`[Lambda] Bundle deployed: ${serveUrl}`);
+
+  if (!needsSegmentation) {
+    console.log(`[Lambda] Single render: ${durationInFrames} frames (${Math.round(totalMinutes)} min)`);
+    const videoUrl = await lambdaRenderSingle({ jobId, serveUrl, compositionId, durationInFrames, fps, width, height, codec, crf, bucketName });
+    await finishRenderJob(jobId, videoUrl, projectId);
+  } else {
+    const segmentMinutes = 60;
+    const framesPerSegment = segmentMinutes * 60 * fps;
+    const segments = [];
+    for (let start = 0; start < durationInFrames; start += framesPerSegment) {
+      segments.push([start, Math.min(start + framesPerSegment - 1, durationInFrames - 1)]);
+    }
+    console.log(`[Lambda] Segmented render: ${segments.length} segments for ${Math.round(totalMinutes)} min video`);
+
+    const segmentProgress = new Array(segments.length).fill(0);
+    const updateJobProgress = () => {
+      const avg = Math.round(segmentProgress.reduce((a, b) => a + b, 0) / segments.length);
+      const j = activeJobs.get(jobId);
+      if (j) j.progress = avg;
+      if (avg % 10 === 0 && supabase) {
+        supabase.from('remotion_render_jobs').update({ progress: avg }).eq('id', jobId).then(() => {});
+      }
+    };
+
+    const segmentResults = await Promise.all(segments.map((frameRange, i) =>
+      lambdaRenderSegment({ serveUrl, compositionId, frameRange, fps, width, height, codec, crf, bucketName, segIndex: i, totalSegments: segments.length, onProgress: (pct) => { segmentProgress[i] = pct; updateJobProgress(); } })
+    ));
+
+    console.log(`[Lambda] All ${segments.length} segments complete, concatenating...`);
+    const videoUrl = await concatSegments(jobId, segmentResults);
+    await finishRenderJob(jobId, videoUrl, projectId);
+  }
+}
+
+async function lambdaRenderSingle({ jobId, serveUrl, compositionId, durationInFrames, fps, width, height, codec, crf, bucketName }) {
+  const { renderId } = await renderMediaOnLambda({
+    region: LAMBDA_REGION,
+    functionName: LAMBDA_FUNCTION_NAME,
+    serveUrl,
+    composition: compositionId,
+    codec,
+    inputProps: {},
+    framesPerLambda: LAMBDA_FRAMES_PER_LAMBDA,
+    ...(crf !== undefined ? { crf } : {}),
+  });
+  console.log(`[Lambda] Render started: ${renderId}`);
+
+  while (true) {
+    await new Promise(r => setTimeout(r, 3000));
+    const progress = await getRenderProgress({
+      renderId,
+      bucketName,
+      region: LAMBDA_REGION,
+      functionName: LAMBDA_FUNCTION_NAME,
+    });
+
+    const pct = Math.round((progress.overallProgress || 0) * 100);
+    const j = activeJobs.get(jobId);
+    if (j) j.progress = pct;
+    if (pct % 10 === 0 && supabase) {
+      supabase.from('remotion_render_jobs').update({ progress: pct }).eq('id', jobId).then(() => {});
+    }
+
+    if (progress.done) {
+      console.log(`[Lambda] Render complete: ${renderId}`);
+      return progress.outputFile;
+    }
+    if (progress.fatalErrorEncountered) {
+      throw new Error(`Lambda render failed: ${progress.errors?.map(e => e.message).join('; ') || 'unknown'}`);
+    }
+  }
+}
+
+async function lambdaRenderSegment({ serveUrl, compositionId, frameRange, fps, width, height, codec, crf, bucketName, segIndex, totalSegments, onProgress }) {
+  const { renderId } = await renderMediaOnLambda({
+    region: LAMBDA_REGION,
+    functionName: LAMBDA_FUNCTION_NAME,
+    serveUrl,
+    composition: compositionId,
+    codec,
+    inputProps: {},
+    framesPerLambda: LAMBDA_FRAMES_PER_LAMBDA,
+    frameRange,
+    audioCodec: 'pcm-16',
+    ...(crf !== undefined ? { crf } : {}),
+  });
+  console.log(`[Lambda] Segment ${segIndex + 1}/${totalSegments} started: ${renderId} (frames ${frameRange[0]}-${frameRange[1]})`);
+
+  while (true) {
+    await new Promise(r => setTimeout(r, 3000));
+    const progress = await getRenderProgress({
+      renderId,
+      bucketName,
+      region: LAMBDA_REGION,
+      functionName: LAMBDA_FUNCTION_NAME,
+    });
+
+    const pct = Math.round((progress.overallProgress || 0) * 100);
+    if (onProgress) onProgress(pct);
+
+    if (progress.done) {
+      if (onProgress) onProgress(100);
+      console.log(`[Lambda] Segment ${segIndex + 1}/${totalSegments} complete: ${progress.outputFile}`);
+      return progress.outputFile;
+    }
+    if (progress.fatalErrorEncountered) {
+      throw new Error(`Lambda segment ${segIndex + 1} failed: ${progress.errors?.map(e => e.message).join('; ') || 'unknown'}`);
+    }
+  }
+}
+
+async function concatSegments(jobId, segmentUrls) {
+  const tmpDir = path.join(os.tmpdir(), `remotion-concat-${jobId}`);
+  if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
+
+  const segFiles = [];
+  for (let i = 0; i < segmentUrls.length; i++) {
+    const segPath = path.join(tmpDir, `seg_${i}.mp4`);
+    console.log(`[Lambda] Downloading segment ${i + 1}/${segmentUrls.length}...`);
+    const resp = await fetch(segmentUrls[i]);
+    if (!resp.ok) throw new Error(`Failed to download segment ${i}: ${resp.status}`);
+    fs.writeFileSync(segPath, Buffer.from(await resp.arrayBuffer()));
+    segFiles.push(segPath);
+  }
+
+  const listFile = path.join(tmpDir, 'filelist.txt');
+  fs.writeFileSync(listFile, segFiles.map(f => `file '${f}'`).join('\n'));
+
+  const outputFile = path.join(__dirname, 'temp', `${jobId}.mp4`);
+  console.log(`[Lambda] Concatenating ${segFiles.length} segments...`);
+  execSync(`ffmpeg -y -f concat -safe 0 -i "${listFile}" -c copy "${outputFile}"`, { stdio: 'pipe' });
+
+  // Cleanup temp
+  for (const f of segFiles) { try { fs.unlinkSync(f); } catch (_) {} }
+  try { fs.unlinkSync(listFile); fs.rmdirSync(tmpDir); } catch (_) {}
+
+  const videoUrl = buildVideoUrl(`${jobId}.mp4`);
+  console.log(`[Lambda] Concatenation complete: ${videoUrl}`);
+  return videoUrl;
+}
+
+async function finishRenderJob(jobId, videoUrl, projectId) {
+  const j = activeJobs.get(jobId);
+  if (j) { j.status = 'completed'; j.progress = 100; j.videoUrl = videoUrl; j.completedAt = Date.now(); }
+
+  if (supabase) {
+    await supabase.from('remotion_render_jobs').update({
+      status: 'completed', progress: 100, video_url: videoUrl, completed_at: new Date().toISOString(),
+    }).eq('id', jobId);
+    if (projectId) {
+      await supabase.from('projects').update({ animator_video_url: videoUrl }).eq('id', projectId);
+    }
+  }
+  console.log(`[Animator] Render complete: ${jobId} -> ${videoUrl}`);
+}
+
 app.post('/animator/render-assembled', async (req, res) => {
   const {
     projectId,
@@ -884,36 +1101,21 @@ app.post('/animator/render-assembled', async (req, res) => {
         const entryPoint = path.join(srcDir, 'index.js');
         const newBundle = await bundle({ entryPoint, webpackOverride: (config) => config });
 
-        const outputFile = path.join(__dirname, 'temp', `${jobId}.mp4`);
-        const composition = await selectComposition({ serveUrl: newBundle, id: compositionId, inputProps: {} });
+        const useLambda = LAMBDA_ENABLED && renderMediaOnLambda && deploySite && LAMBDA_FUNCTION_NAME;
+        const renderArgs = { jobId, compositionId, newBundle, durationInFrames, fps, width, height, codec, crf, projectId };
 
-        await renderMedia({
-          composition: { ...composition, durationInFrames, fps, width, height },
-          serveUrl: newBundle, codec, outputLocation: outputFile, inputProps: {},
-          ...(crf !== undefined ? { crf } : {}),
-          onProgress: ({ progress }) => {
-            const pct = Math.round(progress * 100);
+        if (useLambda) {
+          try {
+            await renderViaLambda(renderArgs);
+          } catch (lambdaErr) {
+            console.warn(`[Lambda] Failed, falling back to local render: ${lambdaErr.message}`);
             const j = activeJobs.get(jobId);
-            if (j) j.progress = pct;
-            if (pct % 10 === 0 && supabase) {
-              supabase.from('remotion_render_jobs').update({ progress: pct }).eq('id', jobId).then(() => {});
-            }
-          },
-        });
-
-        const videoUrl = buildVideoUrl(`${jobId}.mp4`);
-        const j = activeJobs.get(jobId);
-        if (j) { j.status = 'completed'; j.progress = 100; j.videoUrl = videoUrl; j.completedAt = Date.now(); }
-
-        if (supabase) {
-          await supabase.from('remotion_render_jobs').update({
-            status: 'completed', progress: 100, video_url: videoUrl, completed_at: new Date().toISOString(),
-          }).eq('id', jobId);
-          if (projectId) {
-            await supabase.from('projects').update({ animator_video_url: videoUrl }).eq('id', projectId);
+            if (j) { j.progress = 0; j.status = 'rendering'; }
+            await renderLocally(renderArgs);
           }
+        } else {
+          await renderLocally(renderArgs);
         }
-        console.log(`[Animator] Assembled render complete: ${jobId} -> ${videoUrl}`);
       } catch (err) {
         console.error(`[Animator] Assembled render failed for ${jobId}:`, err.message);
         const j = activeJobs.get(jobId);
