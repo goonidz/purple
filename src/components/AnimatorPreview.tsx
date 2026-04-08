@@ -57,7 +57,6 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
   const [chatInput, setChatInput] = useState("");
   const [isEditing, setIsEditing] = useState(false);
   const [isRebuilding, setIsRebuilding] = useState(false);
-  const chatEndRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const resumeFrameRef = useRef<number | null>(null);
 
@@ -72,7 +71,6 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
   const [qaChildJobs, setQaChildJobs] = useState<any[]>([]);
   const qaJob = getJobByType('qa_scenes');
   const qaJobRunning = !!qaJob && qaJob.status === 'processing';
-  const qaLogEndRef = useRef<HTMLDivElement>(null);
 
   const seekToScene = useCallback((sceneIndex: number) => {
     if (!previewMeta || !segments[sceneIndex]) return;
@@ -127,10 +125,7 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
     setActiveSceneIndex(idx >= 0 ? idx : null);
   }, [currentFrame, segments, previewMeta]);
 
-  // Scroll chat to bottom on new messages
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [chatMessages]);
+  // No auto-scroll for chat — user controls scroll position
 
   const loadPreview = useCallback(async () => {
     if (!projectId) return;
@@ -295,11 +290,7 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
     return () => clearInterval(interval);
   }, [qaJob?.id, qaJob?.status, qaJob?.progress]);
 
-  // Auto-scroll QA log
-  useEffect(() => {
-    const el = qaLogEndRef.current?.parentElement;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [qaChildJobs]);
+  // No auto-scroll for QA log — user controls scroll position
 
   const launchQAAgent = useCallback(async () => {
     if (!projectId || hasActiveJob('qa_scenes')) return;
@@ -479,7 +470,6 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
                   Modification en cours...
                 </div>
               )}
-              <div ref={chatEndRef} />
             </div>
 
             {/* Input */}
@@ -835,7 +825,6 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
                           </div>
                         );
                       })}
-                      <div ref={qaLogEndRef} />
                     </div>
                   );
                 })()}
