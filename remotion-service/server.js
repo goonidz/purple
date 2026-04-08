@@ -27,7 +27,7 @@ if (LAMBDA_ENABLED) {
 }
 const LAMBDA_REGION = process.env.REMOTION_AWS_REGION || 'eu-west-1';
 const LAMBDA_FUNCTION_NAME = process.env.REMOTION_LAMBDA_FUNCTION_NAME || '';
-const LAMBDA_MAX_LAMBDAS = 20;
+const LAMBDA_MAX_LAMBDAS = 200;
 const LAMBDA_MAX_SINGLE_DURATION_MIN = 70;
 
 const app = express();
