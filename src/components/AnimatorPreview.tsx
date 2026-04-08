@@ -893,7 +893,7 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
                               <button
                                 type="button"
                                 disabled={!canClick}
-                                onClick={() => canClick && seekToScene(si)}
+                                onClick={() => { if (canClick) { seekToScene(si); setExpandedScreenshot(si); } }}
                                 className={`font-medium ${canClick ? "underline decoration-dotted cursor-pointer hover:opacity-70" : ""}`}
                               >
                                 Scène {si + 1}
@@ -965,7 +965,7 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
                                 <span className="text-blue-400/80">
                                   <button
                                     type="button"
-                                    onClick={() => seekToScene(si)}
+                                    onClick={() => { seekToScene(si); setExpandedScreenshot(si); }}
                                     className="font-medium underline decoration-dotted cursor-pointer hover:opacity-70"
                                   >
                                     Scène {si + 1}
@@ -990,7 +990,7 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
                                 <span className="text-orange-400/80">
                                   <button
                                     type="button"
-                                    onClick={() => seekToScene(si)}
+                                    onClick={() => { seekToScene(si); setExpandedScreenshot(si); }}
                                     className="font-medium underline decoration-dotted cursor-pointer hover:opacity-70"
                                   >
                                     Scène {si + 1}
