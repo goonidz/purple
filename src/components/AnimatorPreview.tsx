@@ -289,7 +289,20 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
     agentLogEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [agentLog]);
 
-  const GEMINI_QA_PRICES = { input: 0.10, output: 0.40 }; // gemini-2.0-flash per M tokens
+  const MODEL_PRICES: Record<string, { input: number; output: number }> = {
+    'gemini-2.0-flash': { input: 0.10, output: 0.40 },
+    'gemini-2.5-flash-preview-04-17': { input: 0.15, output: 0.60 },
+    'gemini-2.5-pro-preview-03-25': { input: 1.25, output: 10.00 },
+    'gemini-3-flash-preview': { input: 0.15, output: 0.60 },
+    'gemini-3.1-flash-lite-preview': { input: 0.02, output: 0.10 },
+    'claude-sonnet-4-6': { input: 3.00, output: 15.00 },
+    'claude-sonnet-4-20250514': { input: 3.00, output: 15.00 },
+  };
+  const getPrice = (model: string) => MODEL_PRICES[model] || { input: 0.15, output: 0.60 };
+  const tokenCost = (tokens: { input: number; output: number }, model: string) => {
+    const p = getPrice(model);
+    return (tokens.input * p.input + tokens.output * p.output) / 1_000_000;
+  };
 
   const runQAAgent = useCallback(async () => {
     if (agentRunning || !projectId) return;
@@ -342,7 +355,7 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
       // Analyze
       setAgentLog(prev => [...prev, { sceneIndex: si, status: "analyzing", message: `Analyse scène ${si + 1}...` }]);
 
-      let analyzeResult: { pass: boolean; issue: string | null; tokens?: { input: number; output: number } };
+      let analyzeResult: { pass: boolean; issue: string | null; tokens?: { input: number; output: number }; model?: string };
       try {
         const resp = await fetch(`${REMOTION_SERVICE_URL}/animator/qa-analyze`, {
           method: "POST",
@@ -361,12 +374,13 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
         continue;
       }
 
-      // Accumulate QA tokens
+      const qaModelUsed = analyzeResult.model || 'gemini-2.0-flash';
+
       if (analyzeResult.tokens) {
         setAgentTokens(prev => {
           const inp = prev.input + analyzeResult.tokens!.input;
           const out = prev.output + analyzeResult.tokens!.output;
-          return { input: inp, output: out, cost: (inp * GEMINI_QA_PRICES.input + out * GEMINI_QA_PRICES.output) / 1_000_000 };
+          return { input: inp, output: out, cost: prev.cost + tokenCost(analyzeResult.tokens!, qaModelUsed) };
         });
       }
 
@@ -408,7 +422,7 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
           setAgentTokens(prev => ({
             input: prev.input + (editResult.tokens!.input || 0),
             output: prev.output + (editResult.tokens!.output || 0),
-            cost: prev.cost + ((editResult.tokens!.input || 0) * GEMINI_QA_PRICES.input + (editResult.tokens!.output || 0) * GEMINI_QA_PRICES.output) / 1_000_000,
+            cost: prev.cost + tokenCost(editResult.tokens!, qaModelUsed),
           }));
         }
 
@@ -449,11 +463,11 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
           });
           const recheck = await resp2.json();
           if (recheck.tokens) {
-            setAgentTokens(prev => {
-              const inp = prev.input + recheck.tokens.input;
-              const out = prev.output + recheck.tokens.output;
-              return { input: inp, output: out, cost: (inp * GEMINI_QA_PRICES.input + out * GEMINI_QA_PRICES.output) / 1_000_000 };
-            });
+            setAgentTokens(prev => ({
+              input: prev.input + recheck.tokens.input,
+              output: prev.output + recheck.tokens.output,
+              cost: prev.cost + tokenCost(recheck.tokens, recheck.model || qaModelUsed),
+            }));
           }
           if (recheck.pass) {
             setAgentLog(prev => {

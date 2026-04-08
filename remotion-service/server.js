@@ -1219,7 +1219,7 @@ createRoot(container).render(<App />);
   }
 });
 
-// --- QA Analyze: Gemini vision pass/fail check for a scene screenshot ---
+// --- QA Analyze: vision pass/fail check using the channel's preset model ---
 app.post('/animator/qa-analyze', async (req, res) => {
   const { projectId, sceneIndex, screenshotUrl } = req.body;
   if (!projectId) return res.status(400).json({ error: 'projectId is required' });
@@ -1231,8 +1231,30 @@ app.post('/animator/qa-analyze', async (req, res) => {
     const { data: proj } = await supabase.from('projects').select('user_id').eq('id', projectId).single();
     if (!proj?.user_id) return res.status(400).json({ error: 'Project not found' });
 
-    const { data: geminiKey } = await supabase.rpc('get_user_api_key', { key_name: 'gemini', p_user_id: proj.user_id });
-    if (!geminiKey) return res.status(400).json({ error: 'No Gemini API key found' });
+    // Resolve model from channel preset (same as edit-scene)
+    const { data: calEntry } = await supabase
+      .from('content_calendar').select('channel_id')
+      .eq('project_id', projectId).not('channel_id', 'is', null).limit(1).single();
+
+    let resolvedModel = 'claude-sonnet-4-6';
+    if (calEntry?.channel_id) {
+      const { data: ch } = await supabase.from('channels').select('animator_preset_id').eq('id', calEntry.channel_id).single();
+      if (ch?.animator_preset_id) {
+        const { data: preset } = await supabase.from('animator_presets').select('model').eq('id', ch.animator_preset_id).single();
+        if (preset?.model) resolvedModel = preset.model;
+      }
+    }
+
+    const useGemini = resolvedModel.startsWith('gemini-');
+    let apiKey = null;
+    if (useGemini) {
+      const { data: k } = await supabase.rpc('get_user_api_key', { key_name: 'gemini', p_user_id: proj.user_id });
+      apiKey = k;
+    } else {
+      const { data: k } = await supabase.rpc('get_user_api_key_for_service', { target_user_id: proj.user_id, key_name: 'anthropic' });
+      apiKey = k;
+    }
+    if (!apiKey) return res.status(400).json({ error: `No ${useGemini ? 'Gemini' : 'Anthropic'} API key found` });
 
     const imgResp = await fetch(screenshotUrl);
     if (!imgResp.ok) return res.status(400).json({ error: 'Failed to download screenshot' });
@@ -1240,14 +1262,7 @@ app.post('/animator/qa-analyze', async (req, res) => {
     const screenshotBase64 = buf.toString('base64');
     const screenshotMime = imgResp.headers.get('content-type') || 'image/png';
 
-    const qaModel = 'gemini-2.0-flash';
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${qaModel}:generateContent?key=${geminiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          systemInstruction: { parts: [{ text: `You are a visual QA inspector for animated video scenes rendered with Remotion.
+    const qaSystemPrompt = `You are a visual QA inspector for animated video scenes rendered with Remotion.
 Analyze the screenshot and check for visual issues:
 - Overlapping or colliding text elements
 - Text cut off or extending beyond the frame
@@ -1259,36 +1274,74 @@ Analyze the screenshot and check for visual issues:
 
 Respond with ONLY a JSON object (no markdown, no code fences):
 {"pass": true, "issue": null} if the scene looks acceptable
-{"pass": false, "issue": "brief description of the problem"} if there is a visual issue` }] },
-          contents: [{ role: 'user', parts: [
-            { inlineData: { mimeType: screenshotMime, data: screenshotBase64 } },
-            { text: `Analyze this screenshot of animation scene ${sceneIndex + 1}. Is it visually acceptable?` },
-          ]}],
-          generationConfig: { maxOutputTokens: 256, temperature: 0.1 },
-        }),
-      }
-    );
+{"pass": false, "issue": "brief description of the problem"} if there is a visual issue`;
 
-    if (!response.ok) {
-      const errText = await response.text();
-      throw new Error(`Gemini error ${response.status}: ${errText.substring(0, 200)}`);
+    let tokens = { input: 0, output: 0 };
+    let responseText = '';
+
+    if (useGemini) {
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${resolvedModel}:generateContent?key=${apiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: qaSystemPrompt }] },
+            contents: [{ role: 'user', parts: [
+              { inlineData: { mimeType: screenshotMime, data: screenshotBase64 } },
+              { text: `Analyze this screenshot of animation scene ${sceneIndex + 1}. Is it visually acceptable?` },
+            ]}],
+            generationConfig: { maxOutputTokens: 256, temperature: 0.1 },
+          }),
+        }
+      );
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`Gemini error ${response.status}: ${errText.substring(0, 200)}`);
+      }
+      const data = await response.json();
+      const usage = data.usageMetadata || {};
+      tokens = { input: usage.promptTokenCount || 0, output: usage.candidatesTokenCount || 0 };
+      responseText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    } else {
+      // Anthropic Claude with vision
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+        },
+        body: JSON.stringify({
+          model: resolvedModel,
+          max_tokens: 256,
+          temperature: 0.1,
+          system: qaSystemPrompt,
+          messages: [{ role: 'user', content: [
+            { type: 'image', source: { type: 'base64', media_type: screenshotMime, data: screenshotBase64 } },
+            { type: 'text', text: `Analyze this screenshot of animation scene ${sceneIndex + 1}. Is it visually acceptable?` },
+          ]}],
+        }),
+      });
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`Anthropic error ${response.status}: ${errText.substring(0, 200)}`);
+      }
+      const data = await response.json();
+      tokens = { input: data.usage?.input_tokens || 0, output: data.usage?.output_tokens || 0 };
+      responseText = data.content?.[0]?.text || '';
     }
 
-    const data = await response.json();
-    const usage = data.usageMetadata || {};
-    const tokens = { input: usage.promptTokenCount || 0, output: usage.candidatesTokenCount || 0 };
-
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
     let result;
     try {
-      const cleaned = text.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+      const cleaned = responseText.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
       result = JSON.parse(cleaned);
     } catch (e) {
-      result = { pass: !text.toLowerCase().includes('issue') && !text.toLowerCase().includes('problem'), issue: text.substring(0, 200) };
+      result = { pass: !responseText.toLowerCase().includes('issue') && !responseText.toLowerCase().includes('problem'), issue: responseText.substring(0, 200) };
     }
 
-    console.log(`[QA-Analyze] Scene ${sceneIndex}: ${result.pass ? 'PASS' : 'FAIL'} ${result.issue || ''} (${tokens.input}+${tokens.output} tokens)`);
-    res.json({ pass: !!result.pass, issue: result.issue || null, tokens });
+    console.log(`[QA-Analyze] Scene ${sceneIndex} (${resolvedModel}): ${result.pass ? 'PASS' : 'FAIL'} ${result.issue || ''} (${tokens.input}+${tokens.output} tokens)`);
+    res.json({ pass: !!result.pass, issue: result.issue || null, tokens, model: resolvedModel });
   } catch (err) {
     console.error(`[QA-Analyze] Failed:`, err.message);
     res.status(500).json({ error: err.message });
