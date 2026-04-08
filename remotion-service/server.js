@@ -1275,15 +1275,19 @@ Analyze the screenshot carefully. Look for ANY of these issues:
 - Numbers or words partially covered by other elements
 - Not centered / bugged visual composition (like all elements on one side and not centered)
 
-Be STRICT. If ANY text is partially hidden, cut off, overlapping, or if any element covers another, mark it as FAIL. When in doubt, FAIL.
+Be STRICT. If ANY text is partially hidden, cut off, overlapping, or if any element covers another, mark it as FAIL. When in doubt, FAIL.`;
 
-First, briefly describe what you see in the screenshot (1-2 sentences).
-Then on a new line, provide your verdict as a JSON object (no markdown, no code fences):
-{"pass": true, "issue": null} if the scene looks fully acceptable
-{"pass": false, "issue": "brief description of the problem"} if there is ANY visual issue`;
+    const qaJsonSchema = {
+      type: 'object',
+      properties: {
+        pass: { type: 'boolean', description: 'true if the scene is visually acceptable, false if there is ANY issue' },
+        issue: { type: 'string', description: 'Brief description of the visual problem, or null if pass is true', nullable: true },
+      },
+      required: ['pass', 'issue'],
+    };
 
     let tokens = { input: 0, output: 0 };
-    let responseText = '';
+    let result;
 
     if (useGemini) {
       const response = await fetch(
@@ -1297,7 +1301,13 @@ Then on a new line, provide your verdict as a JSON object (no markdown, no code 
               { inlineData: { mimeType: screenshotMime, data: screenshotBase64 } },
               { text: `Analyze this screenshot of animation scene ${sceneIndex + 1}. Is it visually acceptable?` },
             ]}],
-            generationConfig: { maxOutputTokens: 512, temperature: 1, thinkingConfig: { thinkingLevel: "high" } },
+            generationConfig: {
+              maxOutputTokens: 512,
+              temperature: 1,
+              thinkingConfig: { thinkingLevel: "high" },
+              responseMimeType: 'application/json',
+              responseSchema: qaJsonSchema,
+            },
           }),
         }
       );
@@ -1309,9 +1319,16 @@ Then on a new line, provide your verdict as a JSON object (no markdown, no code 
       const usage = data.usageMetadata || {};
       tokens = { input: usage.promptTokenCount || 0, output: usage.candidatesTokenCount || 0 };
       const parts = data.candidates?.[0]?.content?.parts || [];
-      responseText = parts.filter(p => !p.thought).map(p => p.text).filter(Boolean).join('\n') || '';
+      const responseText = parts.filter(p => !p.thought).map(p => p.text).filter(Boolean).join('') || '';
+      try {
+        result = JSON.parse(responseText);
+      } catch (e) {
+        console.warn(`[QA-Analyze] Gemini structured output parse failed: ${responseText.substring(0, 150)}`);
+        result = { pass: true, issue: null };
+      }
     } else {
-      // Anthropic Claude with vision
+      // Anthropic Claude with vision (no structured output — use text + regex)
+      const claudePrompt = qaSystemPrompt + `\n\nRespond with ONLY a JSON object: {"pass": true/false, "issue": "description or null"}`;
       const response = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: {
@@ -1323,7 +1340,7 @@ Then on a new line, provide your verdict as a JSON object (no markdown, no code 
           model: resolvedModel,
           max_tokens: 512,
           temperature: 1,
-          system: qaSystemPrompt,
+          system: claudePrompt,
           messages: [{ role: 'user', content: [
             { type: 'image', source: { type: 'base64', media_type: screenshotMime, data: screenshotBase64 } },
             { type: 'text', text: `Analyze this screenshot of animation scene ${sceneIndex + 1}. Is it visually acceptable?` },
@@ -1336,19 +1353,15 @@ Then on a new line, provide your verdict as a JSON object (no markdown, no code 
       }
       const data = await response.json();
       tokens = { input: data.usage?.input_tokens || 0, output: data.usage?.output_tokens || 0 };
-      responseText = data.content?.[0]?.text || '';
-    }
-
-    let result;
-    try {
-      // Extract the first JSON object from the response, ignoring surrounding text/fences
-      const jsonMatch = responseText.match(/\{[\s\S]*?\}/);
-      if (!jsonMatch) throw new Error('No JSON found');
-      result = JSON.parse(jsonMatch[0]);
-    } catch (e) {
-      // If we truly can't parse, default to PASS to avoid false positives
-      console.warn(`[QA-Analyze] Could not parse response, defaulting to PASS. Raw: ${responseText.substring(0, 150)}`);
-      result = { pass: true, issue: null };
+      const responseText = data.content?.[0]?.text || '';
+      try {
+        const jsonMatch = responseText.match(/\{[\s\S]*?\}/);
+        if (!jsonMatch) throw new Error('No JSON found');
+        result = JSON.parse(jsonMatch[0]);
+      } catch (e) {
+        console.warn(`[QA-Analyze] Claude parse failed, defaulting to PASS. Raw: ${responseText.substring(0, 150)}`);
+        result = { pass: true, issue: null };
+      }
     }
 
     console.log(`[QA-Analyze] Scene ${sceneIndex} (${resolvedModel}): ${result.pass ? 'PASS' : 'FAIL'} ${result.issue || ''} (${tokens.input}+${tokens.output} tokens)`);
