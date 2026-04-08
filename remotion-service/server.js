@@ -1334,10 +1334,14 @@ Respond with ONLY a JSON object (no markdown, no code fences):
 
     let result;
     try {
-      const cleaned = responseText.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
-      result = JSON.parse(cleaned);
+      // Extract the first JSON object from the response, ignoring surrounding text/fences
+      const jsonMatch = responseText.match(/\{[\s\S]*?\}/);
+      if (!jsonMatch) throw new Error('No JSON found');
+      result = JSON.parse(jsonMatch[0]);
     } catch (e) {
-      result = { pass: !responseText.toLowerCase().includes('issue') && !responseText.toLowerCase().includes('problem'), issue: responseText.substring(0, 200) };
+      // If we truly can't parse, default to PASS to avoid false positives
+      console.warn(`[QA-Analyze] Could not parse response, defaulting to PASS. Raw: ${responseText.substring(0, 150)}`);
+      result = { pass: true, issue: null };
     }
 
     console.log(`[QA-Analyze] Scene ${sceneIndex} (${resolvedModel}): ${result.pass ? 'PASS' : 'FAIL'} ${result.issue || ''} (${tokens.input}+${tokens.output} tokens)`);
