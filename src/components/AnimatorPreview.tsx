@@ -29,6 +29,7 @@ interface QAScreenshot {
   timestamp: number;
   success: boolean;
   url: string | null;
+  beforeUrl?: string | null;
   error?: string;
 }
 
@@ -62,7 +63,6 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
 
   // QA Screenshots
   const [qaScreenshots, setQaScreenshots] = useState<QAScreenshot[]>([]);
-  const [qaBeforeScreenshots, setQaBeforeScreenshots] = useState<Map<number, string>>(new Map());
   const [isLoadingQA, setIsLoadingQA] = useState(false);
   const [showQAGrid, setShowQAGrid] = useState(false);
   const [expandedScreenshot, setExpandedScreenshot] = useState<number | null>(null);
@@ -359,13 +359,9 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
     setShowQAGrid(true);
     setLastQaResult(null);
     setQaChildJobs([]);
-    // Save current screenshots as "before" for comparison after fixes
-    const beforeMap = new Map<number, string>();
-    qaScreenshots.forEach(s => { if (s.url) beforeMap.set(s.sceneIndex, s.url); });
-    setQaBeforeScreenshots(beforeMap);
     setShowBefore(false);
     await startJob('qa_scenes', {});
-  }, [projectId, startJob, hasActiveJob, qaScreenshots]);
+  }, [projectId, startJob, hasActiveJob]);
 
   const stopQAAgent = useCallback(async () => {
     if (activeQaJob) await cancelJob(activeQaJob.id);
@@ -607,7 +603,7 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
                 const fixedSceneIndices = new Set(
                   qaChildJobs.filter(j => j.metadata?.fixed).map(j => j.metadata?.sceneIndex)
                 );
-                const hasAnyBefore = fixedSceneIndices.size > 0 && qaBeforeScreenshots.size > 0;
+                const hasAnyBefore = qaScreenshots.some(s => s.beforeUrl);
                 return (
                   <>
                     {hasAnyBefore && (
@@ -627,9 +623,8 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
                     )}
                     <div className="p-2 grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 gap-1.5 max-h-[500px] overflow-y-auto">
                       {qaScreenshots.map((shot) => {
-                        const isFixed = fixedSceneIndices.has(shot.sceneIndex);
-                        const beforeUrl = qaBeforeScreenshots.get(shot.sceneIndex);
-                        const displayUrl = (showBefore && isFixed && beforeUrl) ? beforeUrl : shot.url;
+                        const isFixed = fixedSceneIndices.has(shot.sceneIndex) || !!shot.beforeUrl;
+                        const displayUrl = (showBefore && isFixed && shot.beforeUrl) ? shot.beforeUrl : shot.url;
                         return (
                           <div
                             key={shot.sceneIndex}
@@ -639,7 +634,7 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
                               shot.success ? "border-border hover:border-purple-500/50" : "border-red-500/30 bg-red-500/5"
                             } transition-all`}
                             onClick={() => {
-                              if (shot.success || (showBefore && beforeUrl)) {
+                              if (shot.success || (showBefore && shot.beforeUrl)) {
                                 seekToScene(shot.sceneIndex);
                                 setExpandedScreenshot(shot.sceneIndex);
                               }
@@ -672,7 +667,7 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
                                 </div>
                               </div>
                             )}
-                            {(shot.success || (showBefore && beforeUrl)) && (
+                            {(shot.success || (showBefore && shot.beforeUrl)) && (
                               <div className="absolute inset-0 bg-purple-500/0 group-hover:bg-purple-500/10 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
                                 <Button
                                   size="sm"
@@ -699,9 +694,8 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
               {expandedScreenshot != null && (() => {
                 const shot = qaScreenshots.find(s => s.sceneIndex === expandedScreenshot);
                 if (!shot) return null;
-                const expandedBeforeUrl = qaBeforeScreenshots.get(shot.sceneIndex);
-                const expandedIsFixed = qaChildJobs.some(j => j.metadata?.fixed && j.metadata?.sceneIndex === shot.sceneIndex);
-                const hasBefore = expandedIsFixed && !!expandedBeforeUrl;
+                const expandedIsFixed = !!shot.beforeUrl || qaChildJobs.some(j => j.metadata?.fixed && j.metadata?.sceneIndex === shot.sceneIndex);
+                const hasBefore = !!shot.beforeUrl;
                 return (
                   <div className="p-3 border-t border-border">
                     <div className="flex items-center justify-between mb-2">
@@ -740,7 +734,7 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
                         <div>
                           <div className="text-[10px] text-orange-400 font-medium mb-1 text-center">Avant</div>
                           <img
-                            src={expandedBeforeUrl}
+                            src={shot.beforeUrl!}
                             alt={`Scene ${shot.sceneIndex + 1} — avant`}
                             className="w-full rounded border border-orange-500/30"
                           />

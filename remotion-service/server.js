@@ -1734,9 +1734,20 @@ registerRoot(Root);
 
     // --- Single scene mode ---
     if (singleMode) {
+      // Preserve original screenshot as _before (only first time, so we keep the true original)
+      const currentPng = path.join(pngsDir, `scene_${String(singleSceneIndex).padStart(3, '0')}.png`);
+      const beforePng = path.join(pngsDir, `scene_${String(singleSceneIndex).padStart(3, '0')}_before.png`);
+      if (fs.existsSync(currentPng) && !fs.existsSync(beforePng)) {
+        fs.copyFileSync(currentPng, beforePng);
+        console.log(`[QA] Saved before screenshot for scene ${singleSceneIndex}`);
+      }
+
       const result = await captureScene(singleSceneIndex);
       const url = result.success
         ? `${baseUrl}/${shortProjectId}-qa/pngs/scene_${String(singleSceneIndex).padStart(3, '0')}.png?t=${Date.now()}`
+        : null;
+      const beforeUrl = fs.existsSync(beforePng)
+        ? `${baseUrl}/${shortProjectId}-qa/pngs/scene_${String(singleSceneIndex).padStart(3, '0')}_before.png`
         : null;
 
       // Update manifest with new hash for this scene
@@ -1800,10 +1811,15 @@ registerRoot(Root);
       completed: screenshots.filter(s => s.success).length,
       failed: screenshots.filter(s => !s.success).length,
       sceneHashes,
-      screenshots: screenshots.map(s => ({
-        ...s,
-        url: s.success ? `${baseUrl}/${shortProjectId}-qa/pngs/scene_${String(s.sceneIndex).padStart(3, '0')}.png` : null,
-      })),
+      screenshots: screenshots.map(s => {
+        const padded = String(s.sceneIndex).padStart(3, '0');
+        const bFile = path.join(pngsDir, `scene_${padded}_before.png`);
+        return {
+          ...s,
+          url: s.success ? `${baseUrl}/${shortProjectId}-qa/pngs/scene_${padded}.png?t=${Date.now()}` : null,
+          beforeUrl: fs.existsSync(bFile) ? `${baseUrl}/${shortProjectId}-qa/pngs/scene_${padded}_before.png` : null,
+        };
+      }),
     };
 
     fs.writeFileSync(manifestPath, JSON.stringify(result), 'utf-8');
