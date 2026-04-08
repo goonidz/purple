@@ -1308,7 +1308,8 @@ Then on a new line, provide your verdict as a JSON object (no markdown, no code 
       const data = await response.json();
       const usage = data.usageMetadata || {};
       tokens = { input: usage.promptTokenCount || 0, output: usage.candidatesTokenCount || 0 };
-      responseText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      const parts = data.candidates?.[0]?.content?.parts || [];
+      responseText = parts.filter(p => !p.thought).map(p => p.text).filter(Boolean).join('\n') || '';
     } else {
       // Anthropic Claude with vision
       const response = await fetch('https://api.anthropic.com/v1/messages', {
