@@ -810,16 +810,16 @@ async function renderLocally({ jobId, compositionId, newBundle, durationInFrames
   await finishRenderJob(jobId, videoUrl, projectId);
 }
 
-async function renderViaLambda({ jobId, compositionId, newBundle, durationInFrames, fps, width, height, codec, crf, projectId }) {
+async function renderViaLambda({ jobId, compositionId, entryPoint, durationInFrames, fps, width, height, codec, crf, projectId }) {
   const totalMinutes = durationInFrames / fps / 60;
   const needsSegmentation = totalMinutes > LAMBDA_MAX_SINGLE_DURATION_MIN;
 
-  console.log(`[Lambda] Uploading bundle to S3 for ${jobId}...`);
+  console.log(`[Lambda] Deploying site to S3 for ${jobId}...`);
   const { bucketName } = await getOrCreateBucket({ region: LAMBDA_REGION });
   const { serveUrl } = await deploySite({
     bucketName,
     region: LAMBDA_REGION,
-    entryPoint: newBundle,
+    entryPoint,
     siteName: `animator-${jobId.slice(-10)}`,
   });
   console.log(`[Lambda] Bundle deployed: ${serveUrl}`);
@@ -1102,7 +1102,7 @@ app.post('/animator/render-assembled', async (req, res) => {
         const newBundle = await bundle({ entryPoint, webpackOverride: (config) => config });
 
         const useLambda = LAMBDA_ENABLED && renderMediaOnLambda && deploySite && LAMBDA_FUNCTION_NAME;
-        const renderArgs = { jobId, compositionId, newBundle, durationInFrames, fps, width, height, codec, crf, projectId };
+        const renderArgs = { jobId, compositionId, newBundle, entryPoint, durationInFrames, fps, width, height, codec, crf, projectId };
 
         if (useLambda) {
           try {
