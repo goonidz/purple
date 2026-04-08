@@ -3,7 +3,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Play, RefreshCw, ExternalLink, Send, Sparkles, Camera, X, AlertTriangle, ChevronLeft, ChevronRight, Wrench } from "lucide-react";
+import { Loader2, Play, RefreshCw, ExternalLink, Send, Sparkles, Camera, X, AlertTriangle, ChevronLeft, ChevronRight, Wrench, Bot, Square, Check, XCircle, Eye } from "lucide-react";
 import { toast } from "sonner";
 
 const REMOTION_SERVICE_URL =
@@ -28,6 +28,12 @@ interface QAScreenshot {
   success: boolean;
   url: string | null;
   error?: string;
+}
+
+interface AgentLogEntry {
+  sceneIndex: number;
+  status: "analyzing" | "pass" | "fail" | "fixing" | "fixed" | "gave_up";
+  message: string;
 }
 
 interface AnimatorPreviewProps {
@@ -64,6 +70,14 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
   const [showQAGrid, setShowQAGrid] = useState(false);
   const [expandedScreenshot, setExpandedScreenshot] = useState<number | null>(null);
   const [qaFixInput, setQaFixInput] = useState("");
+
+  // QA Agent
+  const [agentRunning, setAgentRunning] = useState(false);
+  const [agentLog, setAgentLog] = useState<AgentLogEntry[]>([]);
+  const [agentProgress, setAgentProgress] = useState({ checked: 0, passed: 0, fixed: 0, failed: 0, total: 0 });
+  const [agentTokens, setAgentTokens] = useState({ input: 0, output: 0, cost: 0 });
+  const agentAbortRef = useRef(false);
+  const agentLogEndRef = useRef<HTMLDivElement>(null);
 
   const seekToScene = useCallback((sceneIndex: number) => {
     if (!previewMeta || !segments[sceneIndex]) return;
@@ -150,16 +164,19 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
     }
   }, [projectId]);
 
-  const sendEdit = useCallback(async (opts?: { screenshotUrl?: string; overrideInstruction?: string; overrideSceneIndex?: number }) => {
+  const sendEdit = useCallback(async (opts?: { screenshotUrl?: string; overrideInstruction?: string; overrideSceneIndex?: number; agentMode?: boolean }): Promise<{ success: boolean; tokens?: { input: number; output: number } }> => {
     const instruction = opts?.overrideInstruction || chatInput.trim();
     const sceneIdx = opts?.overrideSceneIndex ?? activeSceneIndex;
-    if (!instruction || sceneIdx == null || isEditing) return;
+    const agent = opts?.agentMode ?? false;
+    if (!instruction || sceneIdx == null || isEditing) return { success: false };
 
-    if (!opts?.overrideInstruction) setChatInput("");
-    setChatMessages((prev) => [
-      ...prev,
-      { role: "user", content: instruction + (opts?.screenshotUrl ? " 📷" : ""), sceneIndex: sceneIdx },
-    ]);
+    if (!agent && !opts?.overrideInstruction) setChatInput("");
+    if (!agent) {
+      setChatMessages((prev) => [
+        ...prev,
+        { role: "user", content: instruction + (opts?.screenshotUrl ? " 📷" : ""), sceneIndex: sceneIdx },
+      ]);
+    }
     setIsEditing(true);
 
     try {
@@ -173,30 +190,32 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
       const data = await resp.json();
       if (!resp.ok) throw new Error(data.error || "Edit failed");
 
-      setChatMessages((prev) => [
-        ...prev,
-        {
-          role: "assistant",
-          content: `Scene ${sceneIdx + 1} modifiée. Mise à jour...`,
-          sceneIndex: sceneIdx,
-        },
-      ]);
+      const editTokens = data.tokens;
 
-      // Save playback position and rebuild without hiding the player
-      resumeFrameRef.current = currentFrame;
-      setIsRebuilding(true);
-      try {
-        const resp2 = await fetch(`${REMOTION_SERVICE_URL}/animator/preview-bundle`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ projectId }),
-        });
-        const data2 = await resp2.json();
-        if (!resp2.ok) throw new Error(data2.error || "Preview rebuild failed");
-        setPreviewUrl(data2.previewUrl);
-        if (data2.segments) setSegments(data2.segments);
-      } finally {
-        setIsRebuilding(false);
+      if (!agent) {
+        setChatMessages((prev) => [
+          ...prev,
+          { role: "assistant", content: `Scene ${sceneIdx + 1} modifiée. Mise à jour...`, sceneIndex: sceneIdx },
+        ]);
+      }
+
+      // In agent mode, skip preview rebuild (agent will rebuild once at end)
+      if (!agent) {
+        resumeFrameRef.current = currentFrame;
+        setIsRebuilding(true);
+        try {
+          const resp2 = await fetch(`${REMOTION_SERVICE_URL}/animator/preview-bundle`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ projectId }),
+          });
+          const data2 = await resp2.json();
+          if (!resp2.ok) throw new Error(data2.error || "Preview rebuild failed");
+          setPreviewUrl(data2.previewUrl);
+          if (data2.segments) setSegments(data2.segments);
+        } finally {
+          setIsRebuilding(false);
+        }
       }
 
       // Refresh QA screenshot if the grid is open and has this scene
@@ -215,19 +234,24 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
             setQaScreenshots((prev) =>
               prev.map((s) => s.sceneIndex === sceneIdx ? data3.screenshot : s)
             );
-            toast.success(`Screenshot scène ${sceneIdx + 1} mis à jour`);
+            if (!agent) toast.success(`Screenshot scène ${sceneIdx + 1} mis à jour`);
           }
         } catch (e) {
           console.warn("[AnimatorPreview] Screenshot refresh failed:", e);
         }
       }
+
+      return { success: true, tokens: editTokens };
     } catch (err: any) {
       console.error("[AnimatorPreview] Edit error:", err);
-      setChatMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: `Erreur: ${err.message}`, sceneIndex: sceneIdx },
-      ]);
-      toast.error(`Erreur: ${err.message}`);
+      if (!agent) {
+        setChatMessages((prev) => [
+          ...prev,
+          { role: "assistant", content: `Erreur: ${err.message}`, sceneIndex: sceneIdx },
+        ]);
+        toast.error(`Erreur: ${err.message}`);
+      }
+      return { success: false };
     } finally {
       setIsEditing(false);
     }
@@ -259,6 +283,224 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
       setIsLoadingQA(false);
     }
   }, [projectId, isLoadingQA]);
+
+  // Auto-scroll agent log
+  useEffect(() => {
+    agentLogEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [agentLog]);
+
+  const GEMINI_QA_PRICES = { input: 0.10, output: 0.40 }; // gemini-2.0-flash per M tokens
+
+  const runQAAgent = useCallback(async () => {
+    if (agentRunning || !projectId) return;
+
+    agentAbortRef.current = false;
+    setAgentRunning(true);
+    setAgentLog([]);
+    setAgentProgress({ checked: 0, passed: 0, fixed: 0, failed: 0, total: 0 });
+    setAgentTokens({ input: 0, output: 0, cost: 0 });
+
+    // Step 1: ensure we have screenshots
+    let screenshots = qaScreenshots;
+    if (screenshots.length === 0) {
+      setShowQAGrid(true);
+      setIsLoadingQA(true);
+      try {
+        const resp = await fetch(`${REMOTION_SERVICE_URL}/animator/qa-screenshots`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ projectId }),
+        });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.error || "QA screenshots failed");
+        screenshots = data.screenshots || [];
+        setQaScreenshots(screenshots);
+      } catch (err: any) {
+        toast.error(`Erreur QA: ${err.message}`);
+        setAgentRunning(false);
+        setIsLoadingQA(false);
+        return;
+      } finally {
+        setIsLoadingQA(false);
+      }
+    }
+
+    const successShots = screenshots.filter(s => s.success && s.url);
+    setAgentProgress(p => ({ ...p, total: successShots.length }));
+
+    const MAX_RETRIES = 2;
+
+    for (let i = 0; i < successShots.length; i++) {
+      if (agentAbortRef.current) {
+        setAgentLog(prev => [...prev, { sceneIndex: -1, status: "gave_up", message: "Agent arrêté par l'utilisateur" }]);
+        break;
+      }
+
+      const shot = successShots[i];
+      const si = shot.sceneIndex;
+
+      // Analyze
+      setAgentLog(prev => [...prev, { sceneIndex: si, status: "analyzing", message: `Analyse scène ${si + 1}...` }]);
+
+      let analyzeResult: { pass: boolean; issue: string | null; tokens?: { input: number; output: number } };
+      try {
+        const resp = await fetch(`${REMOTION_SERVICE_URL}/animator/qa-analyze`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ projectId, sceneIndex: si, screenshotUrl: shot.url }),
+        });
+        analyzeResult = await resp.json();
+        if (!resp.ok) throw new Error((analyzeResult as any).error || "Analyze failed");
+      } catch (err: any) {
+        setAgentLog(prev => {
+          const next = [...prev];
+          next[next.length - 1] = { sceneIndex: si, status: "gave_up", message: `Erreur analyse: ${err.message}` };
+          return next;
+        });
+        setAgentProgress(p => ({ ...p, checked: p.checked + 1, failed: p.failed + 1 }));
+        continue;
+      }
+
+      // Accumulate QA tokens
+      if (analyzeResult.tokens) {
+        setAgentTokens(prev => {
+          const inp = prev.input + analyzeResult.tokens!.input;
+          const out = prev.output + analyzeResult.tokens!.output;
+          return { input: inp, output: out, cost: (inp * GEMINI_QA_PRICES.input + out * GEMINI_QA_PRICES.output) / 1_000_000 };
+        });
+      }
+
+      if (analyzeResult.pass) {
+        setAgentLog(prev => {
+          const next = [...prev];
+          next[next.length - 1] = { sceneIndex: si, status: "pass", message: `Scène ${si + 1} OK` };
+          return next;
+        });
+        setAgentProgress(p => ({ ...p, checked: p.checked + 1, passed: p.passed + 1 }));
+        continue;
+      }
+
+      // Issue detected
+      const issue = analyzeResult.issue || "Visual issue detected";
+      setAgentLog(prev => {
+        const next = [...prev];
+        next[next.length - 1] = { sceneIndex: si, status: "fail", message: `Scène ${si + 1}: ${issue}` };
+        return next;
+      });
+
+      // Retry loop
+      let fixed = false;
+      for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        if (agentAbortRef.current) break;
+
+        setAgentLog(prev => [...prev, { sceneIndex: si, status: "fixing", message: `Fix scène ${si + 1} (tentative ${attempt}/${MAX_RETRIES})...` }]);
+
+        // Get current screenshot URL (might have been updated)
+        const currentShot = qaScreenshots.find(s => s.sceneIndex === si) || shot;
+        const editResult = await sendEdit({
+          overrideSceneIndex: si,
+          overrideInstruction: `Fix this visual issue: ${issue}. Ensure text is readable, properly positioned, and doesn't overlap. Fix any layout or animation problems, usually by repositioning or resizing elements.`,
+          screenshotUrl: currentShot.url || shot.url!,
+          agentMode: true,
+        });
+
+        if (editResult.tokens) {
+          setAgentTokens(prev => ({
+            input: prev.input + (editResult.tokens!.input || 0),
+            output: prev.output + (editResult.tokens!.output || 0),
+            cost: prev.cost + ((editResult.tokens!.input || 0) * GEMINI_QA_PRICES.input + (editResult.tokens!.output || 0) * GEMINI_QA_PRICES.output) / 1_000_000,
+          }));
+        }
+
+        if (!editResult.success) {
+          setAgentLog(prev => {
+            const next = [...prev];
+            next[next.length - 1] = { sceneIndex: si, status: "gave_up", message: `Fix scène ${si + 1} échoué` };
+            return next;
+          });
+          break;
+        }
+
+        // Wait a moment for screenshot refresh to complete, then get updated URL
+        await new Promise(r => setTimeout(r, 2000));
+        const updatedShot = qaScreenshots.find(s => s.sceneIndex === si);
+
+        // Re-take screenshot
+        let newScreenshotUrl = updatedShot?.url || shot.url;
+        try {
+          const ssResp = await fetch(`${REMOTION_SERVICE_URL}/animator/qa-screenshots`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ projectId, sceneIndex: si }),
+          });
+          const ssData = await ssResp.json();
+          if (ssData.screenshot?.url) {
+            newScreenshotUrl = ssData.screenshot.url;
+            setQaScreenshots(prev => prev.map(s => s.sceneIndex === si ? ssData.screenshot : s));
+          }
+        } catch (e) { /* keep old URL */ }
+
+        // Re-analyze
+        try {
+          const resp2 = await fetch(`${REMOTION_SERVICE_URL}/animator/qa-analyze`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ projectId, sceneIndex: si, screenshotUrl: newScreenshotUrl }),
+          });
+          const recheck = await resp2.json();
+          if (recheck.tokens) {
+            setAgentTokens(prev => {
+              const inp = prev.input + recheck.tokens.input;
+              const out = prev.output + recheck.tokens.output;
+              return { input: inp, output: out, cost: (inp * GEMINI_QA_PRICES.input + out * GEMINI_QA_PRICES.output) / 1_000_000 };
+            });
+          }
+          if (recheck.pass) {
+            setAgentLog(prev => {
+              const next = [...prev];
+              next[next.length - 1] = { sceneIndex: si, status: "fixed", message: `Scène ${si + 1} corrigée !` };
+              return next;
+            });
+            fixed = true;
+            break;
+          }
+        } catch (e) { /* continue retrying */ }
+      }
+
+      if (!fixed && !agentAbortRef.current) {
+        setAgentLog(prev => [...prev, { sceneIndex: si, status: "gave_up", message: `Scène ${si + 1}: abandon après ${MAX_RETRIES} tentatives` }]);
+      }
+
+      setAgentProgress(p => ({
+        ...p,
+        checked: p.checked + 1,
+        ...(fixed ? { fixed: p.fixed + 1 } : { failed: p.failed + 1 }),
+      }));
+    }
+
+    // Rebuild preview once at the end if any fixes were made
+    setAgentLog(prev => [...prev, { sceneIndex: -1, status: "pass", message: "QA Agent terminé." }]);
+
+    if (agentProgress.fixed > 0 || agentProgress.failed > 0) {
+      setIsRebuilding(true);
+      try {
+        const resp = await fetch(`${REMOTION_SERVICE_URL}/animator/preview-bundle`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ projectId }),
+        });
+        const data = await resp.json();
+        if (resp.ok) {
+          setPreviewUrl(data.previewUrl);
+          if (data.segments) setSegments(data.segments);
+        }
+      } finally {
+        setIsRebuilding(false);
+      }
+    }
+
+    setAgentRunning(false);
+  }, [agentRunning, projectId, qaScreenshots, sendEdit, loadQAScreenshots]);
 
   if (!hasCompletedScenes) {
     return (
@@ -657,6 +899,100 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
                   </div>
                 );
               })()}
+            </Card>
+          )}
+
+          {/* QA Agent */}
+          {(showQAGrid || agentRunning || agentLog.length > 0) && (
+            <Card className="border border-border overflow-hidden">
+              <div className="flex items-center justify-between p-3 border-b border-border">
+                <div className="flex items-center gap-2">
+                  <Bot className="h-4 w-4 text-purple-400" />
+                  <span className="text-sm font-medium">QA Agent</span>
+                  {agentRunning && (
+                    <Badge variant="secondary" className="bg-purple-500/10 text-purple-400 border-purple-500/20 text-[10px]">
+                      En cours
+                    </Badge>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  {!agentRunning ? (
+                    <Button
+                      size="sm"
+                      className="h-7 text-xs gap-1.5 bg-purple-600 hover:bg-purple-700"
+                      onClick={runQAAgent}
+                      disabled={isLoadingQA}
+                    >
+                      <Eye className="h-3 w-3" />
+                      Lancer
+                    </Button>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      className="h-7 text-xs gap-1.5"
+                      onClick={() => { agentAbortRef.current = true; }}
+                    >
+                      <Square className="h-3 w-3" />
+                      Stop
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              {/* Progress bar */}
+              {agentProgress.total > 0 && (
+                <div className="px-3 pt-2">
+                  <div className="flex items-center justify-between text-[10px] text-muted-foreground mb-1">
+                    <span>{agentProgress.checked}/{agentProgress.total} vérifiées</span>
+                    <span>
+                      <span className="text-green-400">{agentProgress.passed} OK</span>
+                      {agentProgress.fixed > 0 && <span className="text-blue-400 ml-2">{agentProgress.fixed} corrigées</span>}
+                      {agentProgress.failed > 0 && <span className="text-red-400 ml-2">{agentProgress.failed} échouées</span>}
+                    </span>
+                  </div>
+                  <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-purple-500 transition-all duration-300"
+                      style={{ width: `${agentProgress.total > 0 ? (agentProgress.checked / agentProgress.total) * 100 : 0}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Live log */}
+              {agentLog.length > 0 && (
+                <div className="p-2 max-h-60 overflow-y-auto space-y-0.5">
+                  {agentLog.map((entry, i) => (
+                    <div key={i} className="flex items-start gap-1.5 text-[11px] py-0.5 px-1.5 rounded hover:bg-muted/30">
+                      {entry.status === "analyzing" && <Loader2 className="h-3 w-3 mt-0.5 animate-spin text-purple-400 shrink-0" />}
+                      {entry.status === "pass" && <Check className="h-3 w-3 mt-0.5 text-green-400 shrink-0" />}
+                      {entry.status === "fail" && <AlertTriangle className="h-3 w-3 mt-0.5 text-orange-400 shrink-0" />}
+                      {entry.status === "fixing" && <Loader2 className="h-3 w-3 mt-0.5 animate-spin text-blue-400 shrink-0" />}
+                      {entry.status === "fixed" && <Check className="h-3 w-3 mt-0.5 text-blue-400 shrink-0" />}
+                      {entry.status === "gave_up" && <XCircle className="h-3 w-3 mt-0.5 text-red-400 shrink-0" />}
+                      <span className={`${
+                        entry.status === "pass" ? "text-green-400/80" :
+                        entry.status === "fail" ? "text-orange-400/80" :
+                        entry.status === "fixed" ? "text-blue-400/80" :
+                        entry.status === "gave_up" ? "text-red-400/80" :
+                        "text-muted-foreground"
+                      }`}>
+                        {entry.message}
+                      </span>
+                    </div>
+                  ))}
+                  <div ref={agentLogEndRef} />
+                </div>
+              )}
+
+              {/* Token tracker */}
+              {(agentTokens.input > 0 || agentTokens.output > 0) && (
+                <div className="px-3 py-2 border-t border-border flex items-center justify-between text-[10px] text-muted-foreground">
+                  <span>Tokens: {agentTokens.input.toLocaleString()} in / {agentTokens.output.toLocaleString()} out</span>
+                  <span className="font-medium text-purple-400">${agentTokens.cost.toFixed(4)}</span>
+                </div>
+              )}
             </Card>
           )}
         </div>

@@ -1219,6 +1219,82 @@ createRoot(container).render(<App />);
   }
 });
 
+// --- QA Analyze: Gemini vision pass/fail check for a scene screenshot ---
+app.post('/animator/qa-analyze', async (req, res) => {
+  const { projectId, sceneIndex, screenshotUrl } = req.body;
+  if (!projectId) return res.status(400).json({ error: 'projectId is required' });
+  if (sceneIndex == null) return res.status(400).json({ error: 'sceneIndex is required' });
+  if (!screenshotUrl) return res.status(400).json({ error: 'screenshotUrl is required' });
+  if (!supabase) return res.status(503).json({ error: 'Supabase not configured' });
+
+  try {
+    const { data: proj } = await supabase.from('projects').select('user_id').eq('id', projectId).single();
+    if (!proj?.user_id) return res.status(400).json({ error: 'Project not found' });
+
+    const { data: geminiKey } = await supabase.rpc('get_user_api_key', { key_name: 'gemini', p_user_id: proj.user_id });
+    if (!geminiKey) return res.status(400).json({ error: 'No Gemini API key found' });
+
+    const imgResp = await fetch(screenshotUrl);
+    if (!imgResp.ok) return res.status(400).json({ error: 'Failed to download screenshot' });
+    const buf = Buffer.from(await imgResp.arrayBuffer());
+    const screenshotBase64 = buf.toString('base64');
+    const screenshotMime = imgResp.headers.get('content-type') || 'image/png';
+
+    const qaModel = 'gemini-2.0-flash';
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${qaModel}:generateContent?key=${geminiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: `You are a visual QA inspector for animated video scenes rendered with Remotion.
+Analyze the screenshot and check for visual issues:
+- Overlapping or colliding text elements
+- Text cut off or extending beyond the frame
+- Empty or fully black/blank frames with no content
+- Misaligned or broken layouts
+- Unreadable text (too small, bad contrast)
+- Elements stacked on top of each other
+- Error messages or warning triangles visible
+
+Respond with ONLY a JSON object (no markdown, no code fences):
+{"pass": true, "issue": null} if the scene looks acceptable
+{"pass": false, "issue": "brief description of the problem"} if there is a visual issue` }] },
+          contents: [{ role: 'user', parts: [
+            { inlineData: { mimeType: screenshotMime, data: screenshotBase64 } },
+            { text: `Analyze this screenshot of animation scene ${sceneIndex + 1}. Is it visually acceptable?` },
+          ]}],
+          generationConfig: { maxOutputTokens: 256, temperature: 0.1 },
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`Gemini error ${response.status}: ${errText.substring(0, 200)}`);
+    }
+
+    const data = await response.json();
+    const usage = data.usageMetadata || {};
+    const tokens = { input: usage.promptTokenCount || 0, output: usage.candidatesTokenCount || 0 };
+
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    let result;
+    try {
+      const cleaned = text.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+      result = JSON.parse(cleaned);
+    } catch (e) {
+      result = { pass: !text.toLowerCase().includes('issue') && !text.toLowerCase().includes('problem'), issue: text.substring(0, 200) };
+    }
+
+    console.log(`[QA-Analyze] Scene ${sceneIndex}: ${result.pass ? 'PASS' : 'FAIL'} ${result.issue || ''} (${tokens.input}+${tokens.output} tokens)`);
+    res.json({ pass: !!result.pass, issue: result.issue || null, tokens });
+  } catch (err) {
+    console.error(`[QA-Analyze] Failed:`, err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // --- Edit scene via AI chat ---
 app.post('/animator/edit-scene', async (req, res) => {
   const { projectId, sceneIndex, instruction, model, screenshotUrl } = req.body;
