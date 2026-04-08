@@ -69,8 +69,10 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
 
   // QA Agent (job-based)
   const [qaChildJobs, setQaChildJobs] = useState<any[]>([]);
-  const qaJob = getJobByType('qa_scenes');
-  const qaJobRunning = !!qaJob && qaJob.status === 'processing';
+  const [lastQaResult, setLastQaResult] = useState<{ job: any; children: any[] } | null>(null);
+  const activeQaJob = getJobByType('qa_scenes');
+  const qaJob = activeQaJob || lastQaResult?.job || null;
+  const qaJobRunning = !!activeQaJob && activeQaJob.status === 'processing';
 
   const seekToScene = useCallback((sceneIndex: number) => {
     if (!previewMeta || !segments[sceneIndex]) return;
@@ -274,33 +276,91 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
     }
   }, [projectId, isLoadingQA]);
 
+  // Load last completed QA job on mount
+  useEffect(() => {
+    if (!projectId) return;
+    (async () => {
+      const { data: lastJob } = await supabase
+        .from('generation_jobs')
+        .select('*')
+        .eq('project_id', projectId)
+        .eq('job_type', 'qa_scenes')
+        .in('status', ['completed', 'cancelled'])
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+      if (!lastJob) return;
+      const { data: children } = await supabase
+        .from('generation_jobs')
+        .select('id, status, metadata, error_message, created_at')
+        .eq('parent_job_id', lastJob.id)
+        .order('created_at', { ascending: true });
+      setLastQaResult({ job: lastJob, children: children || [] });
+      setQaChildJobs(children || []);
+      setShowQAGrid(true);
+    })();
+  }, [projectId]);
+
   // Poll QA child jobs for live progress
   useEffect(() => {
-    if (!qaJob) { setQaChildJobs([]); return; }
+    if (!activeQaJob) return;
     const fetchChildren = async () => {
       const { data } = await supabase
         .from('generation_jobs')
-        .select('id, status, metadata, created_at')
-        .eq('parent_job_id', qaJob.id)
+        .select('id, status, metadata, error_message, created_at')
+        .eq('parent_job_id', activeQaJob.id)
         .order('created_at', { ascending: true });
       if (data) setQaChildJobs(data);
     };
     fetchChildren();
     const interval = setInterval(fetchChildren, 3000);
     return () => clearInterval(interval);
-  }, [qaJob?.id, qaJob?.status, qaJob?.progress]);
+  }, [activeQaJob?.id, activeQaJob?.status, activeQaJob?.progress]);
 
-  // No auto-scroll for QA log — user controls scroll position
+  // When active QA job finishes (or disappears from activeJobs), persist result + reload preview
+  const prevActiveQaIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    const prevId = prevActiveQaIdRef.current;
+    const curId = activeQaJob?.id || null;
+    prevActiveQaIdRef.current = curId;
+
+    // Active job disappeared — it was completed/cancelled and removed by the hook
+    if (prevId && !curId) {
+      (async () => {
+        const { data: finishedJob } = await supabase
+          .from('generation_jobs')
+          .select('*')
+          .eq('id', prevId)
+          .single();
+        if (!finishedJob) return;
+        const { data: children } = await supabase
+          .from('generation_jobs')
+          .select('id, status, metadata, error_message, created_at')
+          .eq('parent_job_id', prevId)
+          .order('created_at', { ascending: true });
+        setLastQaResult({ job: finishedJob, children: children || [] });
+        setQaChildJobs(children || []);
+
+        const hadFixes = (children || []).some((j: any) => j.metadata?.fixed);
+        if (hadFixes) {
+          toast.success("QA terminé — rechargement du preview...");
+          loadPreview();
+        }
+      })();
+    }
+  }, [activeQaJob?.id, loadPreview]);
 
   const launchQAAgent = useCallback(async () => {
     if (!projectId || hasActiveJob('qa_scenes')) return;
     setShowQAGrid(true);
+    setLastQaResult(null);
+    setQaChildJobs([]);
     await startJob('qa_scenes', {});
   }, [projectId, startJob, hasActiveJob]);
 
   const stopQAAgent = useCallback(async () => {
-    if (qaJob) await cancelJob(qaJob.id);
-  }, [qaJob, cancelJob]);
+    if (activeQaJob) await cancelJob(activeQaJob.id);
+  }, [activeQaJob, cancelJob]);
 
   if (!hasCompletedScenes) {
     return (
