@@ -2362,6 +2362,10 @@ async function notifyParentJobProgress(parentJobId) {
     await supabase.from('generation_jobs')
       .update({ status: 'completed', completed_at: new Date().toISOString() })
       .eq('id', parentJobId);
+
+    // Clear batch screenshot cache for this project
+    const { data: pj } = await supabase.from('generation_jobs').select('project_id').eq('id', parentJobId).single();
+    if (pj?.project_id) qaScreenshotCache.delete(pj.project_id);
   }
 }
 
@@ -2512,6 +2516,35 @@ async function processAnimatorSceneJob(job) {
 }
 
 // ============================================================================
+// QA SCREENSHOTS: batch pre-generation with per-project dedup
+// ============================================================================
+const qaScreenshotCache = new Map(); // projectId -> Promise<{ [sceneIndex]: url }>
+
+async function ensureQaScreenshots(projectId) {
+  if (qaScreenshotCache.has(projectId)) {
+    return qaScreenshotCache.get(projectId);
+  }
+  const promise = (async () => {
+    log(`[QA] Pre-generating ALL screenshots for project ${projectId.substring(0, 8)}...`);
+    const resp = await fetch(`${REMOTION_SERVICE_URL}/animator/qa-screenshots`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectId }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Screenshot batch generation failed');
+    const urlMap = {};
+    for (const s of (data.screenshots || [])) {
+      if (s.url) urlMap[s.sceneIndex] = s.url;
+    }
+    log(`[QA] Screenshots ready: ${Object.keys(urlMap).length} scenes cached for ${projectId.substring(0, 8)}`);
+    return urlMap;
+  })();
+  qaScreenshotCache.set(projectId, promise);
+  return promise;
+}
+
+// ============================================================================
 // QA SCENE JOB (analyze screenshot + auto-fix if needed)
 // ============================================================================
 async function processQaSceneJob(job) {
@@ -2522,23 +2555,13 @@ async function processQaSceneJob(job) {
   log(`[QA] Processing scene ${sceneIndex} (job ${jobId.substring(0, 8)}...)`);
 
   try {
-    // Step 1: Get/generate screenshot for this scene
+    // Step 1: Get screenshot from batch cache (single bundle for all scenes)
     let screenshotUrl = null;
     try {
-      const ssResp = await fetch(`${REMOTION_SERVICE_URL}/animator/qa-screenshots`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectId, sceneIndex }),
-      });
-      const ssData = await ssResp.json();
-      if (ssResp.ok && ssData.screenshot?.url) {
-        screenshotUrl = ssData.screenshot.url;
-      } else if (ssResp.ok && ssData.screenshots) {
-        const shot = ssData.screenshots.find(s => s.sceneIndex === sceneIndex);
-        if (shot?.url) screenshotUrl = shot.url;
-      }
+      const urlMap = await ensureQaScreenshots(projectId);
+      screenshotUrl = urlMap[sceneIndex] || null;
     } catch (e) {
-      log(`[QA] Screenshot fetch failed for scene ${sceneIndex}: ${e.message}`);
+      log(`[QA] Batch screenshot failed for scene ${sceneIndex}: ${e.message}`);
     }
 
     if (!screenshotUrl) {
