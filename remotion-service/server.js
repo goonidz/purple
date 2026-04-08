@@ -30,6 +30,10 @@ const LAMBDA_FUNCTION_NAME = process.env.REMOTION_LAMBDA_FUNCTION_NAME || '';
 const LAMBDA_MAX_LAMBDAS = parseInt(process.env.LAMBDA_MAX_LAMBDAS || '8', 10);
 const LAMBDA_MAX_SINGLE_DURATION_MIN = 70;
 
+// Cloud Run rendering (preferred over Lambda)
+const CLOUD_RUN_URL = process.env.CLOUD_RUN_RENDER_URL || '';
+if (CLOUD_RUN_URL) console.log(`[CloudRun] Rendering enabled: ${CLOUD_RUN_URL}`);
+
 const app = express();
 const PORT = process.env.PORT || 3002;
 
@@ -810,6 +814,41 @@ async function renderLocally({ jobId, compositionId, newBundle, durationInFrames
   await finishRenderJob(jobId, videoUrl, projectId);
 }
 
+async function renderViaCloudRun({ jobId, compositionId, componentName, code, durationInFrames, fps, width, height, codec, crf, projectId, audioUrl, audioFilename }) {
+  console.log(`[CloudRun] Sending render: ${jobId} (${durationInFrames} frames, ${Math.round(durationInFrames / fps / 60)} min)`);
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 3600000);
+
+  try {
+    const response = await fetch(`${CLOUD_RUN_URL}/render`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jobId, projectId, code, componentName, compositionId,
+        durationInFrames, fps, width, height, codec, crf,
+        audioUrl, audioFilename,
+      }),
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeout);
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({ error: `HTTP ${response.status}` }));
+      throw new Error(err.error || `Cloud Run returned ${response.status}`);
+    }
+
+    const result = await response.json();
+    console.log(`[CloudRun] Render complete: ${jobId} -> ${result.videoUrl}`);
+
+    const j = activeJobs.get(jobId);
+    if (j) { j.status = 'completed'; j.progress = 100; j.videoUrl = result.videoUrl; j.completedAt = Date.now(); }
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function renderViaLambda({ jobId, compositionId, entryPoint, durationInFrames, fps, width, height, codec, crf, projectId }) {
   const totalMinutes = durationInFrames / fps / 60;
   const needsSegmentation = totalMinutes > LAMBDA_MAX_SINGLE_DURATION_MIN;
@@ -1101,24 +1140,43 @@ app.post('/animator/render-assembled', async (req, res) => {
         }
         fs.writeFileSync(rootPath, rootContent, 'utf-8');
 
-        console.log(`[Animator] Re-bundling assembled composition: ${effectiveName}`);
-        const entryPoint = path.join(srcDir, 'index.js');
-        const newBundle = await bundle({ entryPoint, webpackOverride: (config) => config });
+        const useCloudRun = !!CLOUD_RUN_URL;
+        const useLambda = !useCloudRun && LAMBDA_ENABLED && renderMediaOnLambda && deploySite && LAMBDA_FUNCTION_NAME;
 
-        const useLambda = LAMBDA_ENABLED && renderMediaOnLambda && deploySite && LAMBDA_FUNCTION_NAME;
-        const renderArgs = { jobId, compositionId, newBundle, entryPoint, durationInFrames, fps, width, height, codec, crf, projectId };
-
-        if (useLambda) {
+        if (useCloudRun) {
           try {
-            await renderViaLambda(renderArgs);
-          } catch (lambdaErr) {
-            console.warn(`[Lambda] Failed, falling back to local render: ${lambdaErr.message}`);
+            await renderViaCloudRun({
+              jobId, compositionId, componentName: effectiveName, code: finalCode,
+              durationInFrames, fps, width, height, codec, crf, projectId,
+              audioUrl: audioSource, audioFilename: resolvedAudioFilename,
+            });
+          } catch (crErr) {
+            console.warn(`[CloudRun] Failed, falling back to local: ${crErr.message}`);
             const j = activeJobs.get(jobId);
             if (j) { j.progress = 0; j.status = 'rendering'; }
-            await renderLocally(renderArgs);
+            console.log(`[Animator] Re-bundling assembled composition: ${effectiveName}`);
+            const entryPoint = path.join(srcDir, 'index.js');
+            const newBundle = await bundle({ entryPoint, webpackOverride: (config) => config });
+            await renderLocally({ jobId, compositionId, newBundle, durationInFrames, fps, width, height, codec, crf, projectId });
           }
         } else {
-          await renderLocally(renderArgs);
+          console.log(`[Animator] Re-bundling assembled composition: ${effectiveName}`);
+          const entryPoint = path.join(srcDir, 'index.js');
+          const newBundle = await bundle({ entryPoint, webpackOverride: (config) => config });
+          const renderArgs = { jobId, compositionId, newBundle, entryPoint, durationInFrames, fps, width, height, codec, crf, projectId };
+
+          if (useLambda) {
+            try {
+              await renderViaLambda(renderArgs);
+            } catch (lambdaErr) {
+              console.warn(`[Lambda] Failed, falling back to local render: ${lambdaErr.message}`);
+              const j = activeJobs.get(jobId);
+              if (j) { j.progress = 0; j.status = 'rendering'; }
+              await renderLocally(renderArgs);
+            }
+          } else {
+            await renderLocally(renderArgs);
+          }
         }
       } catch (err) {
         console.error(`[Animator] Assembled render failed for ${jobId}:`, err.message);
