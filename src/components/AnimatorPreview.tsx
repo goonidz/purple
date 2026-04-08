@@ -803,6 +803,8 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
                         const isFailed = job.status === 'completed' && job.metadata?.pass === false;
                         const isError = job.status === 'failed';
                         const isProcessing = job.status === 'processing';
+                        const issue = job.metadata?.issue;
+                        const canClick = !isProcessing && segments[si];
 
                         return (
                           <div key={job.id} className="flex items-start gap-1.5 text-[11px] py-0.5 px-1.5 rounded hover:bg-muted/30">
@@ -816,9 +818,16 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
                               isError ? "text-red-400/80" :
                               "text-purple-400/80"
                             }`}>
-                              Scène {si + 1}
-                              {isFixed && ` — Corrigée: ${job.metadata?.issue || "fix appliqué"}`}
-                              {isFailed && ` — ${job.metadata?.issue || "Non corrigée"}`}
+                              <button
+                                type="button"
+                                disabled={!canClick}
+                                onClick={() => canClick && seekToScene(si)}
+                                className={`font-medium ${canClick ? "underline decoration-dotted cursor-pointer hover:opacity-70" : ""}`}
+                              >
+                                Scène {si + 1}
+                              </button>
+                              {isFixed && ` — Corrigée (${issue || "fix appliqué"})`}
+                              {isFailed && ` — ${issue || "Non corrigée"}`}
                               {isError && ` — Erreur: ${job.error_message || "screenshot indisponible"}`}
                               {isProcessing && " — Analyse..."}
                             </span>
