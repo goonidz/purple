@@ -2577,9 +2577,10 @@ async function processQaSceneJob(job) {
     const analyzeResult = await analyzeResp.json();
     if (!analyzeResp.ok) throw new Error(analyzeResult.error || 'QA analyze failed');
 
-    // Track tokens on parent
+    // Track tokens + model on parent
+    const qaModel = analyzeResult.model || null;
     if (analyzeResult.tokens && parentJobId) {
-      await accumulateQaTokens(parentJobId, analyzeResult.tokens);
+      await accumulateQaTokens(parentJobId, analyzeResult.tokens, qaModel);
     }
 
     if (analyzeResult.pass) {
@@ -2613,7 +2614,7 @@ async function processQaSceneJob(job) {
       const editData = await editResp.json();
 
       if (editData.tokens && parentJobId) {
-        await accumulateQaTokens(parentJobId, editData.tokens);
+        await accumulateQaTokens(parentJobId, editData.tokens, editData.model);
       }
 
       if (!editResp.ok) {
@@ -2642,7 +2643,7 @@ async function processQaSceneJob(job) {
       const recheck = await reResp.json();
 
       if (recheck.tokens && parentJobId) {
-        await accumulateQaTokens(parentJobId, recheck.tokens);
+        await accumulateQaTokens(parentJobId, recheck.tokens, recheck.model);
       }
 
       if (recheck.pass) {
@@ -2673,7 +2674,7 @@ async function processQaSceneJob(job) {
   }
 }
 
-async function accumulateQaTokens(parentJobId, tokens) {
+async function accumulateQaTokens(parentJobId, tokens, model) {
   try {
     const { data: parent } = await supabase.from('generation_jobs')
       .select('metadata')
@@ -2683,8 +2684,10 @@ async function accumulateQaTokens(parentJobId, tokens) {
     const meta = parent.metadata || {};
     const prevTokens = meta.tokens || { input: 0, output: 0 };
     const newTokens = { input: prevTokens.input + (tokens.input || 0), output: prevTokens.output + (tokens.output || 0) };
+    const update = { ...meta, tokens: newTokens };
+    if (model && !meta.model) update.model = model;
     await supabase.from('generation_jobs')
-      .update({ metadata: { ...meta, tokens: newTokens } })
+      .update({ metadata: update })
       .eq('id', parentJobId);
   } catch (e) { /* best effort */ }
 }
