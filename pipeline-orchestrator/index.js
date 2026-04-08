@@ -943,9 +943,10 @@ async function stepWaitAnimatorScenes(pipeline) {
 // ============================================================================
 
 async function stepAnimatorQaScreenshots(pipeline) {
-  const { id, project_id } = pipeline;
+  const { id, project_id, metadata } = pipeline;
+  const pass = metadata?.qaPass || 1;
 
-  console.log(`[orchestrator] [${id}] Generating QA screenshots for all scenes...`);
+  console.log(`[orchestrator] [${id}] QA pass ${pass}/2 — generating screenshots for all scenes...`);
   const resp = await fetch(`${REMOTION_SERVICE_URL}/animator/qa-screenshots`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -958,14 +959,15 @@ async function stepAnimatorQaScreenshots(pipeline) {
   }
 
   const data = await resp.json();
-  console.log(`[orchestrator] [${id}] QA screenshots done: ${data.completed}/${data.total} OK, ${data.failed || 0} failed`);
-  await advancePipeline(id, 'animator_qa', { metadata: pipeline.metadata });
+  console.log(`[orchestrator] [${id}] QA pass ${pass} screenshots done: ${data.completed}/${data.total} OK, ${data.failed || 0} failed`);
+  await advancePipeline(id, 'animator_qa', { metadata: { ...metadata, qaPass: pass } });
 }
 
 async function stepAnimatorQa(pipeline) {
-  const { id, project_id, user_id } = pipeline;
+  const { id, project_id, user_id, metadata } = pipeline;
+  const pass = metadata?.qaPass || 1;
 
-  console.log(`[orchestrator] [${id}] Creating qa_scenes job via Edge Function`);
+  console.log(`[orchestrator] [${id}] QA pass ${pass}/2 — creating qa_scenes job`);
   const resp = await fetch(`${SUPABASE_URL}/functions/v1/start-generation-job`, {
     method: 'POST',
     headers: {
@@ -985,16 +987,20 @@ async function stepAnimatorQa(pipeline) {
   }
 
   const { jobId } = await resp.json();
-  console.log(`[orchestrator] [${id}] QA job created: ${jobId}`);
+  console.log(`[orchestrator] [${id}] QA pass ${pass} job created: ${jobId}`);
+
+  const jobIdKey = pass === 1 ? 'qaJobId' : 'qaJobId2';
   await advancePipeline(id, 'wait_animator_qa', {
-    metadata: { ...pipeline.metadata, qaJobId: jobId },
+    metadata: { ...metadata, [jobIdKey]: jobId, qaPass: pass },
   });
 }
 
 async function stepWaitAnimatorQa(pipeline) {
   const { id, metadata } = pipeline;
-  const jobId = metadata?.qaJobId;
-  if (!jobId) throw new Error('No qaJobId in metadata');
+  const pass = metadata?.qaPass || 1;
+  const jobIdKey = pass === 1 ? 'qaJobId' : 'qaJobId2';
+  const jobId = metadata?.[jobIdKey];
+  if (!jobId) throw new Error(`No ${jobIdKey} in metadata`);
 
   const { data: parentJob } = await supabase
     .from('generation_jobs')
@@ -1003,20 +1009,51 @@ async function stepWaitAnimatorQa(pipeline) {
     .single();
 
   if (!parentJob) {
-    console.warn(`[orchestrator] [${id}] QA parent job ${jobId} not found`);
+    console.warn(`[orchestrator] [${id}] QA pass ${pass} parent job ${jobId} not found`);
     return;
   }
 
   if (parentJob.status === 'completed') {
     const tokens = parentJob.metadata?.tokens || {};
-    console.log(`[orchestrator] [${id}] QA completed (${parentJob.progress}/${parentJob.total}). Tokens: ${tokens.input || 0} in / ${tokens.output || 0} out`);
-    await advancePipeline(id, 'completed', { step_status: 'completed' });
+    console.log(`[orchestrator] [${id}] QA pass ${pass} completed (${parentJob.progress}/${parentJob.total}). Tokens: ${tokens.input || 0} in / ${tokens.output || 0} out`);
+
+    if (pass < 2) {
+      console.log(`[orchestrator] [${id}] Starting QA pass 2 — fresh screenshots + full re-analysis`);
+      await advancePipeline(id, 'animator_qa_screenshots', {
+        metadata: { ...metadata, qaPass: 2 },
+      });
+    } else {
+      const totalTokens = await sumQaTokensFromJobs(metadata);
+      console.log(`[orchestrator] [${id}] QA done (2 passes). Total tokens: ${totalTokens.input} in / ${totalTokens.output} out`);
+      await advancePipeline(id, 'completed', { step_status: 'completed' });
+    }
   } else if (parentJob.status === 'failed' || parentJob.status === 'cancelled') {
-    console.warn(`[orchestrator] [${id}] QA ${parentJob.status}, advancing to completed anyway`);
-    await advancePipeline(id, 'completed', { step_status: 'completed' });
+    console.warn(`[orchestrator] [${id}] QA pass ${pass} ${parentJob.status}, advancing anyway`);
+    if (pass < 2) {
+      console.log(`[orchestrator] [${id}] Starting QA pass 2 despite pass 1 ${parentJob.status}`);
+      await advancePipeline(id, 'animator_qa_screenshots', {
+        metadata: { ...metadata, qaPass: 2 },
+      });
+    } else {
+      await advancePipeline(id, 'completed', { step_status: 'completed' });
+    }
   } else {
-    console.log(`[orchestrator] [${id}] QA: ${parentJob.progress || 0}/${parentJob.total || '?'} (status: ${parentJob.status})`);
+    console.log(`[orchestrator] [${id}] QA pass ${pass}: ${parentJob.progress || 0}/${parentJob.total || '?'} (status: ${parentJob.status})`);
   }
+}
+
+async function sumQaTokensFromJobs(metadata) {
+  const totals = { input: 0, output: 0 };
+  for (const key of ['qaJobId', 'qaJobId2']) {
+    const jid = metadata?.[key];
+    if (!jid) continue;
+    try {
+      const { data } = await supabase.from('generation_jobs').select('metadata').eq('id', jid).single();
+      const t = data?.metadata?.tokens;
+      if (t) { totals.input += (t.input || 0); totals.output += (t.output || 0); }
+    } catch (_) { /* best effort */ }
+  }
+  return totals;
 }
 
 async function stepAnimatorRender(pipeline) {
