@@ -62,9 +62,11 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
 
   // QA Screenshots
   const [qaScreenshots, setQaScreenshots] = useState<QAScreenshot[]>([]);
+  const [qaBeforeScreenshots, setQaBeforeScreenshots] = useState<Map<number, string>>(new Map());
   const [isLoadingQA, setIsLoadingQA] = useState(false);
   const [showQAGrid, setShowQAGrid] = useState(false);
   const [expandedScreenshot, setExpandedScreenshot] = useState<number | null>(null);
+  const [showBefore, setShowBefore] = useState(false);
   const [qaFixInput, setQaFixInput] = useState("");
 
   // QA Agent (job-based)
@@ -343,8 +345,10 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
 
         const hadFixes = (children || []).some((j: any) => j.metadata?.fixed);
         if (hadFixes) {
-          toast.success("QA terminé — rechargement du preview...");
+          toast.success("QA terminé — rechargement du preview et des screenshots...");
           loadPreview();
+          // Re-fetch screenshots to show the fixed versions
+          loadQAScreenshots();
         }
       })();
     }
@@ -355,8 +359,13 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
     setShowQAGrid(true);
     setLastQaResult(null);
     setQaChildJobs([]);
+    // Save current screenshots as "before" for comparison after fixes
+    const beforeMap = new Map<number, string>();
+    qaScreenshots.forEach(s => { if (s.url) beforeMap.set(s.sceneIndex, s.url); });
+    setQaBeforeScreenshots(beforeMap);
+    setShowBefore(false);
     await startJob('qa_scenes', {});
-  }, [projectId, startJob, hasActiveJob]);
+  }, [projectId, startJob, hasActiveJob, qaScreenshots]);
 
   const stopQAAgent = useCallback(async () => {
     if (activeQaJob) await cancelJob(activeQaJob.id);
@@ -594,66 +603,105 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
                 </div>
               )}
 
-              {qaScreenshots.length > 0 && (
-                <div className="p-2 grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 gap-1.5 max-h-[500px] overflow-y-auto">
-                  {qaScreenshots.map((shot) => (
-                    <div
-                      key={shot.sceneIndex}
-                      className={`relative group cursor-pointer rounded overflow-hidden border ${
-                        expandedScreenshot === shot.sceneIndex ? "border-purple-500 ring-1 ring-purple-500/50" :
-                        shot.success ? "border-border hover:border-purple-500/50" : "border-red-500/30 bg-red-500/5"
-                      } transition-all`}
-                      onClick={() => {
-                        if (shot.success) {
-                          seekToScene(shot.sceneIndex);
-                          setExpandedScreenshot(shot.sceneIndex);
-                        }
-                      }}
-                    >
-                      {shot.success && shot.url ? (
-                        <img
-                          src={shot.url}
-                          alt={`Scene ${shot.sceneIndex + 1}`}
-                          className="w-full aspect-video object-cover"
-                          loading="lazy"
-                        />
-                      ) : shot.success && !shot.url ? (
-                        <div className="w-full aspect-video flex items-center justify-center bg-purple-500/5">
-                          <Loader2 className="h-4 w-4 animate-spin text-purple-400" />
-                        </div>
-                      ) : (
-                        <div className="w-full aspect-video flex items-center justify-center">
-                          <AlertTriangle className="h-4 w-4 text-red-400" />
-                        </div>
-                      )}
-                      <div className="absolute bottom-0 left-0 right-0 bg-black/70 px-1.5 py-0.5 text-[10px] text-white/80 flex justify-between">
-                        <span>{shot.sceneIndex + 1}</span>
-                        <span>{shot.timestamp.toFixed(1)}s</span>
+              {qaScreenshots.length > 0 && (() => {
+                const fixedSceneIndices = new Set(
+                  qaChildJobs.filter(j => j.metadata?.fixed).map(j => j.metadata?.sceneIndex)
+                );
+                const hasAnyBefore = fixedSceneIndices.size > 0 && qaBeforeScreenshots.size > 0;
+                return (
+                  <>
+                    {hasAnyBefore && (
+                      <div className="px-3 pt-2 flex items-center gap-2">
+                        <button
+                          onClick={() => setShowBefore(!showBefore)}
+                          className={`text-[11px] px-2.5 py-1 rounded-full border transition-colors ${
+                            showBefore ? "bg-orange-500/20 border-orange-500/40 text-orange-300" : "bg-muted/30 border-border text-muted-foreground hover:text-foreground"
+                          }`}
+                        >
+                          {showBefore ? "Avant correction" : "Après correction"}
+                        </button>
+                        <span className="text-[10px] text-muted-foreground">
+                          {fixedSceneIndices.size} scène{fixedSceneIndices.size > 1 ? "s" : ""} corrigée{fixedSceneIndices.size > 1 ? "s" : ""}
+                        </span>
                       </div>
-                      {shot.success && (
-                        <div className="absolute inset-0 bg-purple-500/0 group-hover:bg-purple-500/10 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            className="h-6 text-[10px] px-2"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              seekToScene(shot.sceneIndex);
+                    )}
+                    <div className="p-2 grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 gap-1.5 max-h-[500px] overflow-y-auto">
+                      {qaScreenshots.map((shot) => {
+                        const isFixed = fixedSceneIndices.has(shot.sceneIndex);
+                        const beforeUrl = qaBeforeScreenshots.get(shot.sceneIndex);
+                        const displayUrl = (showBefore && isFixed && beforeUrl) ? beforeUrl : shot.url;
+                        return (
+                          <div
+                            key={shot.sceneIndex}
+                            className={`relative group cursor-pointer rounded overflow-hidden border ${
+                              expandedScreenshot === shot.sceneIndex ? "border-purple-500 ring-1 ring-purple-500/50" :
+                              isFixed ? "border-blue-500/50 ring-1 ring-blue-500/30" :
+                              shot.success ? "border-border hover:border-purple-500/50" : "border-red-500/30 bg-red-500/5"
+                            } transition-all`}
+                            onClick={() => {
+                              if (shot.success || (showBefore && beforeUrl)) {
+                                seekToScene(shot.sceneIndex);
+                                setExpandedScreenshot(shot.sceneIndex);
+                              }
                             }}
                           >
-                            Voir
-                          </Button>
-                        </div>
-                      )}
+                            {displayUrl ? (
+                              <img
+                                src={displayUrl}
+                                alt={`Scene ${shot.sceneIndex + 1}`}
+                                className="w-full aspect-video object-cover"
+                                loading="lazy"
+                              />
+                            ) : shot.success && !shot.url ? (
+                              <div className="w-full aspect-video flex items-center justify-center bg-purple-500/5">
+                                <Loader2 className="h-4 w-4 animate-spin text-purple-400" />
+                              </div>
+                            ) : (
+                              <div className="w-full aspect-video flex items-center justify-center">
+                                <AlertTriangle className="h-4 w-4 text-red-400" />
+                              </div>
+                            )}
+                            <div className="absolute bottom-0 left-0 right-0 bg-black/70 px-1.5 py-0.5 text-[10px] text-white/80 flex justify-between">
+                              <span>{shot.sceneIndex + 1}</span>
+                              <span>{shot.timestamp.toFixed(1)}s</span>
+                            </div>
+                            {isFixed && (
+                              <div className="absolute top-1 right-1">
+                                <div className="bg-blue-500 rounded-full p-0.5">
+                                  <Wrench className="h-2.5 w-2.5 text-white" />
+                                </div>
+                              </div>
+                            )}
+                            {(shot.success || (showBefore && beforeUrl)) && (
+                              <div className="absolute inset-0 bg-purple-500/0 group-hover:bg-purple-500/10 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
+                                <Button
+                                  size="sm"
+                                  variant="secondary"
+                                  className="h-6 text-[10px] px-2"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    seekToScene(shot.sceneIndex);
+                                  }}
+                                >
+                                  Voir
+                                </Button>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
-                  ))}
-                </div>
-              )}
+                  </>
+                );
+              })()}
 
               {/* Expanded screenshot with nav */}
               {expandedScreenshot != null && (() => {
                 const shot = qaScreenshots.find(s => s.sceneIndex === expandedScreenshot);
                 if (!shot) return null;
+                const expandedBeforeUrl = qaBeforeScreenshots.get(shot.sceneIndex);
+                const expandedIsFixed = qaChildJobs.some(j => j.metadata?.fixed && j.metadata?.sceneIndex === shot.sceneIndex);
+                const hasBefore = expandedIsFixed && !!expandedBeforeUrl;
                 return (
                   <div className="p-3 border-t border-border">
                     <div className="flex items-center justify-between mb-2">
@@ -678,11 +726,35 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
                           <ChevronRight className="h-4 w-4" />
                         </Button>
                         <span className="text-[10px] text-muted-foreground/50">← →</span>
+                        {expandedIsFixed && (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/30">
+                            Corrigée par QA
+                          </span>
+                        )}
                       </div>
                       <div className="flex gap-1">
                       </div>
                     </div>
-                    {shot.url ? (
+                    {hasBefore ? (
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <div className="text-[10px] text-orange-400 font-medium mb-1 text-center">Avant</div>
+                          <img
+                            src={expandedBeforeUrl}
+                            alt={`Scene ${shot.sceneIndex + 1} — avant`}
+                            className="w-full rounded border border-orange-500/30"
+                          />
+                        </div>
+                        <div>
+                          <div className="text-[10px] text-green-400 font-medium mb-1 text-center">Après</div>
+                          <img
+                            src={shot.url!}
+                            alt={`Scene ${shot.sceneIndex + 1} — après`}
+                            className="w-full rounded border border-green-500/30"
+                          />
+                        </div>
+                      </div>
+                    ) : shot.url ? (
                       <img
                         src={shot.url}
                         alt={`Scene ${shot.sceneIndex + 1}`}
