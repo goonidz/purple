@@ -1273,6 +1273,7 @@ Analyze the screenshot carefully. Look for ANY of these issues:
 - Elements stacked on top of each other or clipping
 - Error messages or warning triangles visible
 - Numbers or words partially covered by other elements
+- Not centered / bugged visual composition (like all elements on one side and not centered)
 
 Be STRICT. If ANY text is partially hidden, cut off, overlapping, or if any element covers another, mark it as FAIL. When in doubt, FAIL.
 
