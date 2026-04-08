@@ -3,7 +3,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Play, RefreshCw, ExternalLink, Send, Sparkles, Camera, X, AlertTriangle, ChevronLeft, ChevronRight, Wrench, Bot, Square, Check, XCircle, Eye } from "lucide-react";
+import { Loader2, Play, RefreshCw, ExternalLink, Send, Sparkles, Camera, X, AlertTriangle, ChevronLeft, ChevronRight, Wrench, Bot, Square, Check, XCircle, Eye, FileText } from "lucide-react";
 import { toast } from "sonner";
 import { useGenerationJobs } from "@/hooks/useGenerationJobs";
 import { supabase } from "@/integrations/supabase/client";
@@ -842,6 +842,90 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
                 {(qaTokens.input > 0 || qaTokens.output > 0) && (
                   <div className="px-3 py-2 border-t border-border flex items-center justify-between text-[10px] text-muted-foreground">
                     <span>Tokens: {qaTokens.input.toLocaleString()} in / {qaTokens.output.toLocaleString()} out</span>
+                  </div>
+                )}
+
+                {/* History summary when QA is done */}
+                {isQaDone && done > 0 && (
+                  <div className="border-t border-border">
+                    <div className="px-3 py-2 flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
+                      <FileText className="h-3.5 w-3.5" />
+                      Résumé
+                    </div>
+                    <div className="px-3 pb-3 space-y-2">
+                      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px]">
+                        <span className="text-muted-foreground">Scènes analysées</span>
+                        <span className="font-medium text-right">{done}/{total}</span>
+                        <span className="text-muted-foreground">Aucun problème</span>
+                        <span className="font-medium text-green-400 text-right">{passed - fixed}</span>
+                        {fixed > 0 && <>
+                          <span className="text-muted-foreground">Corrigées auto.</span>
+                          <span className="font-medium text-blue-400 text-right">{fixed}</span>
+                        </>}
+                        {gavUp > 0 && <>
+                          <span className="text-muted-foreground">Non corrigées</span>
+                          <span className="font-medium text-orange-400 text-right">{gavUp}</span>
+                        </>}
+                        {failed.length > 0 && <>
+                          <span className="text-muted-foreground">Erreurs</span>
+                          <span className="font-medium text-red-400 text-right">{failed.length}</span>
+                        </>}
+                        {(qaTokens.input > 0) && <>
+                          <span className="text-muted-foreground">Tokens utilisés</span>
+                          <span className="font-medium text-right">{(qaTokens.input + qaTokens.output).toLocaleString()}</span>
+                        </>}
+                      </div>
+
+                      {/* Detail of fixed scenes */}
+                      {fixed > 0 && (
+                        <div className="pt-1.5">
+                          <div className="text-[10px] text-blue-400/70 font-medium mb-1">Corrections appliquées :</div>
+                          {completed.filter(j => j.metadata?.fixed).map(j => {
+                            const si = j.metadata?.sceneIndex ?? 0;
+                            return (
+                              <div key={j.id} className="flex items-start gap-1.5 text-[10px] py-0.5">
+                                <Check className="h-3 w-3 mt-0.5 text-blue-400 shrink-0" />
+                                <span className="text-blue-400/80">
+                                  <button
+                                    type="button"
+                                    onClick={() => seekToScene(si)}
+                                    className="font-medium underline decoration-dotted cursor-pointer hover:opacity-70"
+                                  >
+                                    Scène {si + 1}
+                                  </button>
+                                  {` — ${j.metadata?.issue || "fix appliqué"} (${j.metadata?.attempts || 1} tentative${(j.metadata?.attempts || 1) > 1 ? "s" : ""})`}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {/* Detail of unfixed scenes */}
+                      {gavUp > 0 && (
+                        <div className="pt-1.5">
+                          <div className="text-[10px] text-orange-400/70 font-medium mb-1">Problèmes non résolus :</div>
+                          {completed.filter(j => j.metadata?.pass === false).map(j => {
+                            const si = j.metadata?.sceneIndex ?? 0;
+                            return (
+                              <div key={j.id} className="flex items-start gap-1.5 text-[10px] py-0.5">
+                                <AlertTriangle className="h-3 w-3 mt-0.5 text-orange-400 shrink-0" />
+                                <span className="text-orange-400/80">
+                                  <button
+                                    type="button"
+                                    onClick={() => seekToScene(si)}
+                                    className="font-medium underline decoration-dotted cursor-pointer hover:opacity-70"
+                                  >
+                                    Scène {si + 1}
+                                  </button>
+                                  {` — ${j.metadata?.issue || "problème visuel"}`}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
               </Card>
