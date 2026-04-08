@@ -928,13 +928,94 @@ async function stepWaitAnimatorScenes(pipeline) {
     }
 
     console.log(`[orchestrator] [${id}] All animator scenes generated (${parentJob.progress}/${parentJob.total})`);
-    await advancePipeline(id, 'animator_render', { metadata: pipeline.metadata });
+    await advancePipeline(id, 'animator_qa_screenshots', { metadata: pipeline.metadata });
   } else if (parentJob.status === 'failed') {
     throw new Error('Animator scene generation failed');
   } else if (parentJob.status === 'cancelled') {
     throw new Error('Animator scene generation was cancelled');
   } else {
     console.log(`[orchestrator] [${id}] Animator scenes: ${parentJob.progress || 0}/${parentJob.total || '?'} (status: ${parentJob.status})`);
+  }
+}
+
+// ============================================================================
+// ANIMATOR QA STEPS (screenshots + auto-fix before manual render)
+// ============================================================================
+
+async function stepAnimatorQaScreenshots(pipeline) {
+  const { id, project_id } = pipeline;
+
+  console.log(`[orchestrator] [${id}] Generating QA screenshots for all scenes...`);
+  const resp = await fetch(`${REMOTION_SERVICE_URL}/animator/qa-screenshots`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ projectId: project_id }),
+  });
+
+  if (!resp.ok) {
+    const errText = await resp.text();
+    throw new Error(`QA screenshots failed: ${errText}`);
+  }
+
+  const data = await resp.json();
+  console.log(`[orchestrator] [${id}] QA screenshots done: ${data.completed}/${data.total} OK, ${data.failed || 0} failed`);
+  await advancePipeline(id, 'animator_qa', { metadata: pipeline.metadata });
+}
+
+async function stepAnimatorQa(pipeline) {
+  const { id, project_id, user_id } = pipeline;
+
+  console.log(`[orchestrator] [${id}] Creating qa_scenes job via Edge Function`);
+  const resp = await fetch(`${SUPABASE_URL}/functions/v1/start-generation-job`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      projectId: project_id,
+      jobType: 'qa_scenes',
+      userId: user_id,
+    }),
+  });
+
+  if (!resp.ok) {
+    const errText = await resp.text();
+    throw new Error(`Failed to create qa_scenes job: ${errText}`);
+  }
+
+  const { jobId } = await resp.json();
+  console.log(`[orchestrator] [${id}] QA job created: ${jobId}`);
+  await advancePipeline(id, 'wait_animator_qa', {
+    metadata: { ...pipeline.metadata, qaJobId: jobId },
+  });
+}
+
+async function stepWaitAnimatorQa(pipeline) {
+  const { id, metadata } = pipeline;
+  const jobId = metadata?.qaJobId;
+  if (!jobId) throw new Error('No qaJobId in metadata');
+
+  const { data: parentJob } = await supabase
+    .from('generation_jobs')
+    .select('status, progress, total, metadata')
+    .eq('id', jobId)
+    .single();
+
+  if (!parentJob) {
+    console.warn(`[orchestrator] [${id}] QA parent job ${jobId} not found`);
+    return;
+  }
+
+  if (parentJob.status === 'completed') {
+    const tokens = parentJob.metadata?.tokens || {};
+    console.log(`[orchestrator] [${id}] QA completed (${parentJob.progress}/${parentJob.total}). Tokens: ${tokens.input || 0} in / ${tokens.output || 0} out`);
+    await advancePipeline(id, 'completed', { step_status: 'completed' });
+  } else if (parentJob.status === 'failed' || parentJob.status === 'cancelled') {
+    console.warn(`[orchestrator] [${id}] QA ${parentJob.status}, advancing to completed anyway`);
+    await advancePipeline(id, 'completed', { step_status: 'completed' });
+  } else {
+    console.log(`[orchestrator] [${id}] QA: ${parentJob.progress || 0}/${parentJob.total || '?'} (status: ${parentJob.status})`);
   }
 }
 
@@ -1061,6 +1142,11 @@ const STEP_HANDLERS = {
   wait_animator_transcribe: stepWaitAnimatorTranscribe,
   animator_generate: stepAnimatorGenerate,
   wait_animator_scenes: stepWaitAnimatorScenes,
+  // QA pipeline (screenshots → analyze → wait)
+  animator_qa_screenshots: stepAnimatorQaScreenshots,
+  animator_qa: stepAnimatorQa,
+  wait_animator_qa: stepWaitAnimatorQa,
+  // Render (kept for backward compat / manual trigger)
   animator_render: stepAnimatorRender,
   wait_animator_render: stepWaitAnimatorRender,
   // Legacy compat
