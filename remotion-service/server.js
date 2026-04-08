@@ -27,7 +27,7 @@ if (LAMBDA_ENABLED) {
 }
 const LAMBDA_REGION = process.env.REMOTION_AWS_REGION || 'eu-west-1';
 const LAMBDA_FUNCTION_NAME = process.env.REMOTION_LAMBDA_FUNCTION_NAME || '';
-const LAMBDA_FRAMES_PER_LAMBDA = parseInt(process.env.LAMBDA_FRAMES_PER_LAMBDA || '20', 10);
+const LAMBDA_MAX_LAMBDAS = 200;
 const LAMBDA_MAX_SINGLE_DURATION_MIN = 70;
 
 const app = express();
@@ -858,6 +858,8 @@ async function renderViaLambda({ jobId, compositionId, entryPoint, durationInFra
 }
 
 async function lambdaRenderSingle({ jobId, serveUrl, compositionId, durationInFrames, fps, width, height, codec, crf, bucketName }) {
+  const framesPerLambda = Math.max(20, Math.ceil(durationInFrames / LAMBDA_MAX_LAMBDAS));
+  console.log(`[Lambda] framesPerLambda=${framesPerLambda} (${durationInFrames} frames / max ${LAMBDA_MAX_LAMBDAS} lambdas)`);
   const { renderId } = await renderMediaOnLambda({
     region: LAMBDA_REGION,
     functionName: LAMBDA_FUNCTION_NAME,
@@ -865,7 +867,7 @@ async function lambdaRenderSingle({ jobId, serveUrl, compositionId, durationInFr
     composition: compositionId,
     codec,
     inputProps: {},
-    framesPerLambda: LAMBDA_FRAMES_PER_LAMBDA,
+    framesPerLambda,
     ...(crf !== undefined ? { crf } : {}),
   });
   console.log(`[Lambda] Render started: ${renderId}`);
@@ -897,6 +899,8 @@ async function lambdaRenderSingle({ jobId, serveUrl, compositionId, durationInFr
 }
 
 async function lambdaRenderSegment({ serveUrl, compositionId, frameRange, fps, width, height, codec, crf, bucketName, segIndex, totalSegments, onProgress }) {
+  const segmentFrames = frameRange[1] - frameRange[0] + 1;
+  const framesPerLambda = Math.max(20, Math.ceil(segmentFrames / LAMBDA_MAX_LAMBDAS));
   const { renderId } = await renderMediaOnLambda({
     region: LAMBDA_REGION,
     functionName: LAMBDA_FUNCTION_NAME,
@@ -904,12 +908,12 @@ async function lambdaRenderSegment({ serveUrl, compositionId, frameRange, fps, w
     composition: compositionId,
     codec,
     inputProps: {},
-    framesPerLambda: LAMBDA_FRAMES_PER_LAMBDA,
+    framesPerLambda,
     frameRange,
     audioCodec: 'pcm-16',
     ...(crf !== undefined ? { crf } : {}),
   });
-  console.log(`[Lambda] Segment ${segIndex + 1}/${totalSegments} started: ${renderId} (frames ${frameRange[0]}-${frameRange[1]})`);
+  console.log(`[Lambda] Segment ${segIndex + 1}/${totalSegments} started: ${renderId} (frames ${frameRange[0]}-${frameRange[1]}, fpl=${framesPerLambda})`);
 
   while (true) {
     await new Promise(r => setTimeout(r, 3000));
