@@ -30,6 +30,11 @@ const LAMBDA_FUNCTION_NAME = process.env.REMOTION_LAMBDA_FUNCTION_NAME || '';
 const LAMBDA_MAX_LAMBDAS = parseInt(process.env.LAMBDA_MAX_LAMBDAS || '8', 10);
 const LAMBDA_MAX_SINGLE_DURATION_MIN = 70;
 
+// RunPod CPU Serverless (highest priority for Animator renders)
+const RUNPOD_ANIMATOR_ENDPOINT_ID = process.env.RUNPOD_ANIMATOR_ENDPOINT_ID || '';
+const RUNPOD_API_KEY = process.env.RUNPOD_API_KEY || '';
+if (RUNPOD_ANIMATOR_ENDPOINT_ID) console.log(`[RunPod] Animator CPU rendering enabled: endpoint ${RUNPOD_ANIMATOR_ENDPOINT_ID}`);
+
 // Cloud Run rendering (preferred over Lambda)
 const CLOUD_RUN_URL = process.env.CLOUD_RUN_RENDER_URL || '';
 if (CLOUD_RUN_URL) console.log(`[CloudRun] Rendering enabled: ${CLOUD_RUN_URL}`);
@@ -849,6 +854,73 @@ async function renderViaCloudRun({ jobId, compositionId, componentName, code, du
   }
 }
 
+async function renderViaRunPod({ jobId, compositionId, componentName, code, durationInFrames, fps, width, height, codec, crf, projectId, audioUrl, audioFilename }) {
+  console.log(`[RunPod] Sending Animator render: ${jobId} (${durationInFrames} frames, ${Math.round(durationInFrames / fps / 60)} min)`);
+
+  const runResponse = await fetch(`https://api.runpod.ai/v2/${RUNPOD_ANIMATOR_ENDPOINT_ID}/run`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${RUNPOD_API_KEY}`,
+    },
+    body: JSON.stringify({
+      input: {
+        jobId, projectId, code, componentName, compositionId,
+        durationInFrames, fps, width, height, codec, crf,
+        audioUrl, audioFilename,
+      },
+    }),
+  });
+
+  if (!runResponse.ok) {
+    const errText = await runResponse.text();
+    throw new Error(`RunPod submit failed: ${runResponse.status} - ${errText.substring(0, 300)}`);
+  }
+
+  const { id: runpodJobId } = await runResponse.json();
+  console.log(`[RunPod] Job submitted: ${runpodJobId}`);
+
+  const POLL_INTERVAL = 5000;
+  const MAX_POLLS = 720; // 1 hour max
+
+  for (let i = 0; i < MAX_POLLS; i++) {
+    await new Promise(r => setTimeout(r, POLL_INTERVAL));
+
+    const statusResp = await fetch(`https://api.runpod.ai/v2/${RUNPOD_ANIMATOR_ENDPOINT_ID}/status/${runpodJobId}`, {
+      headers: { 'Authorization': `Bearer ${RUNPOD_API_KEY}` },
+    });
+
+    if (!statusResp.ok) {
+      console.warn(`[RunPod] Status poll error: ${statusResp.status}`);
+      continue;
+    }
+
+    const statusData = await statusResp.json();
+    const j = activeJobs.get(jobId);
+
+    if (statusData.status === 'COMPLETED') {
+      const output = statusData.output || {};
+      if (output.error) throw new Error(`RunPod worker error: ${output.error}`);
+      const videoUrl = output.videoUrl;
+      console.log(`[RunPod] Render complete: ${jobId} -> ${videoUrl}`);
+      if (j) { j.status = 'completed'; j.progress = 100; j.videoUrl = videoUrl; j.completedAt = Date.now(); }
+      return;
+    }
+
+    if (statusData.status === 'FAILED') {
+      const errMsg = statusData.error || 'Unknown RunPod error';
+      throw new Error(`RunPod render failed: ${errMsg}`);
+    }
+
+    if (j && statusData.status === 'IN_PROGRESS') {
+      // Progress is updated directly in Supabase by the worker, just keep activeJobs alive
+      j.status = 'rendering';
+    }
+  }
+
+  throw new Error('RunPod render timed out after 1 hour of polling');
+}
+
 async function renderViaLambda({ jobId, compositionId, entryPoint, durationInFrames, fps, width, height, codec, crf, projectId }) {
   const totalMinutes = durationInFrames / fps / 60;
   const needsSegmentation = totalMinutes > LAMBDA_MAX_SINGLE_DURATION_MIN;
@@ -1140,27 +1212,52 @@ app.post('/animator/render-assembled', async (req, res) => {
         }
         fs.writeFileSync(rootPath, rootContent, 'utf-8');
 
-        const useCloudRun = !!CLOUD_RUN_URL;
-        const useLambda = !useCloudRun && LAMBDA_ENABLED && renderMediaOnLambda && deploySite && LAMBDA_FUNCTION_NAME;
+        const useRunPod = !!(RUNPOD_ANIMATOR_ENDPOINT_ID && RUNPOD_API_KEY);
+        const useCloudRun = !useRunPod && !!CLOUD_RUN_URL;
+        const useLambda = !useRunPod && !useCloudRun && LAMBDA_ENABLED && renderMediaOnLambda && deploySite && LAMBDA_FUNCTION_NAME;
 
-        if (useCloudRun) {
+        const remoteRenderPayload = {
+          jobId, compositionId, componentName: effectiveName, code: finalCode,
+          durationInFrames, fps, width, height, codec, crf, projectId,
+          audioUrl: audioSource, audioFilename: resolvedAudioFilename,
+        };
+
+        if (useRunPod) {
           try {
-            await renderViaCloudRun({
-              jobId, compositionId, componentName: effectiveName, code: finalCode,
-              durationInFrames, fps, width, height, codec, crf, projectId,
-              audioUrl: audioSource, audioFilename: resolvedAudioFilename,
-            });
+            await renderViaRunPod(remoteRenderPayload);
+          } catch (rpErr) {
+            console.warn(`[RunPod] Failed, falling back to Cloud Run / local: ${rpErr.message}`);
+            const j = activeJobs.get(jobId);
+            if (j) { j.progress = 0; j.status = 'rendering'; }
+            if (CLOUD_RUN_URL) {
+              try {
+                await renderViaCloudRun(remoteRenderPayload);
+              } catch (crErr) {
+                console.warn(`[CloudRun] Also failed, falling back to local: ${crErr.message}`);
+                const j2 = activeJobs.get(jobId);
+                if (j2) { j2.progress = 0; j2.status = 'rendering'; }
+                const entryPoint = path.join(srcDir, 'index.js');
+                const newBundle = await bundle({ entryPoint, webpackOverride: (config) => config });
+                await renderLocally({ jobId, compositionId, newBundle, durationInFrames, fps, width, height, codec, crf, projectId });
+              }
+            } else {
+              const entryPoint = path.join(srcDir, 'index.js');
+              const newBundle = await bundle({ entryPoint, webpackOverride: (config) => config });
+              await renderLocally({ jobId, compositionId, newBundle, durationInFrames, fps, width, height, codec, crf, projectId });
+            }
+          }
+        } else if (useCloudRun) {
+          try {
+            await renderViaCloudRun(remoteRenderPayload);
           } catch (crErr) {
             console.warn(`[CloudRun] Failed, falling back to local: ${crErr.message}`);
             const j = activeJobs.get(jobId);
             if (j) { j.progress = 0; j.status = 'rendering'; }
-            console.log(`[Animator] Re-bundling assembled composition: ${effectiveName}`);
             const entryPoint = path.join(srcDir, 'index.js');
             const newBundle = await bundle({ entryPoint, webpackOverride: (config) => config });
             await renderLocally({ jobId, compositionId, newBundle, durationInFrames, fps, width, height, codec, crf, projectId });
           }
         } else {
-          console.log(`[Animator] Re-bundling assembled composition: ${effectiveName}`);
           const entryPoint = path.join(srcDir, 'index.js');
           const newBundle = await bundle({ entryPoint, webpackOverride: (config) => config });
           const renderArgs = { jobId, compositionId, newBundle, entryPoint, durationInFrames, fps, width, height, codec, crf, projectId };
