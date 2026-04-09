@@ -886,6 +886,22 @@ async function renderViaRunPod({ jobId, compositionId, componentName, code, dura
   for (let i = 0; i < MAX_POLLS; i++) {
     await new Promise(r => setTimeout(r, POLL_INTERVAL));
 
+    if (supabase && jobId && i % 3 === 0) {
+      const { data: dbJob } = await supabase.from('remotion_render_jobs').select('status').eq('id', jobId).single();
+      if (dbJob?.status === 'cancelled') {
+        console.log(`[RunPod] Job ${jobId} cancelled by user, cancelling RunPod job ${runpodJobId}`);
+        try {
+          await fetch(`https://api.runpod.ai/v2/${RUNPOD_ANIMATOR_ENDPOINT_ID}/cancel/${runpodJobId}`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${RUNPOD_API_KEY}` },
+          });
+        } catch (e) { console.warn(`[RunPod] Cancel API error: ${e.message}`); }
+        const j = activeJobs.get(jobId);
+        if (j) { j.status = 'cancelled'; }
+        return;
+      }
+    }
+
     const statusResp = await fetch(`https://api.runpod.ai/v2/${RUNPOD_ANIMATOR_ENDPOINT_ID}/status/${runpodJobId}`, {
       headers: { 'Authorization': `Bearer ${RUNPOD_API_KEY}` },
     });
@@ -913,7 +929,6 @@ async function renderViaRunPod({ jobId, compositionId, componentName, code, dura
     }
 
     if (j && statusData.status === 'IN_PROGRESS') {
-      // Progress is updated directly in Supabase by the worker, just keep activeJobs alive
       j.status = 'rendering';
     }
   }

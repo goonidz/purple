@@ -4396,7 +4396,7 @@ const Index = () => {
                           try {
                             if (!currentProjectId) return;
                             await (supabase.from("auto_pipelines" as any) as any)
-                              .update({ step_status: "failed", error: "Annulé par l'utilisateur" })
+                              .update({ step_status: "cancelled", current_step: "cancelled", error: "Annulé par l'utilisateur" })
                               .eq("project_id", currentProjectId)
                               .in("current_step", ["animator_render", "wait_animator_render"]);
                             await supabase.from("remotion_render_jobs" as any)
