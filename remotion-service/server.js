@@ -1227,9 +1227,9 @@ app.post('/animator/render-assembled', async (req, res) => {
         }
         fs.writeFileSync(rootPath, rootContent, 'utf-8');
 
-        const useRunPod = !!(RUNPOD_ANIMATOR_ENDPOINT_ID && RUNPOD_API_KEY);
-        const useCloudRun = !useRunPod && !!CLOUD_RUN_URL;
-        const useLambda = !useRunPod && !useCloudRun && LAMBDA_ENABLED && renderMediaOnLambda && deploySite && LAMBDA_FUNCTION_NAME;
+        const useLambda = LAMBDA_ENABLED && renderMediaOnLambda && deploySite && LAMBDA_FUNCTION_NAME;
+        const useRunPod = !useLambda && !!(RUNPOD_ANIMATOR_ENDPOINT_ID && RUNPOD_API_KEY);
+        const useCloudRun = !useLambda && !useRunPod && !!CLOUD_RUN_URL;
 
         const remoteRenderPayload = {
           jobId, compositionId, componentName: effectiveName, code: finalCode,
@@ -1237,29 +1237,38 @@ app.post('/animator/render-assembled', async (req, res) => {
           audioUrl: audioSource, audioFilename: resolvedAudioFilename,
         };
 
-        if (useRunPod) {
+        if (useLambda) {
+          console.log(`[Animator] Re-bundling assembled composition: ${effectiveName}`);
+          const entryPoint = path.join(srcDir, 'index.js');
+          const newBundle = await bundle({ entryPoint, webpackOverride: (config) => config });
+          const renderArgs = { jobId, compositionId, newBundle, entryPoint, durationInFrames, fps, width, height, codec, crf, projectId };
+          try {
+            await renderViaLambda(renderArgs);
+          } catch (lambdaErr) {
+            console.warn(`[Lambda] Failed, falling back to RunPod / local: ${lambdaErr.message}`);
+            const j = activeJobs.get(jobId);
+            if (j) { j.progress = 0; j.status = 'rendering'; }
+            if (RUNPOD_ANIMATOR_ENDPOINT_ID && RUNPOD_API_KEY) {
+              try {
+                await renderViaRunPod(remoteRenderPayload);
+              } catch (rpErr) {
+                console.warn(`[RunPod] Also failed, falling back to local: ${rpErr.message}`);
+                await renderLocally(renderArgs);
+              }
+            } else {
+              await renderLocally(renderArgs);
+            }
+          }
+        } else if (useRunPod) {
           try {
             await renderViaRunPod(remoteRenderPayload);
           } catch (rpErr) {
-            console.warn(`[RunPod] Failed, falling back to Cloud Run / local: ${rpErr.message}`);
+            console.warn(`[RunPod] Failed, falling back to local: ${rpErr.message}`);
             const j = activeJobs.get(jobId);
             if (j) { j.progress = 0; j.status = 'rendering'; }
-            if (CLOUD_RUN_URL) {
-              try {
-                await renderViaCloudRun(remoteRenderPayload);
-              } catch (crErr) {
-                console.warn(`[CloudRun] Also failed, falling back to local: ${crErr.message}`);
-                const j2 = activeJobs.get(jobId);
-                if (j2) { j2.progress = 0; j2.status = 'rendering'; }
-                const entryPoint = path.join(srcDir, 'index.js');
-                const newBundle = await bundle({ entryPoint, webpackOverride: (config) => config });
-                await renderLocally({ jobId, compositionId, newBundle, durationInFrames, fps, width, height, codec, crf, projectId });
-              }
-            } else {
-              const entryPoint = path.join(srcDir, 'index.js');
-              const newBundle = await bundle({ entryPoint, webpackOverride: (config) => config });
-              await renderLocally({ jobId, compositionId, newBundle, durationInFrames, fps, width, height, codec, crf, projectId });
-            }
+            const entryPoint = path.join(srcDir, 'index.js');
+            const newBundle = await bundle({ entryPoint, webpackOverride: (config) => config });
+            await renderLocally({ jobId, compositionId, newBundle, durationInFrames, fps, width, height, codec, crf, projectId });
           }
         } else if (useCloudRun) {
           try {
@@ -1275,20 +1284,7 @@ app.post('/animator/render-assembled', async (req, res) => {
         } else {
           const entryPoint = path.join(srcDir, 'index.js');
           const newBundle = await bundle({ entryPoint, webpackOverride: (config) => config });
-          const renderArgs = { jobId, compositionId, newBundle, entryPoint, durationInFrames, fps, width, height, codec, crf, projectId };
-
-          if (useLambda) {
-            try {
-              await renderViaLambda(renderArgs);
-            } catch (lambdaErr) {
-              console.warn(`[Lambda] Failed, falling back to local render: ${lambdaErr.message}`);
-              const j = activeJobs.get(jobId);
-              if (j) { j.progress = 0; j.status = 'rendering'; }
-              await renderLocally(renderArgs);
-            }
-          } else {
-            await renderLocally(renderArgs);
-          }
+          await renderLocally({ jobId, compositionId, newBundle, durationInFrames, fps, width, height, codec, crf, projectId });
         }
       } catch (err) {
         console.error(`[Animator] Assembled render failed for ${jobId}:`, err.message);
