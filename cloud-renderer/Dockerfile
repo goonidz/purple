@@ -16,7 +16,7 @@ RUN fc-cache -fv 2>/dev/null || true
 
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci --production
+RUN npm install --production
 
 COPY . .
 
