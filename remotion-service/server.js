@@ -1258,67 +1258,18 @@ app.post('/animator/render-assembled', async (req, res) => {
         fs.writeFileSync(rootPath, rootContent, 'utf-8');
 
         const useLambda = LAMBDA_ENABLED && renderMediaOnLambda && deploySite && LAMBDA_FUNCTION_NAME;
-        const useRunPod = !useLambda && !!(RUNPOD_ANIMATOR_ENDPOINT_ID && RUNPOD_API_KEY);
-        const useCloudRun = !useLambda && !useRunPod && !!CLOUD_RUN_URL;
+        if (!useLambda) throw new Error('Lambda rendering not configured — no fallback enabled');
 
-        const remoteRenderPayload = {
-          jobId, compositionId, componentName: effectiveName, code: finalCode,
-          durationInFrames, fps, width, height, codec, crf, projectId,
-          audioUrl: audioSource, audioFilename: resolvedAudioFilename,
-        };
-
-        if (useLambda) {
-          console.log(`[Animator] Re-bundling assembled composition: ${effectiveName}`);
-          const entryPoint = path.join(srcDir, 'index.js');
-          const newBundle = await bundle({ entryPoint, webpackOverride: (config) => config });
-          const renderArgs = { jobId, compositionId, newBundle, entryPoint, durationInFrames, fps, width, height, codec, crf, projectId };
-          const neededSlots = Math.min(LAMBDA_MAX_LAMBDAS, Math.ceil(durationInFrames / 20));
-          await acquireLambdaSlots(neededSlots);
-          try {
-            await renderViaLambda(renderArgs);
-          } catch (lambdaErr) {
-            console.warn(`[Lambda] Failed, falling back to RunPod / local: ${lambdaErr.message}`);
-            const j = activeJobs.get(jobId);
-            if (j) { j.progress = 0; j.status = 'rendering'; }
-            if (RUNPOD_ANIMATOR_ENDPOINT_ID && RUNPOD_API_KEY) {
-              try {
-                await renderViaRunPod(remoteRenderPayload);
-              } catch (rpErr) {
-                console.warn(`[RunPod] Also failed, falling back to local: ${rpErr.message}`);
-                await renderLocally(renderArgs);
-              }
-            } else {
-              await renderLocally(renderArgs);
-            }
-          } finally {
-            releaseLambdaSlots(neededSlots);
-          }
-        } else if (useRunPod) {
-          try {
-            await renderViaRunPod(remoteRenderPayload);
-          } catch (rpErr) {
-            console.warn(`[RunPod] Failed, falling back to local: ${rpErr.message}`);
-            const j = activeJobs.get(jobId);
-            if (j) { j.progress = 0; j.status = 'rendering'; }
-            const entryPoint = path.join(srcDir, 'index.js');
-            const newBundle = await bundle({ entryPoint, webpackOverride: (config) => config });
-            await renderLocally({ jobId, compositionId, newBundle, durationInFrames, fps, width, height, codec, crf, projectId });
-          }
-        } else if (useCloudRun) {
-          try {
-            await renderViaCloudRun(remoteRenderPayload);
-          } catch (crErr) {
-            console.warn(`[CloudRun] Failed, falling back to local: ${crErr.message}`);
-            const j = activeJobs.get(jobId);
-            if (j) { j.progress = 0; j.status = 'rendering'; }
-            const entryPoint = path.join(srcDir, 'index.js');
-            const newBundle = await bundle({ entryPoint, webpackOverride: (config) => config });
-            await renderLocally({ jobId, compositionId, newBundle, durationInFrames, fps, width, height, codec, crf, projectId });
-          }
-        } else {
-          const entryPoint = path.join(srcDir, 'index.js');
-          const newBundle = await bundle({ entryPoint, webpackOverride: (config) => config });
-          await renderLocally({ jobId, compositionId, newBundle, durationInFrames, fps, width, height, codec, crf, projectId });
+        console.log(`[Animator] Re-bundling assembled composition: ${effectiveName}`);
+        const entryPoint = path.join(srcDir, 'index.js');
+        const newBundle = await bundle({ entryPoint, webpackOverride: (config) => config });
+        const renderArgs = { jobId, compositionId, newBundle, entryPoint, durationInFrames, fps, width, height, codec, crf, projectId };
+        const neededSlots = Math.min(LAMBDA_MAX_LAMBDAS, Math.ceil(durationInFrames / 20));
+        await acquireLambdaSlots(neededSlots);
+        try {
+          await renderViaLambda(renderArgs);
+        } finally {
+          releaseLambdaSlots(neededSlots);
         }
       } catch (err) {
         console.error(`[Animator] Assembled render failed for ${jobId}:`, err.message);
