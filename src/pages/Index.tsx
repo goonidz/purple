@@ -33,7 +33,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Upload, X, Loader2, Image as ImageIcon, RefreshCw, Settings, Download, Video, Type, Check, Copy, FolderOpen, Pencil, AlertCircle, AlertTriangle, FileText, ArrowUp, MonitorPlay, Cloud, Trash2, Play, Sparkles, User as UserIcon, CheckCircle2, Clock, Maximize2, Calendar, ChevronDown, ChevronUp, Minimize2, Zap, RotateCcw, Plus } from "lucide-react";
+import { Upload, X, Loader2, Image as ImageIcon, RefreshCw, Settings, Download, Video, Type, Check, Copy, FolderOpen, Pencil, AlertCircle, AlertTriangle, FileText, ArrowUp, MonitorPlay, Cloud, Trash2, Play, Sparkles, User as UserIcon, CheckCircle2, Clock, Maximize2, Calendar, ChevronDown, ChevronUp, Minimize2, Zap, RotateCcw, Plus, Square } from "lucide-react";
 import AppHeader from "@/components/AppHeader";
 import { ProjectConfigurationModal } from "@/components/ProjectConfigurationModal";
 import { toast } from "sonner";
@@ -4383,9 +4383,36 @@ const Index = () => {
 
                 {isAnimatorChannel && !isAnimatorGenerating && animatorPipelineStatus && ['animator_render', 'wait_animator_render'].includes(animatorPipelineStatus.current_step) && animatorPipelineStatus.step_status !== 'failed' && (
                   <Card className="p-4 border-2 border-green-500/30 bg-green-500/5 mb-6">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Loader2 className="h-4 w-4 animate-spin text-green-500" />
-                      <span className="text-sm font-medium">Rendu Animator en cours...</span>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <Loader2 className="h-4 w-4 animate-spin text-green-500" />
+                        <span className="text-sm font-medium">Rendu Animator en cours...</span>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-xs text-muted-foreground hover:text-destructive"
+                        onClick={async () => {
+                          try {
+                            if (!currentProjectId) return;
+                            await (supabase.from("auto_pipelines" as any) as any)
+                              .update({ step_status: "failed", error: "Annulé par l'utilisateur" })
+                              .eq("project_id", currentProjectId)
+                              .in("current_step", ["animator_render", "wait_animator_render"]);
+                            await supabase.from("remotion_render_jobs" as any)
+                              .update({ status: "cancelled" } as any)
+                              .eq("project_id", currentProjectId)
+                              .in("status", ["rendering", "pending", "generating", "claimed"]);
+                            setAnimatorPipelineStatus(null);
+                            toast.success("Rendu Animator annulé");
+                          } catch (e: any) {
+                            toast.error("Erreur: " + e.message);
+                          }
+                        }}
+                      >
+                        <Square className="h-3 w-3 mr-1" />
+                        Arrêter
+                      </Button>
                     </div>
                     <div className="w-full bg-muted rounded-full h-1.5">
                       <div className="bg-green-500 h-1.5 rounded-full transition-all animate-pulse" style={{ width: '60%' }} />
