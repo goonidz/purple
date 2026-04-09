@@ -162,11 +162,16 @@ export const RemotionRoot = () => (
       browserExecutable: CHROMIUM,
     });
 
+    const cpus = require('os').cpus().length;
+    const concurrency = Math.max(4, cpus);
+    console.log(`[Render] Using concurrency ${concurrency} (${cpus} CPUs detected)`);
+
     let lastReportedPct = -1;
     await renderMedia({
       composition: { ...composition, durationInFrames, fps, width, height },
       serveUrl: bundleLocation,
       codec,
+      concurrency,
       outputLocation: outputFile,
       inputProps: {},
       browserExecutable: CHROMIUM,
