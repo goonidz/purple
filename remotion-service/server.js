@@ -29,6 +29,9 @@ const LAMBDA_REGION = process.env.REMOTION_AWS_REGION || 'eu-west-1';
 const LAMBDA_FUNCTION_NAME = process.env.REMOTION_LAMBDA_FUNCTION_NAME || '';
 const LAMBDA_MAX_LAMBDAS = parseInt(process.env.LAMBDA_MAX_LAMBDAS || '8', 10);
 const LAMBDA_MAX_SINGLE_DURATION_MIN = 70;
+const LAMBDA_CONCURRENCY_LIMIT = parseInt(process.env.LAMBDA_CONCURRENCY_LIMIT || '800', 10);
+let activeLambdaSlots = 0;
+const lambdaQueue = [];
 
 // RunPod CPU Serverless (highest priority for Animator renders)
 const RUNPOD_ANIMATOR_ENDPOINT_ID = process.env.RUNPOD_ANIMATOR_ENDPOINT_ID || '';
@@ -87,6 +90,7 @@ app.get('/health', (req, res) => {
     status: 'ok',
     bundleReady: !!bundleLocation,
     activeJobs: activeJobs.size,
+    lambdaSlots: { active: activeLambdaSlots, limit: LAMBDA_CONCURRENCY_LIMIT, queued: lambdaQueue.length },
     uptime: process.uptime(),
   });
 });
@@ -936,6 +940,32 @@ async function renderViaRunPod({ jobId, compositionId, componentName, code, dura
   throw new Error('RunPod render timed out after 1 hour of polling');
 }
 
+// --- Lambda concurrency queue ---
+function acquireLambdaSlots(needed) {
+  if (activeLambdaSlots + needed <= LAMBDA_CONCURRENCY_LIMIT) {
+    activeLambdaSlots += needed;
+    console.log(`[Lambda Queue] Acquired ${needed} slots (active: ${activeLambdaSlots}/${LAMBDA_CONCURRENCY_LIMIT}, queued: ${lambdaQueue.length})`);
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    lambdaQueue.push({ needed, resolve });
+    console.log(`[Lambda Queue] Queued render needing ${needed} slots (active: ${activeLambdaSlots}/${LAMBDA_CONCURRENCY_LIMIT}, queued: ${lambdaQueue.length})`);
+  });
+}
+
+function releaseLambdaSlots(count) {
+  activeLambdaSlots = Math.max(0, activeLambdaSlots - count);
+  console.log(`[Lambda Queue] Released ${count} slots (active: ${activeLambdaSlots}/${LAMBDA_CONCURRENCY_LIMIT}, queued: ${lambdaQueue.length})`);
+  while (lambdaQueue.length > 0) {
+    const next = lambdaQueue[0];
+    if (activeLambdaSlots + next.needed > LAMBDA_CONCURRENCY_LIMIT) break;
+    lambdaQueue.shift();
+    activeLambdaSlots += next.needed;
+    console.log(`[Lambda Queue] Dequeued render, acquired ${next.needed} slots (active: ${activeLambdaSlots}/${LAMBDA_CONCURRENCY_LIMIT}, queued: ${lambdaQueue.length})`);
+    next.resolve();
+  }
+}
+
 async function renderViaLambda({ jobId, compositionId, entryPoint, durationInFrames, fps, width, height, codec, crf, projectId }) {
   const totalMinutes = durationInFrames / fps / 60;
   const needsSegmentation = totalMinutes > LAMBDA_MAX_SINGLE_DURATION_MIN;
@@ -1242,6 +1272,8 @@ app.post('/animator/render-assembled', async (req, res) => {
           const entryPoint = path.join(srcDir, 'index.js');
           const newBundle = await bundle({ entryPoint, webpackOverride: (config) => config });
           const renderArgs = { jobId, compositionId, newBundle, entryPoint, durationInFrames, fps, width, height, codec, crf, projectId };
+          const neededSlots = Math.min(LAMBDA_MAX_LAMBDAS, Math.ceil(durationInFrames / 20));
+          await acquireLambdaSlots(neededSlots);
           try {
             await renderViaLambda(renderArgs);
           } catch (lambdaErr) {
@@ -1258,6 +1290,8 @@ app.post('/animator/render-assembled', async (req, res) => {
             } else {
               await renderLocally(renderArgs);
             }
+          } finally {
+            releaseLambdaSlots(neededSlots);
           }
         } else if (useRunPod) {
           try {
