@@ -1665,13 +1665,44 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
             </div>
 
             <div>
-              <Label>Personnage de référence (optionnel)</Label>
-              {characterRefUrl && (
-                <img
-                  src={characterRefUrl}
-                  alt="Character"
-                  className="w-32 h-32 object-cover rounded border mt-2"
+              <Label className="mb-2">Personnage de référence (optionnel)</Label>
+              <div
+                className={`border-2 border-dashed rounded-lg p-4 text-center cursor-pointer transition-colors ${
+                  isDraggingCharacter ? 'border-primary bg-primary/10' : 'border-muted-foreground/25'
+                }`}
+                onDragOver={handleDragOverCharacter}
+                onDragLeave={handleDragLeaveCharacter}
+                onDrop={handleDropCharacter}
+                onClick={() => document.getElementById('character-upload-edit')?.click()}
+              >
+                <input
+                  id="character-upload-edit"
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => e.target.files?.[0] && handleCharacterUpload(e.target.files[0])}
                 />
+                <ImageIcon className="w-6 h-6 mx-auto mb-1 text-muted-foreground" />
+                <p className="text-xs text-muted-foreground">
+                  {characterRefUrl ? "Remplacer le personnage" : "Ajouter un personnage"}
+                </p>
+              </div>
+              {characterRefUrl && (
+                <div className="relative group mt-3 inline-block">
+                  <img
+                    src={characterRefUrl}
+                    alt="Character"
+                    className="w-32 h-32 object-cover rounded-lg border"
+                  />
+                  <Button
+                    variant="destructive"
+                    size="icon"
+                    className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                    onClick={(e) => { e.stopPropagation(); setCharacterRefUrl(""); }}
+                  >
+                    <X className="w-4 h-4" />
+                  </Button>
+                </div>
               )}
             </div>
 
