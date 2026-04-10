@@ -66,6 +66,29 @@ const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabase
 let bundleLocation = null;
 let browserInstance = null;
 
+// Sanitize AI-generated JSX: escape bare > and < in JSX text content lines.
+// Identifies text lines by checking they sit between a tag-closing ">" and a tag-opening "<".
+function sanitizeJSX(code) {
+  const lines = code.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const trimmed = lines[i].trim();
+    if (!trimmed || trimmed.startsWith('<') || trimmed.startsWith('{') ||
+        trimmed.startsWith('}') || trimmed.startsWith('//') ||
+        trimmed.startsWith('const ') || trimmed.startsWith('let ') ||
+        trimmed.startsWith('return') || trimmed.startsWith('function') ||
+        /^[}\])]/.test(trimmed) || /^[a-zA-Z_$][\w$]*\s*[=:(.]/.test(trimmed)) continue;
+    let prevTrimmed = '';
+    for (let j = i - 1; j >= 0; j--) { const t = lines[j].trim(); if (t) { prevTrimmed = t; break; } }
+    let nextTrimmed = '';
+    for (let j = i + 1; j < lines.length; j++) { const t = lines[j].trim(); if (t) { nextTrimmed = t; break; } }
+    if (prevTrimmed.endsWith('>') && nextTrimmed.startsWith('<')) {
+      if (trimmed.includes('>')) lines[i] = lines[i].replace(/>/g, '&gt;');
+      if (/<(?![/a-zA-Z!])/.test(trimmed)) lines[i] = lines[i].replace(/<(?![/a-zA-Z!])/g, '&lt;');
+    }
+  }
+  return lines.join('\n');
+}
+
 const activeJobs = new Map();
 
 async function initBundle() {
@@ -698,6 +721,8 @@ app.post('/animator/generate-scene', async (req, res) => {
         client, effectiveModel, systemPrompt, segment, segIndex + 1, totalSegments || 1, extraPrompt, neighborContext
       );
     }
+
+    if (result.code) result.code = sanitizeJSX(result.code);
 
     if (result.error) {
       if (supabase && projectId) {
@@ -1919,6 +1944,7 @@ Do NOT add comments explaining your changes.`;
 
     // Strip markdown fences if present
     newCode = newCode.replace(/^```[\w]*\n?/gm, '').replace(/```\s*$/gm, '').trim();
+    newCode = sanitizeJSX(newCode);
 
     // Validate function name
     if (!newCode.includes(`function ${segName}`) && !newCode.includes(`const ${segName}`)) {
