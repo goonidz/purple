@@ -72,7 +72,7 @@ function sanitizeJSX(code) {
   const lines = code.split('\n');
   for (let i = 0; i < lines.length; i++) {
     const trimmed = lines[i].trim();
-    if (!trimmed || trimmed.startsWith('{') ||
+    if (!trimmed || trimmed.startsWith('<') || trimmed.startsWith('{') ||
         trimmed.startsWith('}') || trimmed.startsWith('//') ||
         trimmed.startsWith('const ') || trimmed.startsWith('let ') ||
         trimmed.startsWith('return') || trimmed.startsWith('function') ||
