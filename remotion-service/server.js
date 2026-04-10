@@ -68,7 +68,7 @@ let browserInstance = null;
 
 // Fix JSX compilation errors by letting esbuild identify the exact broken lines,
 // then escaping the offending characters and retrying.
-function fixJSXAndWriteFile(filePath, content, maxRetries = 10) {
+function fixJSXAndWriteFile(filePath, content, maxRetries = 15) {
   const esbuild = require('esbuild');
   let code = content;
   for (let attempt = 0; attempt < maxRetries; attempt++) {
@@ -78,21 +78,34 @@ function fixJSXAndWriteFile(filePath, content, maxRetries = 10) {
       return code;
     } catch (err) {
       const msg = err.message || '';
-      // Match: "line:col: ERROR: The character ">" is not valid inside a JSX element"
-      const gtMatch = msg.match(/:(\d+):\d+: ERROR: The character ">" is not valid/);
-      // Match: "line:col: ERROR: Expected ">" but found "&""  (over-escaped)
-      const ltMatch = msg.match(/:(\d+):\d+: ERROR: The character "<" is not valid/);
-      const lineNum = gtMatch?.[1] || ltMatch?.[1];
-      if (!lineNum) { fs.writeFileSync(filePath, code, 'utf-8'); return code; }
+      const lineMatch = msg.match(/:(\d+):(\d+): ERROR:/);
+      if (!lineMatch) { return code; }
+      const lineNum = parseInt(lineMatch[1], 10);
+      const colNum = parseInt(lineMatch[2], 10);
       const lines = code.split('\n');
-      const idx = parseInt(lineNum, 10) - 1;
-      if (idx < 0 || idx >= lines.length) { fs.writeFileSync(filePath, code, 'utf-8'); return code; }
-      if (gtMatch) {
-        lines[idx] = lines[idx].replace(/(?<![}\]"'\w/]|\/ )>/g, '&gt;');
+      const idx = lineNum - 1;
+      if (idx < 0 || idx >= lines.length) { return code; }
+      const line = lines[idx];
+      let fixed = false;
+      if (msg.includes('The character ">" is not valid')) {
+        lines[idx] = line.replace(/(?<![}\]"'\w/]|\/ )>/g, '&gt;');
+        fixed = true;
+      } else if (msg.includes('The character "<" is not valid')) {
+        lines[idx] = line.replace(/<(?![/a-zA-Z!{])/g, '&lt;');
+        fixed = true;
+      } else if (msg.includes('Expected identifier but found') ||
+                 msg.includes('Unexpected "<"') ||
+                 msg.includes('Expected ">" but found')) {
+        // Bare < in text: esbuild sees it as a tag opener → fix < on this line
+        lines[idx] = line.replace(/<(?![/a-zA-Z!{])/g, '&lt;');
+        fixed = true;
+        // Also try > if the column points to one
+        if (colNum > 0 && colNum <= line.length && line[colNum - 1] === '>') {
+          lines[idx] = lines[idx].substring(0, colNum - 1) + '&gt;' + lines[idx].substring(colNum);
+          fixed = true;
+        }
       }
-      if (ltMatch) {
-        lines[idx] = lines[idx].replace(/<(?![/a-zA-Z!{])/g, '&lt;');
-      }
+      if (!fixed) { return code; }
       code = lines.join('\n');
       console.log(`[JSX-Fix] Attempt ${attempt + 1}: fixed line ${lineNum} in ${path.basename(filePath)}`);
     }
