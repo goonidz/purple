@@ -3788,30 +3788,39 @@ function getAudioDurationSecs(filePath) {
   return parseFloat(out.trim());
 }
 
-async function sendChunkToGroq(chunkPath, groqApiKey) {
+async function sendChunkToGroq(chunkPath, groqApiKey, maxRetries = 3) {
   const chunkFilename = path.basename(chunkPath);
   const publicUrl = getPublicUrl(chunkFilename);
 
-  const formData = new FormData();
-  formData.append('url', publicUrl);
-  formData.append('model', 'whisper-large-v3-turbo');
-  formData.append('temperature', '0');
-  formData.append('response_format', 'verbose_json');
-  formData.append('timestamp_granularities[]', 'word');
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    const formData = new FormData();
+    formData.append('url', publicUrl);
+    formData.append('model', 'whisper-large-v3-turbo');
+    formData.append('temperature', '0');
+    formData.append('response_format', 'verbose_json');
+    formData.append('timestamp_granularities[]', 'word');
 
-  const resp = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${groqApiKey}` },
-    body: formData,
-  });
+    const resp = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${groqApiKey}` },
+      body: formData,
+    });
 
-  try { await unlink(chunkPath); } catch (_) {}
+    if (resp.ok) {
+      try { await unlink(chunkPath); } catch (_) {}
+      return resp.json();
+    }
 
-  if (!resp.ok) {
     const errText = await resp.text();
-    throw new Error(`Groq API error ${resp.status}: ${errText}`);
+    const isRetryable = errText.includes('context deadline exceeded') || resp.status === 429 || resp.status >= 500;
+    if (!isRetryable || attempt === maxRetries) {
+      try { await unlink(chunkPath); } catch (_) {}
+      throw new Error(`Groq API error ${resp.status}: ${errText}`);
+    }
+    const delay = attempt * 5000;
+    console.log(`[groq-transcribe] Attempt ${attempt}/${maxRetries} failed (${resp.status}), retrying in ${delay / 1000}s...`);
+    await new Promise(r => setTimeout(r, delay));
   }
-  return resp.json();
 }
 
 async function transcribeWithGroq(audioPath, groqApiKey) {
