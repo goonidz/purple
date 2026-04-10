@@ -66,27 +66,39 @@ const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabase
 let bundleLocation = null;
 let browserInstance = null;
 
-// Sanitize AI-generated JSX: escape bare > and < in text content only.
-// Uses negative lookbehind to skip > that closes a JSX tag (preceded by word char, }, ], ", ', /).
-function sanitizeJSX(code) {
-  const lines = code.split('\n');
-  for (let i = 0; i < lines.length; i++) {
-    const trimmed = lines[i].trim();
-    if (!trimmed || trimmed.startsWith('<') || trimmed.startsWith('{') ||
-        trimmed.startsWith('}') || trimmed.startsWith('//') ||
-        trimmed.startsWith('const ') || trimmed.startsWith('let ') ||
-        trimmed.startsWith('return') || trimmed.startsWith('function') ||
-        /^[}\])]/.test(trimmed) || /^[a-zA-Z_$][\w$]*\s*[=:.]/.test(trimmed)) continue;
-    let prevTrimmed = '';
-    for (let j = i - 1; j >= 0; j--) { const t = lines[j].trim(); if (t) { prevTrimmed = t; break; } }
-    let nextTrimmed = '';
-    for (let j = i + 1; j < lines.length; j++) { const t = lines[j].trim(); if (t) { nextTrimmed = t; break; } }
-    if (prevTrimmed.endsWith('>') && nextTrimmed.startsWith('<')) {
-      lines[i] = lines[i].replace(/(?<![}\]"'\w/]|\/ )>/g, '&gt;');
-      lines[i] = lines[i].replace(/<(?![/a-zA-Z!])/g, '&lt;');
+// Fix JSX compilation errors by letting esbuild identify the exact broken lines,
+// then escaping the offending characters and retrying.
+function fixJSXAndWriteFile(filePath, content, maxRetries = 10) {
+  const esbuild = require('esbuild');
+  let code = content;
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    fs.writeFileSync(filePath, code, 'utf-8');
+    try {
+      esbuild.transformSync(code, { loader: 'tsx', jsx: 'automatic' });
+      return code;
+    } catch (err) {
+      const msg = err.message || '';
+      // Match: "line:col: ERROR: The character ">" is not valid inside a JSX element"
+      const gtMatch = msg.match(/:(\d+):\d+: ERROR: The character ">" is not valid/);
+      // Match: "line:col: ERROR: Expected ">" but found "&""  (over-escaped)
+      const ltMatch = msg.match(/:(\d+):\d+: ERROR: The character "<" is not valid/);
+      const lineNum = gtMatch?.[1] || ltMatch?.[1];
+      if (!lineNum) { fs.writeFileSync(filePath, code, 'utf-8'); return code; }
+      const lines = code.split('\n');
+      const idx = parseInt(lineNum, 10) - 1;
+      if (idx < 0 || idx >= lines.length) { fs.writeFileSync(filePath, code, 'utf-8'); return code; }
+      if (gtMatch) {
+        lines[idx] = lines[idx].replace(/(?<![}\]"'\w/]|\/ )>/g, '&gt;');
+      }
+      if (ltMatch) {
+        lines[idx] = lines[idx].replace(/<(?![/a-zA-Z!{])/g, '&lt;');
+      }
+      code = lines.join('\n');
+      console.log(`[JSX-Fix] Attempt ${attempt + 1}: fixed line ${lineNum} in ${path.basename(filePath)}`);
     }
   }
-  return lines.join('\n');
+  fs.writeFileSync(filePath, code, 'utf-8');
+  return code;
 }
 
 const activeJobs = new Map();
@@ -610,7 +622,7 @@ app.post('/animator/generate-and-render', async (req, res) => {
         }
       }
 
-      fs.writeFileSync(path.join(srcDir, `${effectiveName}.tsx`), result.code, 'utf-8');
+      fixJSXAndWriteFile(path.join(srcDir, `${effectiveName}.tsx`), result.code);
 
       const rootPath = path.join(srcDir, 'Root.jsx');
       let rootContent = fs.readFileSync(rootPath, 'utf-8');
@@ -722,7 +734,6 @@ app.post('/animator/generate-scene', async (req, res) => {
       );
     }
 
-    if (result.code) result.code = sanitizeJSX(result.code);
 
     if (result.error) {
       if (supabase && projectId) {
@@ -1265,7 +1276,7 @@ app.post('/animator/render-assembled', async (req, res) => {
           }
         }
 
-        fs.writeFileSync(path.join(srcDir, `${effectiveName}.tsx`), finalCode, 'utf-8');
+        fixJSXAndWriteFile(path.join(srcDir, `${effectiveName}.tsx`), finalCode);
 
         const rootPath = path.join(srcDir, 'Root.jsx');
         let rootContent = fs.readFileSync(rootPath, 'utf-8');
@@ -1405,7 +1416,7 @@ app.post('/animator/preview-bundle', async (req, res) => {
     const srcDir = path.join(previewDir, 'src');
     if (!fs.existsSync(srcDir)) fs.mkdirSync(srcDir, { recursive: true });
 
-    fs.writeFileSync(path.join(srcDir, `${compName}.tsx`), compositionCode, 'utf-8');
+    fixJSXAndWriteFile(path.join(srcDir, `${compName}.tsx`), compositionCode);
 
     // Player entry: renders @remotion/player + posts current frame to parent + speed controls
     fs.writeFileSync(path.join(srcDir, 'player-entry.jsx'), `
@@ -1944,7 +1955,6 @@ Do NOT add comments explaining your changes.`;
 
     // Strip markdown fences if present
     newCode = newCode.replace(/^```[\w]*\n?/gm, '').replace(/```\s*$/gm, '').trim();
-    newCode = sanitizeJSX(newCode);
 
     // Validate function name
     if (!newCode.includes(`function ${segName}`) && !newCode.includes(`const ${segName}`)) {
@@ -2071,7 +2081,7 @@ app.post('/animator/qa-screenshots', async (req, res) => {
 
     const srcDir = path.join(qaDir, 'src');
     if (!fs.existsSync(srcDir)) fs.mkdirSync(srcDir, { recursive: true });
-    fs.writeFileSync(path.join(srcDir, `${compName}.tsx`), compositionCode, 'utf-8');
+    fixJSXAndWriteFile(path.join(srcDir, `${compName}.tsx`), compositionCode);
 
     fs.writeFileSync(path.join(srcDir, 'index.js'), `
 import { registerRoot } from 'remotion';
