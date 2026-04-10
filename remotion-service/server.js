@@ -66,13 +66,13 @@ const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabase
 let bundleLocation = null;
 let browserInstance = null;
 
-// Sanitize AI-generated JSX: escape bare > and < in JSX text content lines.
-// Identifies text lines by checking they sit between a tag-closing ">" and a tag-opening "<".
+// Sanitize AI-generated JSX: escape bare > and < in text content only.
+// Uses negative lookbehind to skip > that closes a JSX tag (preceded by word char, }, ], ", ', /).
 function sanitizeJSX(code) {
   const lines = code.split('\n');
   for (let i = 0; i < lines.length; i++) {
     const trimmed = lines[i].trim();
-    if (!trimmed || trimmed.startsWith('<') || trimmed.startsWith('{') ||
+    if (!trimmed || trimmed.startsWith('{') ||
         trimmed.startsWith('}') || trimmed.startsWith('//') ||
         trimmed.startsWith('const ') || trimmed.startsWith('let ') ||
         trimmed.startsWith('return') || trimmed.startsWith('function') ||
@@ -82,8 +82,8 @@ function sanitizeJSX(code) {
     let nextTrimmed = '';
     for (let j = i + 1; j < lines.length; j++) { const t = lines[j].trim(); if (t) { nextTrimmed = t; break; } }
     if (prevTrimmed.endsWith('>') && nextTrimmed.startsWith('<')) {
-      if (trimmed.includes('>')) lines[i] = lines[i].replace(/>/g, '&gt;');
-      if (/<(?![/a-zA-Z!])/.test(trimmed)) lines[i] = lines[i].replace(/<(?![/a-zA-Z!])/g, '&lt;');
+      lines[i] = lines[i].replace(/(?<![}\]"'\w/]|\/ )>/g, '&gt;');
+      lines[i] = lines[i].replace(/<(?![/a-zA-Z!])/g, '&lt;');
     }
   }
   return lines.join('\n');
