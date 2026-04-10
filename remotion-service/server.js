@@ -76,7 +76,7 @@ function sanitizeJSX(code) {
         trimmed.startsWith('}') || trimmed.startsWith('//') ||
         trimmed.startsWith('const ') || trimmed.startsWith('let ') ||
         trimmed.startsWith('return') || trimmed.startsWith('function') ||
-        /^[}\])]/.test(trimmed) || /^[a-zA-Z_$][\w$]*\s*[=:(.]/.test(trimmed)) continue;
+        /^[}\])]/.test(trimmed) || /^[a-zA-Z_$][\w$]*\s*[=:.]/.test(trimmed)) continue;
     let prevTrimmed = '';
     for (let j = i - 1; j >= 0; j--) { const t = lines[j].trim(); if (t) { prevTrimmed = t; break; } }
     let nextTrimmed = '';
