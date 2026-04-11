@@ -144,7 +144,15 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
       toast.success("Miniatures générées en arrière-plan !");
       setIsGenerating(false);
       
-      // Load the latest thumbnails from history and display them
+      // Immediately update from job metadata (synchronous, no race condition)
+      if (job.metadata?.generatedThumbnails) {
+        const thumbnails = job.metadata.generatedThumbnails as Array<{ url: string; prompt: string; index: number }>;
+        const sorted = [...thumbnails].sort((a, b) => a.index - b.index);
+        setGeneratedThumbnails(sorted.map(t => t.url));
+        setGeneratedPrompts(sorted.map(t => t.prompt));
+      }
+      
+      // Also load from DB as backup (has the canonical data)
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
         let query = supabase
