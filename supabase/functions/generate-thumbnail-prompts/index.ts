@@ -436,7 +436,23 @@ Crée des designs SIMPLES (3-4 éléments max) mais PERTINENTS au script.` });
             max_tokens: 2048,
             temperature: previousPrompts && previousPrompts.length > 0 ? 0.95 : 0.7,
             system: systemPrompt,
-            messages: [{ role: 'user', content: userContent }]
+            messages: [{ role: 'user', content: userContent }],
+            tools: [{
+              name: 'generate_prompts',
+              description: 'Return exactly 5 thumbnail image generation prompts',
+              input_schema: {
+                type: 'object',
+                properties: {
+                  prompts: {
+                    type: 'array',
+                    items: { type: 'string' },
+                    description: 'Array of exactly 5 detailed image generation prompts'
+                  }
+                },
+                required: ['prompts']
+              }
+            }],
+            tool_choice: { type: 'tool', name: 'generate_prompts' }
           }),
         });
 
@@ -458,10 +474,15 @@ Crée des designs SIMPLES (3-4 éléments max) mais PERTINENTS au script.` });
         }
 
         const anthropicData = await anthropicResponse.json();
-        generatedContent = (anthropicData.content || [])
-          .filter((b: any) => b.type === 'text')
-          .map((b: any) => b.text)
-          .join('');
+        const toolBlock = (anthropicData.content || []).find((b: any) => b.type === 'tool_use');
+        if (toolBlock?.input?.prompts) {
+          generatedContent = JSON.stringify(toolBlock.input);
+        } else {
+          generatedContent = (anthropicData.content || [])
+            .filter((b: any) => b.type === 'text')
+            .map((b: any) => b.text)
+            .join('');
+        }
       } catch (claudeError: any) {
         console.error("Anthropic Claude error:", claudeError);
         return new Response(
@@ -490,6 +511,17 @@ Crée des designs SIMPLES (3-4 éléments max) mais PERTINENTS au script.` });
             ],
             generationConfig: {
               temperature: previousPrompts && previousPrompts.length > 0 ? 0.95 : 0.7,
+              responseMimeType: "application/json",
+              responseSchema: {
+                type: "OBJECT",
+                properties: {
+                  prompts: {
+                    type: "ARRAY",
+                    items: { type: "STRING" }
+                  }
+                },
+                required: ["prompts"]
+              }
             }
           }),
         }
@@ -516,26 +548,27 @@ Crée des designs SIMPLES (3-4 éléments max) mais PERTINENTS au script.` });
       generatedContent = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
     }
     
-    console.log("Raw AI response:", generatedContent);
+    console.log("Raw AI response:", generatedContent.substring(0, 500));
 
-    // Parse le JSON de la réponse
     let parsedResponse;
     try {
-      // Nettoie le contenu pour extraire uniquement le JSON
-      const jsonMatch = generatedContent.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) {
-        throw new Error("No JSON found in response");
+      parsedResponse = JSON.parse(generatedContent);
+    } catch {
+      try {
+        const cleaned = generatedContent.replace(/```json\s*/g, '').replace(/```\s*/g, '');
+        const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) throw new Error("No JSON found in response");
+        parsedResponse = JSON.parse(jsonMatch[0]);
+      } catch (parseError) {
+        console.error("Failed to parse AI response:", parseError, generatedContent);
+        return new Response(
+          JSON.stringify({ error: "Erreur lors du parsing de la réponse AI" }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
       }
-      parsedResponse = JSON.parse(jsonMatch[0]);
-    } catch (parseError) {
-      console.error("Failed to parse AI response:", parseError, generatedContent);
-      return new Response(
-        JSON.stringify({ error: "Erreur lors du parsing de la réponse AI" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
     }
 
-    if (!parsedResponse.prompts || !Array.isArray(parsedResponse.prompts) || parsedResponse.prompts.length !== 5) {
+    if (!parsedResponse.prompts || !Array.isArray(parsedResponse.prompts) || parsedResponse.prompts.length < 1) {
       console.error("Invalid prompts format:", parsedResponse);
       return new Response(
         JSON.stringify({ error: "Format de prompts invalide" }),
