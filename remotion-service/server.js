@@ -57,6 +57,52 @@ function buildVideoUrl(filename) {
   return `http://${process.env.VPS_HOST || 'localhost'}:${PORT}/renders/${filename}`;
 }
 
+function generateVideoDisplayName(title) {
+  const now = new Date();
+  const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+  const sanitized = (title || 'video')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9\s_-]/g, '')
+    .trim()
+    .replace(/\s+/g, '_')
+    .substring(0, 80) || 'video';
+  return `${date}_${sanitized}.mp4`;
+}
+
+async function renameAnimatorOutput(jobId, videoUrl, projectId) {
+  if (!supabase || !projectId) return videoUrl;
+  try {
+    const { data: proj } = await supabase.from('projects').select('title').eq('id', projectId).single();
+    if (!proj?.title) return videoUrl;
+
+    const displayName = generateVideoDisplayName(proj.title);
+    const oldFile = path.join(TEMP_DIR, `${jobId}.mp4`);
+
+    if (fs.existsSync(oldFile)) {
+      const newFile = path.join(TEMP_DIR, displayName);
+      fs.renameSync(oldFile, newFile);
+      const newUrl = buildVideoUrl(displayName);
+      console.log(`[Animator] Renamed output: ${jobId}.mp4 -> ${displayName}`);
+      return newUrl;
+    }
+
+    if (videoUrl && !videoUrl.startsWith(PUBLIC_BASE_URL || '___')) {
+      const resp = await fetch(videoUrl);
+      if (resp.ok) {
+        const buffer = Buffer.from(await resp.arrayBuffer());
+        const newFile = path.join(TEMP_DIR, displayName);
+        fs.writeFileSync(newFile, buffer);
+        const newUrl = buildVideoUrl(displayName);
+        console.log(`[Animator] Downloaded & renamed S3 output -> ${displayName} (${(buffer.length / 1024 / 1024).toFixed(1)} MB)`);
+        return newUrl;
+      }
+    }
+  } catch (e) {
+    console.warn(`[Animator] Failed to rename output: ${e.message}`);
+  }
+  return videoUrl;
+}
+
 app.use('/renders', express.static(TEMP_DIR));
 
 const supabaseUrl = process.env.SUPABASE_URL;
@@ -324,7 +370,7 @@ app.post('/animator/generate', async (req, res) => {
   if (!anthropicKey) return res.status(400).json({ error: 'anthropicKey is required' });
   if (!segments || segments.length === 0) return res.status(400).json({ error: 'segments are required' });
 
-  const jobId = `animator-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const jobId = `remotion-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
   try {
     console.log(`[Animator] Starting generation ${jobId} for ${segments.length} segments`);
@@ -408,7 +454,7 @@ app.post('/animator/render', async (req, res) => {
   if (!code) return res.status(400).json({ error: 'code (generated TSX) is required' });
   if (!bundleLocation) return res.status(503).json({ error: 'Bundle not ready' });
 
-  const jobId = existingJobId || `animator-render-${Date.now()}`;
+  const jobId = existingJobId || `remotion-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const effectiveName = componentName || `AnimComp_${Date.now()}`;
 
   try {
@@ -488,7 +534,8 @@ app.post('/animator/render', async (req, res) => {
           },
         });
 
-        const videoUrl = buildVideoUrl(`${jobId}.mp4`);
+        let videoUrl = buildVideoUrl(`${jobId}.mp4`);
+        videoUrl = await renameAnimatorOutput(jobId, videoUrl, projectId);
 
         const job = activeJobs.get(jobId);
         if (job) {
@@ -559,7 +606,7 @@ app.post('/animator/generate-and-render', async (req, res) => {
   if (!segments || segments.length === 0) return res.status(400).json({ error: 'segments are required' });
   if (!bundleLocation) return res.status(503).json({ error: 'Bundle not ready' });
 
-  const jobId = `animator-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const jobId = `remotion-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const effectiveName = componentName || `Anim${jobId.replace(/[^a-zA-Z0-9]/g, '')}`;
   const compositionId = effectiveName.replace(/_/g, '-');
 
@@ -675,7 +722,8 @@ app.post('/animator/generate-and-render', async (req, res) => {
         },
       });
 
-      const videoUrl = buildVideoUrl(`${jobId}.mp4`);
+      let videoUrl = buildVideoUrl(`${jobId}.mp4`);
+      videoUrl = await renameAnimatorOutput(jobId, videoUrl, projectId);
       const j = activeJobs.get(jobId);
       if (j) { j.status = 'completed'; j.progress = 100; j.videoUrl = videoUrl; }
 
@@ -1174,6 +1222,8 @@ async function concatSegments(jobId, segmentUrls) {
 }
 
 async function finishRenderJob(jobId, videoUrl, projectId) {
+  videoUrl = await renameAnimatorOutput(jobId, videoUrl, projectId);
+
   const j = activeJobs.get(jobId);
   if (j) { j.status = 'completed'; j.progress = 100; j.videoUrl = videoUrl; j.completedAt = Date.now(); }
 
@@ -1206,7 +1256,7 @@ app.post('/animator/render-assembled', async (req, res) => {
   if (!supabase) return res.status(503).json({ error: 'Supabase not configured' });
   if (!bundleLocation) return res.status(503).json({ error: 'Bundle not ready' });
 
-  const jobId = `animator-render-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const jobId = `remotion-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const effectiveName = componentName || `AnimAssembled${Date.now().toString(36)}`;
   const compositionId = effectiveName.replace(/_/g, '-');
 
