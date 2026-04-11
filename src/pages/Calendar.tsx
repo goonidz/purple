@@ -3,7 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import type { User } from "@supabase/supabase-js";
 import { Button } from "@/components/ui/button";
-import { ChevronLeft, ChevronRight, ChevronDown, Filter, Calendar as CalendarIcon, LayoutGrid, Plus, Link2, Link2Off, Youtube, Check } from "lucide-react";
+import { ChevronLeft, ChevronRight, ChevronDown, Filter, Calendar as CalendarIcon, LayoutGrid, Plus, Link2, Link2Off, Youtube, Check, Search, X, ExternalLink } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import AppHeader from "@/components/AppHeader";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths, subDays, addDays } from "date-fns";
@@ -284,6 +285,10 @@ export default function Calendar() {
   const [viewMode, setViewMode] = useState<'calendar' | 'kanban'>('calendar');
   const [compactMode, setCompactMode] = useState(false);
   const [blurTitles, setBlurTitles] = useState(false);
+  const [urlSearch, setUrlSearch] = useState("");
+  const [urlSearchResult, setUrlSearchResult] = useState<ContentCalendarEntry | null>(null);
+  const [urlSearchNotFound, setUrlSearchNotFound] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
 
   // Ref to track current month for use in callbacks (avoids stale closures)
   const currentMonthRef = useRef(currentMonth);
@@ -589,6 +594,52 @@ export default function Calendar() {
     }
   };
 
+  const handleUrlSearch = async () => {
+    const url = urlSearch.trim();
+    if (!url || !user) return;
+    setIsSearching(true);
+    setUrlSearchResult(null);
+    setUrlSearchNotFound(false);
+
+    let videoId = "";
+    try {
+      const u = new URL(url);
+      if (u.hostname.includes("youtu.be")) {
+        videoId = u.pathname.slice(1);
+      } else {
+        videoId = u.searchParams.get("v") || "";
+      }
+    } catch {
+      videoId = url;
+    }
+
+    const { data } = await supabase
+      .from("content_calendar")
+      .select(`id, user_id, title, scheduled_date, status, project_id, youtube_url, channel_id, created_at, updated_at, channel:channels(id, name, color)`)
+      .eq("user_id", user.id)
+      .not("youtube_url", "is", null)
+      .order("scheduled_date", { ascending: false });
+
+    const match = (data as ContentCalendarEntry[] | null)?.find(e => {
+      if (!e.youtube_url) return false;
+      if (e.youtube_url === url) return true;
+      try {
+        const eu = new URL(e.youtube_url);
+        const eId = eu.hostname.includes("youtu.be") ? eu.pathname.slice(1) : eu.searchParams.get("v") || "";
+        return eId === videoId;
+      } catch { return false; }
+    });
+
+    if (match) {
+      setUrlSearchResult(match);
+      setUrlSearchNotFound(false);
+    } else {
+      setUrlSearchResult(null);
+      setUrlSearchNotFound(true);
+    }
+    setIsSearching(false);
+  };
+
   const daysInMonth = eachDayOfInterval({
     start: startOfMonth(currentMonth),
     end: endOfMonth(currentMonth),
@@ -710,6 +761,68 @@ export default function Calendar() {
               />
               Masquer titres
             </label>
+
+            {/* URL Search */}
+            <div className="relative">
+              <div className="flex items-center gap-1">
+                <div className="relative">
+                  <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                  <Input
+                    value={urlSearch}
+                    onChange={(e) => { setUrlSearch(e.target.value); setUrlSearchNotFound(false); setUrlSearchResult(null); }}
+                    onKeyDown={(e) => e.key === "Enter" && handleUrlSearch()}
+                    placeholder="Coller une URL YouTube..."
+                    className="pl-7 pr-7 h-8 w-[180px] sm:w-[240px] text-xs"
+                  />
+                  {urlSearch && (
+                    <button onClick={() => { setUrlSearch(""); setUrlSearchResult(null); setUrlSearchNotFound(false); }} className="absolute right-2 top-1/2 -translate-y-1/2">
+                      <X className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground" />
+                    </button>
+                  )}
+                </div>
+                <Button variant="outline" size="sm" className="h-8 px-2" onClick={handleUrlSearch} disabled={!urlSearch.trim() || isSearching}>
+                  <Search className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+              {(urlSearchResult || urlSearchNotFound) && (
+                <div className="absolute top-full mt-1 right-0 z-50 bg-popover border rounded-lg shadow-lg p-3 w-[320px]">
+                  {urlSearchNotFound && (
+                    <p className="text-sm text-muted-foreground">Aucune vidéo trouvée pour cette URL.</p>
+                  )}
+                  {urlSearchResult && (
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium truncate">{urlSearchResult.title}</p>
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <CalendarIcon className="h-3.5 w-3.5" />
+                        <span>{format(new Date(urlSearchResult.scheduled_date), "d MMMM yyyy", { locale: fr })}</span>
+                        {urlSearchResult.channel && (
+                          <>
+                            <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: urlSearchResult.channel.color }} />
+                            <span>{urlSearchResult.channel.name}</span>
+                          </>
+                        )}
+                      </div>
+                      <div className="flex gap-2">
+                        <Button size="sm" variant="outline" className="text-xs h-7" onClick={() => {
+                          setCurrentMonth(new Date(urlSearchResult.scheduled_date));
+                          setUrlSearch(""); setUrlSearchResult(null);
+                        }}>
+                          <CalendarIcon className="h-3 w-3 mr-1" />
+                          Aller au jour
+                        </Button>
+                        <Button size="sm" variant="outline" className="text-xs h-7" onClick={() => {
+                          handleEntryClick(urlSearchResult);
+                          setUrlSearch(""); setUrlSearchResult(null);
+                        }}>
+                          <ExternalLink className="h-3 w-3 mr-1" />
+                          Ouvrir
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
 
             {/* Channel Filter */}
             <div className="flex items-center gap-2">
