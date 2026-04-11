@@ -254,12 +254,16 @@ const CreateFromScratch = () => {
   const [useBatch, setUseBatch] = useState(false);
   
   // Audio step
-  const [ttsProvider, setTtsProvider] = useState<"minimax" | "inworld" | "genaipro" | "ai33" | "edgetts" | "kokoro">("genaipro");
+  const [ttsProvider, setTtsProvider] = useState<"minimax" | "inworld" | "genaipro" | "ai33" | "edgetts" | "kokoro" | "fish_audio">("genaipro");
   const [selectedVoice, setSelectedVoice] = useState("English_expressive_narrator");
   const [kokoroVoice, setKokoroVoice] = useState("af_bella");
   const [kokoroSpeed, setKokoroSpeed] = useState(1.0);
   const [inworldVoiceId, setInworldVoiceId] = useState("Dennis");
   const [inworldModel, setInworldModel] = useState("inworld-tts-1.5-max");
+  const [fishAudioRefId, setFishAudioRefId] = useState("");
+  const [fishAudioModel, setFishAudioModel] = useState("s2-pro");
+  const [fishAudioSpeed, setFishAudioSpeed] = useState(1.0);
+  const [fishAudioNormalizeLoudness, setFishAudioNormalizeLoudness] = useState(true);
   const [inworldSpeakingRate, setInworldSpeakingRate] = useState(0.9);
   const [minimaxModel, setMinimaxModel] = useState("speech-2.8-turbo");
   // GenAIPro settings
@@ -852,8 +856,8 @@ const CreateFromScratch = () => {
 
   const applyTtsPreset = (preset: TtsPreset, opts?: { silent?: boolean }) => {
     // Load provider
-    if (preset.provider === "minimax" || preset.provider === "inworld" || preset.provider === "genaipro" || preset.provider === "ai33" || preset.provider === "edgetts" || preset.provider === "kokoro") {
-      setTtsProvider(preset.provider as "minimax" | "inworld" | "genaipro" | "ai33" | "edgetts" | "kokoro");
+    if (preset.provider === "minimax" || preset.provider === "inworld" || preset.provider === "genaipro" || preset.provider === "ai33" || preset.provider === "edgetts" || preset.provider === "kokoro" || preset.provider === "fish_audio") {
+      setTtsProvider(preset.provider as "minimax" | "inworld" | "genaipro" | "ai33" | "edgetts" | "kokoro" | "fish_audio");
     } else {
       toast.error("Ce preset utilise un fournisseur non supporté");
       return;
@@ -887,6 +891,14 @@ const CreateFromScratch = () => {
     } else if (preset.provider === "kokoro") {
       setKokoroVoice(preset.voice_id || "af_bella");
       setKokoroSpeed(typeof preset.speed === "number" ? preset.speed : 1.0);
+    } else if (preset.provider === "fish_audio") {
+      setFishAudioRefId(preset.voice_id || "");
+      if (preset.model) setFishAudioModel(preset.model);
+      setFishAudioSpeed(typeof preset.speed === "number" ? preset.speed : 1.0);
+      try {
+        const extras = preset.emotion ? JSON.parse(preset.emotion) : {};
+        if (typeof extras.normalizeLoudness === "boolean") setFishAudioNormalizeLoudness(extras.normalizeLoudness);
+      } catch { /* ignore */ }
     } else {
       setSelectedVoice(preset.voice_id);
       if (preset.model) setMinimaxModel(preset.model);
@@ -963,6 +975,11 @@ const CreateFromScratch = () => {
         presetData.voice_id = kokoroVoice;
         presetData.speed = kokoroSpeed;
         presetData.emotion = JSON.stringify({ ...rvcData, ...audioTagsData });
+      } else if (ttsProvider === "fish_audio") {
+        presetData.voice_id = fishAudioRefId;
+        presetData.model = fishAudioModel;
+        presetData.speed = fishAudioSpeed;
+        presetData.emotion = JSON.stringify({ normalizeLoudness: fishAudioNormalizeLoudness, ...rvcData, ...audioTagsData });
       } else {
         presetData.voice_id = selectedVoice;
         presetData.model = minimaxModel;
@@ -1060,6 +1077,11 @@ const CreateFromScratch = () => {
         updateData.voice_id = kokoroVoice;
         updateData.speed = kokoroSpeed;
         updateData.emotion = JSON.stringify({ ...rvcData, ...audioTagsData });
+      } else if (ttsProvider === "fish_audio") {
+        updateData.voice_id = fishAudioRefId;
+        updateData.model = fishAudioModel;
+        updateData.speed = fishAudioSpeed;
+        updateData.emotion = JSON.stringify({ normalizeLoudness: fishAudioNormalizeLoudness, ...rvcData, ...audioTagsData });
       } else {
         updateData.voice_id = selectedVoice;
         updateData.model = minimaxModel;
@@ -2024,6 +2046,11 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
       } else if (ttsProvider === "kokoro") {
         audioMetadata.voice = kokoroVoice;
         audioMetadata.speed = kokoroSpeed;
+      } else if (ttsProvider === "fish_audio") {
+        audioMetadata.voice = fishAudioRefId;
+        audioMetadata.model = fishAudioModel;
+        audioMetadata.speed = fishAudioSpeed;
+        audioMetadata.normalizeLoudness = fishAudioNormalizeLoudness;
       } else {
         audioMetadata.voice = selectedVoice;
         audioMetadata.model = minimaxModel;
@@ -3060,7 +3087,7 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
 
                       <div className="space-y-4">
                         <Label>Fournisseur TTS</Label>
-                        <Select value={ttsProvider} onValueChange={(value: "minimax" | "inworld" | "genaipro" | "ai33" | "edgetts" | "kokoro") => setTtsProvider(value)}>
+                        <Select value={ttsProvider} onValueChange={(value: "minimax" | "inworld" | "genaipro" | "ai33" | "edgetts" | "kokoro" | "fish_audio") => setTtsProvider(value)}>
                           <SelectTrigger>
                             <SelectValue />
                           </SelectTrigger>
@@ -3071,6 +3098,7 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                             <SelectItem value="minimax">MiniMax (API Officielle)</SelectItem>
                             <SelectItem value="inworld">Inworld AI</SelectItem>
                             <SelectItem value="kokoro">Kokoro (Replicate)</SelectItem>
+                            <SelectItem value="fish_audio">Fish Audio (S2)</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
@@ -3712,6 +3740,84 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                         </div>
                       )}
 
+                      {ttsProvider === "fish_audio" && (
+                        <div className="space-y-4 p-4 bg-muted/50 rounded-lg">
+                          <div className="space-y-2">
+                            <Label>Modèle Fish Audio</Label>
+                            <Select value={fishAudioModel} onValueChange={setFishAudioModel}>
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="s2-pro">S2-Pro (meilleure qualité)</SelectItem>
+                                <SelectItem value="s1">S1 (legacy)</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Reference ID (Voice Model)</Label>
+                            <Input
+                              value={fishAudioRefId}
+                              onChange={(e) => setFishAudioRefId(e.target.value)}
+                              placeholder="ID du modèle vocal Fish Audio..."
+                            />
+                            <p className="text-xs text-muted-foreground">
+                              L'ID du modèle vocal créé sur Fish Audio.{" "}
+                              <a
+                                href="https://fish.audio/app/"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-primary hover:underline"
+                              >
+                                Parcourir les voix
+                              </a>
+                            </p>
+                          </div>
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <Label>Vitesse</Label>
+                              <input
+                                type="number"
+                                min="0.5"
+                                max="2.0"
+                                step="0.1"
+                                value={fishAudioSpeed}
+                                onChange={(e) => {
+                                  const v = parseFloat(e.target.value);
+                                  if (!isNaN(v)) setFishAudioSpeed(Math.min(2.0, Math.max(0.5, v)));
+                                }}
+                                className="w-16 text-right text-sm bg-muted border border-border rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-primary"
+                              />
+                            </div>
+                            <input
+                              type="range"
+                              min="0.5"
+                              max="2.0"
+                              step="0.1"
+                              value={fishAudioSpeed}
+                              onChange={(e) => setFishAudioSpeed(parseFloat(e.target.value))}
+                              className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
+                            />
+                            <div className="flex justify-between text-xs text-muted-foreground">
+                              <span>0.5x</span>
+                              <span>2.0x</span>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              id="fishAudioLoudnorm"
+                              checked={fishAudioNormalizeLoudness}
+                              onChange={(e) => setFishAudioNormalizeLoudness(e.target.checked)}
+                              className="accent-primary"
+                            />
+                            <Label htmlFor="fishAudioLoudnorm" className="cursor-pointer">
+                              Normalize loudness (volume constant)
+                            </Label>
+                          </div>
+                        </div>
+                      )}
+
                       {isGeneratingAudio && audioJobProgress ? (
                         <Card className="p-4 border-primary/20 bg-primary/5 space-y-3">
                           <div className="flex items-center gap-2">
@@ -3744,7 +3850,7 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                           size="lg"
                         >
                           <Mic className="mr-2 h-4 w-4" />
-                          Générer l'audio avec {ttsProvider === "inworld" ? "Inworld" : ttsProvider === "genaipro" ? "ElevenLabs" : ttsProvider === "ai33" ? "AI33" : ttsProvider === "edgetts" ? "EdgeTTS" : "MiniMax"}{rvcEnabled ? " + RVC" : ""}
+                          Générer l'audio avec {ttsProvider === "inworld" ? "Inworld" : ttsProvider === "genaipro" ? "ElevenLabs" : ttsProvider === "ai33" ? "AI33" : ttsProvider === "edgetts" ? "EdgeTTS" : ttsProvider === "fish_audio" ? "Fish Audio" : ttsProvider === "kokoro" ? "Kokoro" : "MiniMax"}{rvcEnabled ? " + RVC" : ""}
                         </Button>
                       )}
 
@@ -4064,8 +4170,8 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
             <div className="p-4 bg-muted rounded-lg text-sm">
               <p className="font-medium mb-2">Configuration actuelle :</p>
               <ul className="space-y-1 text-muted-foreground">
-                <li>Fournisseur : {ttsProvider === "minimax" ? "MiniMax" : ttsProvider === "inworld" ? "Inworld AI" : ttsProvider === "edgetts" ? "EdgeTTS" : ttsProvider === "ai33" ? "AI33.pro" : ttsProvider === "kokoro" ? "Kokoro" : "ElevenLabs"}{rvcEnabled ? " + RVC" : ""}</li>
-                <li>Voix : {ttsProvider === "inworld" ? inworldVoiceId : ttsProvider === "edgetts" ? edgeTTSVoice : ttsProvider === "kokoro" ? kokoroVoice : selectedVoice}</li>
+                <li>Fournisseur : {ttsProvider === "minimax" ? "MiniMax" : ttsProvider === "inworld" ? "Inworld AI" : ttsProvider === "edgetts" ? "EdgeTTS" : ttsProvider === "ai33" ? "AI33.pro" : ttsProvider === "kokoro" ? "Kokoro" : ttsProvider === "fish_audio" ? "Fish Audio" : "ElevenLabs"}{rvcEnabled ? " + RVC" : ""}</li>
+                <li>Voix : {ttsProvider === "inworld" ? inworldVoiceId : ttsProvider === "edgetts" ? edgeTTSVoice : ttsProvider === "kokoro" ? kokoroVoice : ttsProvider === "fish_audio" ? (fishAudioRefId || "default") : selectedVoice}</li>
                 {ttsProvider === "inworld" && (
                   <li>Modèle : {inworldModel}</li>
                 )}
@@ -4111,7 +4217,7 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Fournisseur</Label>
-                <Select value={ttsProvider} onValueChange={(value: "minimax" | "inworld" | "genaipro" | "ai33" | "edgetts" | "kokoro") => setTtsProvider(value)}>
+                <Select value={ttsProvider} onValueChange={(value: "minimax" | "inworld" | "genaipro" | "ai33" | "edgetts" | "kokoro" | "fish_audio") => setTtsProvider(value)}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
@@ -4122,6 +4228,7 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                     <SelectItem value="minimax">MiniMax (API Officielle)</SelectItem>
                     <SelectItem value="inworld">Inworld AI</SelectItem>
                     <SelectItem value="kokoro">Kokoro (Replicate)</SelectItem>
+                    <SelectItem value="fish_audio">Fish Audio (S2)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -4152,6 +4259,12 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                       <SelectItem value="pt-BR-AntonioNeural">Antônio (PT-BR)</SelectItem>
                     </SelectContent>
                   </Select>
+                ) : ttsProvider === "fish_audio" ? (
+                  <Input
+                    value={fishAudioRefId}
+                    onChange={(e) => setFishAudioRefId(e.target.value)}
+                    placeholder="Reference ID du modèle vocal..."
+                  />
                 ) : (
                   <Select value={selectedVoice} onValueChange={setSelectedVoice}>
                     <SelectTrigger>
@@ -4168,6 +4281,31 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
                 )}
               </div>
             </div>
+            {ttsProvider === "fish_audio" && (
+              <div className="space-y-4 p-4 bg-muted/50 rounded-lg">
+                <div className="space-y-2">
+                  <Label>Modèle</Label>
+                  <Select value={fishAudioModel} onValueChange={setFishAudioModel}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="s2-pro">S2-Pro</SelectItem>
+                      <SelectItem value="s1">S1</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Vitesse ({fishAudioSpeed.toFixed(1)}x)</Label>
+                  <input type="range" min="0.5" max="2.0" step="0.1" value={fishAudioSpeed}
+                    onChange={(e) => setFishAudioSpeed(parseFloat(e.target.value))}
+                    className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary" />
+                </div>
+                <div className="flex items-center gap-2">
+                  <input type="checkbox" id="fishLoudnormEdit" checked={fishAudioNormalizeLoudness}
+                    onChange={(e) => setFishAudioNormalizeLoudness(e.target.checked)} className="accent-primary" />
+                  <Label htmlFor="fishLoudnormEdit" className="cursor-pointer">Normalize loudness</Label>
+                </div>
+              </div>
+            )}
             {ttsProvider === "edgetts" && (
               <div className="space-y-4 p-4 bg-muted/50 rounded-lg">
                 <div className="space-y-2">

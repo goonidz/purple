@@ -1164,6 +1164,7 @@ export default function Presets() {
                   <SelectItem value="ai33">AI33</SelectItem>
                   <SelectItem value="edgetts">Edge TTS</SelectItem>
                   <SelectItem value="kokoro">Kokoro (Replicate)</SelectItem>
+                  <SelectItem value="fish_audio">Fish Audio (S2)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -1222,6 +1223,33 @@ export default function Presets() {
                   <div className="flex justify-between text-xs text-muted-foreground">
                     <span>0.5x</span>
                     <span>1.5x</span>
+                  </div>
+                </div>
+              </>
+            ) : ttsProvider === "fish_audio" ? (
+              <>
+                <div>
+                  <Label>Modèle</Label>
+                  <Select value={ttsModel || "s2-pro"} onValueChange={setTtsModel}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="s2-pro">S2-Pro (meilleure qualité)</SelectItem>
+                      <SelectItem value="s1">S1 (legacy)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Reference ID (Voice Model)</Label>
+                  <Input value={ttsVoiceId} onChange={(e) => setTtsVoiceId(e.target.value)} placeholder="ID du modèle vocal Fish Audio..." />
+                </div>
+                <div>
+                  <Label>Vitesse ({ttsSpeed.toFixed(1)}x)</Label>
+                  <input type="range" min={0.5} max={2.0} step={0.1} value={ttsSpeed}
+                    onChange={(e) => setTtsSpeed(parseFloat(e.target.value))}
+                    className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary" />
+                  <div className="flex justify-between text-xs text-muted-foreground">
+                    <span>0.5x</span>
+                    <span>2.0x</span>
                   </div>
                 </div>
               </>

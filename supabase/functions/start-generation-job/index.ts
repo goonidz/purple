@@ -428,7 +428,7 @@ async function processJob(
       throw new Error('WEBHOOK_MODE_ACTIVE');
     } else if (jobType === 'script_generation') {
       await processScriptGenerationJob(jobId, projectId, userId, metadata, authHeader, adminClient);
-    } else if (jobType === 'audio_generation' && (metadata?.provider === 'gemini_tts' || metadata?.provider === 'genaipro' || metadata?.provider === 'ai33' || metadata?.provider === 'edgetts' || metadata?.provider === 'minimax' || metadata?.provider === 'inworld' || metadata?.provider === 'qwen3_tts' || metadata?.provider === 'kokoro' || metadata?.rvcEnabled)) {
+    } else if (jobType === 'audio_generation' && (metadata?.provider === 'gemini_tts' || metadata?.provider === 'genaipro' || metadata?.provider === 'ai33' || metadata?.provider === 'edgetts' || metadata?.provider === 'minimax' || metadata?.provider === 'inworld' || metadata?.provider === 'qwen3_tts' || metadata?.provider === 'kokoro' || metadata?.provider === 'fish_audio' || metadata?.rvcEnabled)) {
       await adminClient
         .from('generation_jobs')
         .update({ status: 'pending' })

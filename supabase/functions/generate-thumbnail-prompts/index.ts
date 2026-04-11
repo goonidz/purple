@@ -421,7 +421,9 @@ GÉNÈRE des miniatures qui représentent VRAIMENT le contenu spécifique de CET
 RAPPEL: Les images d'exemples = STYLE VISUEL uniquement (couleurs, composition, typographie).
 Le CONTENU des miniatures vient UNIQUEMENT du script ci-dessus.
 
-Crée des designs SIMPLES (3-4 éléments max) mais PERTINENTS au script.` });
+Crée des designs SIMPLES (3-4 éléments max) mais PERTINENTS au script.
+
+CRITICAL OUTPUT INSTRUCTION: You MUST call the generate_prompts tool with exactly 5 detailed image generation prompts in the "prompts" array. Each prompt must be a complete, standalone text description for an AI image generator. Do NOT return an empty object.` });
 
       try {
         const anthropicResponse = await fetch('https://api.anthropic.com/v1/messages', {
@@ -433,20 +435,22 @@ Crée des designs SIMPLES (3-4 éléments max) mais PERTINENTS au script.` });
           },
           body: JSON.stringify({
             model: 'claude-sonnet-4-6',
-            max_tokens: 2048,
+            max_tokens: 8192,
             temperature: previousPrompts && previousPrompts.length > 0 ? 0.95 : 0.7,
             system: systemPrompt,
             messages: [{ role: 'user', content: userContent }],
             tools: [{
               name: 'generate_prompts',
-              description: 'Return exactly 5 thumbnail image generation prompts',
+              description: 'You MUST use this tool to return your 5 thumbnail prompts. Put each image generation prompt as a string in the prompts array. Each prompt should be a complete standalone text description (60-100 words) that an AI image generator can use to create a YouTube thumbnail.',
               input_schema: {
                 type: 'object',
                 properties: {
                   prompts: {
                     type: 'array',
                     items: { type: 'string' },
-                    description: 'Array of exactly 5 detailed image generation prompts'
+                    minItems: 5,
+                    maxItems: 5,
+                    description: 'Array of exactly 5 detailed image generation prompt strings. Each string is a complete image description.'
                   }
                 },
                 required: ['prompts']
@@ -474,14 +478,43 @@ Crée des designs SIMPLES (3-4 éléments max) mais PERTINENTS au script.` });
         }
 
         const anthropicData = await anthropicResponse.json();
+        console.log("Claude response structure:", JSON.stringify({
+          stop_reason: anthropicData.stop_reason,
+          content_types: (anthropicData.content || []).map((b: any) => b.type),
+          usage: anthropicData.usage
+        }));
         const toolBlock = (anthropicData.content || []).find((b: any) => b.type === 'tool_use');
-        if (toolBlock?.input?.prompts) {
+        if (toolBlock?.input?.prompts && Array.isArray(toolBlock.input.prompts) && toolBlock.input.prompts.length > 0) {
           generatedContent = JSON.stringify(toolBlock.input);
         } else {
-          generatedContent = (anthropicData.content || [])
-            .filter((b: any) => b.type === 'text')
-            .map((b: any) => b.text)
-            .join('');
+          console.log("Tool_use empty or missing prompts, retrying WITHOUT tool_use...");
+          const retryResponse = await fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-api-key': anthropicApiKey!,
+              'anthropic-version': '2023-06-01',
+            },
+            body: JSON.stringify({
+              model: 'claude-sonnet-4-6',
+              max_tokens: 8192,
+              temperature: previousPrompts && previousPrompts.length > 0 ? 0.95 : 0.7,
+              system: systemPrompt + '\n\nYou MUST respond with ONLY a valid JSON object: {"prompts": ["prompt1", "prompt2", "prompt3", "prompt4", "prompt5"]}. No other text.',
+              messages: [{ role: 'user', content: userContent }],
+            }),
+          });
+          if (retryResponse.ok) {
+            const retryData = await retryResponse.json();
+            generatedContent = (retryData.content || [])
+              .filter((b: any) => b.type === 'text')
+              .map((b: any) => b.text)
+              .join('');
+            console.log("Retry response (first 300 chars):", generatedContent.substring(0, 300));
+          } else {
+            const retryError = await retryResponse.text();
+            console.error("Retry also failed:", retryResponse.status, retryError);
+            generatedContent = '';
+          }
         }
       } catch (claudeError: any) {
         console.error("Anthropic Claude error:", claudeError);
@@ -560,18 +593,18 @@ Crée des designs SIMPLES (3-4 éléments max) mais PERTINENTS au script.` });
         if (!jsonMatch) throw new Error("No JSON found in response");
         parsedResponse = JSON.parse(jsonMatch[0]);
       } catch (parseError) {
-        console.error("Failed to parse AI response:", parseError, generatedContent);
+        console.error("Failed to parse AI response:", parseError, "Raw content:", generatedContent.substring(0, 1000));
         return new Response(
-          JSON.stringify({ error: "Erreur lors du parsing de la réponse AI" }),
+          JSON.stringify({ error: "Erreur lors du parsing de la réponse AI", raw: generatedContent.substring(0, 500) }),
           { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
     }
 
     if (!parsedResponse.prompts || !Array.isArray(parsedResponse.prompts) || parsedResponse.prompts.length < 1) {
-      console.error("Invalid prompts format:", parsedResponse);
+      console.error("Invalid prompts format:", JSON.stringify(parsedResponse).substring(0, 500));
       return new Response(
-        JSON.stringify({ error: "Format de prompts invalide" }),
+        JSON.stringify({ error: "Format de prompts invalide", keys: Object.keys(parsedResponse), raw: JSON.stringify(parsedResponse).substring(0, 300) }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }

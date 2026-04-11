@@ -4324,6 +4324,209 @@ async function processMinimaxTtsPipeline(job) {
 
 const INWORLD_CHUNK_SIZE = 2000;
 const INWORLD_CONCURRENCY = 5;
+
+// Fish Audio S2
+const FISH_AUDIO_CHUNK_SIZE = 5000;
+const FISH_AUDIO_CONCURRENCY = 3;
+
+async function callFishAudioTts(apiKey, text, referenceId, model, speed, normalizeLoudness) {
+  const requestBody = {
+    text,
+    temperature: 0.7,
+    top_p: 0.7,
+    chunk_length: 300,
+    normalize: true,
+    format: 'mp3',
+    sample_rate: 44100,
+    mp3_bitrate: 128,
+    latency: 'normal',
+    max_new_tokens: 1024,
+    repetition_penalty: 1.2,
+    prosody: {
+      speed: typeof speed === 'number' && Number.isFinite(speed) ? speed : 1.0,
+      volume: 0,
+      normalize_loudness: normalizeLoudness !== false,
+    },
+  };
+  if (referenceId) requestBody.reference_id = referenceId;
+
+  const response = await fetch('https://api.fish.audio/v1/tts', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+      'model': model || 's2-pro',
+    },
+    body: JSON.stringify(requestBody),
+  });
+
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`Fish Audio API ${response.status}: ${errText.substring(0, 300)}`);
+  }
+
+  const arrayBuffer = await response.arrayBuffer();
+  return Buffer.from(arrayBuffer);
+}
+
+async function processFishAudioTtsPipeline(job) {
+  const startTime = Date.now();
+  const { id: jobId, project_id: projectId, user_id: userId, metadata: meta } = job;
+
+  try {
+    const text = applyAudioTags(meta.script || meta.text, meta);
+    const referenceId = meta.voice || '';
+    const model = meta.model || 's2-pro';
+    const speed = typeof meta.speed === 'number' ? meta.speed : 1.0;
+    const normalizeLoudness = meta.normalizeLoudness !== false;
+    const wantRVC = meta.rvcEnabled && meta.rvcModelUrl;
+
+    if (!text || text.trim().length < 5) throw new Error('No text provided for Fish Audio TTS');
+
+    log(`[FishAudio ${jobId}] Starting (model=${model}, ref=${referenceId || 'none'}, speed=${speed}x, loudnorm=${normalizeLoudness}, rvc=${!!wantRVC}, text=${text.length} chars)`);
+
+    const apiKey = await getUserApiKey(userId, 'fish_audio');
+    if (!apiKey) throw new Error('Fish Audio API key not configured. Please add it in your profile.');
+
+    const chunks = chunkTextByChars(text, FISH_AUDIO_CHUNK_SIZE);
+    log(`[FishAudio ${jobId}] Split into ${chunks.length} chunks`);
+
+    await supabase.from('generation_jobs')
+      .update({ total: chunks.length + 2, progress: 0, current_step: `Découpage en ${chunks.length} chunks...`, metadata: { ...meta, totalChunks: chunks.length, step: 'chunking' } })
+      .eq('id', jobId);
+
+    const chunkUrls = new Array(chunks.length);
+    let completedCount = 0;
+    const chunkQueue = chunks.map((_, i) => i);
+
+    async function processOneFishChunk(index) {
+      const MAX_RETRIES = 3;
+      let audioBuffer;
+
+      for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        try {
+          log(`[FishAudio ${jobId}] Chunk ${index + 1}/${chunks.length}${attempt > 1 ? ` [retry ${attempt}]` : ''}...`);
+          audioBuffer = await callFishAudioTts(apiKey, chunks[index], referenceId, model, speed, normalizeLoudness);
+          break;
+        } catch (err) {
+          logError(`[FishAudio ${jobId}] Chunk ${index + 1} attempt ${attempt} failed:`, err.message);
+          if (attempt === MAX_RETRIES) throw err;
+          await sleep(2000 * attempt);
+        }
+      }
+
+      const storagePath = `tts/${jobId}/chunk_${String(index).padStart(3, '0')}.mp3`;
+      const { error: uploadError } = await supabase.storage
+        .from('audio-files')
+        .upload(storagePath, audioBuffer, { contentType: 'audio/mpeg', upsert: true });
+      if (uploadError) throw new Error(`Failed to upload chunk ${index}: ${uploadError.message}`);
+
+      const { data: urlData, error: urlError } = await supabase.storage
+        .from('audio-files')
+        .createSignedUrl(storagePath, 3600);
+      if (urlError || !urlData?.signedUrl) throw new Error(`Failed to get signed URL for chunk ${index}`);
+
+      chunkUrls[index] = urlData.signedUrl;
+      completedCount++;
+      await supabase.from('generation_jobs')
+        .update({ progress: completedCount, current_step: `Génération Fish Audio ${completedCount}/${chunks.length}...`, metadata: { ...meta, totalChunks: chunks.length, completedChunks: completedCount, step: 'fish_audio_tts' } })
+        .eq('id', jobId);
+    }
+
+    const workers = [];
+    for (let w = 0; w < Math.min(FISH_AUDIO_CONCURRENCY, chunks.length); w++) {
+      workers.push((async () => {
+        while (chunkQueue.length > 0) {
+          const idx = chunkQueue.shift();
+          if (idx === undefined) break;
+          await processOneFishChunk(idx);
+        }
+      })());
+    }
+    await Promise.all(workers);
+
+    log(`[FishAudio ${jobId}] All ${chunks.length} chunks done. Concatenating...`);
+
+    await supabase.from('generation_jobs')
+      .update({ progress: chunks.length, current_step: 'Concaténation audio...', metadata: { ...meta, totalChunks: chunks.length, completedChunks: chunks.length, step: 'concat' } })
+      .eq('id', jobId);
+
+    const CONCAT_MAX_RETRIES = 3;
+    let concatResult;
+    for (let attempt = 1; attempt <= CONCAT_MAX_RETRIES; attempt++) {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 120000);
+        const concatResponse = await fetch('http://localhost:3000/concat-audio', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ audioUrls: chunkUrls, userId, projectId }),
+          signal: controller.signal,
+        });
+        clearTimeout(timeout);
+        if (!concatResponse.ok) {
+          const errText = await concatResponse.text();
+          throw new Error(`concat-audio HTTP ${concatResponse.status}: ${errText.substring(0, 300)}`);
+        }
+        concatResult = await concatResponse.json();
+        break;
+      } catch (concatErr) {
+        logError(`[FishAudio ${jobId}] concat attempt ${attempt}/${CONCAT_MAX_RETRIES} failed:`, concatErr.message);
+        if (attempt === CONCAT_MAX_RETRIES) throw concatErr;
+        await sleep(5000 * attempt);
+      }
+    }
+
+    let concatenatedUrl = concatResult.audioUrl;
+    if (concatenatedUrl && concatenatedUrl.includes('localhost')) {
+      concatenatedUrl = concatenatedUrl.replace(/http:\/\/localhost:\d+/, 'https://purpleai.duckdns.org/api/render');
+    }
+    log(`[FishAudio ${jobId}] Concat done: ${concatenatedUrl} (${concatResult.totalDuration?.toFixed(1)}s)`);
+
+    let finalAudioUrl = concatenatedUrl;
+
+    if (wantRVC) {
+      await supabase.from('generation_jobs').update({ progress: chunks.length + 1 }).eq('id', jobId);
+      finalAudioUrl = await applyRVCConversion(jobId, concatenatedUrl, {
+        rvcModelUrl: meta.rvcModelUrl,
+        rvcIndexUrl: meta.rvcIndexUrl || '',
+        rvcPitch: typeof meta.rvcPitch === 'number' ? meta.rvcPitch : 0,
+        rvcIndexRate: typeof meta.rvcIndexRate === 'number' ? meta.rvcIndexRate : 0.75,
+        userId, projectId,
+      }, { ...meta, totalChunks: chunks.length });
+    }
+
+    if (projectId) {
+      await supabase.from('projects')
+        .update({ audio_url: finalAudioUrl, updated_at: new Date().toISOString() })
+        .eq('id', projectId);
+    }
+
+    await supabase.from('generation_jobs')
+      .update({
+        status: 'completed',
+        progress: chunks.length + (wantRVC ? 2 : 1),
+        current_step: 'Terminé !',
+        completed_at: new Date().toISOString(),
+        metadata: {
+          ...meta,
+          totalChunks: chunks.length,
+          audioUrl: finalAudioUrl,
+          totalDuration: concatResult.totalDuration,
+          durationMs: Date.now() - startTime,
+        },
+      })
+      .eq('id', jobId);
+
+    log(`[FishAudio ${jobId}] Done in ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
+
+  } catch (err) {
+    logError(`[FishAudio ${jobId}] Pipeline failed:`, err.message);
+    await supabase.from('generation_jobs')
+      .update({ status: 'failed', error_message: err.message, completed_at: new Date().toISOString() })
+      .eq('id', jobId);
+  }
+}
 const INWORLD_API_URL = 'https://api.inworld.ai/tts/v1/voice';
 
 async function callInworldTts(apiKey, text, voiceId, modelId, speakingRate) {
@@ -5101,6 +5304,7 @@ async function mainLoop() {
               else if (job.metadata?.provider === 'inworld') pipeline = processInworldDirectTtsPipeline(job);
               else if (job.metadata?.provider === 'qwen3_tts') pipeline = processQwen3TtsPipeline(job);
               else if (job.metadata?.provider === 'kokoro') pipeline = processKokoroTtsPipeline(job);
+              else if (job.metadata?.provider === 'fish_audio') pipeline = processFishAudioTtsPipeline(job);
               else pipeline = processAudioTTSPipeline(job);
             } else if (job.job_type === 'idea_generation') pipeline = processIdeaGenerationPipeline(job);
 

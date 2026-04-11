@@ -29,6 +29,7 @@ const Profile = () => {
   const [zaiApiKey, setZaiApiKey] = useState("");
   const [openrouterApiKey, setOpenrouterApiKey] = useState("");
   const [groqApiKey, setGroqApiKey] = useState("");
+  const [fishAudioApiKey, setFishAudioApiKey] = useState("");
   
   // Track original values to detect changes
   const [originalKeys, setOriginalKeys] = useState({
@@ -45,7 +46,8 @@ const Profile = () => {
     ai33: "",
     zai: "",
     openrouter: "",
-    groq: ""
+    groq: "",
+    fish_audio: ""
   });
   const [showKeys, setShowKeys] = useState({
     replicate: false,
@@ -61,7 +63,8 @@ const Profile = () => {
     ai33: false,
     zai: false,
     openrouter: false,
-    groq: false
+    groq: false,
+    fish_audio: false
   });
 
   // Password change state
@@ -97,7 +100,7 @@ const Profile = () => {
     setIsLoading(true);
     try {
       // Try to get API keys from Vault
-      const [replicateResult, elevenLabsResult, minimaxResult, anthropicResult, braveResult, keiResult, apifyResult, inworldResult, geminiResult, genaiproResult, ai33Result, zaiResult, openrouterResult, groqResult] = await Promise.all([
+      const [replicateResult, elevenLabsResult, minimaxResult, anthropicResult, braveResult, keiResult, apifyResult, inworldResult, geminiResult, genaiproResult, ai33Result, zaiResult, openrouterResult, groqResult, fishAudioResult] = await Promise.all([
         supabase.rpc('get_user_api_key', { key_name: 'replicate' }),
         supabase.rpc('get_user_api_key', { key_name: 'eleven_labs' }),
         supabase.rpc('get_user_api_key', { key_name: 'minimax' }),
@@ -112,6 +115,7 @@ const Profile = () => {
         supabase.rpc('get_user_api_key', { key_name: 'zai' }),
         supabase.rpc('get_user_api_key', { key_name: 'openrouter' }),
         supabase.rpc('get_user_api_key', { key_name: 'groq' }),
+        supabase.rpc('get_user_api_key', { key_name: 'fish_audio' }),
       ]);
 
       const replicateValue = replicateResult.data || "";
@@ -128,6 +132,7 @@ const Profile = () => {
       const zaiValue = zaiResult.data || "";
       const openrouterValue = openrouterResult.data || "";
       const groqValue = groqResult.data || "";
+      const fishAudioValue = fishAudioResult.data || "";
 
       // Set current values
       setReplicateApiKey(replicateValue);
@@ -144,6 +149,7 @@ const Profile = () => {
       setZaiApiKey(zaiValue);
       setOpenrouterApiKey(openrouterValue);
       setGroqApiKey(groqValue);
+      setFishAudioApiKey(fishAudioValue);
       
       // Store original values to track changes
       setOriginalKeys({
@@ -160,7 +166,8 @@ const Profile = () => {
         ai33: ai33Value,
         zai: zaiValue,
         openrouter: openrouterValue,
-        groq: groqValue
+        groq: groqValue,
+        fish_audio: fishAudioValue
       });
       
       if (replicateResult.error && !replicateResult.error.message?.includes('not found')) {
@@ -231,6 +238,9 @@ const Profile = () => {
     if (groqApiKey.trim() !== originalKeys.groq) {
       changedKeys.push({ key_name: 'groq', key_value: groqApiKey.trim() });
     }
+    if (fishAudioApiKey.trim() !== originalKeys.fish_audio) {
+      changedKeys.push({ key_name: 'fish_audio', key_value: fishAudioApiKey.trim() });
+    }
 
     if (changedKeys.length === 0) {
       toast.info("Aucune modification détectée");
@@ -274,7 +284,8 @@ const Profile = () => {
         ai33: ai33ApiKey.trim(),
         zai: zaiApiKey.trim(),
         openrouter: openrouterApiKey.trim(),
-        groq: groqApiKey.trim()
+        groq: groqApiKey.trim(),
+        fish_audio: fishAudioApiKey.trim()
       });
 
       toast.success("Clés API sauvegardées avec succès !");
@@ -770,6 +781,42 @@ const Profile = () => {
                       Utilisée pour la génération vocale TTS avec Inworld.{" "}
                       <a
                         href="https://platform.inworld.ai/v2/documentation"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary hover:underline"
+                      >
+                        Obtenir une clé
+                      </a>
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="fish-audio-key">
+                      Fish Audio API Key
+                    </Label>
+                    <div className="relative">
+                      <Input
+                        id="fish-audio-key"
+                        type={showKeys.fish_audio ? "text" : "password"}
+                        value={fishAudioApiKey}
+                        onChange={(e) => setFishAudioApiKey(e.target.value)}
+                        placeholder="..."
+                        className="pr-10"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                        onClick={() => setShowKeys(prev => ({ ...prev, fish_audio: !prev.fish_audio }))}
+                      >
+                        {showKeys.fish_audio ? <EyeOff className="h-4 w-4 text-muted-foreground" /> : <Eye className="h-4 w-4 text-muted-foreground" />}
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Utilisée pour la génération vocale TTS avec Fish Audio S2.{" "}
+                      <a
+                        href="https://fish.audio/app/api-keys/"
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-primary hover:underline"
