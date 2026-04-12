@@ -459,14 +459,39 @@ const Index = () => {
         }
         query.then(({ data }) => {
           if (data && data.length > 0) {
-            const sceneData = data.map((row: any) => ({
-              sceneIndex: row.scene_index,
-              text: scenes[row.scene_index]?.text || '',
-              pexelsResults: row.pexels_results || [],
-              pexelsClips: row.pexels_clips || [],
-            }));
-            setPexelsSceneResults(sceneData);
-            setVideoClipSelectorOpen(true);
+            const hasAutoSelected = data.some((row: any) => {
+              const clips = row.pexels_clips;
+              if (!clips) return false;
+              const arr = Array.isArray(clips) ? clips : clips.clips;
+              return arr && arr.length > 0;
+            });
+            if (hasAutoSelected) {
+              setGeneratedPrompts(prev => {
+                const next = [...prev];
+                for (const row of data) {
+                  const idx = row.scene_index;
+                  if (next[idx]) {
+                    const raw = row.pexels_clips;
+                    next[idx] = {
+                      ...next[idx],
+                      pexelsClips: raw ? (Array.isArray(raw) ? raw : raw.clips) : undefined,
+                      pexelsReason: raw?.reason || undefined,
+                    };
+                  }
+                }
+                return next;
+              });
+              toast.success('Vidéos Pexels sélectionnées automatiquement par Gemini !');
+            } else {
+              const sceneData = data.map((row: any) => ({
+                sceneIndex: row.scene_index,
+                text: scenes[row.scene_index]?.text || '',
+                pexelsResults: row.pexels_results || [],
+                pexelsClips: row.pexels_clips || [],
+              }));
+              setPexelsSceneResults(sceneData);
+              setVideoClipSelectorOpen(true);
+            }
           }
         });
       }
@@ -5383,7 +5408,9 @@ const Index = () => {
                           .eq('project_id', pid)
                           .eq('scene_index', index)
                           .single();
-                        if (existing?.pexels_clips && existing.pexels_clips.length > 0) {
+                        const rawClips = existing?.pexels_clips;
+                        const clipsArr = rawClips ? (Array.isArray(rawClips) ? rawClips : rawClips.clips) : null;
+                        if (clipsArr && clipsArr.length > 0) {
                           setPexelsSceneResults([{
                             sceneIndex: index,
                             text: sceneText,
