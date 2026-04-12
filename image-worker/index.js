@@ -2345,23 +2345,26 @@ async function pexelsSelectClips(geminiKey, videos, sceneText, sceneDuration) {
 
   const videoList = videos.map((v, i) => `Video ${i + 1}: duration=${v.duration}s`).join('\n');
 
-  const prompt = `You are selecting stock footage clips for a video scene.
+  const maxClips = Math.min(videos.length, 7);
+  const prompt = `You are selecting stock footage clips for a video scene. Your goal is to FILL the entire scene duration with compelling footage.
 
 Scene text: "${sceneText.substring(0, 400)}"
-Scene duration: ${sceneDuration}s
+Scene duration: ${sceneDuration}s — you MUST fill this entire duration.
 
 Available videos (thumbnails shown above in order):
 ${videoList}
 
 Rules:
-- Select 1 to 3 videos that best visually match the scene text
-- The TOTAL duration of all clips MUST NOT exceed ${sceneDuration}s
+- Select as many clips as needed (1 to ${maxClips}) to FILL the full ${sceneDuration}s
+- The TOTAL duration of all clips MUST be as close to ${sceneDuration}s as possible (never exceed it)
 - For each clip, set a startTime (where to start in the source video) and a duration
-- Prefer variety if selecting multiple clips
-- Each clip duration must be at least 0.5s
+- You can reuse different segments of the same video if needed
+- Prefer variety: use different videos when possible
+- Each clip duration must be at least 1s
+- Distribute duration evenly across clips for a dynamic feel
 
 Return ONLY a JSON object (no other text):
-{"clips": [{"videoIndex": 0, "startTime": 0, "duration": 3.5}], "reason": "Brief explanation in French of why these clips were chosen"}`;
+{"clips": [{"videoIndex": 0, "startTime": 0, "duration": 5.0}, {"videoIndex": 2, "startTime": 3, "duration": 4.5}], "reason": "Brief explanation in French of why these clips were chosen"}`;
 
   const parts = [...thumbnailParts, { text: prompt }];
 
@@ -2398,7 +2401,7 @@ Return ONLY a JSON object (no other text):
     const v = videos[idx];
     const start = Math.max(0, Math.min(sel.startTime || 0, v.duration - 1));
     const maxDur = v.duration - start;
-    let dur = Math.max(0.5, Math.min(sel.duration || 3, maxDur));
+    let dur = Math.max(1, Math.min(sel.duration || 3, maxDur));
     if (totalDuration + dur > sceneDuration) dur = Math.round(Math.max(0, sceneDuration - totalDuration) * 10) / 10;
     if (dur < 0.5) continue;
     clips.push({
