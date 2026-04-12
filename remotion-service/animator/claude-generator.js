@@ -118,7 +118,7 @@ ${extraPrompt ? `\nExtra instructions:\n${extraPrompt}` : ''}`;
     }
 
     const raw = toolBlock.input?.components_code?.trim() ?? '';
-    const code = stripSharedDeclarations(raw);
+    const code = sanitizeReservedNames(stripSharedDeclarations(raw));
     const u = response.usage ?? {};
 
     console.log(`  [Animator] Chunk ${chunkIdx + 1}/${totalChunks} | ${segEntries.map(s => s.name).join(',')} | ${code.length} chars | in:${u.input_tokens} out:${u.output_tokens}`);
@@ -242,14 +242,30 @@ ${audioFilename ? `      <Audio src={staticFile(${JSON.stringify(audioFilename)}
 `;
 }
 
+const RESERVED_VAR_NAMES = ['arguments', 'eval', 'implements', 'interface', 'package', 'private', 'protected', 'public', 'static', 'yield'];
+
+function sanitizeReservedNames(code) {
+  let result = code;
+  for (const name of RESERVED_VAR_NAMES) {
+    const pattern = new RegExp(`\\b(const|let|var)\\s+${name}\\b`, 'g');
+    if (pattern.test(result)) {
+      result = result.replace(pattern, `$1 ${name}List`);
+      result = result.replace(new RegExp(`\\b${name}\\b\\.map\\b`, 'g'), `${name}List.map`);
+      result = result.replace(new RegExp(`\\b${name}\\b\\.forEach\\b`, 'g'), `${name}List.forEach`);
+      result = result.replace(new RegExp(`\\b${name}\\b\\.length\\b`, 'g'), `${name}List.length`);
+      result = result.replace(new RegExp(`\\b${name}\\b\\.filter\\b`, 'g'), `${name}List.filter`);
+      result = result.replace(new RegExp(`\\b${name}\\b\\[`, 'g'), `${name}List[`);
+    }
+  }
+  return result;
+}
+
 function validateComponentCode(code, segName) {
   if (!code || code.trim().length === 0) return { valid: false, error: 'Empty code' };
 
   const hasDecl = new RegExp(`(?:function|const)\\s+${segName}\\b`).test(code);
   if (!hasDecl) return { valid: false, error: `Missing declaration for ${segName}` };
 
-  // Use esbuild to validate JSX syntax — handles apostrophes in JSX text,
-  // template literals, and all other edge cases that naive char counting misses.
   try {
     esbuild.transformSync(code, {
       loader: 'jsx',
@@ -321,7 +337,7 @@ ${extraPrompt ? `\nExtra instructions:\n${extraPrompt}` : ''}`;
     }
 
     const raw = toolBlock.input?.components_code?.trim() ?? '';
-    const code = stripSharedDeclarations(raw);
+    const code = sanitizeReservedNames(stripSharedDeclarations(raw));
     const u = response.usage ?? {};
 
     const validation = validateComponentCode(code, segName);
@@ -420,7 +436,7 @@ ${extraPrompt ? `\nExtra instructions:\n${extraPrompt}` : ''}`;
     }
 
     const raw = (fnCall.functionCall.args?.components_code || '').trim();
-    const code = stripSharedDeclarations(raw);
+    const code = sanitizeReservedNames(stripSharedDeclarations(raw));
     const u = data.usageMetadata || {};
 
     const validation = validateComponentCode(code, segName);
@@ -506,7 +522,7 @@ ${extraPrompt ? `\nExtra instructions:\n${extraPrompt}` : ''}`;
     }
 
     const raw = (fnCall.functionCall.args?.components_code || '').trim();
-    const code = stripSharedDeclarations(raw);
+    const code = sanitizeReservedNames(stripSharedDeclarations(raw));
     const u = data.usageMetadata || {};
 
     console.log(`  [Animator/Gemini] Chunk ${chunkIdx + 1}/${totalChunks} | ${segEntries.map(s => s.name).join(',')} | ${code.length} chars | in:${u.promptTokenCount || 0} out:${u.candidatesTokenCount || 0}`);
@@ -620,4 +636,4 @@ async function generateComposition({
   };
 }
 
-module.exports = { generateComposition, generateSingleScene, generateSingleSceneGemini, validateComponentCode, buildWrapper, stripSharedDeclarations, isGeminiModel, getModelPrices };
+module.exports = { generateComposition, generateSingleScene, generateSingleSceneGemini, validateComponentCode, sanitizeReservedNames, buildWrapper, stripSharedDeclarations, isGeminiModel, getModelPrices };
