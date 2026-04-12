@@ -226,50 +226,53 @@ export const VideoPreview = ({
     return 0;
   };
 
-  // Animation loop to sync image with audio
-  const syncImageWithAudio = () => {
-    if (!audioRef.current) return;
+  const lastFrameTimeRef = useRef<number>(0);
 
-    const time = audioRef.current.currentTime;
+  // Animation loop to sync with audio or timer fallback
+  const syncPlayback = () => {
+    const audio = audioRef.current;
+    let time: number;
+
+    if (audio && audio.duration > 0 && !audio.paused) {
+      time = audio.currentTime;
+    } else {
+      const now = performance.now();
+      const delta = (now - lastFrameTimeRef.current) / 1000 * playbackRate;
+      lastFrameTimeRef.current = now;
+      time = currentTime + delta;
+    }
+
+    const totalEnd = prompts.length > 0 ? prompts[prompts.length - 1].endTime : 0;
+    if (time >= totalEnd && totalEnd > 0) {
+      setIsPlaying(false);
+      setCurrentTime(totalEnd);
+      if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+      return;
+    }
+
     const sceneIndex = getCurrentSceneIndex(time);
-
     if (sceneIndex !== currentSceneIndex) {
       setCurrentSceneIndex(sceneIndex);
     }
-
     setCurrentTime(time);
-
-    if (!audioRef.current.paused) {
-      animationFrameRef.current = requestAnimationFrame(syncImageWithAudio);
-    } else {
-      setIsPlaying(false);
-    }
+    animationFrameRef.current = requestAnimationFrame(syncPlayback);
   };
+
   // Handle play/pause
   const togglePlayPause = () => {
-    if (!audioRef.current) return;
-
     if (isPlaying) {
-      audioRef.current.pause();
+      if (audioRef.current) audioRef.current.pause();
       setIsPlaying(false);
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
       }
     } else {
-      const playPromise = audioRef.current.play();
-      if (playPromise) {
-        playPromise.then(() => {
-          setIsPlaying(true);
-          syncImageWithAudio();
-        }).catch((err) => {
-          console.warn('Audio play failed:', err);
-          setIsPlaying(true);
-          syncImageWithAudio();
-        });
-      } else {
-        setIsPlaying(true);
-        syncImageWithAudio();
+      lastFrameTimeRef.current = performance.now();
+      if (audioRef.current && audioRef.current.readyState >= 2) {
+        audioRef.current.play().catch(() => {});
       }
+      setIsPlaying(true);
+      animationFrameRef.current = requestAnimationFrame(syncPlayback);
     }
   };
 
@@ -341,9 +344,10 @@ export const VideoPreview = ({
       
       // Auto-play if requested
       if (autoPlay && !isPlaying) {
-        audio.play();
+        audio.play().catch(() => {});
+        lastFrameTimeRef.current = performance.now();
         setIsPlaying(true);
-        syncImageWithAudio();
+        animationFrameRef.current = requestAnimationFrame(syncPlayback);
       }
     };
 
