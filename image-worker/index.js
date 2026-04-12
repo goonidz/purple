@@ -2346,14 +2346,14 @@ Available videos (thumbnails shown above in order):
 ${videoList}
 
 Rules:
-- Select 1 to 3 videos that best visually match the scene
+- Select 1 to 3 videos that best visually match the scene text
 - The TOTAL duration of all clips MUST NOT exceed ${sceneDuration}s
 - For each clip, set a startTime (where to start in the source video) and a duration
 - Prefer variety if selecting multiple clips
-- Each clip duration must be at least 1s
+- Each clip duration must be at least 0.5s
 
-Return ONLY a JSON array, no other text:
-[{"videoIndex": 0, "startTime": 0, "duration": 3.5}, ...]`;
+Return ONLY a JSON object (no other text):
+{"clips": [{"videoIndex": 0, "startTime": 0, "duration": 3.5}], "reason": "Brief explanation in French of why these clips were chosen"}`;
 
   const parts = [...thumbnailParts, { text: prompt }];
 
@@ -2364,7 +2364,7 @@ Return ONLY a JSON array, no other text:
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents: [{ parts }],
-        generationConfig: { maxOutputTokens: 300, temperature: 0.2 },
+        generationConfig: { maxOutputTokens: 500, temperature: 0.2 },
       }),
     }
   );
@@ -2373,23 +2373,25 @@ Return ONLY a JSON array, no other text:
   const data = await resp.json();
   const raw = (data?.candidates?.[0]?.content?.parts?.[0]?.text || '').trim();
 
-  // Parse JSON from response (handle markdown code blocks)
-  const jsonMatch = raw.match(/\[[\s\S]*?\]/);
+  // Parse JSON object from response (handle markdown code blocks)
+  const jsonMatch = raw.match(/\{[\s\S]*\}/);
   if (!jsonMatch) throw new Error(`Gemini vision returned unparseable response: ${raw.substring(0, 100)}`);
 
-  const selections = JSON.parse(jsonMatch[0]);
+  const parsed = JSON.parse(jsonMatch[0]);
+  const selections = parsed.clips || parsed;
+  const reason = parsed.reason || '';
 
-  // Validate and build clips
+  // Validate and build clips, strictly enforce scene duration
   let totalDuration = 0;
   const clips = [];
-  for (const sel of selections) {
+  for (const sel of (Array.isArray(selections) ? selections : [])) {
     const idx = sel.videoIndex;
     if (idx < 0 || idx >= videos.length) continue;
     const v = videos[idx];
     const start = Math.max(0, Math.min(sel.startTime || 0, v.duration - 1));
     const maxDur = v.duration - start;
-    let dur = Math.max(1, Math.min(sel.duration || 3, maxDur));
-    if (totalDuration + dur > sceneDuration) dur = Math.max(0, sceneDuration - totalDuration);
+    let dur = Math.max(0.5, Math.min(sel.duration || 3, maxDur));
+    if (totalDuration + dur > sceneDuration) dur = Math.round(Math.max(0, sceneDuration - totalDuration) * 10) / 10;
     if (dur < 0.5) continue;
     clips.push({
       pexelId: v.pexelId,
@@ -2402,16 +2404,19 @@ Return ONLY a JSON array, no other text:
     if (totalDuration >= sceneDuration) break;
   }
 
-  return clips;
+  return { clips, reason };
 }
 
 // Step 4: Save results and clips to DB
-async function pexelsSaveResults(projectId, sceneIndex, results, clips) {
+async function pexelsSaveResults(projectId, sceneIndex, results, clips, reason = '') {
+  const clipsData = clips.length > 0
+    ? { clips, reason }
+    : null;
   await supabase.from('project_scenes').upsert({
     project_id: projectId,
     scene_index: sceneIndex,
     pexels_results: results,
-    pexels_clips: clips.length > 0 ? clips : null,
+    pexels_clips: clipsData,
   }, { onConflict: 'project_id,scene_index' });
 }
 
@@ -2438,17 +2443,20 @@ async function processPexelsSearchJob(job) {
 
     // Step 3: Gemini vision auto-selects clips
     let clips = [];
+    let reason = '';
     if (results.length > 0) {
       try {
-        clips = await pexelsSelectClips(geminiKey, results, sceneText, sceneDuration);
-        log(`[Pexels] Scene ${sceneIndex}: Gemini selected ${clips.length} clips (total ${clips.reduce((s, c) => s + c.duration, 0).toFixed(1)}s / ${sceneDuration}s)`);
+        const selection = await pexelsSelectClips(geminiKey, results, sceneText, sceneDuration);
+        clips = selection.clips;
+        reason = selection.reason;
+        log(`[Pexels] Scene ${sceneIndex}: Gemini selected ${clips.length} clips (total ${clips.reduce((s, c) => s + c.duration, 0).toFixed(1)}s / ${sceneDuration}s) — ${reason.substring(0, 80)}`);
       } catch (selErr) {
         logError(`[Pexels] Scene ${sceneIndex}: Gemini vision selection failed, skipping auto-select:`, selErr.message);
       }
     }
 
     // Step 4: Save to DB
-    await pexelsSaveResults(projectId, sceneIndex, results, clips);
+    await pexelsSaveResults(projectId, sceneIndex, results, clips, reason);
 
     // Mark job complete
     await supabase.from('generation_jobs').update({

@@ -103,6 +103,7 @@ interface GeneratedPrompt {
   was_regenerated?: boolean;
   regenerated_prompt?: string;
   pexelsClips?: Array<{ pexelId: number; url: string; thumbnail?: string; startTime: number; duration: number }>;
+  pexelsReason?: string;
 }
 
 // Fonction pour calculer les groupes si continuityGroupId manquant (rétrocompatibilité)
@@ -541,7 +542,8 @@ const Index = () => {
               isUpscaled: s ? (s.is_upscaled ?? promptsJson[sceneIdx]?.isUpscaled) : promptsJson[sceneIdx]?.isUpscaled,
               videoUrl: s?.video_url || promptsJson[sceneIdx]?.videoUrl,
               continuityGroupId: s?.continuity_group_id || promptsJson[sceneIdx]?.continuityGroupId,
-              pexelsClips: s?.pexels_clips || undefined
+              pexelsClips: s?.pexels_clips ? (Array.isArray(s.pexels_clips) ? s.pexels_clips : s.pexels_clips.clips) : undefined,
+              pexelsReason: s?.pexels_clips?.reason || undefined
             };
           }
           promptsWithGroups = calculateGroupsIfMissing(newPrompts);
@@ -912,7 +914,8 @@ const Index = () => {
               videoUrl: s?.video_url || promptsJson[sceneIdx]?.videoUrl,
               continuityGroupId: s?.continuity_group_id || promptsJson[sceneIdx]?.continuityGroupId,
               manually_regenerated: promptsJson[sceneIdx]?.manually_regenerated,
-              pexelsClips: s?.pexels_clips || undefined
+              pexelsClips: s?.pexels_clips ? (Array.isArray(s.pexels_clips) ? s.pexels_clips : s.pexels_clips.clips) : undefined,
+              pexelsReason: s?.pexels_clips?.reason || undefined
             };
           }
 

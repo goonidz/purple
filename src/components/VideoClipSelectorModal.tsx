@@ -129,13 +129,16 @@ export default function VideoClipSelectorModal({
           .from("project_scenes")
           .update({
             pexels_clips: clips.length > 0
-              ? clips.map((c) => ({
-                  pexelId: c.pexelId,
-                  url: c.url,
-                  thumbnail: c.thumbnail,
-                  startTime: c.startTime,
-                  duration: c.duration,
-                }))
+              ? {
+                  clips: clips.map((c) => ({
+                    pexelId: c.pexelId,
+                    url: c.url,
+                    thumbnail: c.thumbnail,
+                    startTime: c.startTime,
+                    duration: c.duration,
+                  })),
+                  reason: "Sélection manuelle"
+                }
               : null,
           })
           .eq("project_id", projectId)

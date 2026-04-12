@@ -20,6 +20,8 @@ import {
   AlertCircle,
   RotateCcw,
   Trash2,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import {
   Tooltip,
@@ -58,6 +60,7 @@ interface GeneratedPrompt {
   was_regenerated?: boolean;
   regenerated_prompt?: string;
   pexelsClips?: PexelsClip[];
+  pexelsReason?: string;
 }
 
 interface SceneGridProps {
@@ -125,6 +128,7 @@ export function SceneGrid({
 }: SceneGridProps) {
   const [manualPromptIndex, setManualPromptIndex] = useState<number | null>(null);
   const [manualPromptText, setManualPromptText] = useState("");
+  const [expandedReasons, setExpandedReasons] = useState<Set<number>>(new Set());
   const items = scenes.length > 0 ? scenes : generatedPrompts;
 
   // Fonction pour obtenir la couleur du groupe
@@ -456,6 +460,19 @@ export function SceneGrid({
                       </Button>
                     )}
                   </div>
+                  {prompt.pexelsReason && (
+                    <button
+                      className="w-full text-left px-2 py-1 flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+                      onClick={() => setExpandedReasons(prev => {
+                        const next = new Set(prev);
+                        next.has(index) ? next.delete(index) : next.add(index);
+                        return next;
+                      })}
+                    >
+                      {expandedReasons.has(index) ? <ChevronUp className="h-3 w-3 shrink-0" /> : <ChevronDown className="h-3 w-3 shrink-0" />}
+                      <span className={expandedReasons.has(index) ? '' : 'truncate'}>{prompt.pexelsReason}</span>
+                    </button>
+                  )}
                 </div>
               ) : prompt?.imageUrl ? (
                 <div className={`group relative w-full overflow-hidden rounded-lg bg-muted ${prompt?.videoUrl ? 'h-20' : 'aspect-video'}`}>
