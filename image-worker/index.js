@@ -2266,6 +2266,96 @@ async function processThumbnailsV2Pipeline(job) {
 }
 
 // ============================================================================
+// PEXELS VIDEO SEARCH PIPELINE
+// ============================================================================
+
+async function processPexelsSearchJob(job) {
+  const { id: jobId, project_id: projectId, user_id: userId, parent_job_id: parentJobId, metadata } = job;
+  const sceneIndex = metadata?.sceneIndex;
+  const sceneText = metadata?.sceneText || '';
+
+  log(`[Pexels] Processing scene ${sceneIndex} (job ${jobId.substring(0, 8)}...)`);
+
+  try {
+    // Step 1: Extract keyword via Gemini
+    const geminiKey = await getUserApiKey(userId, 'gemini');
+    const keywordPrompt = `Extract 1-2 English keywords for searching stock video footage that would visually represent this scene. Return ONLY the keywords, nothing else.\n\nScene: "${sceneText.substring(0, 500)}"`;
+
+    const geminiResp = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: keywordPrompt }] }],
+          generationConfig: { maxOutputTokens: 20, temperature: 0.3 },
+        }),
+      }
+    );
+
+    if (!geminiResp.ok) throw new Error(`Gemini API ${geminiResp.status}: ${await geminiResp.text()}`);
+    const geminiData = await geminiResp.json();
+    const keyword = (geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || '').trim().replace(/["']/g, '').substring(0, 50);
+    if (!keyword) throw new Error('Gemini returned empty keyword');
+
+    log(`[Pexels] Scene ${sceneIndex}: keyword="${keyword}"`);
+
+    // Step 2: Search Pexels
+    const pexelsKey = await getUserApiKey(userId, 'pexels');
+    const pexelsResp = await fetch(
+      `https://api.pexels.com/videos/search?query=${encodeURIComponent(keyword)}&per_page=7&orientation=landscape&size=medium`,
+      { headers: { Authorization: pexelsKey } }
+    );
+
+    if (!pexelsResp.ok) throw new Error(`Pexels API ${pexelsResp.status}: ${await pexelsResp.text()}`);
+    const pexelsData = await pexelsResp.json();
+
+    const results = (pexelsData.videos || []).map(v => {
+      const hdFile = v.video_files?.find(f => f.quality === 'hd' && f.width >= 1280) || v.video_files?.[0];
+      return {
+        pexelId: v.id,
+        url: hdFile?.link || '',
+        thumbnail: v.image || '',
+        duration: v.duration || 0,
+        width: hdFile?.width || v.width || 1920,
+        height: hdFile?.height || v.height || 1080,
+        keyword,
+      };
+    }).filter(r => r.url);
+
+    log(`[Pexels] Scene ${sceneIndex}: found ${results.length} videos for "${keyword}"`);
+
+    // Step 3: Save to project_scenes
+    await supabase.from('project_scenes').upsert({
+      project_id: projectId,
+      scene_index: sceneIndex,
+      pexels_results: results,
+    }, { onConflict: 'project_id,scene_index' });
+
+    // Step 4: Mark job complete
+    await supabase.from('generation_jobs').update({
+      status: 'completed',
+      progress: 1,
+      completed_at: new Date().toISOString(),
+      metadata: { ...metadata, keyword, resultCount: results.length },
+    }).eq('id', jobId);
+
+    if (parentJobId) await notifyParentJobProgress(parentJobId);
+
+  } catch (error) {
+    logError(`[Pexels] Scene ${sceneIndex} failed:`, error.message);
+    await supabase.from('generation_jobs').update({
+      status: 'failed',
+      error_message: error.message?.substring(0, 500),
+      completed_at: new Date().toISOString(),
+    }).eq('id', jobId);
+    if (parentJobId) {
+      try { await notifyParentJobProgress(parentJobId); } catch (_) {}
+    }
+  }
+}
+
+// ============================================================================
 // PROMPT PIPELINE: Dispatch single_prompt job to Edge Function
 // ============================================================================
 
@@ -5253,7 +5343,7 @@ async function mainLoop() {
       await checkDiskUsage();
       await cleanupStuckParents();
       // ── PRIORITY PASS: audio, prompt, idea, thumbnail jobs run outside image concurrency ──
-      const PRIORITY_TYPES = ['audio_generation', 'single_prompt', 'idea_generation', 'thumbnails', 'thumbnails_v2'];
+      const PRIORITY_TYPES = ['audio_generation', 'single_prompt', 'single_pexels_search', 'idea_generation', 'thumbnails', 'thumbnails_v2'];
       {
         const { data: priorityJobs } = await supabase
           .from('generation_jobs')
@@ -5296,6 +5386,7 @@ async function mainLoop() {
             if (job.job_type === 'thumbnails') pipeline = processThumbnailsPipeline(job);
             else if (job.job_type === 'thumbnails_v2') pipeline = processThumbnailsV2Pipeline(job);
             else if (job.job_type === 'single_prompt') pipeline = processPromptJob(job);
+            else if (job.job_type === 'single_pexels_search') pipeline = processPexelsSearchJob(job);
             else if (job.job_type === 'audio_generation') {
               if (job.metadata?.provider === 'genaipro') pipeline = processGenaiproAudioPipeline(job);
               else if (job.metadata?.provider === 'ai33') pipeline = processAi33AudioPipeline(job);

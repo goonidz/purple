@@ -30,6 +30,7 @@ const Profile = () => {
   const [openrouterApiKey, setOpenrouterApiKey] = useState("");
   const [groqApiKey, setGroqApiKey] = useState("");
   const [fishAudioApiKey, setFishAudioApiKey] = useState("");
+  const [pexelsApiKey, setPexelsApiKey] = useState("");
   
   // Track original values to detect changes
   const [originalKeys, setOriginalKeys] = useState({
@@ -47,7 +48,8 @@ const Profile = () => {
     zai: "",
     openrouter: "",
     groq: "",
-    fish_audio: ""
+    fish_audio: "",
+    pexels: ""
   });
   const [showKeys, setShowKeys] = useState({
     replicate: false,
@@ -64,7 +66,8 @@ const Profile = () => {
     zai: false,
     openrouter: false,
     groq: false,
-    fish_audio: false
+    fish_audio: false,
+    pexels: false
   });
 
   // Password change state
@@ -100,7 +103,7 @@ const Profile = () => {
     setIsLoading(true);
     try {
       // Try to get API keys from Vault
-      const [replicateResult, elevenLabsResult, minimaxResult, anthropicResult, braveResult, keiResult, apifyResult, inworldResult, geminiResult, genaiproResult, ai33Result, zaiResult, openrouterResult, groqResult, fishAudioResult] = await Promise.all([
+      const [replicateResult, elevenLabsResult, minimaxResult, anthropicResult, braveResult, keiResult, apifyResult, inworldResult, geminiResult, genaiproResult, ai33Result, zaiResult, openrouterResult, groqResult, fishAudioResult, pexelsResult] = await Promise.all([
         supabase.rpc('get_user_api_key', { key_name: 'replicate' }),
         supabase.rpc('get_user_api_key', { key_name: 'eleven_labs' }),
         supabase.rpc('get_user_api_key', { key_name: 'minimax' }),
@@ -116,6 +119,7 @@ const Profile = () => {
         supabase.rpc('get_user_api_key', { key_name: 'openrouter' }),
         supabase.rpc('get_user_api_key', { key_name: 'groq' }),
         supabase.rpc('get_user_api_key', { key_name: 'fish_audio' }),
+        supabase.rpc('get_user_api_key', { key_name: 'pexels' }),
       ]);
 
       const replicateValue = replicateResult.data || "";
@@ -133,6 +137,7 @@ const Profile = () => {
       const openrouterValue = openrouterResult.data || "";
       const groqValue = groqResult.data || "";
       const fishAudioValue = fishAudioResult.data || "";
+      const pexelsValue = pexelsResult.data || "";
 
       // Set current values
       setReplicateApiKey(replicateValue);
@@ -150,6 +155,7 @@ const Profile = () => {
       setOpenrouterApiKey(openrouterValue);
       setGroqApiKey(groqValue);
       setFishAudioApiKey(fishAudioValue);
+      setPexelsApiKey(pexelsValue);
       
       // Store original values to track changes
       setOriginalKeys({
@@ -167,7 +173,8 @@ const Profile = () => {
         zai: zaiValue,
         openrouter: openrouterValue,
         groq: groqValue,
-        fish_audio: fishAudioValue
+        fish_audio: fishAudioValue,
+        pexels: pexelsValue
       });
       
       if (replicateResult.error && !replicateResult.error.message?.includes('not found')) {
@@ -241,6 +248,9 @@ const Profile = () => {
     if (fishAudioApiKey.trim() !== originalKeys.fish_audio) {
       changedKeys.push({ key_name: 'fish_audio', key_value: fishAudioApiKey.trim() });
     }
+    if (pexelsApiKey.trim() !== originalKeys.pexels) {
+      changedKeys.push({ key_name: 'pexels', key_value: pexelsApiKey.trim() });
+    }
 
     if (changedKeys.length === 0) {
       toast.info("Aucune modification détectée");
@@ -285,7 +295,8 @@ const Profile = () => {
         zai: zaiApiKey.trim(),
         openrouter: openrouterApiKey.trim(),
         groq: groqApiKey.trim(),
-        fish_audio: fishAudioApiKey.trim()
+        fish_audio: fishAudioApiKey.trim(),
+        pexels: pexelsApiKey.trim()
       });
 
       toast.success("Clés API sauvegardées avec succès !");
@@ -817,6 +828,42 @@ const Profile = () => {
                       Utilisée pour la génération vocale TTS avec Fish Audio S2.{" "}
                       <a
                         href="https://fish.audio/app/api-keys/"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary hover:underline"
+                      >
+                        Obtenir une clé
+                      </a>
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="pexels-key">
+                      Pexels API Key
+                    </Label>
+                    <div className="relative">
+                      <Input
+                        id="pexels-key"
+                        type={showKeys.pexels ? "text" : "password"}
+                        value={pexelsApiKey}
+                        onChange={(e) => setPexelsApiKey(e.target.value)}
+                        placeholder="..."
+                        className="pr-10"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                        onClick={() => setShowKeys(prev => ({ ...prev, pexels: !prev.pexels }))}
+                      >
+                        {showKeys.pexels ? <EyeOff className="h-4 w-4 text-muted-foreground" /> : <Eye className="h-4 w-4 text-muted-foreground" />}
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Utilisée pour la recherche de vidéos stock Pexels.{" "}
+                      <a
+                        href="https://www.pexels.com/api/new/"
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-primary hover:underline"

@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/dialog";
 import { SceneGrid } from "@/components/SceneGrid";
 import ImageSearchModal from "@/components/ImageSearchModal";
+import VideoClipSelectorModal from "@/components/VideoClipSelectorModal";
 import {
   Select,
   SelectContent,
@@ -240,6 +241,8 @@ const Index = () => {
   const [animatingSceneIndex, setAnimatingSceneIndex] = useState<number | null>(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
   const [imageSearchOpen, setImageSearchOpen] = useState(false);
+  const [videoClipSelectorOpen, setVideoClipSelectorOpen] = useState(false);
+  const [pexelsSceneResults, setPexelsSceneResults] = useState<Array<{ sceneIndex: number; text: string; pexelsResults: any[]; pexelsClips: any[] }>>([]);
   const [imageSearchSceneIndex, setImageSearchSceneIndex] = useState<number>(0);
   const [imageSearchSceneText, setImageSearchSceneText] = useState<string>("");
   const [imageSearchPreviousScenes, setImageSearchPreviousScenes] = useState<string[]>([]);
@@ -367,7 +370,8 @@ const Index = () => {
         'single_image': 'Image générée !',
         'single_animation': 'Scène animée avec succès !',
         'qa': job.error_message ? `⚠️ QA terminé avec erreurs : ${job.error_message}` : `✅ Vérification QA terminée ! (${job.total} images vérifiées)`,
-        'qa_regen': `${job.total} images régénérées après rejet QA !`
+        'qa_regen': `${job.total} images régénérées après rejet QA !`,
+        'pexels_search': `Vidéos Pexels trouvées pour ${job.total} scènes !`
       };
       
       if (job.job_type === 'qa' && job.error_message) {
@@ -439,8 +443,29 @@ const Index = () => {
       }
     } else if (job.job_type === 'single_animation') {
       setAnimatingSceneIndex(null);
+    } else if (job.job_type === 'pexels_search') {
+      const pid = currentProjectIdRef.current;
+      if (pid) {
+        supabase.from('project_scenes')
+          .select('scene_index, pexels_results, pexels_clips')
+          .eq('project_id', pid)
+          .not('pexels_results', 'is', null)
+          .order('scene_index', { ascending: true })
+          .then(({ data }) => {
+            if (data && data.length > 0) {
+              const sceneData = data.map((row: any) => ({
+                sceneIndex: row.scene_index,
+                text: scenes[row.scene_index]?.text || '',
+                pexelsResults: row.pexels_results || [],
+                pexelsClips: row.pexels_clips || [],
+              }));
+              setPexelsSceneResults(sceneData);
+              setVideoClipSelectorOpen(true);
+            }
+          });
+      }
     }
-    
+
     // Also clear scene indices for images jobs with sceneIndices (manual regeneration)
     if (job.job_type === 'images' && job.metadata?.sceneIndices && Array.isArray(job.metadata.sceneIndices)) {
       job.metadata.sceneIndices.forEach((idx: number) => removeGeneratingImageIndex(idx));
@@ -4823,6 +4848,31 @@ const Index = () => {
                                     QA
                                   </Button>
                                 )}
+                                {scenes.length > 0 && !hasActiveJob('pexels_search') && (
+                                  <Button
+                                    onClick={async () => {
+                                      if (!startJobRef.current) return;
+                                      try {
+                                        await startJobRef.current('pexels_search', {});
+                                        toast.success("Recherche de vidéos Pexels lancée !");
+                                      } catch (e: any) {
+                                        toast.error(e.message || "Erreur lors du lancement");
+                                      }
+                                    }}
+                                    title="Chercher des vidéos stock Pexels pour chaque scène"
+                                    size="sm"
+                                    variant="outline"
+                                  >
+                                    <Video className="mr-2 h-4 w-4" />
+                                    Pexels
+                                  </Button>
+                                )}
+                                {hasActiveJob('pexels_search') && (
+                                  <Button size="sm" variant="outline" disabled>
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                    Pexels...
+                                  </Button>
+                                )}
                                 {(() => {
                                   const withQA = generatedPrompts.filter((p: any) => p?.qa_checked);
                                   const ok = withQA.filter((p: any) => p?.qa_status === 'OK').length;
@@ -6054,6 +6104,13 @@ const Index = () => {
           projectName={projectName}
           customSearchPrompt={imageSearchPromptSystem || null}
           onSelectImage={handleSelectWebImage}
+        />
+
+        <VideoClipSelectorModal
+          open={videoClipSelectorOpen}
+          onOpenChange={setVideoClipSelectorOpen}
+          projectId={currentProjectId || ''}
+          sceneResults={pexelsSceneResults}
         />
 
         {/* Scene settings dialog */}

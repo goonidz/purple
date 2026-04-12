@@ -322,6 +322,9 @@ serve(async (req) => {
       total = count || 0;
     } else if (jobType === 'qa_scene') {
       total = 1;
+    } else if (jobType === 'pexels_search') {
+      const scenes = (project?.scenes as any[]) || [];
+      total = scenes.length;
     }
 
     // Create the job record (use null for project_id in standalone mode)
@@ -469,6 +472,8 @@ async function processJob(
         .update({ status: 'pending' })
         .eq('id', jobId);
       throw new Error('WEBHOOK_MODE_ACTIVE');
+    } else if (jobType === 'pexels_search') {
+      await processPexelsSearchJob(jobId, projectId, userId, metadata, adminClient);
     }
 
     // Handle prompts chunk continuation
@@ -6304,5 +6309,55 @@ async function processQaScenesJob(
     .eq('id', jobId);
 
   console.log(`[processQaScenesJob] Created ${sceneRows.length} qa_scene jobs for project ${projectId}`);
+  throw new Error('WEBHOOK_MODE_ACTIVE');
+}
+
+async function processPexelsSearchJob(
+  jobId: string,
+  projectId: string,
+  userId: string,
+  metadata: Record<string, any>,
+  adminClient: any,
+) {
+  const { data: project } = await adminClient
+    .from('projects')
+    .select('scenes')
+    .eq('id', projectId)
+    .single();
+
+  const scenes = (project?.scenes as any[]) || [];
+  if (scenes.length === 0) throw new Error('No scenes found in project');
+
+  await adminClient
+    .from('generation_jobs')
+    .update({
+      total: scenes.length,
+      status: 'processing',
+      metadata: { ...metadata, isParentJob: true, childJobsCount: scenes.length },
+    })
+    .eq('id', jobId);
+
+  const childJobs = scenes.map((scene: any, index: number) => ({
+    project_id: projectId,
+    user_id: userId,
+    job_type: 'single_pexels_search',
+    status: 'pending',
+    progress: 0,
+    total: 1,
+    parent_job_id: jobId,
+    scene_index: index,
+    metadata: {
+      sceneIndex: index,
+      sceneText: scene.text || '',
+    },
+  }));
+
+  const { error: jobsError } = await adminClient
+    .from('generation_jobs')
+    .insert(childJobs);
+
+  if (jobsError) throw new Error(`Failed to create pexels search jobs: ${jobsError.message}`);
+
+  console.log(`[processPexelsSearchJob] Created ${scenes.length} single_pexels_search jobs for project ${projectId}`);
   throw new Error('WEBHOOK_MODE_ACTIVE');
 }

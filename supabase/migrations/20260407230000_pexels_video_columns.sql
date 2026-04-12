@@ -1,0 +1,3 @@
+ALTER TABLE public.project_scenes
+  ADD COLUMN IF NOT EXISTS pexels_results JSONB DEFAULT NULL,
+  ADD COLUMN IF NOT EXISTS pexels_clips JSONB DEFAULT NULL;
