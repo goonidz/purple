@@ -2279,7 +2279,7 @@ async function pexelsExtractKeyword(geminiKey, sceneText, prevSceneText = '', ne
     contextBlock += `\n\nIf the current scene text is very short or abstract (e.g. a single word, a transition), use the surrounding context to determine the visual topic.`;
   }
 
-  const prompt = `Extract 1-2 English keywords for searching stock video footage that would visually represent this scene. Return ONLY the keywords, nothing else.\n\nScene: "${sceneText.substring(0, 500)}"${contextBlock}`;
+  const prompt = `Extract 1-2 English keywords for searching stock video footage that would visually represent this scene.\n\nScene: "${sceneText.substring(0, 500)}"${contextBlock}`;
 
   const resp = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`,
@@ -2288,14 +2288,32 @@ async function pexelsExtractKeyword(geminiKey, sceneText, prevSceneText = '', ne
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { maxOutputTokens: 20, temperature: 0.3 },
+        generationConfig: {
+          maxOutputTokens: 50,
+          temperature: 0.3,
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: 'OBJECT',
+            properties: {
+              keyword: { type: 'STRING', description: '1-2 English keywords for stock video search' },
+            },
+            required: ['keyword'],
+          },
+        },
       }),
     }
   );
 
   if (!resp.ok) throw new Error(`Gemini keyword API ${resp.status}: ${await resp.text()}`);
   const data = await resp.json();
-  const keyword = (data?.candidates?.[0]?.content?.parts?.[0]?.text || '').replace(/[\n\r]+/g, ' ').trim().replace(/["']/g, '').substring(0, 50);
+  const raw = (data?.candidates?.[0]?.content?.parts?.[0]?.text || '').trim();
+  let keyword;
+  try {
+    keyword = JSON.parse(raw).keyword || '';
+  } catch (_) {
+    keyword = raw.replace(/[\n\r]+/g, ' ').trim().replace(/["'{}]/g, '');
+  }
+  keyword = keyword.substring(0, 50);
   if (!keyword) throw new Error('Gemini returned empty keyword');
   return keyword;
 }
@@ -2361,10 +2379,7 @@ Rules:
 - You can reuse different segments of the same video if needed
 - Prefer variety: use different videos when possible
 - Each clip duration must be at least 1s
-- Distribute duration evenly across clips for a dynamic feel
-
-Return ONLY a JSON object (no other text):
-{"clips": [{"videoIndex": 0, "startTime": 0, "duration": 5.0}, {"videoIndex": 2, "startTime": 3, "duration": 4.5}], "reason": "Brief explanation in French of why these clips were chosen"}`;
+- Distribute duration evenly across clips for a dynamic feel`;
 
   const parts = [...thumbnailParts, { text: prompt }];
 
@@ -2375,7 +2390,30 @@ Return ONLY a JSON object (no other text):
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents: [{ parts }],
-        generationConfig: { maxOutputTokens: 500, temperature: 0.2 },
+        generationConfig: {
+          maxOutputTokens: 800,
+          temperature: 0.2,
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: 'OBJECT',
+            properties: {
+              clips: {
+                type: 'ARRAY',
+                items: {
+                  type: 'OBJECT',
+                  properties: {
+                    videoIndex: { type: 'INTEGER', description: 'Zero-based index of the video to use' },
+                    startTime: { type: 'NUMBER', description: 'Start time in seconds within the source video' },
+                    duration: { type: 'NUMBER', description: 'Duration in seconds for this clip' },
+                  },
+                  required: ['videoIndex', 'startTime', 'duration'],
+                },
+              },
+              reason: { type: 'STRING', description: 'Brief explanation in French of why these clips were chosen' },
+            },
+            required: ['clips', 'reason'],
+          },
+        },
       }),
     }
   );
@@ -2384,11 +2422,14 @@ Return ONLY a JSON object (no other text):
   const data = await resp.json();
   const raw = (data?.candidates?.[0]?.content?.parts?.[0]?.text || '').trim();
 
-  // Parse JSON object from response (handle markdown code blocks)
-  const jsonMatch = raw.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error(`Gemini vision returned unparseable response: ${raw.substring(0, 100)}`);
-
-  const parsed = JSON.parse(jsonMatch[0]);
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (_) {
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error(`Gemini vision returned unparseable response: ${raw.substring(0, 100)}`);
+    parsed = JSON.parse(jsonMatch[0]);
+  }
   const selections = parsed.clips || parsed;
   const reason = parsed.reason || '';
 
