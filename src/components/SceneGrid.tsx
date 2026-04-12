@@ -19,6 +19,7 @@ import {
   Info,
   AlertCircle,
   RotateCcw,
+  Trash2,
 } from "lucide-react";
 import {
   Tooltip,
@@ -31,6 +32,14 @@ interface Scene {
   startTime: number;
   endTime: number;
   text: string;
+}
+
+interface PexelsClip {
+  pexelId: number;
+  url: string;
+  thumbnail?: string;
+  startTime: number;
+  duration: number;
 }
 
 interface GeneratedPrompt {
@@ -48,6 +57,7 @@ interface GeneratedPrompt {
   qa_previous_rejection?: string;
   was_regenerated?: boolean;
   regenerated_prompt?: string;
+  pexelsClips?: PexelsClip[];
 }
 
 interface SceneGridProps {
@@ -77,6 +87,7 @@ interface SceneGridProps {
   onToggleSceneSelection?: (index: number) => void;
   onSearchWeb?: (index: number, sceneText: string) => void;
   onSearchPexels?: (index: number, sceneText: string) => void;
+  onClearPexelsClips?: (index: number) => void;
   onAnimateScene?: (index: number) => void;
   visualContinuityEnabled?: boolean;
 }
@@ -108,6 +119,7 @@ export function SceneGrid({
   onToggleSceneSelection,
   onSearchWeb,
   onSearchPexels,
+  onClearPexelsClips,
   onAnimateScene,
   visualContinuityEnabled = false,
 }: SceneGridProps) {
@@ -399,8 +411,53 @@ export function SceneGrid({
                 </div>
               )}
               
-              {/* Image (always shown if exists) */}
-              {prompt?.imageUrl ? (
+              {/* Pexels video clips OR Image */}
+              {prompt?.pexelsClips && prompt.pexelsClips.length > 0 ? (
+                <div className="group relative w-full overflow-hidden rounded-lg bg-muted">
+                  <div className={`grid gap-1 ${prompt.pexelsClips.length === 1 ? 'grid-cols-1' : prompt.pexelsClips.length === 2 ? 'grid-cols-2' : 'grid-cols-3'}`}>
+                    {prompt.pexelsClips.map((clip, ci) => (
+                      <div key={clip.pexelId || ci} className="aspect-video bg-black rounded overflow-hidden relative">
+                        <video
+                          src={clip.url}
+                          poster={clip.thumbnail}
+                          className="w-full h-full object-cover"
+                          muted
+                          loop
+                          onMouseEnter={(e) => (e.target as HTMLVideoElement).play().catch(() => {})}
+                          onMouseLeave={(e) => { const v = e.target as HTMLVideoElement; v.pause(); v.currentTime = clip.startTime || 0; }}
+                        />
+                        <div className="absolute bottom-0.5 right-0.5 bg-black/70 text-white text-[9px] px-1 rounded">
+                          {clip.duration.toFixed(1)}s
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    {onSearchPexels && (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        className="h-6 w-6 p-0"
+                        onClick={() => onSearchPexels(index, text)}
+                        title="Modifier les vidéos Pexels"
+                      >
+                        <Film className="h-3 w-3" />
+                      </Button>
+                    )}
+                    {onClearPexelsClips && (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        className="h-6 w-6 p-0"
+                        onClick={() => onClearPexelsClips(index)}
+                        title="Supprimer les vidéos et revenir à l'image"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              ) : prompt?.imageUrl ? (
                 <div className={`group relative w-full overflow-hidden rounded-lg bg-muted ${prompt?.videoUrl ? 'h-20' : 'aspect-video'}`}>
                   {prompt?.videoUrl && (
                     <div className="absolute top-1 left-1 bg-muted-foreground/60 text-white text-[10px] px-1.5 py-0.5 rounded z-10">
@@ -438,7 +495,6 @@ export function SceneGrid({
                         <RefreshCw className="h-3 w-3" />
                       )}
                     </Button>
-                    {/* Only show animate button if no video yet */}
                     {onAnimateScene && !prompt?.videoUrl && (
                       <Button
                         variant="secondary"

@@ -324,7 +324,8 @@ serve(async (req) => {
       total = 1;
     } else if (jobType === 'pexels_search') {
       const scenes = (project?.scenes as any[]) || [];
-      total = scenes.length;
+      const sceneIndices = metadata.sceneIndices as number[] | undefined;
+      total = sceneIndices && sceneIndices.length > 0 ? sceneIndices.length : scenes.length;
     }
 
     // Create the job record (use null for project_id in standalone mode)
@@ -6328,16 +6329,21 @@ async function processPexelsSearchJob(
   const scenes = (project?.scenes as any[]) || [];
   if (scenes.length === 0) throw new Error('No scenes found in project');
 
+  const sceneIndices = metadata.sceneIndices as number[] | undefined;
+  const targetScenes = sceneIndices && sceneIndices.length > 0
+    ? sceneIndices.filter((i: number) => i >= 0 && i < scenes.length)
+    : scenes.map((_: any, i: number) => i);
+
   await adminClient
     .from('generation_jobs')
     .update({
-      total: scenes.length,
+      total: targetScenes.length,
       status: 'processing',
-      metadata: { ...metadata, isParentJob: true, childJobsCount: scenes.length },
+      metadata: { ...metadata, isParentJob: true, childJobsCount: targetScenes.length },
     })
     .eq('id', jobId);
 
-  const childJobs = scenes.map((scene: any, index: number) => ({
+  const childJobs = targetScenes.map((index: number) => ({
     project_id: projectId,
     user_id: userId,
     job_type: 'single_pexels_search',
@@ -6348,7 +6354,7 @@ async function processPexelsSearchJob(
     scene_index: index,
     metadata: {
       sceneIndex: index,
-      sceneText: scene.text || '',
+      sceneText: scenes[index]?.text || '',
     },
   }));
 

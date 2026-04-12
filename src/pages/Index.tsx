@@ -102,6 +102,7 @@ interface GeneratedPrompt {
   qa_previous_rejection?: string;
   was_regenerated?: boolean;
   regenerated_prompt?: string;
+  pexelsClips?: Array<{ pexelId: number; url: string; thumbnail?: string; startTime: number; duration: number }>;
 }
 
 // Fonction pour calculer les groupes si continuityGroupId manquant (rétrocompatibilité)
@@ -445,24 +446,28 @@ const Index = () => {
       setAnimatingSceneIndex(null);
     } else if (job.job_type === 'pexels_search') {
       const pid = currentProjectIdRef.current;
+      const sceneIndices = (job.metadata as any)?.sceneIndices as number[] | undefined;
       if (pid) {
-        supabase.from('project_scenes')
+        let query = supabase.from('project_scenes')
           .select('scene_index, pexels_results, pexels_clips')
           .eq('project_id', pid)
           .not('pexels_results', 'is', null)
-          .order('scene_index', { ascending: true })
-          .then(({ data }) => {
-            if (data && data.length > 0) {
-              const sceneData = data.map((row: any) => ({
-                sceneIndex: row.scene_index,
-                text: scenes[row.scene_index]?.text || '',
-                pexelsResults: row.pexels_results || [],
-                pexelsClips: row.pexels_clips || [],
-              }));
-              setPexelsSceneResults(sceneData);
-              setVideoClipSelectorOpen(true);
-            }
-          });
+          .order('scene_index', { ascending: true });
+        if (sceneIndices && sceneIndices.length > 0) {
+          query = query.in('scene_index', sceneIndices);
+        }
+        query.then(({ data }) => {
+          if (data && data.length > 0) {
+            const sceneData = data.map((row: any) => ({
+              sceneIndex: row.scene_index,
+              text: scenes[row.scene_index]?.text || '',
+              pexelsResults: row.pexels_results || [],
+              pexelsClips: row.pexels_clips || [],
+            }));
+            setPexelsSceneResults(sceneData);
+            setVideoClipSelectorOpen(true);
+          }
+        });
       }
     }
 
@@ -535,7 +540,8 @@ const Index = () => {
               regenerated_prompt: s?.regenerated_prompt || promptsJson[sceneIdx]?.regenerated_prompt,
               isUpscaled: s ? (s.is_upscaled ?? promptsJson[sceneIdx]?.isUpscaled) : promptsJson[sceneIdx]?.isUpscaled,
               videoUrl: s?.video_url || promptsJson[sceneIdx]?.videoUrl,
-              continuityGroupId: s?.continuity_group_id || promptsJson[sceneIdx]?.continuityGroupId
+              continuityGroupId: s?.continuity_group_id || promptsJson[sceneIdx]?.continuityGroupId,
+              pexelsClips: s?.pexels_clips || undefined
             };
           }
           promptsWithGroups = calculateGroupsIfMissing(newPrompts);
@@ -905,7 +911,8 @@ const Index = () => {
               isUpscaled: s ? (s.is_upscaled ?? promptsJson[sceneIdx]?.isUpscaled) : promptsJson[sceneIdx]?.isUpscaled,
               videoUrl: s?.video_url || promptsJson[sceneIdx]?.videoUrl,
               continuityGroupId: s?.continuity_group_id || promptsJson[sceneIdx]?.continuityGroupId,
-              manually_regenerated: promptsJson[sceneIdx]?.manually_regenerated
+              manually_regenerated: promptsJson[sceneIdx]?.manually_regenerated,
+              pexelsClips: s?.pexels_clips || undefined
             };
           }
 
@@ -5367,30 +5374,42 @@ const Index = () => {
                       onSearchPexels={async (index: number, sceneText: string) => {
                         const pid = currentProjectId;
                         if (!pid) return;
-                        const { data } = await supabase
+                        const { data: existing } = await supabase
                           .from('project_scenes')
-                          .select('scene_index, pexels_results, pexels_clips')
+                          .select('pexels_results, pexels_clips')
                           .eq('project_id', pid)
-                          .not('pexels_results', 'is', null)
-                          .order('scene_index', { ascending: true });
-                        if (data && data.length > 0) {
-                          const sceneData = data.map((row: any) => ({
-                            sceneIndex: row.scene_index,
-                            text: scenes[row.scene_index]?.text || '',
-                            pexelsResults: row.pexels_results || [],
-                            pexelsClips: row.pexels_clips || [],
-                          }));
-                          setPexelsSceneResults(sceneData);
+                          .eq('scene_index', index)
+                          .single();
+                        if (existing?.pexels_results && existing.pexels_results.length > 0) {
+                          setPexelsSceneResults([{
+                            sceneIndex: index,
+                            text: sceneText,
+                            pexelsResults: existing.pexels_results || [],
+                            pexelsClips: existing.pexels_clips || [],
+                          }]);
                           setVideoClipSelectorOpen(true);
                         } else {
                           if (!startJobRef.current) return;
                           try {
-                            await startJobRef.current('pexels_search', {});
-                            toast.success("Recherche de vidéos Pexels lancée !");
+                            await startJobRef.current('pexels_search', { sceneIndices: [index] });
+                            toast.success(`Recherche Pexels pour la scène ${index + 1} lancée !`);
                           } catch (e: any) {
                             toast.error(e.message || "Erreur lors du lancement");
                           }
                         }
+                      }}
+                      onClearPexelsClips={async (index: number) => {
+                        const pid = currentProjectId;
+                        if (!pid) return;
+                        await supabase
+                          .from('project_scenes')
+                          .update({ pexels_clips: null })
+                          .eq('project_id', pid)
+                          .eq('scene_index', index);
+                        setGeneratedPrompts(prev => prev.map((p, i) =>
+                          i === index ? { ...p, pexelsClips: undefined } : p
+                        ));
+                        toast.success(`Vidéos supprimées pour la scène ${index + 1}`);
                       }}
                       onAnimateScene={(index) => setConfirmAnimateScene(index)}
                       visualContinuityEnabled={visualContinuityEnabled}
