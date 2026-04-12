@@ -2373,11 +2373,11 @@ Available videos (thumbnails shown above in order):
 ${videoList}
 
 Rules:
-- Select as many clips as needed (1 to ${maxClips}) so that the SUM of all durations = ${sceneDuration}s EXACTLY
+- Select as many clips as needed so that the SUM of all durations = ${sceneDuration}s EXACTLY
 - For each clip, set a startTime (where to start in the source video) and a duration
+- Keep each clip between 3s and 7s for a dynamic feel — avoid staying on the same clip longer than 8s
 - You can reuse different segments of the same video if needed
 - Prefer variety: use different videos when possible
-- Each clip duration must be at least 2s
 - CRITICAL: add up all durations and verify the total equals ${sceneDuration}s before responding`;
 
   const parts = [...thumbnailParts, { text: prompt }];
