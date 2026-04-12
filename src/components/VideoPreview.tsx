@@ -275,8 +275,10 @@ export const VideoPreview = ({
     } else {
       lastFrameTimeRef.current = performance.now();
       playbackTimeRef.current = currentTime;
-      if (audioRef.current) {
-        audioRef.current.play().catch(() => {});
+      const audio = audioRef.current;
+      if (audio) {
+        audio.currentTime = currentTime;
+        audio.play().catch((err) => console.warn('Audio play error:', err));
       }
       isPlayingRef.current = true;
       setIsPlaying(true);
@@ -369,11 +371,20 @@ export const VideoPreview = ({
       }
     };
 
+    const handleCanPlay = () => {
+      if (isPlayingRef.current && audio.paused) {
+        audio.currentTime = playbackTimeRef.current;
+        audio.play().catch(() => {});
+      }
+    };
+
     audio.addEventListener('loadedmetadata', handleLoadedMetadata);
+    audio.addEventListener('canplay', handleCanPlay);
     audio.addEventListener('ended', handleEnded);
 
     return () => {
       audio.removeEventListener('loadedmetadata', handleLoadedMetadata);
+      audio.removeEventListener('canplay', handleCanPlay);
       audio.removeEventListener('ended', handleEnded);
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
