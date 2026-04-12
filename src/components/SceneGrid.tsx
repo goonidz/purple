@@ -75,6 +75,7 @@ interface SceneGridProps {
   selectedScenes?: Set<number>;
   onToggleSceneSelection?: (index: number) => void;
   onSearchWeb?: (index: number, sceneText: string) => void;
+  onSearchPexels?: (index: number, sceneText: string) => void;
   onAnimateScene?: (index: number) => void;
   visualContinuityEnabled?: boolean;
 }
@@ -105,6 +106,7 @@ export function SceneGrid({
   selectedScenes = new Set(),
   onToggleSceneSelection,
   onSearchWeb,
+  onSearchPexels,
   onAnimateScene,
   visualContinuityEnabled = false,
 }: SceneGridProps) {
@@ -453,19 +455,33 @@ export function SceneGrid({
                       </Button>
                     )}
                   </div>
-                  {/* Web search button - only visible when no video */}
-                  {onSearchWeb && !prompt?.videoUrl && (
-                    <div className="absolute bottom-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        className="h-6 w-6 p-0 shadow-md"
-                        onClick={() => onSearchWeb(index, text)}
-                        disabled={generatingImageIndices.has(index)}
-                        title="Chercher une image sur le web"
-                      >
-                        <Search className="h-3 w-3" />
-                      </Button>
+                  {/* Hover buttons: web search + pexels video */}
+                  {(onSearchWeb || onSearchPexels) && !prompt?.videoUrl && (
+                    <div className="absolute bottom-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
+                      {onSearchPexels && (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          className="h-6 w-6 p-0 shadow-md"
+                          onClick={() => onSearchPexels(index, text)}
+                          disabled={generatingImageIndices.has(index)}
+                          title="Chercher une vidéo Pexels"
+                        >
+                          <Video className="h-3 w-3" />
+                        </Button>
+                      )}
+                      {onSearchWeb && (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          className="h-6 w-6 p-0 shadow-md"
+                          onClick={() => onSearchWeb(index, text)}
+                          disabled={generatingImageIndices.has(index)}
+                          title="Chercher une image sur le web"
+                        >
+                          <Search className="h-3 w-3" />
+                        </Button>
+                      )}
                     </div>
                   )}
                 </div>

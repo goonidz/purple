@@ -5364,6 +5364,34 @@ const Index = () => {
                         });
                       }}
                       onSearchWeb={handleSearchWebImage}
+                      onSearchPexels={async (index: number, sceneText: string) => {
+                        const pid = currentProjectId;
+                        if (!pid) return;
+                        const { data } = await supabase
+                          .from('project_scenes')
+                          .select('scene_index, pexels_results, pexels_clips')
+                          .eq('project_id', pid)
+                          .not('pexels_results', 'is', null)
+                          .order('scene_index', { ascending: true });
+                        if (data && data.length > 0) {
+                          const sceneData = data.map((row: any) => ({
+                            sceneIndex: row.scene_index,
+                            text: scenes[row.scene_index]?.text || '',
+                            pexelsResults: row.pexels_results || [],
+                            pexelsClips: row.pexels_clips || [],
+                          }));
+                          setPexelsSceneResults(sceneData);
+                          setVideoClipSelectorOpen(true);
+                        } else {
+                          if (!startJobRef.current) return;
+                          try {
+                            await startJobRef.current('pexels_search', {});
+                            toast.success("Recherche de vidéos Pexels lancée !");
+                          } catch (e: any) {
+                            toast.error(e.message || "Erreur lors du lancement");
+                          }
+                        }
+                      }}
                       onAnimateScene={(index) => setConfirmAnimateScene(index)}
                       visualContinuityEnabled={visualContinuityEnabled}
                     />
