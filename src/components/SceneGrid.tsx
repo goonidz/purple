@@ -15,6 +15,7 @@ import {
   Clock,
   Search,
   Video,
+  Film,
   Info,
   AlertCircle,
   RotateCcw,
@@ -467,7 +468,7 @@ export function SceneGrid({
                           disabled={generatingImageIndices.has(index)}
                           title="Chercher une vidéo Pexels"
                         >
-                          <Video className="h-3 w-3" />
+                          <Film className="h-3 w-3" />
                         </Button>
                       )}
                       {onSearchWeb && (
