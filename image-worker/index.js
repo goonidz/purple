@@ -2295,7 +2295,7 @@ async function pexelsExtractKeyword(geminiKey, sceneText, prevSceneText = '', ne
 
   if (!resp.ok) throw new Error(`Gemini keyword API ${resp.status}: ${await resp.text()}`);
   const data = await resp.json();
-  const keyword = (data?.candidates?.[0]?.content?.parts?.[0]?.text || '').trim().replace(/["']/g, '').substring(0, 50);
+  const keyword = (data?.candidates?.[0]?.content?.parts?.[0]?.text || '').replace(/[\n\r]+/g, ' ').trim().replace(/["']/g, '').substring(0, 50);
   if (!keyword) throw new Error('Gemini returned empty keyword');
   return keyword;
 }
