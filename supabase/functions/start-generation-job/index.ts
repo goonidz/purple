@@ -6343,20 +6343,25 @@ async function processPexelsSearchJob(
     })
     .eq('id', jobId);
 
-  const childJobs = targetScenes.map((index: number) => ({
-    project_id: projectId,
-    user_id: userId,
-    job_type: 'single_pexels_search',
-    status: 'pending',
-    progress: 0,
-    total: 1,
-    parent_job_id: jobId,
-    scene_index: index,
-    metadata: {
-      sceneIndex: index,
-      sceneText: scenes[index]?.text || '',
-    },
-  }));
+  const childJobs = targetScenes.map((index: number) => {
+    const scene = scenes[index] || {};
+    const duration = (scene.endTime && scene.startTime) ? scene.endTime - scene.startTime : 5;
+    return {
+      project_id: projectId,
+      user_id: userId,
+      job_type: 'single_pexels_search',
+      status: 'pending',
+      progress: 0,
+      total: 1,
+      parent_job_id: jobId,
+      scene_index: index,
+      metadata: {
+        sceneIndex: index,
+        sceneText: scene.text || '',
+        sceneDuration: Math.round(duration * 10) / 10,
+      },
+    };
+  });
 
   const { error: jobsError } = await adminClient
     .from('generation_jobs')

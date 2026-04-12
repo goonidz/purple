@@ -2266,78 +2266,196 @@ async function processThumbnailsV2Pipeline(job) {
 }
 
 // ============================================================================
-// PEXELS VIDEO SEARCH PIPELINE
+// PEXELS VIDEO SEARCH PIPELINE (modular steps for future AI agent orchestration)
 // ============================================================================
 
+// Step 1: Extract search keyword from scene text
+async function pexelsExtractKeyword(geminiKey, sceneText) {
+  const prompt = `Extract 1-2 English keywords for searching stock video footage that would visually represent this scene. Return ONLY the keywords, nothing else.\n\nScene: "${sceneText.substring(0, 500)}"`;
+
+  const resp = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { maxOutputTokens: 20, temperature: 0.3 },
+      }),
+    }
+  );
+
+  if (!resp.ok) throw new Error(`Gemini keyword API ${resp.status}: ${await resp.text()}`);
+  const data = await resp.json();
+  const keyword = (data?.candidates?.[0]?.content?.parts?.[0]?.text || '').trim().replace(/["']/g, '').substring(0, 50);
+  if (!keyword) throw new Error('Gemini returned empty keyword');
+  return keyword;
+}
+
+// Step 2: Search Pexels API for videos
+async function pexelsSearchVideos(pexelsKey, keyword, perPage = 7) {
+  const resp = await fetch(
+    `https://api.pexels.com/videos/search?query=${encodeURIComponent(keyword)}&per_page=${perPage}&orientation=landscape&size=medium`,
+    { headers: { Authorization: pexelsKey } }
+  );
+
+  if (!resp.ok) throw new Error(`Pexels API ${resp.status}: ${await resp.text()}`);
+  const data = await resp.json();
+
+  return (data.videos || []).map(v => {
+    const hdFile = v.video_files?.find(f => f.quality === 'hd' && f.width >= 1280) || v.video_files?.[0];
+    return {
+      pexelId: v.id,
+      url: hdFile?.link || '',
+      thumbnail: v.image || '',
+      duration: v.duration || 0,
+      width: hdFile?.width || v.width || 1920,
+      height: hdFile?.height || v.height || 1080,
+      keyword,
+    };
+  }).filter(r => r.url);
+}
+
+// Step 3: Gemini vision selects best clips from thumbnails
+async function pexelsSelectClips(geminiKey, videos, sceneText, sceneDuration) {
+  if (videos.length === 0) return [];
+
+  // Download thumbnails as base64 for Gemini vision
+  const thumbnailParts = [];
+  for (const v of videos) {
+    try {
+      const resp = await fetch(v.thumbnail);
+      if (!resp.ok) continue;
+      const buffer = Buffer.from(await resp.arrayBuffer());
+      thumbnailParts.push({
+        inline_data: { mime_type: 'image/jpeg', data: buffer.toString('base64') }
+      });
+    } catch (_) {
+      // Skip failed thumbnails
+    }
+  }
+
+  const videoList = videos.map((v, i) => `Video ${i + 1}: duration=${v.duration}s`).join('\n');
+
+  const prompt = `You are selecting stock footage clips for a video scene.
+
+Scene text: "${sceneText.substring(0, 400)}"
+Scene duration: ${sceneDuration}s
+
+Available videos (thumbnails shown above in order):
+${videoList}
+
+Rules:
+- Select 1 to 3 videos that best visually match the scene
+- The TOTAL duration of all clips MUST NOT exceed ${sceneDuration}s
+- For each clip, set a startTime (where to start in the source video) and a duration
+- Prefer variety if selecting multiple clips
+- Each clip duration must be at least 1s
+
+Return ONLY a JSON array, no other text:
+[{"videoIndex": 0, "startTime": 0, "duration": 3.5}, ...]`;
+
+  const parts = [...thumbnailParts, { text: prompt }];
+
+  const resp = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts }],
+        generationConfig: { maxOutputTokens: 300, temperature: 0.2 },
+      }),
+    }
+  );
+
+  if (!resp.ok) throw new Error(`Gemini vision API ${resp.status}: ${await resp.text()}`);
+  const data = await resp.json();
+  const raw = (data?.candidates?.[0]?.content?.parts?.[0]?.text || '').trim();
+
+  // Parse JSON from response (handle markdown code blocks)
+  const jsonMatch = raw.match(/\[[\s\S]*?\]/);
+  if (!jsonMatch) throw new Error(`Gemini vision returned unparseable response: ${raw.substring(0, 100)}`);
+
+  const selections = JSON.parse(jsonMatch[0]);
+
+  // Validate and build clips
+  let totalDuration = 0;
+  const clips = [];
+  for (const sel of selections) {
+    const idx = sel.videoIndex;
+    if (idx < 0 || idx >= videos.length) continue;
+    const v = videos[idx];
+    const start = Math.max(0, Math.min(sel.startTime || 0, v.duration - 1));
+    const maxDur = v.duration - start;
+    let dur = Math.max(1, Math.min(sel.duration || 3, maxDur));
+    if (totalDuration + dur > sceneDuration) dur = Math.max(0, sceneDuration - totalDuration);
+    if (dur < 0.5) continue;
+    clips.push({
+      pexelId: v.pexelId,
+      url: v.url,
+      thumbnail: v.thumbnail,
+      startTime: Math.round(start * 10) / 10,
+      duration: Math.round(dur * 10) / 10,
+    });
+    totalDuration += dur;
+    if (totalDuration >= sceneDuration) break;
+  }
+
+  return clips;
+}
+
+// Step 4: Save results and clips to DB
+async function pexelsSaveResults(projectId, sceneIndex, results, clips) {
+  await supabase.from('project_scenes').upsert({
+    project_id: projectId,
+    scene_index: sceneIndex,
+    pexels_results: results,
+    pexels_clips: clips.length > 0 ? clips : null,
+  }, { onConflict: 'project_id,scene_index' });
+}
+
+// Orchestrator: runs all steps for a single scene
 async function processPexelsSearchJob(job) {
   const { id: jobId, project_id: projectId, user_id: userId, parent_job_id: parentJobId, metadata } = job;
   const sceneIndex = metadata?.sceneIndex;
   const sceneText = metadata?.sceneText || '';
+  const sceneDuration = metadata?.sceneDuration || 5;
 
-  log(`[Pexels] Processing scene ${sceneIndex} (job ${jobId.substring(0, 8)}...)`);
+  log(`[Pexels] Processing scene ${sceneIndex} (job ${jobId.substring(0, 8)}..., ${sceneDuration}s)`);
 
   try {
-    // Step 1: Extract keyword via Gemini
     const geminiKey = await getUserApiKey(userId, 'gemini');
-    const keywordPrompt = `Extract 1-2 English keywords for searching stock video footage that would visually represent this scene. Return ONLY the keywords, nothing else.\n\nScene: "${sceneText.substring(0, 500)}"`;
+    const pexelsKey = await getUserApiKey(userId, 'pexels');
 
-    const geminiResp = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: keywordPrompt }] }],
-          generationConfig: { maxOutputTokens: 20, temperature: 0.3 },
-        }),
-      }
-    );
-
-    if (!geminiResp.ok) throw new Error(`Gemini API ${geminiResp.status}: ${await geminiResp.text()}`);
-    const geminiData = await geminiResp.json();
-    const keyword = (geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || '').trim().replace(/["']/g, '').substring(0, 50);
-    if (!keyword) throw new Error('Gemini returned empty keyword');
-
+    // Step 1: Extract keyword
+    const keyword = await pexelsExtractKeyword(geminiKey, sceneText);
     log(`[Pexels] Scene ${sceneIndex}: keyword="${keyword}"`);
 
     // Step 2: Search Pexels
-    const pexelsKey = await getUserApiKey(userId, 'pexels');
-    const pexelsResp = await fetch(
-      `https://api.pexels.com/videos/search?query=${encodeURIComponent(keyword)}&per_page=7&orientation=landscape&size=medium`,
-      { headers: { Authorization: pexelsKey } }
-    );
+    const results = await pexelsSearchVideos(pexelsKey, keyword);
+    log(`[Pexels] Scene ${sceneIndex}: found ${results.length} videos`);
 
-    if (!pexelsResp.ok) throw new Error(`Pexels API ${pexelsResp.status}: ${await pexelsResp.text()}`);
-    const pexelsData = await pexelsResp.json();
+    // Step 3: Gemini vision auto-selects clips
+    let clips = [];
+    if (results.length > 0) {
+      try {
+        clips = await pexelsSelectClips(geminiKey, results, sceneText, sceneDuration);
+        log(`[Pexels] Scene ${sceneIndex}: Gemini selected ${clips.length} clips (total ${clips.reduce((s, c) => s + c.duration, 0).toFixed(1)}s / ${sceneDuration}s)`);
+      } catch (selErr) {
+        logError(`[Pexels] Scene ${sceneIndex}: Gemini vision selection failed, skipping auto-select:`, selErr.message);
+      }
+    }
 
-    const results = (pexelsData.videos || []).map(v => {
-      const hdFile = v.video_files?.find(f => f.quality === 'hd' && f.width >= 1280) || v.video_files?.[0];
-      return {
-        pexelId: v.id,
-        url: hdFile?.link || '',
-        thumbnail: v.image || '',
-        duration: v.duration || 0,
-        width: hdFile?.width || v.width || 1920,
-        height: hdFile?.height || v.height || 1080,
-        keyword,
-      };
-    }).filter(r => r.url);
+    // Step 4: Save to DB
+    await pexelsSaveResults(projectId, sceneIndex, results, clips);
 
-    log(`[Pexels] Scene ${sceneIndex}: found ${results.length} videos for "${keyword}"`);
-
-    // Step 3: Save to project_scenes
-    await supabase.from('project_scenes').upsert({
-      project_id: projectId,
-      scene_index: sceneIndex,
-      pexels_results: results,
-    }, { onConflict: 'project_id,scene_index' });
-
-    // Step 4: Mark job complete
+    // Mark job complete
     await supabase.from('generation_jobs').update({
       status: 'completed',
       progress: 1,
       completed_at: new Date().toISOString(),
-      metadata: { ...metadata, keyword, resultCount: results.length },
+      metadata: { ...metadata, keyword, resultCount: results.length, clipsCount: clips.length },
     }).eq('id', jobId);
 
     if (parentJobId) await notifyParentJobProgress(parentJobId);
