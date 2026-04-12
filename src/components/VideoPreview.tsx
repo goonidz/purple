@@ -98,10 +98,10 @@ function PexelsClipPlayer({ clips, sceneStartTime, sceneDuration, currentTime, i
           poster={clip.thumbnail}
           muted
           playsInline
-          className={`max-w-full max-h-[50vh] w-auto h-auto object-contain transition-opacity duration-300 ${
+          className={`max-w-full max-h-[50vh] w-auto h-auto object-contain transition-opacity duration-300 pointer-events-none ${
             i === activeClipIndex ? 'opacity-100' : 'opacity-0 absolute'
           }`}
-          style={{ zIndex: i === activeClipIndex ? 2 : 1 }}
+          style={{ zIndex: 1 }}
         />
       ))}
     </div>
@@ -453,7 +453,7 @@ export const VideoPreview = ({
         )}
         
         {/* Hover controls overlay */}
-        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center" style={{ zIndex: 10 }}>
           <Button
             size="lg"
             onClick={togglePlayPause}
