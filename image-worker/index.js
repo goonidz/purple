@@ -2459,25 +2459,45 @@ Rules:
     if (totalDuration >= sceneDuration) break;
   }
 
-  // Post-process: stretch clips proportionally to fill exactly sceneDuration
-  const gap = sceneDuration - clips.reduce((s, c) => s + c.duration, 0);
-  if (gap > 0.1 && clips.length > 0) {
-    const totalCurrent = clips.reduce((s, c) => s + c.duration, 0);
-    for (const clip of clips) {
-      const extraShare = (clip.duration / totalCurrent) * gap;
-      const canExtend = Math.min(extraShare, clip._maxDur - clip.duration);
-      clip.duration += canExtend;
-    }
-    // If still short (some clips couldn't extend), distribute remainder to others
-    let remaining = sceneDuration - clips.reduce((s, c) => s + c.duration, 0);
-    for (const clip of clips) {
-      if (remaining <= 0.05) break;
-      const canExtend = clip._maxDur - clip.duration;
-      if (canExtend > 0) {
-        const add = Math.min(canExtend, remaining);
-        clip.duration += add;
-        remaining -= add;
+  // Post-process: adjust clips to match exactly sceneDuration
+  if (clips.length > 0) {
+    let total = clips.reduce((s, c) => s + c.duration, 0);
+
+    // If over: shrink proportionally
+    if (total > sceneDuration + 0.05) {
+      const ratio = sceneDuration / total;
+      for (const clip of clips) {
+        clip.duration = Math.max(0.5, clip.duration * ratio);
       }
+      total = clips.reduce((s, c) => s + c.duration, 0);
+    }
+
+    // If under: stretch proportionally (respecting source video length)
+    if (total < sceneDuration - 0.05) {
+      const gap = sceneDuration - total;
+      for (const clip of clips) {
+        const extraShare = (clip.duration / total) * gap;
+        const canExtend = Math.min(extraShare, clip._maxDur - clip.duration);
+        clip.duration += canExtend;
+      }
+      let remaining = sceneDuration - clips.reduce((s, c) => s + c.duration, 0);
+      for (const clip of clips) {
+        if (remaining <= 0.05) break;
+        const canExtend = clip._maxDur - clip.duration;
+        if (canExtend > 0) {
+          const add = Math.min(canExtend, remaining);
+          clip.duration += add;
+          remaining -= add;
+        }
+      }
+    }
+
+    // Final adjustment: force last clip to close any rounding gap
+    const finalTotal = clips.reduce((s, c) => s + c.duration, 0);
+    const diff = sceneDuration - finalTotal;
+    if (Math.abs(diff) > 0.01 && Math.abs(diff) < 2) {
+      const last = clips[clips.length - 1];
+      last.duration = Math.max(0.5, last.duration + diff);
     }
   }
 
