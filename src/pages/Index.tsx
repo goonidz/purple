@@ -5380,12 +5380,12 @@ const Index = () => {
                           .eq('project_id', pid)
                           .eq('scene_index', index)
                           .single();
-                        if (existing?.pexels_results && existing.pexels_results.length > 0) {
+                        if (existing?.pexels_clips && existing.pexels_clips.length > 0) {
                           setPexelsSceneResults([{
                             sceneIndex: index,
                             text: sceneText,
                             pexelsResults: existing.pexels_results || [],
-                            pexelsClips: existing.pexels_clips || [],
+                            pexelsClips: existing.pexels_clips,
                           }]);
                           setVideoClipSelectorOpen(true);
                         } else {
