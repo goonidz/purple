@@ -2319,7 +2319,7 @@ async function pexelsExtractKeyword(geminiKey, sceneText, prevSceneText = '', ne
 }
 
 // Step 2: Search Pexels API for videos
-async function pexelsSearchVideos(pexelsKey, keyword, perPage = 7) {
+async function pexelsSearchVideos(pexelsKey, keyword, perPage = 10) {
   const resp = await fetch(
     `https://api.pexels.com/videos/search?query=${encodeURIComponent(keyword)}&per_page=${perPage}&orientation=landscape&size=medium`,
     { headers: { Authorization: pexelsKey } }
@@ -2363,23 +2363,22 @@ async function pexelsSelectClips(geminiKey, videos, sceneText, sceneDuration) {
 
   const videoList = videos.map((v, i) => `Video ${i + 1}: duration=${v.duration}s`).join('\n');
 
-  const maxClips = Math.min(videos.length, 7);
-  const prompt = `You are selecting stock footage clips for a video scene. Your goal is to FILL the entire scene duration with compelling footage.
+  const maxClips = Math.min(videos.length, 10);
+  const prompt = `You are selecting stock footage clips for a video scene. Your goal is to FILL EXACTLY the entire scene duration.
 
 Scene text: "${sceneText.substring(0, 400)}"
-Scene duration: ${sceneDuration}s — you MUST fill this entire duration.
+Scene duration: EXACTLY ${sceneDuration}s — the sum of all clip durations MUST equal ${sceneDuration}s.
 
 Available videos (thumbnails shown above in order):
 ${videoList}
 
 Rules:
-- Select as many clips as needed (1 to ${maxClips}) to FILL the full ${sceneDuration}s
-- The TOTAL duration of all clips MUST be as close to ${sceneDuration}s as possible (never exceed it)
+- Select as many clips as needed (1 to ${maxClips}) so that the SUM of all durations = ${sceneDuration}s EXACTLY
 - For each clip, set a startTime (where to start in the source video) and a duration
 - You can reuse different segments of the same video if needed
 - Prefer variety: use different videos when possible
-- Each clip duration must be at least 1s
-- Distribute duration evenly across clips for a dynamic feel`;
+- Each clip duration must be at least 2s
+- CRITICAL: add up all durations and verify the total equals ${sceneDuration}s before responding`;
 
   const parts = [...thumbnailParts, { text: prompt }];
 
@@ -2433,7 +2432,7 @@ Rules:
   const selections = parsed.clips || parsed;
   const reason = parsed.reason || '';
 
-  // Validate and build clips, strictly enforce scene duration
+  // Validate and build clips
   let totalDuration = 0;
   const clips = [];
   for (const sel of (Array.isArray(selections) ? selections : [])) {
@@ -2443,17 +2442,46 @@ Rules:
     const start = Math.max(0, Math.min(sel.startTime || 0, v.duration - 1));
     const maxDur = v.duration - start;
     let dur = Math.max(1, Math.min(sel.duration || 3, maxDur));
-    if (totalDuration + dur > sceneDuration) dur = Math.round(Math.max(0, sceneDuration - totalDuration) * 10) / 10;
+    if (totalDuration + dur > sceneDuration) dur = Math.max(0, sceneDuration - totalDuration);
     if (dur < 0.5) continue;
     clips.push({
       pexelId: v.pexelId,
       url: v.url,
       thumbnail: v.thumbnail,
       startTime: Math.round(start * 10) / 10,
-      duration: Math.round(dur * 10) / 10,
+      duration: dur,
+      _maxDur: maxDur,
     });
     totalDuration += dur;
     if (totalDuration >= sceneDuration) break;
+  }
+
+  // Post-process: stretch clips proportionally to fill exactly sceneDuration
+  const gap = sceneDuration - clips.reduce((s, c) => s + c.duration, 0);
+  if (gap > 0.1 && clips.length > 0) {
+    const totalCurrent = clips.reduce((s, c) => s + c.duration, 0);
+    for (const clip of clips) {
+      const extraShare = (clip.duration / totalCurrent) * gap;
+      const canExtend = Math.min(extraShare, clip._maxDur - clip.duration);
+      clip.duration += canExtend;
+    }
+    // If still short (some clips couldn't extend), distribute remainder to others
+    let remaining = sceneDuration - clips.reduce((s, c) => s + c.duration, 0);
+    for (const clip of clips) {
+      if (remaining <= 0.05) break;
+      const canExtend = clip._maxDur - clip.duration;
+      if (canExtend > 0) {
+        const add = Math.min(canExtend, remaining);
+        clip.duration += add;
+        remaining -= add;
+      }
+    }
+  }
+
+  // Round and clean up
+  for (const clip of clips) {
+    clip.duration = Math.round(clip.duration * 10) / 10;
+    delete clip._maxDur;
   }
 
   return { clips, reason };
