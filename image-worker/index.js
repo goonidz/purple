@@ -2269,9 +2269,17 @@ async function processThumbnailsV2Pipeline(job) {
 // PEXELS VIDEO SEARCH PIPELINE (modular steps for future AI agent orchestration)
 // ============================================================================
 
-// Step 1: Extract search keyword from scene text
-async function pexelsExtractKeyword(geminiKey, sceneText) {
-  const prompt = `Extract 1-2 English keywords for searching stock video footage that would visually represent this scene. Return ONLY the keywords, nothing else.\n\nScene: "${sceneText.substring(0, 500)}"`;
+// Step 1: Extract search keyword from scene text (with surrounding context)
+async function pexelsExtractKeyword(geminiKey, sceneText, prevSceneText = '', nextSceneText = '') {
+  let contextBlock = '';
+  if (prevSceneText || nextSceneText) {
+    contextBlock = `\nFor context, here are the surrounding scenes:`;
+    if (prevSceneText) contextBlock += `\nPrevious scene: "${prevSceneText}"`;
+    if (nextSceneText) contextBlock += `\nNext scene: "${nextSceneText}"`;
+    contextBlock += `\n\nIf the current scene text is very short or abstract (e.g. a single word, a transition), use the surrounding context to determine the visual topic.`;
+  }
+
+  const prompt = `Extract 1-2 English keywords for searching stock video footage that would visually represent this scene. Return ONLY the keywords, nothing else.\n\nScene: "${sceneText.substring(0, 500)}"${contextBlock}`;
 
   const resp = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`,
@@ -2426,6 +2434,8 @@ async function processPexelsSearchJob(job) {
   const sceneIndex = metadata?.sceneIndex;
   const sceneText = metadata?.sceneText || '';
   const sceneDuration = metadata?.sceneDuration || 5;
+  const prevSceneText = metadata?.prevSceneText || '';
+  const nextSceneText = metadata?.nextSceneText || '';
 
   log(`[Pexels] Processing scene ${sceneIndex} (job ${jobId.substring(0, 8)}..., ${sceneDuration}s)`);
 
@@ -2433,8 +2443,8 @@ async function processPexelsSearchJob(job) {
     const geminiKey = await getUserApiKey(userId, 'gemini');
     const pexelsKey = await getUserApiKey(userId, 'pexels');
 
-    // Step 1: Extract keyword
-    const keyword = await pexelsExtractKeyword(geminiKey, sceneText);
+    // Step 1: Extract keyword (with surrounding scene context)
+    const keyword = await pexelsExtractKeyword(geminiKey, sceneText, prevSceneText, nextSceneText);
     log(`[Pexels] Scene ${sceneIndex}: keyword="${keyword}"`);
 
     // Step 2: Search Pexels

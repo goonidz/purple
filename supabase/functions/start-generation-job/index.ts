@@ -6346,6 +6346,8 @@ async function processPexelsSearchJob(
   const childJobs = targetScenes.map((index: number) => {
     const scene = scenes[index] || {};
     const duration = (scene.endTime && scene.startTime) ? scene.endTime - scene.startTime : 5;
+    const prevText = index > 0 ? (scenes[index - 1]?.text || '') : '';
+    const nextText = index < scenes.length - 1 ? (scenes[index + 1]?.text || '') : '';
     return {
       project_id: projectId,
       user_id: userId,
@@ -6359,6 +6361,8 @@ async function processPexelsSearchJob(
         sceneIndex: index,
         sceneText: scene.text || '',
         sceneDuration: Math.round(duration * 10) / 10,
+        prevSceneText: prevText.substring(0, 200),
+        nextSceneText: nextText.substring(0, 200),
       },
     };
   });
