@@ -2376,8 +2376,8 @@ Rules:
 - Select as many clips as needed so that the SUM of all durations = ${sceneDuration}s EXACTLY
 - For each clip, set a startTime (where to start in the source video) and a duration
 - Keep each clip between 3s and 7s for a dynamic feel — avoid staying on the same clip longer than 8s
-- You can reuse different segments of the same video if needed
-- Prefer variety: use different videos when possible
+- NEVER use the same video twice — each clip must be from a different video
+- Maximize variety across clips
 - CRITICAL: add up all durations and verify the total equals ${sceneDuration}s before responding`;
 
   const parts = [...thumbnailParts, { text: prompt }];
@@ -2432,12 +2432,15 @@ Rules:
   const selections = parsed.clips || parsed;
   const reason = parsed.reason || '';
 
-  // Validate and build clips
+  // Validate and build clips (no duplicate videos)
   let totalDuration = 0;
   const clips = [];
+  const usedVideoIndices = new Set();
   for (const sel of (Array.isArray(selections) ? selections : [])) {
     const idx = sel.videoIndex;
     if (idx < 0 || idx >= videos.length) continue;
+    if (usedVideoIndices.has(idx)) continue;
+    usedVideoIndices.add(idx);
     const v = videos[idx];
     const start = Math.max(0, Math.min(sel.startTime || 0, v.duration - 1));
     const maxDur = v.duration - start;
