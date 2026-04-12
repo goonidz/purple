@@ -256,9 +256,20 @@ export const VideoPreview = ({
         cancelAnimationFrame(animationFrameRef.current);
       }
     } else {
-      audioRef.current.play();
-      setIsPlaying(true);
-      syncImageWithAudio();
+      const playPromise = audioRef.current.play();
+      if (playPromise) {
+        playPromise.then(() => {
+          setIsPlaying(true);
+          syncImageWithAudio();
+        }).catch((err) => {
+          console.warn('Audio play failed:', err);
+          setIsPlaying(true);
+          syncImageWithAudio();
+        });
+      } else {
+        setIsPlaying(true);
+        syncImageWithAudio();
+      }
     }
   };
 
@@ -404,7 +415,7 @@ export const VideoPreview = ({
       <audio ref={audioRef} src={audioUrl} preload="auto" />
 
       {/* Image/Video preview */}
-      <div className="relative w-full bg-black rounded-lg overflow-hidden group flex items-center justify-center" style={{ minHeight: '200px' }}>
+      <div className="relative w-full bg-black rounded-lg overflow-hidden group flex items-center justify-center cursor-pointer" style={{ minHeight: '200px' }} onClick={togglePlayPause}>
         {currentPrompt?.pexelsClips && currentPrompt.pexelsClips.length > 0 ? (
           <PexelsClipPlayer
             clips={currentPrompt.pexelsClips}
