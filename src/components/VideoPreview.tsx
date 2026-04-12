@@ -143,6 +143,7 @@ export const VideoPreview = ({
   const [previousImageUrl, setPreviousImageUrl] = useState<string | null>(null);
 
   const [isPlaying, setIsPlaying] = useState(false);
+  const isPlayingRef = useRef(false);
   const [currentTime, setCurrentTime] = useState(startFromScene > 0 ? prompts[startFromScene].startTime : 0);
   const [duration, setDuration] = useState(0);
   const [currentSceneIndex, setCurrentSceneIndex] = useState(startFromScene);
@@ -247,6 +248,7 @@ export const VideoPreview = ({
 
     const totalEnd = prompts.length > 0 ? prompts[prompts.length - 1].endTime : 0;
     if (time >= totalEnd && totalEnd > 0) {
+      isPlayingRef.current = false;
       setIsPlaying(false);
       setCurrentTime(totalEnd);
       if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
@@ -263,8 +265,9 @@ export const VideoPreview = ({
 
   // Handle play/pause
   const togglePlayPause = () => {
-    if (isPlaying) {
+    if (isPlayingRef.current) {
       if (audioRef.current) audioRef.current.pause();
+      isPlayingRef.current = false;
       setIsPlaying(false);
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
@@ -272,9 +275,10 @@ export const VideoPreview = ({
     } else {
       lastFrameTimeRef.current = performance.now();
       playbackTimeRef.current = currentTime;
-      if (audioRef.current && audioRef.current.readyState >= 2) {
+      if (audioRef.current) {
         audioRef.current.play().catch(() => {});
       }
+      isPlayingRef.current = true;
       setIsPlaying(true);
       animationFrameRef.current = requestAnimationFrame(syncPlayback);
     }
@@ -351,12 +355,14 @@ export const VideoPreview = ({
         audio.play().catch(() => {});
         lastFrameTimeRef.current = performance.now();
         playbackTimeRef.current = 0;
+        isPlayingRef.current = true;
         setIsPlaying(true);
         animationFrameRef.current = requestAnimationFrame(syncPlayback);
       }
     };
 
     const handleEnded = () => {
+      isPlayingRef.current = false;
       setIsPlaying(false);
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
