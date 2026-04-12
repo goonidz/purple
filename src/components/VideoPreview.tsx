@@ -6,6 +6,14 @@ import { Play, Pause, SkipBack, SkipForward, Subtitles, RefreshCw, Image as Imag
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
+interface PexelsClip {
+  pexelId: number;
+  url: string;
+  thumbnail?: string;
+  startTime: number;
+  duration: number;
+}
+
 interface GeneratedPrompt {
   scene: string;
   prompt: string;
@@ -14,6 +22,7 @@ interface GeneratedPrompt {
   endTime: number;
   duration: number;
   imageUrl?: string;
+  pexelsClips?: PexelsClip[];
 }
 
 interface VideoPreviewProps {
@@ -40,6 +49,63 @@ interface SubtitleSettings {
   textShadow: string;
   x: number; // position X en %
   y: number; // position Y en %
+}
+
+function PexelsClipPlayer({ clips, sceneStartTime, sceneDuration, currentTime, isPlaying }: {
+  clips: PexelsClip[];
+  sceneStartTime: number;
+  sceneDuration: number;
+  currentTime: number;
+  isPlaying: boolean;
+}) {
+  const videoRefs = useRef<(HTMLVideoElement | null)[]>([]);
+  const [activeClipIndex, setActiveClipIndex] = useState(0);
+
+  const elapsed = Math.max(0, currentTime - sceneStartTime);
+
+  useEffect(() => {
+    let cumulative = 0;
+    for (let i = 0; i < clips.length; i++) {
+      if (elapsed < cumulative + clips[i].duration || i === clips.length - 1) {
+        setActiveClipIndex(i);
+        const clipOffset = elapsed - cumulative;
+        const vid = videoRefs.current[i];
+        if (vid) {
+          const targetTime = clips[i].startTime + clipOffset;
+          if (Math.abs(vid.currentTime - targetTime) > 0.5) {
+            vid.currentTime = targetTime;
+          }
+          if (isPlaying && vid.paused) vid.play().catch(() => {});
+          if (!isPlaying && !vid.paused) vid.pause();
+        }
+        break;
+      }
+      cumulative += clips[i].duration;
+    }
+    // Pause all non-active videos
+    videoRefs.current.forEach((vid, i) => {
+      if (vid && i !== activeClipIndex) vid.pause();
+    });
+  }, [elapsed, isPlaying, clips, activeClipIndex]);
+
+  return (
+    <div className="relative w-full h-full flex items-center justify-center">
+      {clips.map((clip, i) => (
+        <video
+          key={clip.pexelId + '-' + i}
+          ref={(el) => { videoRefs.current[i] = el; }}
+          src={clip.url}
+          poster={clip.thumbnail}
+          muted
+          playsInline
+          className={`max-w-full max-h-[50vh] w-auto h-auto object-contain transition-opacity duration-300 ${
+            i === activeClipIndex ? 'opacity-100' : 'opacity-0 absolute'
+          }`}
+          style={{ zIndex: i === activeClipIndex ? 2 : 1 }}
+        />
+      ))}
+    </div>
+  );
 }
 
 export const VideoPreview = ({ 
@@ -337,9 +403,17 @@ export const VideoPreview = ({
       {/* Hidden audio element */}
       <audio ref={audioRef} src={audioUrl} preload="auto" />
 
-      {/* Image preview */}
+      {/* Image/Video preview */}
       <div className="relative w-full bg-black rounded-lg overflow-hidden group flex items-center justify-center" style={{ minHeight: '200px' }}>
-        {currentPrompt?.imageUrl ? (
+        {currentPrompt?.pexelsClips && currentPrompt.pexelsClips.length > 0 ? (
+          <PexelsClipPlayer
+            clips={currentPrompt.pexelsClips}
+            sceneStartTime={currentPrompt.startTime}
+            sceneDuration={currentPrompt.duration}
+            currentTime={currentTime}
+            isPlaying={isPlaying}
+          />
+        ) : currentPrompt?.imageUrl ? (
           <>
             {/* Previous image (fade out) - only show during transition */}
             {previousImageUrl && previousImageUrl !== currentPrompt.imageUrl && !imageLoaded && (
@@ -367,7 +441,7 @@ export const VideoPreview = ({
                 setImageLoaded(true);
               }}
               onError={() => {
-                setImageLoaded(true); // Show placeholder even on error
+                setImageLoaded(true);
               }}
               loading="eager"
             />
