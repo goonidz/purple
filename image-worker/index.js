@@ -2423,12 +2423,17 @@ async function pexelsSaveResults(projectId, sceneIndex, results, clips, reason =
   const clipsData = clips.length > 0
     ? { clips, reason }
     : null;
-  await supabase.from('project_scenes').upsert({
+  const { error } = await supabase.from('project_scenes').upsert({
     project_id: projectId,
     scene_index: sceneIndex,
     pexels_results: results,
     pexels_clips: clipsData,
   }, { onConflict: 'project_id,scene_index' });
+  if (error) {
+    logError(`[Pexels] DB save failed for scene ${sceneIndex}:`, error.message);
+    throw new Error(`Pexels save failed: ${error.message}`);
+  }
+  log(`[Pexels] Scene ${sceneIndex}: saved ${clips.length} clips to DB`);
 }
 
 // Orchestrator: runs all steps for a single scene
