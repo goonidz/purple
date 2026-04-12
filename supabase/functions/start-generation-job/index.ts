@@ -6345,7 +6345,7 @@ async function processPexelsSearchJob(
 
   const childJobs = targetScenes.map((index: number) => {
     const scene = scenes[index] || {};
-    const duration = (scene.endTime && scene.startTime) ? scene.endTime - scene.startTime : 5;
+    const duration = (scene.endTime != null && scene.startTime != null) ? scene.endTime - scene.startTime : 5;
     const prevText = index > 0 ? (scenes[index - 1]?.text || '') : '';
     const nextText = index < scenes.length - 1 ? (scenes[index + 1]?.text || '') : '';
     return {
