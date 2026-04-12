@@ -227,6 +227,7 @@ export const VideoPreview = ({
   };
 
   const lastFrameTimeRef = useRef<number>(0);
+  const playbackTimeRef = useRef<number>(0);
 
   // Animation loop to sync with audio or timer fallback
   const syncPlayback = () => {
@@ -239,8 +240,10 @@ export const VideoPreview = ({
       const now = performance.now();
       const delta = (now - lastFrameTimeRef.current) / 1000 * playbackRate;
       lastFrameTimeRef.current = now;
-      time = currentTime + delta;
+      time = playbackTimeRef.current + delta;
     }
+
+    playbackTimeRef.current = time;
 
     const totalEnd = prompts.length > 0 ? prompts[prompts.length - 1].endTime : 0;
     if (time >= totalEnd && totalEnd > 0) {
@@ -268,6 +271,7 @@ export const VideoPreview = ({
       }
     } else {
       lastFrameTimeRef.current = performance.now();
+      playbackTimeRef.current = currentTime;
       if (audioRef.current && audioRef.current.readyState >= 2) {
         audioRef.current.play().catch(() => {});
       }
@@ -346,6 +350,7 @@ export const VideoPreview = ({
       if (autoPlay && !isPlaying) {
         audio.play().catch(() => {});
         lastFrameTimeRef.current = performance.now();
+        playbackTimeRef.current = 0;
         setIsPlaying(true);
         animationFrameRef.current = requestAnimationFrame(syncPlayback);
       }
