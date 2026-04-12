@@ -2373,9 +2373,11 @@ Available videos (thumbnails shown above in order):
 ${videoList}
 
 Rules:
-- Select as many clips as needed so that the SUM of all durations = ${sceneDuration}s EXACTLY
+- The SUM of all clip durations MUST equal EXACTLY ${sceneDuration}s
+- For scenes under 5s: use only 1 clip
+- For scenes 5-15s: use 2-3 clips
+- For scenes over 15s: use as many clips as needed, keeping each between 3s and 7s
 - For each clip, set a startTime (where to start in the source video) and a duration
-- Keep each clip between 3s and 7s for a dynamic feel — avoid staying on the same clip longer than 8s
 - NEVER use the same video twice — each clip must be from a different video
 - Maximize variety across clips
 - CRITICAL: add up all durations and verify the total equals ${sceneDuration}s before responding`;
