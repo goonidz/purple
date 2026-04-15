@@ -162,6 +162,28 @@ function fixJSXAndWriteFile(filePath, content, maxRetries = 15) {
 
 const activeJobs = new Map();
 
+function cleanupStaleBundles(keepBundle) {
+  try {
+    const tmpDir = os.tmpdir();
+    const entries = fs.readdirSync(tmpDir).filter(e => e.startsWith('remotion-webpack-bundle-'));
+    const keep = keepBundle ? path.basename(keepBundle) : null;
+    let removed = 0;
+    for (const entry of entries) {
+      if (entry === keep) continue;
+      const fullPath = path.join(tmpDir, entry);
+      try {
+        fs.rmSync(fullPath, { recursive: true, force: true });
+        removed++;
+      } catch (_) {}
+    }
+    if (removed > 0) console.log(`[Cleanup] Removed ${removed} stale remotion bundles from /tmp`);
+  } catch (err) {
+    console.warn('[Cleanup] Error cleaning bundles:', err.message);
+  }
+}
+
+setInterval(() => cleanupStaleBundles(bundleLocation), 30 * 60 * 1000);
+
 async function initBundle() {
   console.log('[Remotion] Bundling compositions...');
   const entryPoint = path.join(__dirname, 'src', 'index.js');
@@ -572,6 +594,8 @@ app.post('/animator/render', async (req, res) => {
             error_message: err.message,
           }).eq('id', jobId);
         }
+      } finally {
+        cleanupStaleBundles(bundleLocation);
       }
     })();
   } catch (err) {
@@ -746,6 +770,8 @@ app.post('/animator/generate-and-render', async (req, res) => {
       if (supabase && projectId) {
         await supabase.from('remotion_render_jobs').update({ status: 'failed', error_message: err.message }).eq('id', jobId);
       }
+    } finally {
+      cleanupStaleBundles(bundleLocation);
     }
   })();
 });
@@ -1377,6 +1403,8 @@ app.post('/animator/render-assembled', async (req, res) => {
         if (supabase) {
           await supabase.from('remotion_render_jobs').update({ status: 'failed', error_message: err.message }).eq('id', jobId);
         }
+      } finally {
+        cleanupStaleBundles(bundleLocation);
       }
     })();
   } catch (err) {
@@ -1665,12 +1693,15 @@ createRoot(container).render(<App />);
       : `http://localhost:${PORT}/preview-bundles`;
     const previewUrl = `${baseUrl}/${codeHash}/index.html`;
 
+    cleanupStaleBundles(bundleLocation);
+
     const result = { success: true, previewUrl, hash: codeHash, durationInFrames, fps, totalDuration, segments };
     previewCache.set(projectId, { hash: codeHash, result });
     console.log(`[Preview] Bundle ready: ${previewUrl}`);
     res.json(result);
   } catch (err) {
     console.error(`[Preview] Bundle failed:`, err.message);
+    cleanupStaleBundles(bundleLocation);
     res.status(500).json({ error: err.message });
   }
 });
@@ -2294,10 +2325,13 @@ registerRoot(Root);
 
     fs.writeFileSync(manifestPath, JSON.stringify(result), 'utf-8');
 
+    cleanupStaleBundles(bundleLocation);
+
     console.log(`[QA] Screenshots done for ${projectId}: ${result.completed}/${result.total} OK (${scenesToSkip.length} cached, ${scenesToRender.length} rendered)`);
     res.json(result);
   } catch (err) {
     console.error(`[QA] Failed:`, err.message);
+    cleanupStaleBundles(bundleLocation);
     res.status(500).json({ error: err.message });
   }
 });
@@ -2410,6 +2444,7 @@ async function pollForJobs() {
   try {
     await initBrowser();
     await initBundle();
+    cleanupStaleBundles(bundleLocation);
 
     app.listen(PORT, '0.0.0.0', () => {
       console.log(`[Remotion] Service running on port ${PORT}`);
