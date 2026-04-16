@@ -502,6 +502,7 @@ app.post('/animator/render', async (req, res) => {
     }
     fs.writeFileSync(rootPath, rootContent, 'utf-8');
 
+    cleanupStaleBundles(bundleLocation);
     console.log(`[Animator] Re-bundling with new composition: ${effectiveName}`);
     const entryPoint = path.join(srcDir, 'index.js');
     const newBundle = await bundle({ entryPoint, webpackOverride: (config) => config });
@@ -723,6 +724,7 @@ app.post('/animator/generate-and-render', async (req, res) => {
       }
       fs.writeFileSync(rootPath, rootContent, 'utf-8');
 
+      cleanupStaleBundles(bundleLocation);
       const entryPoint = path.join(srcDir, 'index.js');
       const newBundle = await bundle({ entryPoint, webpackOverride: (config) => config });
 
@@ -1385,6 +1387,7 @@ app.post('/animator/render-assembled', async (req, res) => {
         const useLambda = LAMBDA_ENABLED && renderMediaOnLambda && deploySite && LAMBDA_FUNCTION_NAME;
         if (!useLambda) throw new Error('Lambda rendering not configured — no fallback enabled');
 
+        cleanupStaleBundles(bundleLocation);
         console.log(`[Animator] Re-bundling assembled composition: ${effectiveName}`);
         const entryPoint = path.join(srcDir, 'index.js');
         const newBundle = await bundle({ entryPoint, webpackOverride: (config) => config });
@@ -1655,6 +1658,7 @@ const container = document.getElementById('container') || document.getElementByI
 createRoot(container).render(<App />);
 `, 'utf-8');
 
+    cleanupStaleBundles(bundleLocation);
     console.log(`[Preview] Bundling player for ${projectId} (${codeHash})...`);
     const bundlePath = await bundle({
       entryPoint: path.join(srcDir, 'player-entry.jsx'),
@@ -2192,6 +2196,7 @@ const Root = () => (
 registerRoot(Root);
 `, 'utf-8');
 
+    cleanupStaleBundles(bundleLocation);
     console.log(`[QA] Bundling composition for ${projectId} (${singleMode ? `scene ${singleSceneIndex}` : `${sceneRows.length} scenes`})...`);
     const qaBundlePath = await bundle({
       entryPoint: path.join(srcDir, 'index.js'),
