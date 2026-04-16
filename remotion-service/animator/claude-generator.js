@@ -257,6 +257,43 @@ function sanitizeReservedNames(code) {
       result = result.replace(new RegExp(`\\b${name}\\b\\[`, 'g'), `${name}List[`);
     }
   }
+  result = fixKebabCaseStyles(result);
+  return result;
+}
+
+function fixKebabCaseStyles(code) {
+  const kebabProps = [
+    'margin-top', 'margin-bottom', 'margin-left', 'margin-right',
+    'padding-top', 'padding-bottom', 'padding-left', 'padding-right',
+    'font-size', 'font-weight', 'font-family', 'font-style',
+    'line-height', 'letter-spacing', 'word-spacing', 'word-break', 'word-wrap',
+    'text-align', 'text-decoration', 'text-transform', 'text-shadow', 'text-overflow',
+    'white-space', 'vertical-align',
+    'background-color', 'background-image', 'background-size', 'background-position', 'background-repeat',
+    'border-radius', 'border-color', 'border-width', 'border-style',
+    'border-top', 'border-bottom', 'border-left', 'border-right',
+    'box-shadow', 'box-sizing',
+    'flex-direction', 'flex-wrap', 'flex-grow', 'flex-shrink', 'flex-basis',
+    'align-items', 'align-self', 'align-content',
+    'justify-content', 'justify-items', 'justify-self',
+    'grid-template', 'grid-column', 'grid-row', 'grid-gap', 'grid-area',
+    'object-fit', 'object-position',
+    'overflow-x', 'overflow-y',
+    'z-index',
+    'min-width', 'max-width', 'min-height', 'max-height',
+    'list-style', 'list-style-type',
+    'clip-path', 'stroke-width', 'stroke-dasharray', 'stroke-dashoffset',
+    'fill-opacity', 'stroke-opacity', 'stop-color', 'stop-opacity',
+    'pointer-events', 'user-select', 'touch-action',
+    'animation-name', 'animation-duration', 'animation-delay',
+    'transition-property', 'transition-duration', 'transition-delay',
+  ];
+  function toCamel(s) { return s.replace(/-([a-z])/g, (_, c) => c.toUpperCase()); }
+  let result = code;
+  for (const prop of kebabProps) {
+    const re = new RegExp(`(\\{[^}]*?)${prop.replace('-', '\\-')}(\\s*:)`, 'g');
+    result = result.replace(re, `$1${toCamel(prop)}$2`);
+  }
   return result;
 }
 
