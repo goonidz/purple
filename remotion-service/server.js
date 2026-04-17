@@ -6,6 +6,17 @@ const os = require('os');
 const { createClient } = require('@supabase/supabase-js');
 require('dotenv').config();
 
+const REMOTION_TMPDIR = process.env.REMOTION_TMPDIR || '/home/ubuntu/remotion-tmp';
+try {
+  if (!fs.existsSync(REMOTION_TMPDIR)) fs.mkdirSync(REMOTION_TMPDIR, { recursive: true });
+  process.env.TMPDIR = REMOTION_TMPDIR;
+  process.env.TMP = REMOTION_TMPDIR;
+  process.env.TEMP = REMOTION_TMPDIR;
+  console.log(`[Remotion] Using TMPDIR: ${REMOTION_TMPDIR}`);
+} catch (err) {
+  console.warn(`[Remotion] Failed to setup custom TMPDIR: ${err.message} — falling back to system /tmp`);
+}
+
 const { bundle } = require('@remotion/bundler');
 const { renderMedia, renderStill, selectComposition, getCompositions, ensureBrowser } = require('@remotion/renderer');
 const { execSync } = require('child_process');
