@@ -2169,12 +2169,18 @@ app.post('/animator/qa-screenshots', async (req, res) => {
         const prev = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
         prevHashes = prev.sceneHashes || {};
 
-        // Full mode: if ALL scene hashes match and count matches, return cached result immediately
+        // Full mode: if ALL scene hashes match, count matches, and PNG files exist on disk, return cached result
         if (!singleMode && prev.screenshots?.length === sceneRows.length) {
           const allMatch = sceneRows.every(r => prevHashes[r.scene_index] === sceneHashes[r.scene_index]);
-          if (allMatch) {
+          const allPngsExist = allMatch && sceneRows.every(r => {
+            const pngFile = path.join(pngsDir, `scene_${String(r.scene_index).padStart(3, '0')}.png`);
+            return fs.existsSync(pngFile);
+          });
+          if (allMatch && allPngsExist) {
             console.log(`[QA] Full cache hit for ${projectId} (all ${sceneRows.length} scenes unchanged)`);
             return res.json(prev);
+          } else if (allMatch && !allPngsExist) {
+            console.log(`[QA] Hash match but PNGs missing for ${projectId} — will re-render missing scenes`);
           }
         }
       } catch (e) { /* ignore corrupt manifest */ }
