@@ -172,28 +172,40 @@ function fixJSXAndWriteFile(filePath, content, maxRetries = 15) {
 }
 
 const activeJobs = new Map();
+const activeBundles = new Set();
 
-function cleanupStaleBundles(keepBundle) {
+function registerBundle(bundlePath) {
+  if (bundlePath) activeBundles.add(path.basename(bundlePath));
+  return bundlePath;
+}
+
+function unregisterBundle(bundlePath) {
+  if (bundlePath) activeBundles.delete(path.basename(bundlePath));
+}
+
+function cleanupStaleBundles() {
   try {
     const tmpDir = os.tmpdir();
     const entries = fs.readdirSync(tmpDir).filter(e => e.startsWith('remotion-webpack-bundle-'));
-    const keep = keepBundle ? path.basename(keepBundle) : null;
+    const keep = new Set();
+    if (bundleLocation) keep.add(path.basename(bundleLocation));
+    for (const b of activeBundles) keep.add(b);
     let removed = 0;
     for (const entry of entries) {
-      if (entry === keep) continue;
+      if (keep.has(entry)) continue;
       const fullPath = path.join(tmpDir, entry);
       try {
         fs.rmSync(fullPath, { recursive: true, force: true });
         removed++;
       } catch (_) {}
     }
-    if (removed > 0) console.log(`[Cleanup] Removed ${removed} stale remotion bundles from /tmp`);
+    if (removed > 0) console.log(`[Cleanup] Removed ${removed} stale remotion bundles (kept ${keep.size} active)`);
   } catch (err) {
     console.warn('[Cleanup] Error cleaning bundles:', err.message);
   }
 }
 
-setInterval(() => cleanupStaleBundles(bundleLocation), 30 * 60 * 1000);
+setInterval(() => cleanupStaleBundles(), 30 * 60 * 1000);
 
 async function initBundle() {
   console.log('[Remotion] Bundling compositions...');
@@ -513,10 +525,10 @@ app.post('/animator/render', async (req, res) => {
     }
     fs.writeFileSync(rootPath, rootContent, 'utf-8');
 
-    cleanupStaleBundles(bundleLocation);
+    cleanupStaleBundles();
     console.log(`[Animator] Re-bundling with new composition: ${effectiveName}`);
     const entryPoint = path.join(srcDir, 'index.js');
-    const newBundle = await bundle({ entryPoint, webpackOverride: (config) => config });
+    const newBundle = registerBundle(await bundle({ entryPoint, webpackOverride: (config) => config }));
 
     const outputFile = path.join(__dirname, 'temp', `${jobId}.mp4`);
 
@@ -607,7 +619,8 @@ app.post('/animator/render', async (req, res) => {
           }).eq('id', jobId);
         }
       } finally {
-        cleanupStaleBundles(bundleLocation);
+        unregisterBundle(newBundle);
+        cleanupStaleBundles();
       }
     })();
   } catch (err) {
@@ -680,6 +693,7 @@ app.post('/animator/generate-and-render', async (req, res) => {
   res.json({ success: true, jobId, status: 'generating' });
 
   (async () => {
+    let newBundle = null;
     try {
       const result = await generateComposition({
         anthropicKey, segments, componentName: effectiveName,
@@ -735,9 +749,9 @@ app.post('/animator/generate-and-render', async (req, res) => {
       }
       fs.writeFileSync(rootPath, rootContent, 'utf-8');
 
-      cleanupStaleBundles(bundleLocation);
+      cleanupStaleBundles();
       const entryPoint = path.join(srcDir, 'index.js');
-      const newBundle = await bundle({ entryPoint, webpackOverride: (config) => config });
+      newBundle = registerBundle(await bundle({ entryPoint, webpackOverride: (config) => config }));
 
       const outputFile = path.join(__dirname, 'temp', `${jobId}.mp4`);
       const composition = await selectComposition({ serveUrl: newBundle, id: compositionId, inputProps: {} });
@@ -784,7 +798,8 @@ app.post('/animator/generate-and-render', async (req, res) => {
         await supabase.from('remotion_render_jobs').update({ status: 'failed', error_message: err.message }).eq('id', jobId);
       }
     } finally {
-      cleanupStaleBundles(bundleLocation);
+      unregisterBundle(newBundle);
+      cleanupStaleBundles();
     }
   })();
 });
@@ -1360,6 +1375,7 @@ app.post('/animator/render-assembled', async (req, res) => {
     res.json({ success: true, jobId, status: 'rendering', durationInFrames });
 
     (async () => {
+      let newBundle = null;
       try {
         const srcDir = path.join(__dirname, 'src');
 
@@ -1398,10 +1414,10 @@ app.post('/animator/render-assembled', async (req, res) => {
         const useLambda = LAMBDA_ENABLED && renderMediaOnLambda && deploySite && LAMBDA_FUNCTION_NAME;
         if (!useLambda) throw new Error('Lambda rendering not configured — no fallback enabled');
 
-        cleanupStaleBundles(bundleLocation);
+        cleanupStaleBundles();
         console.log(`[Animator] Re-bundling assembled composition: ${effectiveName}`);
         const entryPoint = path.join(srcDir, 'index.js');
-        const newBundle = await bundle({ entryPoint, webpackOverride: (config) => config });
+        newBundle = registerBundle(await bundle({ entryPoint, webpackOverride: (config) => config }));
         const renderArgs = { jobId, compositionId, newBundle, entryPoint, durationInFrames, fps, width, height, codec, crf, projectId };
         const neededSlots = Math.min(LAMBDA_MAX_LAMBDAS, Math.ceil(durationInFrames / 20));
         await acquireLambdaSlots(neededSlots);
@@ -1418,7 +1434,8 @@ app.post('/animator/render-assembled', async (req, res) => {
           await supabase.from('remotion_render_jobs').update({ status: 'failed', error_message: err.message }).eq('id', jobId);
         }
       } finally {
-        cleanupStaleBundles(bundleLocation);
+        unregisterBundle(newBundle);
+        cleanupStaleBundles();
       }
     })();
   } catch (err) {
@@ -1669,25 +1686,30 @@ const container = document.getElementById('container') || document.getElementByI
 createRoot(container).render(<App />);
 `, 'utf-8');
 
-    cleanupStaleBundles(bundleLocation);
+    cleanupStaleBundles();
     console.log(`[Preview] Bundling player for ${projectId} (${codeHash})...`);
-    const bundlePath = await bundle({
+    const bundlePath = registerBundle(await bundle({
       entryPoint: path.join(srcDir, 'player-entry.jsx'),
       webpackOverride: (config) => config,
       ignoreRegisterRootWarning: true,
       rootDir: previewDir,
       publicDir: path.join(previewDir, 'public'),
-    });
+    }));
 
-    const bundleFiles = fs.readdirSync(bundlePath);
-    for (const f of bundleFiles) {
-      const src = path.join(bundlePath, f);
-      const dest = path.join(previewDir, f);
-      if (fs.lstatSync(src).isFile()) {
-        fs.copyFileSync(src, dest);
-      } else if (fs.lstatSync(src).isDirectory()) {
-        fs.cpSync(src, dest, { recursive: true });
+    try {
+      const bundleFiles = fs.readdirSync(bundlePath);
+      for (const f of bundleFiles) {
+        const src = path.join(bundlePath, f);
+        const dest = path.join(previewDir, f);
+        if (fs.lstatSync(src).isFile()) {
+          fs.copyFileSync(src, dest);
+        } else if (fs.lstatSync(src).isDirectory()) {
+          fs.cpSync(src, dest, { recursive: true });
+        }
       }
+    } finally {
+      unregisterBundle(bundlePath);
+      cleanupStaleBundles();
     }
 
     // Rewrite index.html: absolute → relative paths for subdirectory serving
@@ -1708,7 +1730,7 @@ createRoot(container).render(<App />);
       : `http://localhost:${PORT}/preview-bundles`;
     const previewUrl = `${baseUrl}/${codeHash}/index.html`;
 
-    cleanupStaleBundles(bundleLocation);
+    cleanupStaleBundles();
 
     const result = { success: true, previewUrl, hash: codeHash, durationInFrames, fps, totalDuration, segments };
     previewCache.set(projectId, { hash: codeHash, result });
@@ -1716,7 +1738,7 @@ createRoot(container).render(<App />);
     res.json(result);
   } catch (err) {
     console.error(`[Preview] Bundle failed:`, err.message);
-    cleanupStaleBundles(bundleLocation);
+    cleanupStaleBundles();
     res.status(500).json({ error: err.message });
   }
 });
@@ -2116,6 +2138,7 @@ app.post('/animator/qa-screenshots', async (req, res) => {
   if (!projectId) return res.status(400).json({ error: 'projectId is required' });
   if (!supabase) return res.status(503).json({ error: 'Supabase not configured' });
 
+  let qaBundlePathRef = null;
   try {
     const { data: sceneRows, error: sceneErr } = await supabase
       .from('project_scenes')
@@ -2213,13 +2236,14 @@ const Root = () => (
 registerRoot(Root);
 `, 'utf-8');
 
-    cleanupStaleBundles(bundleLocation);
+    cleanupStaleBundles();
     console.log(`[QA] Bundling composition for ${projectId} (${singleMode ? `scene ${singleSceneIndex}` : `${sceneRows.length} scenes`})...`);
-    const qaBundlePath = await bundle({
+    const qaBundlePath = registerBundle(await bundle({
       entryPoint: path.join(srcDir, 'index.js'),
       webpackOverride: (config) => config,
       rootDir: qaDir,
-    });
+    }));
+    qaBundlePathRef = qaBundlePath;
 
     const composition = await selectComposition({
       serveUrl: qaBundlePath,
@@ -2347,14 +2371,14 @@ registerRoot(Root);
 
     fs.writeFileSync(manifestPath, JSON.stringify(result), 'utf-8');
 
-    cleanupStaleBundles(bundleLocation);
-
     console.log(`[QA] Screenshots done for ${projectId}: ${result.completed}/${result.total} OK (${scenesToSkip.length} cached, ${scenesToRender.length} rendered)`);
     res.json(result);
   } catch (err) {
     console.error(`[QA] Failed:`, err.message);
-    cleanupStaleBundles(bundleLocation);
     res.status(500).json({ error: err.message });
+  } finally {
+    unregisterBundle(qaBundlePathRef);
+    cleanupStaleBundles();
   }
 });
 
@@ -2466,7 +2490,7 @@ async function pollForJobs() {
   try {
     await initBrowser();
     await initBundle();
-    cleanupStaleBundles(bundleLocation);
+    cleanupStaleBundles();
 
     app.listen(PORT, '0.0.0.0', () => {
       console.log(`[Remotion] Service running on port ${PORT}`);
