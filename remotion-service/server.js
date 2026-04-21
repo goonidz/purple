@@ -1760,13 +1760,16 @@ app.post('/animator/qa-analyze', async (req, res) => {
       .from('content_calendar').select('channel_id')
       .eq('project_id', projectId).not('channel_id', 'is', null).limit(1).single();
 
-    let resolvedModel = 'claude-sonnet-4-6';
+    let resolvedModel = null;
     if (calEntry?.channel_id) {
       const { data: ch } = await supabase.from('channels').select('animator_preset_id').eq('id', calEntry.channel_id).single();
       if (ch?.animator_preset_id) {
         const { data: preset } = await supabase.from('animator_presets').select('model').eq('id', ch.animator_preset_id).single();
         if (preset?.model) resolvedModel = preset.model;
       }
+    }
+    if (!resolvedModel) {
+      return res.status(400).json({ error: "No animator preset model configured for this project's channel. Configure a model on the channel's animator preset." });
     }
 
     const useGemini = resolvedModel.startsWith('gemini-');
