@@ -1,5 +1,7 @@
 # Dependencies
 node_modules
+**/node_modules
+**/.cache
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -33,6 +35,15 @@ Thumbs.db
 video-render-service/temp
 video-render-service/node_modules
 video-render-service/render-queue.json
+
+# Other service temp / build artifacts (CRITICAL - can be many GB)
+remotion-service/node_modules
+remotion-service/.cache
+image-worker/node_modules
+pipeline-orchestrator/node_modules
+remotion-tmp
+**/temp
+**/.pm2
 
 # Exports
 public/exports
