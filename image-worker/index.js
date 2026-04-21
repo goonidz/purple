@@ -2721,7 +2721,7 @@ async function processAnimatorSceneJob(job) {
       }
 
       // Load branding config from channel preset
-      let brandingConfig = null, brandingMarkdown = '', extraPrompt = '', selectedSkills = null, model = 'claude-sonnet-4-6';
+      let brandingConfig = null, brandingMarkdown = '', extraPrompt = '', selectedSkills = null, model = null;
       const { data: calEntry } = await supabase
         .from('content_calendar')
         .select('channel_id')
@@ -2747,9 +2747,13 @@ async function processAnimatorSceneJob(job) {
             brandingMarkdown = preset.branding_markdown || '';
             extraPrompt = preset.extra_prompt || '';
             selectedSkills = preset.selected_skills || null;
-            model = preset.model || 'claude-sonnet-4-6';
+            model = preset.model || null;
           }
         }
+      }
+
+      if (!model) {
+        throw new Error("No model configured on the channel's animator preset. Set a model explicitly — no silent fallback to Claude.");
       }
 
       // Build neighbor context from project_scenes

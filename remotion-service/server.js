@@ -822,8 +822,9 @@ app.post('/animator/generate-scene', async (req, res) => {
 
   if (!segment) return res.status(400).json({ error: 'segment is required' });
   if (segIndex == null) return res.status(400).json({ error: 'segIndex is required' });
+  if (!model) return res.status(400).json({ error: 'model is required (no silent fallback to Claude)' });
 
-  const effectiveModel = model || 'claude-sonnet-4-6';
+  const effectiveModel = model;
   const useGemini = effectiveModel.startsWith('gemini-');
 
   if (useGemini && !geminiKey) return res.status(400).json({ error: 'geminiKey is required for Gemini models' });
@@ -1924,7 +1925,7 @@ app.post('/animator/edit-scene', async (req, res) => {
       .from('content_calendar').select('channel_id')
       .eq('project_id', projectId).not('channel_id', 'is', null).limit(1).single();
 
-    let resolvedModel = model || 'claude-sonnet-4-6';
+    let resolvedModel = model || null;
     let anthropicKey = null;
     let geminiKey = null;
     let brandingConfig = null;
@@ -1944,6 +1945,10 @@ app.post('/animator/edit-scene', async (req, res) => {
           selectedSkills = preset.selected_skills || null;
         }
       }
+    }
+
+    if (!resolvedModel) {
+      return res.status(400).json({ error: "No model configured (pass `model` or set one on the channel's animator preset). No silent fallback to Claude." });
     }
 
     // Fetch user API key via Vault RPC (same as image-worker)

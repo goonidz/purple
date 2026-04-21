@@ -842,7 +842,7 @@ async function stepWaitAnimatorTranscribe(pipeline) {
 
 async function getAnimatorPresetConfig(channel_id) {
   let brandingConfig = null, brandingMarkdown = '', extraPrompt = '', selectedSkills = null;
-  let model = 'claude-sonnet-4-6';
+  let model = null;
 
   if (channel_id) {
     const { data: ch } = await supabase
@@ -861,7 +861,7 @@ async function getAnimatorPresetConfig(channel_id) {
         brandingMarkdown = preset.branding_markdown || '';
         extraPrompt = preset.extra_prompt || '';
         selectedSkills = preset.selected_skills || null;
-        model = preset.model || 'claude-sonnet-4-6';
+        model = preset.model || null;
       }
     }
   }

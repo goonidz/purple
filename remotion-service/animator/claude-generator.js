@@ -595,7 +595,8 @@ async function generateComposition({
   width,
   height,
 }) {
-  const effectiveModel = model || 'claude-sonnet-4-6';
+  if (!model) throw new Error('model is required (no silent fallback to Claude)');
+  const effectiveModel = model;
   const useGemini = isGeminiModel(effectiveModel);
 
   if (useGemini && !geminiKey) throw new Error('Gemini API key is required for Gemini models');
