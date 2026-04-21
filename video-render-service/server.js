@@ -14,6 +14,8 @@ const { execSync } = require('child_process');
 
 require('dotenv').config();
 
+const { GEMINI_TEXT_MODEL, geminiEndpoint } = require('./config/gemini');
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -884,7 +886,7 @@ User prompt:
 ${customPrompt.substring(0, 3000)}`;
 
         const resp = await axios.post(
-          'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent',
+          geminiEndpoint(GEMINI_TEXT_MODEL),
           { contents: [{ parts: [{ text: extractionPrompt }] }], generationConfig: { temperature: 0 } },
           { headers: { 'Content-Type': 'application/json', 'x-goog-api-key': geminiKey }, timeout: 15000 }
         );

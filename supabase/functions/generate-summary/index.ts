@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { GEMINI_TEXT_MODEL, geminiEndpoint } from '../_shared/gemini.ts';
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -69,7 +70,7 @@ Retourne UNIQUEMENT le résumé, sans préambule, sans formatage, juste 1-2 phra
     console.log("Generating global summary for transcript");
 
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=${GOOGLE_AI_API_KEY}`,
+      geminiEndpoint(GEMINI_TEXT_MODEL, GOOGLE_AI_API_KEY),
       {
         method: "POST",
         headers: {

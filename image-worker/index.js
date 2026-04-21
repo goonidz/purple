@@ -2,6 +2,7 @@ require('dotenv').config();
 const Replicate = require('replicate');
 const { createClient } = require('@supabase/supabase-js');
 const sharp = require('sharp');
+const { GEMINI_TEXT_MODEL, geminiEndpoint } = require('./config/gemini');
 
 // ============================================================================
 // CONFIGURATION
@@ -338,7 +339,7 @@ async function runQACheck(geminiKey, imageUrl, sourcePrompt, qaPrompt) {
   }, null, 2);
 
   const geminiResponse = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=${geminiKey}`,
+    geminiEndpoint(GEMINI_TEXT_MODEL, geminiKey),
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -414,7 +415,7 @@ Keep the EXACT same visual style, composition, character descriptions, and struc
 Return ONLY the rewritten prompt text, nothing else.`;
 
   const geminiResponse = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=${geminiKey}`,
+    geminiEndpoint(GEMINI_TEXT_MODEL, geminiKey),
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1643,7 +1644,7 @@ async function analyzeStyleFromExamples(geminiKey, exampleUrls) {
   }
 
   const response = await fetch(
-    'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent',
+    geminiEndpoint(GEMINI_TEXT_MODEL),
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-goog-api-key': geminiKey },
@@ -1710,7 +1711,7 @@ Be EXHAUSTIVE and SPECIFIC. The more detail you give, the better the result. Out
   }
 
   const response = await fetch(
-    'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent',
+    geminiEndpoint(GEMINI_TEXT_MODEL),
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-goog-api-key': geminiKey },
@@ -2282,7 +2283,7 @@ async function pexelsExtractKeyword(geminiKey, sceneText, prevSceneText = '', ne
   const prompt = `Extract 1-2 English keywords for searching stock video footage that would visually represent this scene.\n\nScene: "${sceneText.substring(0, 500)}"${contextBlock}`;
 
   const resp = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=${geminiKey}`,
+    geminiEndpoint(GEMINI_TEXT_MODEL, geminiKey),
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -2385,7 +2386,7 @@ Rules:
   const parts = [...thumbnailParts, { text: prompt }];
 
   const resp = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=${geminiKey}`,
+    geminiEndpoint(GEMINI_TEXT_MODEL, geminiKey),
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

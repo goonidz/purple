@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { GEMINI_TEXT_MODEL, GEMINI_QA_VISION_MODEL, geminiEndpoint } from '../_shared/gemini.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -205,7 +206,7 @@ VISUAL HIERARCHY
 Now analyze the provided thumbnail with AT LEAST this level of detail. Respond ONLY with the structured description. No introduction, no commentary, no summary.`;
 
       const geminiResponse = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=${geminiKey}`,
+        geminiEndpoint(GEMINI_TEXT_MODEL, geminiKey),
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -268,7 +269,7 @@ Now analyze the provided thumbnail with AT LEAST this level of detail. Respond O
     }, null, 2);
 
     const geminiResponse = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${geminiKey}`,
+      geminiEndpoint(GEMINI_QA_VISION_MODEL, geminiKey),
       {
         method: 'POST',
         headers: {
