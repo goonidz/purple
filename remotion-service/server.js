@@ -183,23 +183,43 @@ function unregisterBundle(bundlePath) {
   if (bundlePath) activeBundles.delete(path.basename(bundlePath));
 }
 
+// Grace period: never delete a bundle/asset dir modified within the last N minutes.
+// This is critical: `bundle()` can take 20–30 s while copying a large `public/`
+// folder, and `registerBundle()` is only called AFTER `await bundle()` resolves.
+// Without mtime grace, a concurrent render's cleanup can wipe an in-flight bundle
+// (causing ENOENT copyfile / lstat / open errors during render).
+const BUNDLE_GRACE_MS = 30 * 60 * 1000;
+
 function cleanupStaleBundles() {
   try {
     const tmpDir = os.tmpdir();
-    const entries = fs.readdirSync(tmpDir).filter(e => e.startsWith('remotion-webpack-bundle-'));
+    const entries = fs.readdirSync(tmpDir).filter(e =>
+      e.startsWith('remotion-webpack-bundle-') ||
+      e.startsWith('remotion-v4-0-242-assets') ||
+      e.startsWith('remotion-assets-')
+    );
     const keep = new Set();
     if (bundleLocation) keep.add(path.basename(bundleLocation));
     for (const b of activeBundles) keep.add(b);
+    const now = Date.now();
     let removed = 0;
+    let skippedGrace = 0;
     for (const entry of entries) {
       if (keep.has(entry)) continue;
       const fullPath = path.join(tmpDir, entry);
       try {
+        const st = fs.statSync(fullPath);
+        if (now - st.mtimeMs < BUNDLE_GRACE_MS) {
+          skippedGrace++;
+          continue;
+        }
         fs.rmSync(fullPath, { recursive: true, force: true });
         removed++;
       } catch (_) {}
     }
-    if (removed > 0) console.log(`[Cleanup] Removed ${removed} stale remotion bundles (kept ${keep.size} active)`);
+    if (removed > 0 || skippedGrace > 0) {
+      console.log(`[Cleanup] Removed ${removed} stale entries (kept ${keep.size} active, ${skippedGrace} within grace window)`);
+    }
   } catch (err) {
     console.warn('[Cleanup] Error cleaning bundles:', err.message);
   }
@@ -525,7 +545,6 @@ app.post('/animator/render', async (req, res) => {
     }
     fs.writeFileSync(rootPath, rootContent, 'utf-8');
 
-    cleanupStaleBundles();
     console.log(`[Animator] Re-bundling with new composition: ${effectiveName}`);
     const entryPoint = path.join(srcDir, 'index.js');
     const newBundle = registerBundle(await bundle({ entryPoint, webpackOverride: (config) => config }));
@@ -749,7 +768,6 @@ app.post('/animator/generate-and-render', async (req, res) => {
       }
       fs.writeFileSync(rootPath, rootContent, 'utf-8');
 
-      cleanupStaleBundles();
       const entryPoint = path.join(srcDir, 'index.js');
       newBundle = registerBundle(await bundle({ entryPoint, webpackOverride: (config) => config }));
 
@@ -1415,7 +1433,6 @@ app.post('/animator/render-assembled', async (req, res) => {
         const useLambda = LAMBDA_ENABLED && renderMediaOnLambda && deploySite && LAMBDA_FUNCTION_NAME;
         if (!useLambda) throw new Error('Lambda rendering not configured — no fallback enabled');
 
-        cleanupStaleBundles();
         console.log(`[Animator] Re-bundling assembled composition: ${effectiveName}`);
         const entryPoint = path.join(srcDir, 'index.js');
         newBundle = registerBundle(await bundle({ entryPoint, webpackOverride: (config) => config }));
@@ -1687,7 +1704,6 @@ const container = document.getElementById('container') || document.getElementByI
 createRoot(container).render(<App />);
 `, 'utf-8');
 
-    cleanupStaleBundles();
     console.log(`[Preview] Bundling player for ${projectId} (${codeHash})...`);
     const bundlePath = registerBundle(await bundle({
       entryPoint: path.join(srcDir, 'player-entry.jsx'),
@@ -1730,8 +1746,6 @@ createRoot(container).render(<App />);
       ? PUBLIC_BASE_URL.replace('/remotion-renders', '/remotion-preview')
       : `http://localhost:${PORT}/preview-bundles`;
     const previewUrl = `${baseUrl}/${codeHash}/index.html`;
-
-    cleanupStaleBundles();
 
     const result = { success: true, previewUrl, hash: codeHash, durationInFrames, fps, totalDuration, segments };
     previewCache.set(projectId, { hash: codeHash, result });
@@ -2246,7 +2260,6 @@ const Root = () => (
 registerRoot(Root);
 `, 'utf-8');
 
-    cleanupStaleBundles();
     console.log(`[QA] Bundling composition for ${projectId} (${singleMode ? `scene ${singleSceneIndex}` : `${sceneRows.length} scenes`})...`);
     const qaBundlePath = registerBundle(await bundle({
       entryPoint: path.join(srcDir, 'index.js'),
