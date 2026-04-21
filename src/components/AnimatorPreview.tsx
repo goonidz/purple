@@ -838,7 +838,7 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
             const fixed = completed.filter(j => j.metadata?.fixed).length;
             const gavUp = completed.filter(j => j.metadata?.pass === false).length;
             const qaTokens = qaJob?.metadata?.tokens || { input: 0, output: 0 };
-            const qaModel = qaJob?.metadata?.model || 'gemini-2.0-flash';
+            const qaModel = qaJob?.metadata?.model || 'gemini-3.1-flash-lite-preview';
             const MODEL_COSTS: Record<string, { input: number; output: number }> = {
               'gemini-2.0-flash': { input: 0.10, output: 0.40 },
               'gemini-2.5-flash-preview-04-17': { input: 0.15, output: 0.60 },

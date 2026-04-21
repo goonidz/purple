@@ -70,7 +70,7 @@ IMPORTANT: Réponds UNIQUEMENT avec un JSON valide dans ce format exact:
 Ne mets RIEN d'autre que ce JSON dans ta réponse.`;
 
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GOOGLE_AI_API_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=${GOOGLE_AI_API_KEY}`,
       {
         method: "POST",
         headers: {

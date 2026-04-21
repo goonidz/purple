@@ -114,7 +114,7 @@ Analyze if these scenes should maintain visual continuity. Return JSON with your
     console.log(`[analyze-scene-continuity] Analyzing continuity between scenes`);
 
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GOOGLE_AI_API_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=${GOOGLE_AI_API_KEY}`,
       {
         method: "POST",
         headers: {

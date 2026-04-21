@@ -884,7 +884,7 @@ User prompt:
 ${customPrompt.substring(0, 3000)}`;
 
         const resp = await axios.post(
-          'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent',
+          'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent',
           { contents: [{ parts: [{ text: extractionPrompt }] }], generationConfig: { temperature: 0 } },
           { headers: { 'Content-Type': 'application/json', 'x-goog-api-key': geminiKey }, timeout: 15000 }
         );
