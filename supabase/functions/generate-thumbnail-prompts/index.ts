@@ -525,9 +525,14 @@ CRITICAL OUTPUT INSTRUCTION: You MUST call the generate_prompts tool with exactl
       }
       
     } else {
-      // Use Gemini (existing logic)
+      // Use Gemini (existing logic). Honor the textModel coming from the preset/UI:
+      // supported values: 'gemini-3-flash-preview' (default), 'gemini-2.0-flash' (legacy).
+      const geminiModelId = (typeof textModel === 'string' && textModel.startsWith('gemini-'))
+        ? textModel
+        : 'gemini-3-flash-preview';
+      console.log(`[generate-thumbnail-prompts] Using Gemini model: ${geminiModelId}`);
       const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GOOGLE_AI_API_KEY}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/${geminiModelId}:generateContent?key=${GOOGLE_AI_API_KEY}`,
         {
           method: "POST",
           headers: {

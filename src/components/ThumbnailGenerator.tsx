@@ -29,6 +29,7 @@ interface ThumbnailPreset {
   character_ref_url: string | null;
   custom_prompt: string | null;
   image_model: string | null;
+  text_model: string | null;
 }
 
 const DEFAULT_THUMBNAIL_PROMPT = `Tu es un expert en création de miniatures YouTube accrocheuses et performantes.
@@ -512,6 +513,7 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
         character_ref_url: preset.character_ref_url,
         custom_prompt: preset.custom_prompt || null,
         image_model: (preset as any).image_model || null,
+        text_model: (preset as any).text_model || null,
       }));
 
       setPresets(mappedPresets);
@@ -571,6 +573,7 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
     setCharacterRefUrl(preset.character_ref_url || "");
     setCustomPrompt(preset.custom_prompt || DEFAULT_THUMBNAIL_PROMPT);
     setImageModel(preset.image_model || "ai33-seedream-4.5");
+    setTextModel(preset.text_model || "claude-sonnet-4-6");
     toast.success("Preset chargé !");
   };
 
@@ -594,6 +597,7 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
           character_ref_url: characterRefUrl || null,
           custom_prompt: customPrompt !== DEFAULT_THUMBNAIL_PROMPT ? customPrompt : null,
           image_model: imageModel,
+          text_model: textModel,
         } as any);
 
       if (error) throw error;
@@ -960,6 +964,7 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
     setEditName(preset.name);
     setEditCustomPrompt(preset.custom_prompt || DEFAULT_THUMBNAIL_PROMPT);
     setImageModel(preset.image_model || "ai33-seedream-4.5");
+    setTextModel(preset.text_model || "claude-sonnet-4-6");
     setIsEditDialogOpen(true);
   };
 
@@ -978,6 +983,7 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
           character_ref_url: characterRefUrl || null,
           custom_prompt: editCustomPrompt !== DEFAULT_THUMBNAIL_PROMPT ? editCustomPrompt : null,
           image_model: imageModel,
+          text_model: textModel,
         } as any)
         .eq("id", editingPreset.id);
 
@@ -1023,6 +1029,7 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
           character_ref_url: editingPreset.character_ref_url,
           custom_prompt: editingPreset.custom_prompt,
           image_model: editingPreset.image_model,
+          text_model: editingPreset.text_model,
         } as any);
 
       if (error) throw error;
@@ -1380,8 +1387,8 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
                 <SelectValue placeholder="Choisir un modèle" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="gemini-2.0-flash">Gemini 2.0 Flash (Rapide)</SelectItem>
                 <SelectItem value="claude-sonnet-4-6">Claude Sonnet 4.6 (Qualité)</SelectItem>
+                <SelectItem value="gemini-3-flash-preview">Gemini 3 Flash (Rapide)</SelectItem>
               </SelectContent>
             </Select>
             {textModel === "claude-sonnet-4-6" && (
@@ -1711,6 +1718,24 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
                     <X className="w-4 h-4" />
                   </Button>
                 </div>
+              )}
+            </div>
+
+            <div>
+              <Label>Modèle de génération de prompts</Label>
+              <Select value={textModel} onValueChange={setTextModel}>
+                <SelectTrigger className="mt-2">
+                  <SelectValue placeholder="Choisir un modèle" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="claude-sonnet-4-6">Claude Sonnet 4.6 (Qualité)</SelectItem>
+                  <SelectItem value="gemini-3-flash-preview">Gemini 3 Flash (Rapide)</SelectItem>
+                </SelectContent>
+              </Select>
+              {textModel === "claude-sonnet-4-6" && (
+                <p className="text-xs text-muted-foreground mt-2 italic px-1">
+                  ⚠️ Avec Claude, seule la première image sera envoyée en exemple. La qualité est par contre bien supérieure.
+                </p>
               )}
             </div>
 

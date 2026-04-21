@@ -186,6 +186,7 @@ interface ThumbnailPresetRow {
   custom_prompt: string | null;
   system_prompt: string | null;
   image_model: string | null;
+  text_model: string | null;
 }
 
 // LoRA preset
@@ -256,6 +257,7 @@ export default function Presets() {
   const [thumbCustomPrompt, setThumbCustomPrompt] = useState("");
   const [thumbSystemPrompt, setThumbSystemPrompt] = useState("");
   const [thumbImageModel, setThumbImageModel] = useState("seedream-4.5");
+  const [thumbTextModel, setThumbTextModel] = useState("claude-sonnet-4-6");
   const [thumbSaving, setThumbSaving] = useState(false);
 
   // LoRA
@@ -709,6 +711,7 @@ export default function Presets() {
     setThumbCustomPrompt("");
     setThumbSystemPrompt("");
     setThumbImageModel("seedream-4.5");
+    setThumbTextModel("claude-sonnet-4-6");
     setThumbDialogOpen(true);
   };
 
@@ -720,6 +723,7 @@ export default function Presets() {
     setThumbCustomPrompt(p.custom_prompt || "");
     setThumbSystemPrompt(p.system_prompt || "");
     setThumbImageModel(p.image_model || "seedream-4.5");
+    setThumbTextModel(p.text_model || "claude-sonnet-4-6");
     setThumbDialogOpen(true);
   };
 
@@ -739,6 +743,7 @@ export default function Presets() {
         custom_prompt: thumbCustomPrompt.trim() || null,
         system_prompt: thumbSystemPrompt.trim() || null,
         image_model: thumbImageModel,
+        text_model: thumbTextModel,
       };
       if (thumbEditId) {
         const { error } = await supabase.from("thumbnail_presets").update(row).eq("id", thumbEditId);
@@ -771,6 +776,7 @@ export default function Presets() {
         custom_prompt: p.custom_prompt,
         system_prompt: p.system_prompt,
         image_model: p.image_model,
+        text_model: p.text_model,
         example_urls: p.example_urls,
       });
       if (error) throw error;
@@ -1456,6 +1462,18 @@ export default function Presets() {
             <div>
               <Label>System prompt (v2)</Label>
               <Textarea value={thumbSystemPrompt} onChange={(e) => setThumbSystemPrompt(e.target.value)} rows={2} className="resize-none" />
+            </div>
+            <div>
+              <Label>Modèle de génération de prompts</Label>
+              <Select value={thumbTextModel} onValueChange={setThumbTextModel}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="claude-sonnet-4-6">Claude Sonnet 4.6 (Qualité)</SelectItem>
+                  <SelectItem value="gemini-3-flash-preview">Gemini 3 Flash (Rapide)</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div>
               <Label>Modèle d'image</Label>
