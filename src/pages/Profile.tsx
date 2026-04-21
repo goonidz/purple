@@ -5,10 +5,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
-import { Loader2, Key, LogOut, Eye, EyeOff, Shield, Lock } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Loader2, Key, LogOut, Eye, EyeOff, Shield, Lock, Mail } from "lucide-react";
 import { toast } from "sonner";
 import type { User } from "@supabase/supabase-js";
 import AppHeader from "@/components/AppHeader";
+import EmailAccountsManager from "@/components/EmailAccountsManager";
 
 const Profile = () => {
   const navigate = useNavigate();
@@ -397,7 +399,20 @@ const Profile = () => {
                 <Loader2 className="h-8 w-8 animate-spin text-primary" />
               </div>
             ) : (
-              <div className="space-y-6 pt-4 border-t">
+              <Tabs defaultValue="api-keys" className="pt-4 border-t">
+                <TabsList className="grid w-full grid-cols-3">
+                  <TabsTrigger value="api-keys" className="gap-2">
+                    <Key className="h-4 w-4" /> Clés API
+                  </TabsTrigger>
+                  <TabsTrigger value="email-accounts" className="gap-2">
+                    <Mail className="h-4 w-4" /> Comptes Email
+                  </TabsTrigger>
+                  <TabsTrigger value="security" className="gap-2">
+                    <Shield className="h-4 w-4" /> Sécurité
+                  </TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="api-keys" className="space-y-6 mt-6">
                 <div className="flex items-center gap-2 mb-4">
                   <Key className="h-5 w-5 text-primary" />
                   <h2 className="text-xl font-semibold">Clés API</h2>
@@ -998,9 +1013,13 @@ const Profile = () => {
                     "Sauvegarder les clés API"
                   )}
                 </Button>
+                </TabsContent>
 
-                {/* Security Section */}
-                <div className="space-y-6 pt-6 mt-6 border-t">
+                <TabsContent value="email-accounts" className="space-y-6 mt-6">
+                  <EmailAccountsManager userId={user.id} />
+                </TabsContent>
+
+                <TabsContent value="security" className="space-y-6 mt-6">
                   <div className="flex items-center gap-2 mb-4">
                     <Shield className="h-5 w-5 text-primary" />
                     <h2 className="text-xl font-semibold">Sécurité</h2>
@@ -1082,8 +1101,8 @@ const Profile = () => {
                       )}
                     </Button>
                   </div>
-                </div>
-              </div>
+                </TabsContent>
+              </Tabs>
             )}
           </div>
         </Card>

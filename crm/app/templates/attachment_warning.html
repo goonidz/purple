@@ -1,0 +1,40 @@
+{% extends "_shell.html" %}
+{% block title %}Pièce jointe dangereuse{% endblock %}
+{% block main %}
+<header class="topbar">
+  <div>
+    <a class="muted small" href="/crm/mailbox/{{ account.slug }}/message/{{ msg.uid }}?folder={{ folder | urlencode }}">← Retour au message</a>
+    <h2>⚠️ Pièce jointe potentiellement dangereuse</h2>
+  </div>
+</header>
+
+<section class="warning-card">
+  <p>
+    Le fichier suivant porte une extension connue pour être utilisée
+    par des logiciels malveillants (installateurs, scripts, exécutables,
+    HTML qui peut s'exécuter dans ton navigateur, etc.) :
+  </p>
+
+  <div class="warning-file">
+    <div><strong>Nom :</strong> <code>{{ att.filename }}</code></div>
+    <div><strong>Extension :</strong> <code>{{ ext }}</code></div>
+    <div><strong>Type annoncé :</strong> <code>{{ att.content_type }}</code></div>
+    <div><strong>Taille :</strong> {{ (att.size / 1024) | round(1) }} Ko</div>
+    <div><strong>Expéditeur :</strong> {{ msg.from_name }} &lt;{{ msg.from_email }}&gt;</div>
+  </div>
+
+  <p class="muted small">
+    Rien n'est scanné par antivirus côté serveur. Vérifie que tu fais
+    confiance à l'expéditeur <strong>avant</strong> de télécharger.
+    Ouvre ce fichier depuis une VM ou un environnement isolé si tu as
+    le moindre doute.
+  </p>
+
+  <div class="form-actions">
+    <a href="/crm/mailbox/{{ account.slug }}/message/{{ msg.uid }}?folder={{ folder | urlencode }}"
+       class="btn">Annuler</a>
+    <a href="/crm/mailbox/{{ account.slug }}/message/{{ msg.uid }}/attachment/{{ idx }}?folder={{ folder | urlencode }}&confirm=1"
+       class="btn btn-danger">Télécharger quand même</a>
+  </div>
+</section>
+{% endblock %}

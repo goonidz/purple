@@ -1,0 +1,11 @@
+.venv/
+venv/
+__pycache__/
+*.pyc
+.env
+accounts.yml
+uploads/
+cache.sqlite
+cache.sqlite-shm
+cache.sqlite-wal
+.DS_Store

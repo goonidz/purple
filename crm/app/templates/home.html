@@ -1,0 +1,74 @@
+{% extends "_shell.html" %}
+{% block title %}Accueil{% endblock %}
+{% block main %}
+<header class="topbar">
+  <div>
+    <h2>Accueil</h2>
+    <div class="muted small">Activité des 7 derniers jours — tous les comptes</div>
+  </div>
+  <div class="topbar-actions">
+    <a href="/crm/" class="btn" title="Rafraîchir">↻ Rafraîchir</a>
+    <a href="/crm/compose" class="btn btn-primary">+ Nouveau</a>
+  </div>
+</header>
+
+<section class="stats-grid">
+  <div class="stat-card">
+    <div class="stat-label">Reçus cette semaine</div>
+    <div class="stat-value">{{ totals.received_week }}</div>
+  </div>
+  <div class="stat-card {% if totals.unread_total > 0 %}stat-warn{% endif %}">
+    <div class="stat-label">Non lus</div>
+    <div class="stat-value">{{ totals.unread_total }}</div>
+    {% if totals.unread_week != totals.unread_total %}
+      <div class="stat-sub muted small">dont {{ totals.unread_week }} cette semaine</div>
+    {% endif %}
+  </div>
+  <div class="stat-card {% if totals.unanswered_week > 0 %}stat-warn{% endif %}">
+    <div class="stat-label">Non répondus (7j)</div>
+    <div class="stat-value">{{ totals.unanswered_week }}</div>
+  </div>
+  <div class="stat-card stat-ok">
+    <div class="stat-label">Répondus (7j)</div>
+    <div class="stat-value">{{ totals.answered_week }}</div>
+  </div>
+</section>
+
+<section class="stats-table-wrap">
+  <h3>Par compte</h3>
+  <table class="stats-table">
+    <thead>
+      <tr>
+        <th>Compte</th>
+        <th class="num">Reçus (7j)</th>
+        <th class="num">Non lus</th>
+        <th class="num">Non répondus (7j)</th>
+        <th class="num">Répondus (7j)</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for a in accounts %}
+        {% set s = stats.get(a.slug) or {} %}
+        <tr>
+          <td>
+            <a class="row-link" href="/crm/mailbox/{{ a.slug }}">
+              <span class="account-dot inline" style="background: hsl({{ (loop.index0 * 67) % 360 }}, 70%, 55%)"></span>
+              <strong>{{ a.name }}</strong>
+              <span class="muted small">{{ a.email }}</span>
+            </a>
+          </td>
+          <td class="num">{{ s.received_week or 0 }}</td>
+          <td class="num {% if (s.unread_total or 0) > 0 %}num-warn{% endif %}">{{ s.unread_total or 0 }}</td>
+          <td class="num {% if (s.unanswered_week or 0) > 0 %}num-warn{% endif %}">{{ s.unanswered_week or 0 }}</td>
+          <td class="num num-ok">{{ s.answered_week or 0 }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="muted small">
+    « Répondu » = le message porte le flag IMAP <code>\Answered</code>,
+    défini automatiquement quand tu réponds depuis cette app. Rapports
+    automatiques (DMARC, postmaster…) exclus.
+  </p>
+</section>
+{% endblock %}

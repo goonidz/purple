@@ -102,6 +102,20 @@ restart_service "image-worker" "$HOME/purple/image-worker/index.js"
 restart_service "pipeline-orchestrator" "$HOME/purple/pipeline-orchestrator/index.js"
 restart_service "remotion-service" "$HOME/purple/remotion-service/server.js"
 
+# CRM webmail (Python FastAPI) — delegated to its own idempotent installer
+# so Python deps stay in sync with requirements.txt and .env is always
+# re-read (pm2 restart would NOT re-read it).
+if [ -d "$HOME/purple/crm" ] && [ -f "$HOME/purple/crm/setup-vps.sh" ]; then
+    echo ""
+    echo -e "${YELLOW}📬  (Re)starting CRM webmail (crm-webmail, port 8002)...${NC}"
+    chmod +x "$HOME/purple/crm/setup-vps.sh"
+    if (cd "$HOME/purple/crm" && ./setup-vps.sh); then
+        echo -e "${GREEN}✅ crm-webmail up${NC}"
+    else
+        echo -e "${YELLOW}⚠️  crm-webmail setup failed — check crm/.env + run ~/purple/crm/setup-vps.sh manually${NC}"
+    fi
+fi
+
 echo -e "${GREEN}✅ Deployment complete!${NC}"
 echo ""
 echo "Your application should be available at: http://$(hostname -I | awk '{print $1}')"

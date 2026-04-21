@@ -1,0 +1,89 @@
+{% extends "_shell.html" %}
+{% block title %}{{ msg.subject }}{% endblock %}
+{% block main %}
+<header class="topbar">
+  <div>
+    <a class="muted small" href="/crm/mailbox/{{ account.slug }}?folder={{ folder | urlencode }}">← {{ folder }}</a>
+    <h2>{{ msg.subject }}</h2>
+    <div class="muted small">
+      Reçu sur <strong>{{ account.email }}</strong>
+    </div>
+  </div>
+  <div class="topbar-actions">
+    <a class="btn btn-primary"
+       href="/crm/compose?reply_to_slug={{ account.slug }}&reply_to_folder={{ folder | urlencode }}&reply_to_uid={{ msg.uid }}">
+       ↩ Répondre
+    </a>
+    <a class="btn"
+       href="/crm/compose?reply_to_slug={{ account.slug }}&reply_to_folder={{ folder | urlencode }}&reply_to_uid={{ msg.uid }}&reply_all=1">
+       ↩↩ Répondre à tous
+    </a>
+    <form method="post"
+          action="/crm/mailbox/{{ account.slug }}/message/{{ msg.uid }}/delete"
+          onsubmit="return confirm('Supprimer ce message ?')">
+      <input type="hidden" name="folder" value="{{ folder }}" />
+      <button class="btn btn-danger" type="submit">🗑 Supprimer</button>
+    </form>
+  </div>
+</header>
+
+<article class="message">
+  <header class="msg-header">
+    <div><strong>De :</strong> {{ msg.from_name }} &lt;{{ msg.from_email }}&gt;</div>
+    <div><strong>À :</strong> {{ msg.to | join(', ') }}</div>
+    {% if msg.cc %}<div><strong>Cc :</strong> {{ msg.cc | join(', ') }}</div>{% endif %}
+    <div class="muted small" title="{{ msg.date_iso }}">{{ msg.date_display }}</div>
+  </header>
+
+  {% if msg.attachments %}
+  <section class="attachments">
+    <div class="nav-label">Pièces jointes</div>
+    <ul>
+      {% for a in msg.attachments %}
+        {% set ext = ('.' ~ a.filename.rsplit('.', 1)[-1]) | lower if '.' in a.filename else '' %}
+        {% set dangerous = ext in [
+          '.exe','.scr','.bat','.cmd','.com','.cpl','.dll','.vbs','.vbe',
+          '.js','.jse','.wsf','.wsh','.ps1','.hta','.lnk','.pif','.reg',
+          '.msi','.msp','.jar','.apk','.app','.dmg','.iso','.img',
+          '.html','.htm','.svg','.xhtml',
+          '.docm','.xlsm','.pptm','.dotm','.xltm','.potm'
+        ] %}
+        <li class="{% if dangerous %}att-danger{% endif %}">
+          <a href="/crm/mailbox/{{ account.slug }}/message/{{ msg.uid }}/attachment/{{ loop.index0 }}?folder={{ folder | urlencode }}"
+             title="{% if dangerous %}Extension potentiellement dangereuse — confirmation requise{% endif %}">
+            {% if dangerous %}⚠️{% else %}📎{% endif %} {{ a.filename }}
+          </a>
+          <span class="muted small">({{ a.content_type }}, {{ (a.size / 1024) | round(1) }} Ko)</span>
+        </li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+
+  {% if msg.html and blocked_assets and not show_images %}
+    <div class="filter-bar">
+      <span>
+        🛡️ {{ blocked_assets }} ressource(s) distante(s) bloquée(s)
+        (images, feuilles de style) — évite les pixels de tracking.
+      </span>
+      <a href="/crm/mailbox/{{ account.slug }}/message/{{ msg.uid }}?folder={{ folder | urlencode }}&show_images=1">
+        Afficher les images
+      </a>
+    </div>
+  {% endif %}
+
+  <section class="msg-content">
+    {% if msg.html %}
+      <iframe
+        class="html-frame"
+        sandbox
+        srcdoc="{{ display_html | e }}"
+      ></iframe>
+    {% elif msg.text %}
+      <pre class="msg-text">{{ msg.text }}</pre>
+    {% else %}
+      <div class="muted">(Message vide)</div>
+    {% endif %}
+  </section>
+</article>
+{% endblock %}

@@ -51,3 +51,14 @@ soprano-test/soprano/
 soprano-test/__pycache__/
 soprano-test/*.wav
 soprano-test/*.pyc
+
+# CRM webmail (FastAPI) — local state + secrets
+crm/.env
+crm/.venv/
+crm/cache.sqlite
+crm/cache.sqlite-*
+crm/uploads/
+crm/accounts.yml
+crm/__pycache__/
+crm/app/__pycache__/
+crm/**/*.pyc

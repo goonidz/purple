@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block body %}
+<div class="app">
+  <aside class="sidebar">
+    <div class="sidebar-head">
+      <div class="brand">CRM</div>
+      <div class="sidebar-actions">
+        <a href="/crm/" class="btn btn-ghost" title="Accueil (stats)">⌂ Accueil</a>
+        <a href="/crm/compose" class="btn btn-primary">+ Nouveau</a>
+      </div>
+    </div>
+    <nav class="accounts">
+      <div class="nav-label">Comptes</div>
+      {% for a in accounts %}
+        {% set n = (unseen_counts or {}).get(a.slug, 0) %}
+        <a
+          class="account-link {% if account and a.slug == account.slug %}active{% endif %} {% if n > 0 %}has-unseen{% endif %}"
+          href="/crm/mailbox/{{ a.slug }}"
+          title="{{ a.email }}{% if n > 0 %} — {{ n }} non lu(s){% endif %}"
+        >
+          <span class="account-dot" style="background: hsl({{ (loop.index0 * 67) % 360 }}, 70%, 55%)"></span>
+          <span class="account-name">{{ a.name }}</span>
+          {% if n > 0 %}<span class="badge">{{ n }}</span>{% endif %}
+          <span class="account-email">{{ a.email }}</span>
+        </a>
+      {% endfor %}
+    </nav>
+
+    {% if account and folders %}
+      <nav class="folders">
+        <div class="nav-label">Dossiers</div>
+        {% for f in folders %}
+          <a
+            class="folder-link {% if f == folder %}active{% endif %}"
+            href="/crm/mailbox/{{ account.slug }}?folder={{ f | urlencode }}"
+          >{{ f }}</a>
+        {% endfor %}
+      </nav>
+    {% endif %}
+
+    <div class="sidebar-foot">
+      <a href="/" class="muted">← VideoFlow</a>
+      <a href="/profile" class="muted">Gérer les comptes</a>
+    </div>
+  </aside>
+
+  <main class="main">
+    {% block main %}{% endblock %}
+  </main>
+</div>
+{% endblock %}

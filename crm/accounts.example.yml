@@ -1,0 +1,31 @@
+
+accounts:
+  - name: "Contact"
+    email: "contact@masociete.com"
+    password: "motdepasse_privateemail_1"
+    display_name: "Ma Société - Contact"
+    imap_host: "mail.privateemail.com"
+    imap_port: 993
+    smtp_host: "mail.privateemail.com"
+    smtp_port: 465
+    smtp_ssl: true
+
+  - name: "Facturation"
+    email: "facture@masociete.com"
+    password: "motdepasse_privateemail_2"
+    display_name: "Ma Société - Facturation"
+    imap_host: "mail.privateemail.com"
+    imap_port: 993
+    smtp_host: "mail.privateemail.com"
+    smtp_port: 465
+    smtp_ssl: true
+
+  - name: "Perso pro"
+    email: "moi@masociete.com"
+    password: "motdepasse_privateemail_3"
+    display_name: "Tom - Ma Société"
+    imap_host: "mail.privateemail.com"
+    imap_port: 993
+    smtp_host: "mail.privateemail.com"
+    smtp_port: 465
+    smtp_ssl: true

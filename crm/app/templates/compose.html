@@ -1,0 +1,66 @@
+{% extends "_shell.html" %}
+{% block title %}Nouveau message{% endblock %}
+{% block main %}
+<header class="topbar">
+  <div>
+    <h2>Nouveau message</h2>
+    <div class="muted small">Choisis l'expéditeur : le destinataire verra cette adresse.</div>
+  </div>
+</header>
+
+{% if error %}<div class="error banner">{{ error }}</div>{% endif %}
+
+<form class="compose-form" method="post" action="/crm/compose" enctype="multipart/form-data">
+  <label>
+    <span>De</span>
+    <select name="from_slug" required>
+      {% for a in accounts %}
+        <option value="{{ a.slug }}" {% if a.slug == selected.slug %}selected{% endif %}>
+          {{ a.display_name }} &lt;{{ a.email }}&gt;
+        </option>
+      {% endfor %}
+    </select>
+  </label>
+
+  <label>
+    <span>À</span>
+    <input type="text" name="to" value="{{ prefill.to }}" placeholder="nom@exemple.com, autre@exemple.com" required />
+  </label>
+
+  <label>
+    <span>Cc</span>
+    <input type="text" name="cc" value="{{ prefill.cc }}" placeholder="optionnel" />
+  </label>
+
+  <label>
+    <span>Cci</span>
+    <input type="text" name="bcc" value="" placeholder="optionnel" />
+  </label>
+
+  <label>
+    <span>Objet</span>
+    <input type="text" name="subject" value="{{ prefill.subject }}" required />
+  </label>
+
+  <label class="body-label">
+    <span>Message</span>
+    <textarea name="body" rows="18" required>{{ prefill.body }}</textarea>
+  </label>
+
+  <label>
+    <span>Pièces jointes</span>
+    <input type="file" name="attachments" multiple />
+  </label>
+
+  <input type="hidden" name="in_reply_to" value="{{ prefill.in_reply_to }}" />
+  <input type="hidden" name="references" value="{{ prefill.references }}" />
+  <input type="hidden" name="reply_source_slug" value="{{ prefill.reply_source_slug or '' }}" />
+  <input type="hidden" name="reply_source_folder" value="{{ prefill.reply_source_folder or '' }}" />
+  <input type="hidden" name="reply_source_uid" value="{{ prefill.reply_source_uid or '' }}" />
+
+  <div class="form-actions">
+    <a href="/crm/" class="btn">Annuler</a>
+    <button type="submit" class="btn btn-primary">Envoyer</button>
+  </div>
+</form>
+{% endblock %}

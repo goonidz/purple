@@ -1,0 +1,73 @@
+{% extends "_shell.html" %}
+{% block title %}{{ account.name }} — {{ folder }}{% endblock %}
+{% block main %}
+<header class="topbar">
+  <div>
+    <h2>{{ account.name }}</h2>
+    <div class="muted small">{{ account.email }} — {{ folder }}</div>
+  </div>
+  <div class="topbar-actions">
+    <a href="/crm/mailbox/{{ account.slug }}?folder={{ folder | urlencode }}&resync=1" class="btn" title="Resynchronise les flags et détecte les suppressions">↻ Rafraîchir</a>
+    <a href="/crm/compose?from_slug={{ account.slug }}" class="btn btn-primary">+ Nouveau message</a>
+  </div>
+</header>
+
+{% if error %}<div class="error banner">{{ error }}</div>{% endif %}
+{% if request.query_params.get('sent') %}
+  <div class="success banner">Message envoyé.</div>
+{% endif %}
+
+{% if show_all %}
+  <div class="filter-bar">
+    <span>Rapports automatiques affichés.</span>
+    <a href="/crm/mailbox/{{ account.slug }}?folder={{ folder | urlencode }}">Masquer à nouveau</a>
+  </div>
+{% elif hidden_count > 0 %}
+  <div class="filter-bar muted">
+    <span>{{ hidden_count }} rapport(s) automatique(s) masqué(s) (DMARC, postmaster...).</span>
+    <a href="/crm/mailbox/{{ account.slug }}?folder={{ folder | urlencode }}&show_all=1">Tout afficher</a>
+  </div>
+{% endif %}
+
+{% if messages %}
+<ul class="msg-list">
+  {% for m in messages %}
+    <li class="msg-row {% if m.is_unseen %}unseen{% endif %}">
+      <a
+        class="msg-link"
+        href="/crm/mailbox/{{ account.slug }}/message/{{ m.uid }}?folder={{ folder | urlencode }}"
+        title="{% if m.is_unseen %}Non lu{% else %}Lu{% endif %}"
+      >
+        <span class="msg-dot" aria-hidden="true"></span>
+        <div class="msg-from">
+          {{ m.from_name or m.from_email or "(inconnu)" }}
+        </div>
+        <div class="msg-body">
+          <div class="msg-subject">
+            {{ m.subject }}
+            {% if m.has_attachments %}<span class="tag">📎</span>{% endif %}
+          </div>
+          {% if m.preview %}
+          <div class="msg-preview muted">{{ m.preview }}</div>
+          {% endif %}
+        </div>
+        <div class="msg-date small" title="{{ m.date_iso }}">{{ m.date_display }}</div>
+      </a>
+    </li>
+  {% endfor %}
+</ul>
+
+<div class="pagination">
+  {% if page > 1 %}
+    <a class="btn" href="?folder={{ folder | urlencode }}&page={{ page - 1 }}">← Précédent</a>
+  {% endif %}
+  <span class="muted">Page {{ page }}</span>
+  {% if messages|length >= 50 %}
+    <a class="btn" href="?folder={{ folder | urlencode }}&page={{ page + 1 }}">Suivant →</a>
+  {% endif %}
+</div>
+{% else %}
+  <div class="empty">Aucun message dans ce dossier.</div>
+{% endif %}
+
+{% endblock %}
