@@ -389,7 +389,7 @@ app.delete('/render/:jobId', (req, res) => {
 });
 
 // --- Animator: Claude generation + Remotion render ---
-const { generateComposition, generateSingleScene, generateSingleSceneGemini, validateComponentCode, sanitizeReservedNames, buildWrapper, stripSharedDeclarations, isGeminiModel, getModelPrices } = require('./animator/claude-generator');
+const { generateComposition, generateSingleScene, generateSingleSceneGemini, validateComponentCode, sanitizeReservedNames, buildWrapper, stripSharedDeclarations, trimTrailingGarbage, isGeminiModel, getModelPrices } = require('./animator/claude-generator');
 const { buildSystemPrompt } = require('./animator/prompt-builder');
 const Anthropic = require('@anthropic-ai/sdk');
 
@@ -1341,7 +1341,7 @@ app.post('/animator/render-assembled', async (req, res) => {
       return res.status(400).json({ error: 'No scenes found in project' });
     }
 
-    const allComponentsCode = sanitizeReservedNames(sceneRows.map(s => s.animator_code).join('\n\n'));
+    const allComponentsCode = sanitizeReservedNames(sceneRows.map(s => trimTrailingGarbage(s.animator_code || '', `Seg${s.scene_index + 1}`)).join('\n\n'));
     let resolvedAudioFilename = null;
     const audioSource = audioUrl || project?.audio_url;
     if (audioSource) {
@@ -1474,7 +1474,7 @@ app.post('/animator/preview-bundle', async (req, res) => {
     const segments = (project?.scenes || []).map(s => ({ start: s.startTime, end: s.endTime, text: s.text || '' }));
     if (segments.length === 0) return res.status(400).json({ error: 'No scenes in project' });
 
-    const allCode = sanitizeReservedNames(sceneRows.map(s => s.animator_code).join('\n\n'));
+    const allCode = sanitizeReservedNames(sceneRows.map(s => trimTrailingGarbage(s.animator_code || '', `Seg${s.scene_index + 1}`)).join('\n\n'));
     const codeHash = crypto.createHash('md5').update(allCode).digest('hex').slice(0, 12);
 
     const cached = previewCache.get(projectId);
@@ -2166,12 +2166,14 @@ app.post('/animator/qa-screenshots', async (req, res) => {
     const fps = 30;
     const totalDuration = segments[segments.length - 1].end;
     const durationInFrames = Math.ceil(totalDuration * fps);
-    const allCode = sanitizeReservedNames(sceneRows.map(s => s.animator_code).join('\n\n'));
+    const allCode = sanitizeReservedNames(sceneRows.map(s => trimTrailingGarbage(s.animator_code || '', `Seg${s.scene_index + 1}`)).join('\n\n'));
 
-    // Per-scene code hashes for incremental caching
+    // Per-scene code hashes for incremental caching (hash the CLEANED code
+    // so cache invalidates when a previously-garbage-trailed scene is fixed)
     const sceneHashes = {};
     for (const row of sceneRows) {
-      sceneHashes[row.scene_index] = crypto.createHash('md5').update(row.animator_code).digest('hex').slice(0, 10);
+      const cleaned = trimTrailingGarbage(row.animator_code || '', `Seg${row.scene_index + 1}`);
+      sceneHashes[row.scene_index] = crypto.createHash('md5').update(cleaned).digest('hex').slice(0, 10);
     }
 
     // Branding config from channel preset

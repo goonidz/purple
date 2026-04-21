@@ -34,6 +34,72 @@ function countDelimiters(line) {
   return { braces, parens };
 }
 
+// Remove any trailing garbage (orphan identifiers, stray tokens) after the last
+// top-level component declaration. AI models occasionally leak partial tokens at
+// the end of their tool output (e.g. `}; lands`), which esbuild accepts as a
+// valid ExpressionStatement but crashes at bundle/run time with ReferenceError.
+function trimTrailingGarbage(code, segName) {
+  if (!code || !segName) return code;
+  const anchor = new RegExp(`(?:function|const)\\s+${segName}\\b`);
+  const m = code.match(anchor);
+  if (!m) return code;
+  const startIdx = m.index;
+
+  let depth = 0;
+  let inStr = null;
+  let inLineComment = false;
+  let inBlockComment = false;
+  let started = false;
+
+  for (let i = startIdx; i < code.length; i++) {
+    const c = code[i], n = code[i + 1];
+
+    if (inLineComment) {
+      if (c === '\n') inLineComment = false;
+      continue;
+    }
+    if (inBlockComment) {
+      if (c === '*' && n === '/') { inBlockComment = false; i++; }
+      continue;
+    }
+    if (inStr) {
+      if (c === '\\') { i++; continue; }
+      if (c === inStr) inStr = null;
+      continue;
+    }
+    if (c === '/' && n === '/') { inLineComment = true; i++; continue; }
+    if (c === '/' && n === '*') { inBlockComment = true; i++; continue; }
+    if (c === '"' || c === "'" || c === '`') { inStr = c; continue; }
+
+    if (c === '{') { depth++; started = true; }
+    else if (c === '}') {
+      depth--;
+      if (started && depth === 0) {
+        let end = i + 1;
+        while (end < code.length && /\s/.test(code[end])) end++;
+        if (code[end] === ';') end++;
+        return code.slice(0, end);
+      }
+    }
+  }
+  return code;
+}
+
+// Find the last SegN declaration in a multi-component chunk and trim after it.
+function trimTrailingGarbageChunk(code, segNames) {
+  if (!code || !segNames || segNames.length === 0) return code;
+  // Find the last segName that actually appears in the code
+  let lastSeg = null;
+  let lastIdx = -1;
+  for (const name of segNames) {
+    const re = new RegExp(`(?:function|const)\\s+${name}\\b`);
+    const m = code.match(re);
+    if (m && m.index > lastIdx) { lastIdx = m.index; lastSeg = name; }
+  }
+  if (!lastSeg) return code;
+  return trimTrailingGarbage(code, lastSeg);
+}
+
 function stripSharedDeclarations(code) {
   const SHARED = ['BG', 'ACCENT', 'ACCENT_DIM', 'TEXT_PRIMARY', 'TEXT_DIM', 'RED', 'RED_DIM', 'WHITE', 'WHITE_DIM', 'useFade', 'Grid', 'GRID_STYLE'];
   const declPattern = new RegExp(
@@ -118,7 +184,8 @@ ${extraPrompt ? `\nExtra instructions:\n${extraPrompt}` : ''}`;
     }
 
     const raw = toolBlock.input?.components_code?.trim() ?? '';
-    const code = sanitizeReservedNames(stripSharedDeclarations(raw));
+    const cleaned = sanitizeReservedNames(stripSharedDeclarations(raw));
+    const code = trimTrailingGarbageChunk(cleaned, segEntries.map(s => s.name));
     const u = response.usage ?? {};
 
     console.log(`  [Animator] Chunk ${chunkIdx + 1}/${totalChunks} | ${segEntries.map(s => s.name).join(',')} | ${code.length} chars | in:${u.input_tokens} out:${u.output_tokens}`);
@@ -374,7 +441,7 @@ ${extraPrompt ? `\nExtra instructions:\n${extraPrompt}` : ''}`;
     }
 
     const raw = toolBlock.input?.components_code?.trim() ?? '';
-    const code = sanitizeReservedNames(stripSharedDeclarations(raw));
+    const code = trimTrailingGarbage(sanitizeReservedNames(stripSharedDeclarations(raw)), segName);
     const u = response.usage ?? {};
 
     const validation = validateComponentCode(code, segName);
@@ -473,7 +540,7 @@ ${extraPrompt ? `\nExtra instructions:\n${extraPrompt}` : ''}`;
     }
 
     const raw = (fnCall.functionCall.args?.components_code || '').trim();
-    const code = sanitizeReservedNames(stripSharedDeclarations(raw));
+    const code = trimTrailingGarbage(sanitizeReservedNames(stripSharedDeclarations(raw)), segName);
     const u = data.usageMetadata || {};
 
     const validation = validateComponentCode(code, segName);
@@ -559,7 +626,8 @@ ${extraPrompt ? `\nExtra instructions:\n${extraPrompt}` : ''}`;
     }
 
     const raw = (fnCall.functionCall.args?.components_code || '').trim();
-    const code = sanitizeReservedNames(stripSharedDeclarations(raw));
+    const cleaned = sanitizeReservedNames(stripSharedDeclarations(raw));
+    const code = trimTrailingGarbageChunk(cleaned, segEntries.map(s => s.name));
     const u = data.usageMetadata || {};
 
     console.log(`  [Animator/Gemini] Chunk ${chunkIdx + 1}/${totalChunks} | ${segEntries.map(s => s.name).join(',')} | ${code.length} chars | in:${u.promptTokenCount || 0} out:${u.candidatesTokenCount || 0}`);
@@ -674,4 +742,4 @@ async function generateComposition({
   };
 }
 
-module.exports = { generateComposition, generateSingleScene, generateSingleSceneGemini, validateComponentCode, sanitizeReservedNames, buildWrapper, stripSharedDeclarations, isGeminiModel, getModelPrices };
+module.exports = { generateComposition, generateSingleScene, generateSingleSceneGemini, validateComponentCode, sanitizeReservedNames, buildWrapper, stripSharedDeclarations, trimTrailingGarbage, trimTrailingGarbageChunk, isGeminiModel, getModelPrices };
