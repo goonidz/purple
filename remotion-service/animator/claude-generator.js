@@ -34,70 +34,34 @@ function countDelimiters(line) {
   return { braces, parens };
 }
 
-// Remove any trailing garbage (orphan identifiers, stray tokens) after the last
-// top-level component declaration. AI models occasionally leak partial tokens at
-// the end of their tool output (e.g. `}; lands`), which esbuild accepts as a
-// valid ExpressionStatement but crashes at bundle/run time with ReferenceError.
-function trimTrailingGarbage(code, segName) {
-  if (!code || !segName) return code;
-  const anchor = new RegExp(`(?:function|const)\\s+${segName}\\b`);
-  const m = code.match(anchor);
-  if (!m) return code;
-  const startIdx = m.index;
-
-  let depth = 0;
-  let inStr = null;
-  let inLineComment = false;
-  let inBlockComment = false;
-  let started = false;
-
-  for (let i = startIdx; i < code.length; i++) {
-    const c = code[i], n = code[i + 1];
-
-    if (inLineComment) {
-      if (c === '\n') inLineComment = false;
-      continue;
-    }
-    if (inBlockComment) {
-      if (c === '*' && n === '/') { inBlockComment = false; i++; }
-      continue;
-    }
-    if (inStr) {
-      if (c === '\\') { i++; continue; }
-      if (c === inStr) inStr = null;
-      continue;
-    }
-    if (c === '/' && n === '/') { inLineComment = true; i++; continue; }
-    if (c === '/' && n === '*') { inBlockComment = true; i++; continue; }
-    if (c === '"' || c === "'" || c === '`') { inStr = c; continue; }
-
-    if (c === '{') { depth++; started = true; }
-    else if (c === '}') {
-      depth--;
-      if (started && depth === 0) {
-        let end = i + 1;
-        while (end < code.length && /\s/.test(code[end])) end++;
-        if (code[end] === ';') end++;
-        return code.slice(0, end);
-      }
-    }
-  }
-  return code;
+// Remove a trailing orphan identifier / expression statement left over by AI
+// models (e.g. `}; lands` at the end of a tool output). esbuild accepts these
+// as valid ExpressionStatements syntactically, but they crash at bundle/run
+// time with "ReferenceError: <name> is not defined".
+//
+// Conservative approach: only strip when what remains after the last `}` or
+// `;` is a bare identifier (optionally followed by `;`). Legitimate trailing
+// helper declarations (`function foo()`, `const foo = ...`) are kept because
+// they include more than just an identifier before end-of-string.
+//
+// The `segName` param is accepted for API compatibility but not used — the
+// scan is content-based and works for any declaration name.
+function trimTrailingGarbage(code /* , segName */) {
+  if (!code) return code;
+  let prev;
+  let current = code;
+  // Iterate in case the AI leaked multiple trailing tokens (e.g. `}; foo bar`).
+  do {
+    prev = current;
+    current = current.replace(/([};])\s*[a-zA-Z_$][a-zA-Z0-9_$]*\s*;?\s*$/, '$1');
+  } while (current !== prev);
+  return current;
 }
 
-// Find the last SegN declaration in a multi-component chunk and trim after it.
-function trimTrailingGarbageChunk(code, segNames) {
-  if (!code || !segNames || segNames.length === 0) return code;
-  // Find the last segName that actually appears in the code
-  let lastSeg = null;
-  let lastIdx = -1;
-  for (const name of segNames) {
-    const re = new RegExp(`(?:function|const)\\s+${name}\\b`);
-    const m = code.match(re);
-    if (m && m.index > lastIdx) { lastIdx = m.index; lastSeg = name; }
-  }
-  if (!lastSeg) return code;
-  return trimTrailingGarbage(code, lastSeg);
+// Alias kept for multi-component chunks — same content-based logic works
+// regardless of the number of components in the chunk.
+function trimTrailingGarbageChunk(code /* , segNames */) {
+  return trimTrailingGarbage(code);
 }
 
 function stripSharedDeclarations(code) {
