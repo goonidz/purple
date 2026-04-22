@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import smtplib
 import ssl
 import threading
@@ -452,6 +453,218 @@ def fetch_message(
                 folder=folder,
             )
     return None
+
+
+# ---------------------------------------------------------------- threads
+
+# Common reply/forward/transfer subject prefixes in several languages
+# (FR, EN, DE, NL, SV, PT, IT, ES). Matched repeatedly so "Re: Re: Tr: …"
+# collapses down to the base subject.
+_SUBJ_PREFIX = re.compile(
+    r"^\s*((re|ref|rv|res|r|fwd|fw|tr|rv|aw|sv|vs|wg|antw|odp|sk|ang)"
+    r"\s*(\[\d+\])?\s*[:：]\s*)+",
+    re.IGNORECASE,
+)
+_WS = re.compile(r"\s+")
+
+_SENT_FOLDER_CANDIDATES = (
+    "Sent",
+    "INBOX.Sent",
+    "Sent Items",
+    "Sent Messages",
+    "[Gmail]/Sent Mail",
+    "[Google Mail]/Sent Mail",
+    "Éléments envoyés",
+    "Elements envoyes",
+    "Envoyés",
+    "Envoyes",
+)
+
+
+def _normalize_subject(subject: str) -> str:
+    """Strip Re:/Fwd:/Tr: prefixes and collapse whitespace."""
+    if not subject:
+        return ""
+    s = _SUBJ_PREFIX.sub("", subject).strip()
+    return _WS.sub(" ", s)
+
+
+def _split_refs(raw: str) -> list[str]:
+    """Split a References / In-Reply-To header value into trimmed IDs."""
+    if not raw:
+        return []
+    out: list[str] = []
+    for tok in raw.replace(",", " ").split():
+        tok = tok.strip().strip("<>")
+        if tok:
+            out.append(f"<{tok}>")
+    return out
+
+
+def _header_first(msg: MailMessage, name: str) -> str:
+    if not msg.headers:
+        return ""
+    val = msg.headers.get(name.lower())
+    if not val:
+        return ""
+    if isinstance(val, (tuple, list)):
+        return val[0] if val else ""
+    return str(val)
+
+
+def _discover_thread_folders(box: MailBox) -> list[str]:
+    """Return [INBOX, <Sent-folder>] — whichever Sent exists on the server."""
+    folders = ["INBOX"]
+    try:
+        server_folders = {f.name for f in box.folder.list()}
+    except Exception:
+        return folders
+    for cand in _SENT_FOLDER_CANDIDATES:
+        if cand in server_folders:
+            folders.append(cand)
+            break
+    return folders
+
+
+def fetch_thread(
+    account: Account,
+    current: FullMessage,
+    *,
+    max_items: int = 25,
+    per_folder_limit: int = 50,
+    preview_chars: int = 140,
+    body_chars: int = 12000,
+) -> list[dict]:
+    """Return the other messages belonging to ``current``'s thread.
+
+    Looks through INBOX + the Sent folder using a mix of:
+      1. IMAP ``SUBJECT`` search on the normalized base subject,
+      2. header-based verification (``Message-ID`` / ``In-Reply-To`` /
+         ``References`` chain) or exact normalized-subject match.
+
+    The returned list is sorted chronologically (oldest first) and does
+    NOT include ``current`` itself. Each item has the fields needed to
+    render a collapsible thread entry.
+
+    Errors are swallowed silently — threading is a nice-to-have, not a
+    hard requirement for displaying a single message.
+    """
+    base = _normalize_subject(current.subject)
+    if not base or len(base) < 3:
+        return []
+
+    known_ids: set[str] = set()
+    if current.message_id:
+        known_ids.add(current.message_id.strip())
+    if current.in_reply_to:
+        known_ids.update(_split_refs(current.in_reply_to))
+    known_ids.update(_split_refs(current.references))
+
+    found: dict[tuple[str, str], dict] = {}
+
+    try:
+        with _use(account) as box:
+            thread_folders = _discover_thread_folders(box)
+            for src_folder in thread_folders:
+                try:
+                    _select(box, account, src_folder)
+                except Exception:
+                    continue
+
+                try:
+                    matches = list(
+                        box.fetch(
+                            AND(subject=base),
+                            limit=per_folder_limit,
+                            mark_seen=False,
+                            bulk=True,
+                            reverse=True,
+                        )
+                    )
+                except Exception:
+                    continue
+
+                for msg in matches:
+                    key = (src_folder, str(msg.uid))
+                    if (
+                        src_folder == current.folder
+                        and str(msg.uid) == str(current.uid)
+                    ):
+                        continue
+                    if key in found:
+                        continue
+
+                    mid = _header_first(msg, "message-id").strip()
+                    irt_raw = _header_first(msg, "in-reply-to")
+                    refs_raw = _header_first(msg, "references")
+                    msg_ids = {mid} if mid else set()
+                    msg_ids.update(_split_refs(irt_raw))
+                    msg_ids.update(_split_refs(refs_raw))
+
+                    subj_norm = _normalize_subject(msg.subject or "")
+                    by_header = bool(msg_ids & known_ids)
+                    by_subject = subj_norm == base
+
+                    if not (by_header or by_subject):
+                        continue
+
+                    if mid:
+                        known_ids.add(mid)
+                    known_ids.update(msg_ids)
+
+                    iso, display = _fmt_date(msg)
+                    from_email = (
+                        msg.from_values.email
+                        if msg.from_values
+                        else (msg.from_ or "")
+                    ) or ""
+                    direction = (
+                        "outgoing"
+                        if from_email.lower() == account.email.lower()
+                        else "incoming"
+                    )
+
+                    text = msg.text or ""
+                    if not text and msg.html:
+                        text = _html_tags_to_text(msg.html)
+                    text = text.strip()
+
+                    preview = _WS.sub(" ", text)[:preview_chars].strip()
+                    if len(text) > body_chars:
+                        text = text[:body_chars] + "\n\n[… message tronqué …]"
+
+                    found[key] = {
+                        "uid": str(msg.uid),
+                        "folder": src_folder,
+                        "subject": msg.subject or "",
+                        "from_name": (
+                            msg.from_values.name if msg.from_values else ""
+                        ) or "",
+                        "from_email": from_email,
+                        "to": list(msg.to or []),
+                        "date_iso": iso,
+                        "date_display": display,
+                        "text": text,
+                        "preview": preview,
+                        "direction": direction,
+                    }
+    except Exception:
+        return []
+
+    items = sorted(found.values(), key=lambda m: m["date_iso"])
+    if len(items) > max_items:
+        # Keep the most recent exchanges around the current message.
+        items = items[-max_items:]
+    return items
+
+
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def _html_tags_to_text(html: str) -> str:
+    if not html:
+        return ""
+    return _WS.sub(" ", _HTML_TAG_RE.sub(" ", html)).strip()
 
 
 def mark_flag(

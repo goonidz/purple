@@ -70,6 +70,52 @@
   </div>
 </div>
 
+{% macro thread_entry(t) %}
+  <details class="thread-item thread-{{ t.direction }}">
+    <summary>
+      <span class="thread-dir" aria-hidden="true">{% if t.direction == 'outgoing' %}↗{% else %}↙{% endif %}</span>
+      <span class="thread-from">
+        <strong>{{ t.from_name or t.from_email }}</strong>
+        {% if t.direction == 'outgoing' %}
+          <span class="muted small thread-dir-label">(vous)</span>
+        {% endif %}
+      </span>
+      <span class="muted small thread-date">{{ t.date_display }}</span>
+      {% if t.preview %}
+        <span class="muted small thread-preview">— {{ t.preview }}{% if t.preview|length >= 140 %}…{% endif %}</span>
+      {% endif %}
+    </summary>
+    <div class="thread-body">
+      <div class="muted small thread-meta">
+        <strong>De :</strong> {{ t.from_name }} &lt;{{ t.from_email }}&gt;
+        {% if t.to %} · <strong>À :</strong> {{ t.to | join(', ') }}{% endif %}
+        · <strong>Dossier :</strong> {{ t.folder }}
+      </div>
+      {% if t.text %}
+        <pre class="thread-text">{{ t.text }}</pre>
+      {% else %}
+        <div class="muted">(Corps vide ou illisible)</div>
+      {% endif %}
+      <a class="muted small thread-open"
+         href="/crm/mailbox/{{ account.slug }}/message/{{ t.uid }}?folder={{ t.folder | urlencode }}">
+        Ouvrir ce message ↗
+      </a>
+    </div>
+  </details>
+{% endmacro %}
+
+{% if thread_before %}
+  <section class="thread thread-older" aria-label="Messages précédents de la conversation">
+    <header class="thread-head">
+      <h3>Avant ({{ thread_before|length }})</h3>
+      <span class="muted small">Conversation complète : {{ thread_total }} message(s)</span>
+    </header>
+    {% for t in thread_before %}
+      {{ thread_entry(t) }}
+    {% endfor %}
+  </section>
+{% endif %}
+
 <article class="message">
   <header class="msg-header">
     <div><strong>De :</strong> {{ msg.from_name }} &lt;{{ msg.from_email }}&gt;</div>
@@ -129,5 +175,18 @@
     {% endif %}
   </section>
 </article>
+
+{% if thread_after %}
+  <section class="thread thread-newer" aria-label="Réponses suivantes de la conversation">
+    <header class="thread-head">
+      <h3>Après ({{ thread_after|length }})</h3>
+      <span class="muted small">Réponses postérieures à ce message</span>
+    </header>
+    {% for t in thread_after %}
+      {{ thread_entry(t) }}
+    {% endfor %}
+  </section>
+{% endif %}
+
 <script src="/crm/static/message.js"></script>
 {% endblock %}

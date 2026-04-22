@@ -332,6 +332,21 @@ def view_message(
     if msg.html and not show_images:
         display_html, blocked_assets = security.strip_remote_assets(msg.html)
     analysis = analyses.get_analysis(user_id, account.slug, folder, int(uid))
+
+    # Best-effort thread fetch (INBOX + Sent). Never fail the page for it.
+    try:
+        thread = mail.fetch_thread(account, msg)
+    except Exception as e:
+        log.warning("fetch_thread failed user=%s uid=%s err=%s", user_id, uid, e)
+        thread = []
+
+    # Split into "before" and "after" the currently viewed message so we
+    # can render older exchanges above it and newer replies below it,
+    # Gmail-style.
+    current_iso = msg.date_iso or ""
+    thread_before = [t for t in thread if (t["date_iso"] or "") <= current_iso]
+    thread_after = [t for t in thread if (t["date_iso"] or "") > current_iso]
+
     return templates.TemplateResponse(
         "message.html",
         {
@@ -344,6 +359,9 @@ def view_message(
             "blocked_assets": blocked_assets,
             "show_images": bool(show_images),
             "analysis": analysis,
+            "thread_before": thread_before,
+            "thread_after": thread_after,
+            "thread_total": len(thread) + 1,
             "unseen_counts": cache.unseen_counts_by_account(user_id, "INBOX"),
         },
     )
