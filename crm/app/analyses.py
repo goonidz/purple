@@ -146,6 +146,125 @@ def pending_uids(
     return [int(r["uid"]) for r in rows]
 
 
+def priority_stats(
+    user_id: str, *, days: int = 7, folder: str = "INBOX"
+) -> dict[str, int]:
+    """Return ``{priority: count}`` for messages analysed in the last N days.
+
+    Counts are based on the message's own ``date_iso`` (not the
+    analysis time), so this is "priorité des mails reçus dans les 7j".
+    """
+    cutoff = (
+        datetime.now(timezone.utc) - timedelta(days=days)
+    ).isoformat()
+    rows = cache._db.execute(
+        """SELECT a.priority, COUNT(*) AS c
+             FROM email_analyses a
+             JOIN messages m
+               ON a.user_id = m.user_id
+              AND a.account_slug = m.account_slug
+              AND a.folder = m.folder
+              AND a.uid = m.uid
+            WHERE a.user_id = ?
+              AND a.folder = ?
+              AND m.date_iso >= ?
+            GROUP BY a.priority""",
+        (user_id, folder, cutoff),
+    ).fetchall()
+    out = {"urgent": 0, "a_lire": 0, "spam": 0, "auto": 0}
+    for r in rows:
+        out[r["priority"]] = int(r["c"])
+    return out
+
+
+def category_stats(
+    user_id: str, *, days: int = 7, folder: str = "INBOX"
+) -> dict[str, int]:
+    cutoff = (
+        datetime.now(timezone.utc) - timedelta(days=days)
+    ).isoformat()
+    rows = cache._db.execute(
+        """SELECT a.category, COUNT(*) AS c
+             FROM email_analyses a
+             JOIN messages m
+               ON a.user_id = m.user_id
+              AND a.account_slug = m.account_slug
+              AND a.folder = m.folder
+              AND a.uid = m.uid
+            WHERE a.user_id = ?
+              AND a.folder = ?
+              AND m.date_iso >= ?
+            GROUP BY a.category""",
+        (user_id, folder, cutoff),
+    ).fetchall()
+    out = {"client": 0, "facture": 0, "support": 0, "perso": 0}
+    for r in rows:
+        out[r["category"]] = int(r["c"])
+    return out
+
+
+def top_urgent_messages(
+    user_id: str,
+    *,
+    days: int = 7,
+    folder: str = "INBOX",
+    limit: int = 8,
+) -> list[dict]:
+    """Return urgent/à-lire messages from the last N days, unseen first.
+
+    Each row carries the fields needed to render a clickable list on
+    the home dashboard.
+    """
+    cutoff = (
+        datetime.now(timezone.utc) - timedelta(days=days)
+    ).isoformat()
+    rows = cache._db.execute(
+        """SELECT m.account_slug, m.folder, m.uid, m.subject,
+                  m.from_name, m.from_email, m.date_display, m.date_iso,
+                  m.flags_json, a.priority, a.category, a.reason
+             FROM email_analyses a
+             JOIN messages m
+               ON a.user_id = m.user_id
+              AND a.account_slug = m.account_slug
+              AND a.folder = m.folder
+              AND a.uid = m.uid
+            WHERE a.user_id = ?
+              AND a.folder = ?
+              AND m.date_iso >= ?
+              AND a.priority IN ('urgent', 'a_lire')
+            ORDER BY
+              CASE a.priority WHEN 'urgent' THEN 0 ELSE 1 END,
+              m.date_iso DESC
+            LIMIT ?""",
+        (user_id, folder, cutoff, int(limit)),
+    ).fetchall()
+    import json as _json
+
+    out = []
+    for r in rows:
+        flags = {
+            f.lstrip("\\").lower()
+            for f in _json.loads(r["flags_json"] or "[]")
+        }
+        out.append(
+            {
+                "account_slug": r["account_slug"],
+                "folder": r["folder"],
+                "uid": int(r["uid"]),
+                "subject": r["subject"] or "(sans objet)",
+                "from_name": r["from_name"] or "",
+                "from_email": r["from_email"] or "",
+                "date_display": r["date_display"] or "",
+                "date_iso": r["date_iso"] or "",
+                "priority": r["priority"],
+                "category": r["category"],
+                "reason": r["reason"] or "",
+                "is_unseen": "seen" not in flags,
+            }
+        )
+    return out
+
+
 def _get_summary_row(
     user_id: str, slug: str, folder: str, uid: int
 ) -> dict | None:

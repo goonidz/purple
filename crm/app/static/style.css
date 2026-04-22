@@ -665,6 +665,86 @@ body.modal-open { overflow: hidden; }
   font-size: 12px;
 }
 
+/* Home AI summary */
+.ai-summary {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 20px;
+  box-shadow: var(--shadow);
+  margin-bottom: 16px;
+}
+.ai-summary-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.ai-summary-header h3 { font-size: 15px; }
+
+.ai-pills {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.ai-pills-cat { margin-top: 10px; }
+
+.ai-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-alt);
+  font-size: 12px;
+}
+.ai-pill.badge-priority-urgent,
+.ai-pill.badge-priority-a_lire,
+.ai-pill.badge-priority-spam,
+.ai-pill.badge-priority-auto {
+  margin-left: 0;
+  padding: 8px 14px;
+  font-size: 12px;
+}
+.ai-pill-value {
+  font-size: 18px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.ai-pill-label {
+  opacity: 0.85;
+  letter-spacing: 0.02em;
+}
+
+/* Urgent messages list on home */
+.urgent-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+.urgent-row {
+  border-bottom: 1px solid var(--border);
+}
+.urgent-row:last-child { border-bottom: 0; }
+.urgent-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 4px;
+  color: var(--text);
+  flex-wrap: wrap;
+}
+.urgent-link:hover {
+  text-decoration: none;
+  color: var(--primary);
+}
+.urgent-row.unseen .urgent-subject { font-weight: 600; }
+.urgent-subject { flex: 1; min-width: 200px; }
+.urgent-date { margin-left: auto; }
+
 /* Compose body-label translate controls */
 .body-actions {
   display: inline-flex;

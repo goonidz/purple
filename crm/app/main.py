@@ -217,6 +217,13 @@ def index(request: Request):
         for k in totals:
             totals[k] += s.get(k, 0)
     unseen_counts = cache.unseen_counts_by_account(user_id, "INBOX")
+    priority_counts = analyses.priority_stats(user_id, days=7)
+    category_counts = analyses.category_stats(user_id, days=7)
+    urgent_list = analyses.top_urgent_messages(user_id, days=7, limit=8)
+    slug_to_account = {a.slug: a for a in accounts}
+    for item in urgent_list:
+        acc = slug_to_account.get(item["account_slug"])
+        item["account_name"] = acc.name if acc else item["account_slug"]
     return templates.TemplateResponse(
         "home.html",
         {
@@ -228,6 +235,9 @@ def index(request: Request):
             "stats": stats,
             "totals": totals,
             "unseen_counts": unseen_counts,
+            "priority_counts": priority_counts,
+            "category_counts": category_counts,
+            "urgent_list": urgent_list,
         },
     )
 
@@ -734,7 +744,6 @@ async def analyze_pending(request: Request, slug: str):
     if not api_key:
         return _missing_gemini_response()
 
-    # Sync first so we pick up brand-new messages.
     try:
         mail.sync_folder(account, "INBOX")
     except Exception:
@@ -742,6 +751,30 @@ async def analyze_pending(request: Request, slug: str):
 
     result = await analyses.run_classification_pass(
         user_id, accounts, manual=True, slug_filter=slug
+    )
+    return result
+
+
+@app.post("/api/analyze-all-pending")
+async def analyze_all_pending(request: Request):
+    """Manually classify unanalyzed messages across all user accounts."""
+    user_id = _user_id(request)
+    accounts = get_accounts(user_id)
+    if not accounts:
+        return {"analyzed": 0, "skipped": 0}
+
+    api_key = await ai.fetch_user_gemini_key(user_id)
+    if not api_key:
+        return _missing_gemini_response()
+
+    for a in accounts:
+        try:
+            mail.sync_folder(a, "INBOX")
+        except Exception:
+            pass
+
+    result = await analyses.run_classification_pass(
+        user_id, accounts, manual=True
     )
     return result
 
