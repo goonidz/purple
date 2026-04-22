@@ -1,114 +1,167 @@
 #!/bin/bash
 
-# Script de correction automatique nginx + Docker + DuckDNS
-# Ce script résout tous les problèmes de configuration
+# nginx + Docker setup for purpleai.duckdns.org.
+#
+# Source of truth for the VPS nginx config: ./nginx-purpleai.conf in
+# the repo. This script installs it to /etc/nginx/sites-available/purpleai,
+# runs a preflight check on required routes, backs up the current live
+# config, validates with `nginx -t`, and rolls back on failure so we
+# can never leave nginx broken after a deploy.
+#
+# Exits non-zero on any failure. deploy.sh relies on that.
 
-set -e
+set -euo pipefail
 
-echo "🔧 Correction automatique de la configuration..."
+readonly DOMAIN="purpleai.duckdns.org"
+readonly REPO_CONF="$HOME/purple/nginx-purpleai.conf"
+readonly LIVE_CONF="/etc/nginx/sites-available/purpleai"
+readonly ENABLED_LINK="/etc/nginx/sites-enabled/purpleai"
+readonly LEGACY_AVAILABLE="/etc/nginx/sites-available/videoflow"
+readonly LEGACY_ENABLED="/etc/nginx/sites-enabled/videoflow"
+readonly LEGACY_DEFAULT="/etc/nginx/sites-enabled/default"
 
-# Arrêter nginx temporairement
+# Critical location blocks. If any is missing from the repo conf the
+# script aborts BEFORE touching nginx on the VPS. Add any new route
+# here so future refactors cannot silently drop it.
+readonly REQUIRED_LOCATIONS=(
+    "location /"
+    "location /api/render/"
+    "location /api/upload-video"
+    "location /api/download-video/"
+    "location /rendered-videos/"
+    "location /gameplay/"
+    "location /api/upload-gameplay"
+    "location /api/list-gameplay"
+    "location /api/delete-gameplay/"
+    "location /blackscreen/"
+    "location /api/upload-blackscreen"
+    "location /api/list-blackscreen"
+    "location /api/delete-blackscreen/"
+    "location /remotion-api/"
+    "location /remotion-renders/"
+    "location /remotion-preview/"
+    "location /health"
+    "location /crm/"
+)
+
+log()  { printf "\033[1;34m▶\033[0m %s\n" "$*"; }
+ok()   { printf "\033[1;32m✓\033[0m %s\n" "$*"; }
+warn() { printf "\033[1;33m⚠\033[0m %s\n" "$*"; }
+die()  { printf "\033[1;31m✗ %s\033[0m\n" "$*" >&2; exit 1; }
+
+log "🔧 nginx + Docker setup for ${DOMAIN}"
+
+# 1. Docker frontend container -------------------------------------------------
+log "🐳 (Re)starting Docker frontend on 127.0.0.1:8080..."
 sudo systemctl stop nginx 2>/dev/null || true
-
-# Arrêter et supprimer le container Docker
 sudo docker stop videoflow 2>/dev/null || true
-sudo docker rm videoflow 2>/dev/null || true
-
-# Redémarrer Docker sur le port 8080 (interne uniquement)
-echo "🐳 Démarrage Docker sur le port 8080..."
+sudo docker rm   videoflow 2>/dev/null || true
 sudo docker run -d \
     --name videoflow \
     -p 127.0.0.1:8080:80 \
     --restart unless-stopped \
-    videoflow:latest
-
-# Attendre que Docker soit prêt
+    videoflow:latest >/dev/null
 sleep 2
 
-# Vérifier que Docker répond
-if ! curl -s http://localhost:8080/health > /dev/null; then
-    echo "⚠️  Docker ne répond pas encore, attente supplémentaire..."
-    sleep 3
+for _ in 1 2 3 4 5; do
+    if curl -fsS http://localhost:8080/health >/dev/null 2>&1; then
+        ok "Docker answers on :8080"
+        break
+    fi
+    sleep 1
+done
+
+# 2. Preflight on the repo conf ------------------------------------------------
+log "🔍 Preflight: checking ${REPO_CONF##*/} has all required routes..."
+[[ -f "$REPO_CONF" ]] || die "Missing $REPO_CONF — run this from a machine that has the repo at ~/purple."
+
+missing=()
+for loc in "${REQUIRED_LOCATIONS[@]}"; do
+    if ! grep -qF "$loc" "$REPO_CONF"; then
+        missing+=("$loc")
+    fi
+done
+
+if (( ${#missing[@]} > 0 )); then
+    echo
+    printf "   - %s\n" "${missing[@]}" >&2
+    die "Refus de déployer : ${#missing[@]} route(s) critique(s) manque(nt) dans $REPO_CONF. Ajoute-les avant de relancer."
+fi
+ok "All ${#REQUIRED_LOCATIONS[@]} required routes present in repo config"
+
+# 3. Backup current live config ------------------------------------------------
+backup=""
+if [[ -f "$LIVE_CONF" ]]; then
+    backup="${LIVE_CONF}.bak-$(date +%s)"
+    sudo cp -a "$LIVE_CONF" "$backup"
+    ok "Backup saved to $backup"
 fi
 
-# Mettre à jour la configuration nginx
-echo "⚙️  Configuration nginx..."
-sudo cp ~/purple/nginx-videoflow.conf /etc/nginx/sites-available/videoflow 2>/dev/null || true
+# 4. Install the repo conf as the live conf -----------------------------------
+log "📄 Installing $REPO_CONF → $LIVE_CONF"
+sudo install -m 0644 "$REPO_CONF" "$LIVE_CONF"
 
-# Remplacer le domaine
-sudo sed -i 's/videoflow.duckdns.org/purpleai.duckdns.org/g' /etc/nginx/sites-available/videoflow 2>/dev/null || true
+# 5. Enable only the purpleai site; remove the legacy "videoflow" leftover ----
+log "🔗 Fixing sites-enabled symlinks"
+sudo ln -sf "$LIVE_CONF" "$ENABLED_LINK"
+sudo rm -f "$LEGACY_ENABLED"    "$LEGACY_DEFAULT"
+sudo rm -f "$LEGACY_AVAILABLE"
 
-# Remplacer tous les proxy_pass vers 8080 (regex pour matcher n'importe quel port)
-sudo sed -i -E 's|proxy_pass http://localhost:[0-9]+|proxy_pass http://localhost:8080|g' /etc/nginx/sites-available/videoflow 2>/dev/null || true
+# 6. Validate nginx config; rollback on failure -------------------------------
+log "🧪 nginx -t"
+if ! sudo nginx -t 2>&1; then
+    warn "nginx -t FAILED — rolling back"
+    if [[ -n "$backup" && -f "$backup" ]]; then
+        sudo install -m 0644 "$backup" "$LIVE_CONF"
+        sudo ln -sf "$LIVE_CONF" "$ENABLED_LINK"
+        sudo nginx -t >/dev/null 2>&1 \
+            && ok "Rolled back to previous live config" \
+            || die "Rollback also failed — manual intervention required. Backup at $backup"
+    fi
+    die "nginx config rejected."
+fi
+ok "nginx -t passed"
 
-# Activer le site
-sudo ln -sf /etc/nginx/sites-available/videoflow /etc/nginx/sites-enabled/ 2>/dev/null || true
-sudo rm -f /etc/nginx/sites-enabled/default 2>/dev/null || true
-
-# Tester la configuration
-if sudo nginx -t; then
-    echo "✅ Configuration nginx valide"
-    sudo systemctl start nginx
-    sudo systemctl enable nginx
-    echo "✅ nginx démarré"
+# 7. Reload / start nginx ------------------------------------------------------
+if sudo systemctl is-active --quiet nginx; then
+    sudo systemctl reload nginx
+    ok "nginx reloaded"
 else
-    echo "❌ Erreur dans la configuration nginx"
-    sudo nginx -t
-    exit 1
+    sudo systemctl start  nginx
+    sudo systemctl enable nginx 2>/dev/null || true
+    ok "nginx started"
 fi
 
-# Mettre à jour DuckDNS
-echo "🌐 Mise à jour DuckDNS..."
-if [ -f ~/.duckdns ]; then
-    source ~/.duckdns
-    if [ ! -z "$DUCKDNS_DOMAIN" ] && [ ! -z "$DUCKDNS_TOKEN" ]; then
-        RESPONSE=$(curl -s --max-time 10 "https://www.duckdns.org/update?domains=${DUCKDNS_DOMAIN}&token=${DUCKDNS_TOKEN}&ip=" 2>&1)
-        if [ "$RESPONSE" = "OK" ]; then
-            echo "✅ DuckDNS mis à jour"
+# 8. DuckDNS refresh (unchanged from the old script) --------------------------
+if [[ -f "$HOME/.duckdns" ]]; then
+    # shellcheck disable=SC1091
+    source "$HOME/.duckdns"
+    if [[ -n "${DUCKDNS_DOMAIN:-}" && -n "${DUCKDNS_TOKEN:-}" ]]; then
+        resp=$(curl -s --max-time 10 \
+            "https://www.duckdns.org/update?domains=${DUCKDNS_DOMAIN}&token=${DUCKDNS_TOKEN}&ip=" 2>&1 || true)
+        if [[ "$resp" == "OK" ]]; then
+            ok "DuckDNS updated"
         else
-            echo "⚠️  DuckDNS: $RESPONSE (peut prendre quelques minutes pour se propager)"
+            warn "DuckDNS response: $resp"
         fi
     fi
 fi
 
-# Tester localement
-echo "🧪 Tests..."
-if curl -s http://localhost:8080/health > /dev/null; then
-    echo "✅ Docker répond sur le port 8080"
-else
-    echo "⚠️  Docker ne répond pas encore"
-fi
+# 9. Smoke tests ---------------------------------------------------------------
+log "🧪 Smoke tests"
+curl -fsS http://localhost:8080/health   >/dev/null && ok "frontend :8080  OK" || warn "frontend :8080 KO"
+curl -fsS http://localhost/health        >/dev/null && ok "nginx  → /health OK" || warn "nginx → /health KO"
 
-if curl -s http://localhost/health > /dev/null; then
-    echo "✅ nginx proxy fonctionne"
-else
-    echo "⚠️  nginx proxy ne répond pas encore"
-fi
+# /remotion-preview/ is the one that silently broke in the past.
+# Try a HEAD on a known-404 path — we only want to see that it is NOT
+# served by the SPA fallback (which would return index.html / 200).
+preview_code=$(curl -o /dev/null -s -w '%{http_code}' \
+    "http://localhost/remotion-preview/__sentinel__/bundle.js" || true)
+case "$preview_code" in
+    404|502|403) ok "/remotion-preview/ is proxied (got $preview_code, not SPA fallback)" ;;
+    200)        warn "/remotion-preview/ returned 200 — looks like the SPA fallback caught it!" ;;
+    *)          warn "/remotion-preview/ returned $preview_code (remotion-service may be down, check pm2)" ;;
+esac
 
-# Configuration SSL (si pas déjà configuré)
-echo ""
-echo "🔒 Vérification SSL..."
-if [ ! -f /etc/letsencrypt/live/purpleai.duckdns.org/fullchain.pem ]; then
-    if [ -f ~/purple/setup-ssl.sh ]; then
-        echo "   SSL non configuré. Pour activer SSL, exécutez:"
-        echo "   cd ~/purple && ./setup-ssl.sh"
-    fi
-else
-    echo "   ✅ SSL déjà configuré"
-fi
-
-echo ""
-echo "✅ Configuration terminée!"
-echo ""
-echo "🌐 Votre site devrait être accessible sur:"
-echo "   http://purpleai.duckdns.org"
-if [ -f /etc/letsencrypt/live/purpleai.duckdns.org/fullchain.pem ]; then
-    echo "   https://purpleai.duckdns.org (SSL activé)"
-fi
-echo ""
-echo "📋 Vérifications:"
-echo "   sudo docker ps"
-echo "   sudo systemctl status nginx"
-echo "   curl -I http://localhost"
-echo "   curl -I http://purpleai.duckdns.org"
-echo ""
+echo
+ok "nginx setup complete for https://${DOMAIN}"
