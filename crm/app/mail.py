@@ -501,6 +501,44 @@ def _split_refs(raw: str) -> list[str]:
     return out
 
 
+_EMAIL_RE = re.compile(r"[\w.\-+%!#$&'*/=?^`{|}~]+@[\w.\-]+\.[a-zA-Z]{2,}")
+
+
+def _extract_emails(values: object) -> set[str]:
+    """Pull lowercased email addresses out of ``str`` / list / tuple data."""
+    out: set[str] = set()
+    if not values:
+        return out
+    if isinstance(values, (str, bytes)):
+        seq = [values if isinstance(values, str) else values.decode("utf-8", "ignore")]
+    elif isinstance(values, (list, tuple, set)):
+        seq = [v if isinstance(v, str) else str(v) for v in values]
+    else:
+        seq = [str(values)]
+    for s in seq:
+        for m in _EMAIL_RE.finditer(s or ""):
+            out.add(m.group(0).lower())
+    return out
+
+
+def _candidate_addresses(msg: MailMessage) -> set[str]:
+    """All email addresses involved in a MailMessage (from + to + cc)."""
+    out: set[str] = set()
+    if msg.from_values and msg.from_values.email:
+        out.add(msg.from_values.email.lower())
+    for v in msg.to_values or []:
+        if v and v.email:
+            out.add(v.email.lower())
+    for v in msg.cc_values or []:
+        if v and v.email:
+            out.add(v.email.lower())
+    # Fallback: string forms may still carry additional addresses.
+    out |= _extract_emails(msg.from_ or "")
+    out |= _extract_emails(msg.to or [])
+    out |= _extract_emails(msg.cc or [])
+    return out
+
+
 def _header_first(msg: MailMessage, name: str) -> str:
     if not msg.headers:
         return ""
@@ -560,6 +598,18 @@ def fetch_thread(
         known_ids.update(_split_refs(current.in_reply_to))
     known_ids.update(_split_refs(current.references))
 
+    # Counterparties of this thread: every address on the current message
+    # that isn't our own account. We only keep candidate messages that
+    # involve at least one of these addresses, so threads that happen to
+    # share the same subject with a different client don't bleed in.
+    own_email = (account.email or "").lower()
+    counterparty: set[str] = set()
+    counterparty.add((current.from_email or "").lower())
+    counterparty |= _extract_emails(current.to)
+    counterparty |= _extract_emails(current.cc)
+    counterparty.discard("")
+    counterparty.discard(own_email)
+
     found: dict[tuple[str, str], dict] = {}
 
     try:
@@ -607,6 +657,16 @@ def fetch_thread(
 
                     if not (by_header or by_subject):
                         continue
+
+                    # Counterparty filter — must involve at least one of
+                    # the current thread's external participants.
+                    # (Skipped only if we literally have no counterparty,
+                    # e.g. a note-to-self, in which case subject matches
+                    # are the best we can do.)
+                    if counterparty:
+                        addrs = _candidate_addresses(msg)
+                        if not (addrs & counterparty):
+                            continue
 
                     if mid:
                         known_ids.add(mid)
