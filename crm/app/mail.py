@@ -56,6 +56,9 @@ class MessageSummary:
     preview: str
     account_slug: str
     folder: str
+    priority: str | None = None
+    category: str | None = None
+    reason: str | None = None
 
     @property
     def is_unseen(self) -> bool:

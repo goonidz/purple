@@ -43,8 +43,21 @@
   </label>
 
   <label class="body-label">
-    <span>Message</span>
-    <textarea name="body" rows="18" required>{{ prefill.body }}</textarea>
+    <span>
+      Message
+      <span class="body-actions">
+        <button id="translate-btn" type="button" class="btn btn-ghost btn-sm"
+                title="Traduire le message en anglais via Gemini">
+          🇬🇧 Traduire en anglais
+        </button>
+        <button id="translate-undo-btn" type="button" class="btn btn-ghost btn-sm" hidden
+                title="Restaurer le texte précédent">
+          ↶ Annuler la traduction
+        </button>
+        <span id="translate-status" class="muted small" hidden></span>
+      </span>
+    </span>
+    <textarea id="compose-body" name="body" rows="18" required>{{ prefill.body }}</textarea>
   </label>
 
   <label>
@@ -63,4 +76,5 @@
     <button type="submit" class="btn btn-primary">Envoyer</button>
   </div>
 </form>
+<script src="/crm/static/compose.js"></script>
 {% endblock %}

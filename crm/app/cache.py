@@ -56,6 +56,26 @@ CREATE TABLE IF NOT EXISTS folder_state (
     last_sync_at TEXT,
     PRIMARY KEY (user_id, account_slug, folder)
 );
+
+CREATE TABLE IF NOT EXISTS email_analyses (
+    user_id      TEXT NOT NULL,
+    account_slug TEXT NOT NULL,
+    folder       TEXT NOT NULL,
+    uid          INTEGER NOT NULL,
+    priority     TEXT NOT NULL,
+    category     TEXT NOT NULL,
+    reason       TEXT,
+    analyzed_at  TEXT NOT NULL,
+    PRIMARY KEY (user_id, account_slug, folder, uid)
+);
+CREATE INDEX IF NOT EXISTS idx_email_analyses_lookup
+    ON email_analyses (user_id, account_slug, folder);
+
+CREATE TABLE IF NOT EXISTS email_analysis_state (
+    user_id               TEXT PRIMARY KEY,
+    last_pass_started_at  TEXT,
+    last_pass_finished_at TEXT
+);
 """
 
 _lock = threading.Lock()

@@ -18,6 +18,16 @@
        href="/crm/compose?reply_to_slug={{ account.slug }}&reply_to_folder={{ folder | urlencode }}&reply_to_uid={{ msg.uid }}&reply_all=1">
        ↩↩ Répondre à tous
     </a>
+    <button id="drafts-btn"
+            type="button"
+            class="btn"
+            data-slug="{{ account.slug }}"
+            data-folder="{{ folder }}"
+            data-uid="{{ msg.uid }}"
+            data-reply-href="/crm/compose?reply_to_slug={{ account.slug }}&reply_to_folder={{ folder | urlencode }}&reply_to_uid={{ msg.uid }}"
+            title="Générer 3 brouillons de réponse via Gemini">
+      ✨ Suggérer des réponses
+    </button>
     <form method="post"
           action="/crm/mailbox/{{ account.slug }}/message/{{ msg.uid }}/delete"
           onsubmit="return confirm('Supprimer ce message ?')">
@@ -26,6 +36,39 @@
     </form>
   </div>
 </header>
+
+{% if analysis %}
+  <div class="analysis-banner">
+    {% set prio_label = {'urgent':'Urgent','a_lire':'À lire','spam':'Spam','auto':'Auto'}.get(analysis.priority, analysis.priority) %}
+    {% set cat_label = {'client':'Client','facture':'Facture','support':'Support','perso':'Perso'}.get(analysis.category, analysis.category) %}
+    <span class="badge badge-priority badge-priority-{{ analysis.priority }}">{{ prio_label }}</span>
+    <span class="badge badge-category badge-category-{{ analysis.category }}">{{ cat_label }}</span>
+    {% if analysis.reason %}
+      <span class="muted small">{{ analysis.reason }}</span>
+    {% endif %}
+  </div>
+{% endif %}
+
+<div id="drafts-modal" class="modal-backdrop" hidden>
+  <div class="modal-drafts" role="dialog" aria-modal="true" aria-labelledby="drafts-title">
+    <header class="modal-header">
+      <h3 id="drafts-title">Brouillons de réponse</h3>
+      <button id="drafts-close" type="button" class="btn btn-ghost" aria-label="Fermer">✕</button>
+    </header>
+    <div class="drafts-tabs" role="tablist">
+      <button type="button" class="drafts-tab is-active" role="tab" data-tone="professionnel">Professionnel</button>
+      <button type="button" class="drafts-tab" role="tab" data-tone="amical">Amical</button>
+      <button type="button" class="drafts-tab" role="tab" data-tone="ferme">Ferme & concis</button>
+    </div>
+    <div id="drafts-content" class="drafts-content">
+      <div class="drafts-loading muted">Génération en cours…</div>
+    </div>
+    <footer class="modal-footer">
+      <button id="drafts-use" type="button" class="btn btn-primary" disabled>Utiliser ce brouillon</button>
+      <button id="drafts-copy" type="button" class="btn" disabled>Copier</button>
+    </footer>
+  </div>
+</div>
 
 <article class="message">
   <header class="msg-header">
@@ -86,4 +129,5 @@
     {% endif %}
   </section>
 </article>
+<script src="/crm/static/message.js"></script>
 {% endblock %}

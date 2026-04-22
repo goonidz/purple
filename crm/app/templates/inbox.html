@@ -8,9 +8,18 @@
   </div>
   <div class="topbar-actions">
     <a href="/crm/mailbox/{{ account.slug }}?folder={{ folder | urlencode }}&resync=1" class="btn" title="Resynchronise les flags et détecte les suppressions">↻ Rafraîchir</a>
+    <button id="analyze-pending-btn"
+            class="btn"
+            type="button"
+            data-slug="{{ account.slug }}"
+            title="Analyse via Gemini les messages récents (≤ 7 jours) non encore classifiés">
+      Analyser les nouveaux mails
+    </button>
     <a href="/crm/compose?from_slug={{ account.slug }}" class="btn btn-primary">+ Nouveau message</a>
   </div>
 </header>
+
+<div id="analyze-toast" class="analyze-toast" hidden></div>
 
 {% if error %}<div class="error banner">{{ error }}</div>{% endif %}
 {% if request.query_params.get('sent') %}
@@ -46,6 +55,14 @@
           <div class="msg-subject">
             {{ m.subject }}
             {% if m.has_attachments %}<span class="tag">📎</span>{% endif %}
+            {% if m.priority %}
+              {% set prio_label = {'urgent':'Urgent','a_lire':'À lire','spam':'Spam','auto':'Auto'}.get(m.priority, m.priority) %}
+              <span class="badge badge-priority badge-priority-{{ m.priority }}" title="{{ m.reason or '' }}">{{ prio_label }}</span>
+            {% endif %}
+            {% if m.category %}
+              {% set cat_label = {'client':'Client','facture':'Facture','support':'Support','perso':'Perso'}.get(m.category, m.category) %}
+              <span class="badge badge-category badge-category-{{ m.category }}">{{ cat_label }}</span>
+            {% endif %}
           </div>
           {% if m.preview %}
           <div class="msg-preview muted">{{ m.preview }}</div>
@@ -70,4 +87,5 @@
   <div class="empty">Aucun message dans ce dossier.</div>
 {% endif %}
 
+<script src="/crm/static/inbox.js"></script>
 {% endblock %}

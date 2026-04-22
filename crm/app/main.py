@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import io
+import logging
 from pathlib import Path
 from typing import Annotated
 
@@ -9,9 +11,11 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from . import auth, cache, mail, security
+from . import ai, analyses, auth, cache, mail, security
 from .config import Account, ROOT_PATH, load_accounts_for_user
 from .mail import OutgoingAttachment
+
+log = logging.getLogger("crm.main")
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -23,6 +27,17 @@ app = FastAPI(
 )
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
+
+
+# Captured at startup so sync routes (running in the threadpool) can
+# still schedule background coroutines onto the main event loop.
+_main_loop: asyncio.AbstractEventLoop | None = None
+
+
+@app.on_event("startup")
+async def _capture_main_loop() -> None:
+    global _main_loop
+    _main_loop = asyncio.get_running_loop()
 
 
 # --------------------------------------------------------------- helpers
@@ -117,6 +132,47 @@ async def security_middleware(request: Request, call_next):
     return response
 
 
+def _maybe_trigger_daily_pass(user_id: str, accounts: list[Account]) -> None:
+    """Fire-and-forget the daily classification pass if cooldown expired.
+
+    Runs in the background — the HTTP response never waits for it. If
+    the user has no Gemini key, the pass is a cheap no-op.
+    """
+    if not accounts:
+        return
+    try:
+        if not analyses.needs_daily_pass(user_id):
+            return
+    except Exception:
+        return
+    loop = _main_loop
+    if loop is None:
+        return
+    try:
+        asyncio.run_coroutine_threadsafe(
+            _safe_run_pass(user_id, accounts, manual=False),
+            loop,
+        )
+    except Exception as e:
+        log.warning("failed to schedule daily pass user=%s err=%s", user_id, e)
+
+
+async def _safe_run_pass(
+    user_id: str, accounts: list[Account], *, manual: bool,
+    slug_filter: str | None = None,
+) -> dict | None:
+    try:
+        return await analyses.run_classification_pass(
+            user_id, accounts, manual=manual, slug_filter=slug_filter
+        )
+    except Exception as e:
+        log.warning(
+            "classification_pass crashed user=%s manual=%s err=%s",
+            user_id, manual, e,
+        )
+        return None
+
+
 def _client_ip(request: Request) -> str:
     xff = request.headers.get("x-forwarded-for", "")
     if xff:
@@ -146,6 +202,9 @@ def index(request: Request):
             mail.sync_folder(a, "INBOX")
         except Exception:
             pass
+
+    _maybe_trigger_daily_pass(user_id, accounts)
+
     stats = cache.get_home_stats(user_id, days=7, folder="INBOX")
     totals = {
         "received_week": 0,
@@ -204,6 +263,22 @@ def mailbox(
         )
     except Exception as e:
         err = f"Impossible de contacter {account.email} : {e}"
+
+    # Attach cached priority/category badges.
+    if messages:
+        uids = [int(m.uid) for m in messages]
+        analysis_map = analyses.list_analyses_for_uids(
+            user_id, account.slug, folder, uids
+        )
+        for m in messages:
+            row = analysis_map.get(int(m.uid))
+            if row:
+                m.priority = row["priority"]
+                m.category = row["category"]
+                m.reason = row["reason"]
+
+    _maybe_trigger_daily_pass(user_id, accounts)
+
     unseen_counts = cache.unseen_counts_by_account(
         user_id, "INBOX", apply_filter=True
     )
@@ -246,6 +321,7 @@ def view_message(
     display_html = msg.html
     if msg.html and not show_images:
         display_html, blocked_assets = security.strip_remote_assets(msg.html)
+    analysis = analyses.get_analysis(user_id, account.slug, folder, int(uid))
     return templates.TemplateResponse(
         "message.html",
         {
@@ -257,6 +333,7 @@ def view_message(
             "display_html": display_html,
             "blocked_assets": blocked_assets,
             "show_images": bool(show_images),
+            "analysis": analysis,
             "unseen_counts": cache.unseen_counts_by_account(user_id, "INBOX"),
         },
     )
@@ -336,6 +413,7 @@ def compose_get(
     reply_to_folder: str | None = None,
     reply_to_uid: str | None = None,
     reply_all: int = 0,
+    draft: str | None = None,
 ):
     user_id = _user_id(request)
     accounts = get_accounts(user_id)
@@ -388,6 +466,10 @@ def compose_get(
             prefill["reply_source_slug"] = reply_to_slug
             prefill["reply_source_folder"] = reply_to_folder
             prefill["reply_source_uid"] = reply_to_uid
+
+    if draft:
+        # Gemini-generated draft overrides the quoted-reply body.
+        prefill["body"] = draft
 
     return templates.TemplateResponse(
         "compose.html",
@@ -552,3 +634,129 @@ async def test_account(request: Request):
     except Exception as e:
         return JSONResponse({"ok": False, "error": str(e)}, status_code=200)
     return {"ok": True}
+
+
+# -------------------------------------------------------------- AI API
+
+
+def _missing_gemini_response() -> JSONResponse:
+    return JSONResponse(
+        {
+            "error": "missing_gemini_key",
+            "message": (
+                "Configure ta clé Gemini dans ton profil VideoFlow "
+                "(Profil → Clés API → Gemini)."
+            ),
+        },
+        status_code=400,
+    )
+
+
+@app.post("/api/messages/{slug}/{folder}/{uid}/drafts")
+async def drafts_for_message(
+    request: Request, slug: str, folder: str, uid: int
+):
+    """Generate 3 reply drafts (pro/amical/ferme) for this message."""
+    user_id = _user_id(request)
+    accounts = get_accounts(user_id)
+    account = find_account(slug, accounts)
+
+    api_key = await ai.fetch_user_gemini_key(user_id)
+    if not api_key:
+        return _missing_gemini_response()
+
+    msg = mail.fetch_message(account, folder, str(uid), mark_seen=False)
+    if not msg:
+        raise HTTPException(status_code=404, detail="Message introuvable")
+
+    body_text = msg.text or _html_to_text(msg.html or "")
+    try:
+        drafts = await ai.generate_reply_drafts(
+            api_key,
+            subject=msg.subject or "",
+            from_name=msg.from_name or "",
+            from_email=msg.from_email or "",
+            body_text=body_text,
+            user_display_name=account.display_name or account.email,
+        )
+    except ai.GeminiError as e:
+        return JSONResponse(
+            {"error": "gemini_error", "message": str(e)}, status_code=502
+        )
+    except Exception as e:
+        log.warning("drafts failed user=%s uid=%s err=%s", user_id, uid, e)
+        return JSONResponse(
+            {"error": "drafts_failed", "message": str(e)}, status_code=500
+        )
+
+    return {"drafts": drafts}
+
+
+@app.post("/api/translate")
+async def translate_text(request: Request):
+    """Translate arbitrary text to English (used by the composer)."""
+    user_id = _user_id(request)
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="invalid json")
+
+    text = (payload.get("text") or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="missing text")
+
+    api_key = await ai.fetch_user_gemini_key(user_id)
+    if not api_key:
+        return _missing_gemini_response()
+
+    try:
+        translated = await ai.translate_to_english(api_key, text)
+    except ai.GeminiError as e:
+        return JSONResponse(
+            {"error": "gemini_error", "message": str(e)}, status_code=502
+        )
+    except Exception as e:
+        log.warning("translate failed user=%s err=%s", user_id, e)
+        return JSONResponse(
+            {"error": "translate_failed", "message": str(e)}, status_code=500
+        )
+    return {"translated": translated}
+
+
+@app.post("/api/mailbox/{slug}/analyze-pending")
+async def analyze_pending(request: Request, slug: str):
+    """Manually classify the account's recent unanalyzed messages."""
+    user_id = _user_id(request)
+    accounts = get_accounts(user_id)
+    account = find_account(slug, accounts)
+
+    api_key = await ai.fetch_user_gemini_key(user_id)
+    if not api_key:
+        return _missing_gemini_response()
+
+    # Sync first so we pick up brand-new messages.
+    try:
+        mail.sync_folder(account, "INBOX")
+    except Exception:
+        pass
+
+    result = await analyses.run_classification_pass(
+        user_id, accounts, manual=True, slug_filter=slug
+    )
+    return result
+
+
+# ---------------------------------------------------------------- util
+
+
+import re as _re
+
+_HTML_TAG = _re.compile(r"<[^>]+>")
+
+
+def _html_to_text(html: str) -> str:
+    """Coarse HTML → text for Gemini prompts."""
+    if not html:
+        return ""
+    text = _HTML_TAG.sub(" ", html)
+    return _re.sub(r"\s+", " ", text).strip()
