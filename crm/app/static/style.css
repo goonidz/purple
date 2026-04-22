@@ -378,7 +378,6 @@ code {
   gap: 12px;
   align-items: center;
 }
-.compose-form label.body-label { align-items: flex-start; }
 .compose-form label span { color: var(--muted); font-size: 13px; }
 .compose-form input[type="text"],
 .compose-form select,
@@ -748,13 +747,35 @@ body.modal-open { overflow: hidden; }
 .urgent-subject { flex: 1; min-width: 200px; }
 .urgent-date { margin-left: auto; }
 
-/* Compose body-label translate controls */
-.body-actions {
-  display: inline-flex;
+/* Compose body row: label on the left, actions bar + textarea on the right */
+.compose-body-row {
+  display: grid;
+  grid-template-columns: 90px 1fr;
+  gap: 12px;
+  align-items: flex-start;
+}
+.compose-body-label {
+  color: var(--muted);
+  font-size: 13px;
+  padding-top: 8px;
+}
+.compose-body-col {
+  display: flex;
+  flex-direction: column;
   gap: 8px;
+  min-width: 0;
+}
+.body-actions {
+  display: flex;
   align-items: center;
-  margin-left: 10px;
+  gap: 8px;
+  flex-wrap: wrap;
   font-weight: normal;
 }
 #translate-status[data-kind="error"] { color: hsl(0, 85%, 75%); }
 #translate-status[data-kind="ok"] { color: hsl(142, 70%, 70%); }
+
+@media (max-width: 720px) {
+  .compose-body-row { grid-template-columns: 1fr; }
+  .compose-body-label { padding-top: 0; }
+}
