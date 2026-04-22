@@ -729,8 +729,17 @@ body.modal-open { overflow: hidden; }
 }
 .urgent-row {
   border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: opacity 200ms ease, transform 200ms ease;
 }
 .urgent-row:last-child { border-bottom: 0; }
+.urgent-row.is-done {
+  opacity: 0;
+  transform: translateX(12px);
+  pointer-events: none;
+}
 .urgent-link {
   display: flex;
   align-items: center;
@@ -738,6 +747,8 @@ body.modal-open { overflow: hidden; }
   padding: 10px 4px;
   color: var(--text);
   flex-wrap: wrap;
+  flex: 1;
+  min-width: 0;
 }
 .urgent-link:hover {
   text-decoration: none;
@@ -746,6 +757,21 @@ body.modal-open { overflow: hidden; }
 .urgent-row.unseen .urgent-subject { font-weight: 600; }
 .urgent-subject { flex: 1; min-width: 200px; }
 .urgent-date { margin-left: auto; }
+
+.btn-done {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: hsl(142, 70%, 70%);
+  background: hsla(142, 70%, 55%, 0.1);
+  border-color: hsla(142, 70%, 55%, 0.35);
+}
+.btn-done:hover {
+  background: hsla(142, 70%, 55%, 0.2);
+  border-color: hsla(142, 70%, 55%, 0.6);
+  color: hsl(142, 75%, 78%);
+}
+.btn-done:disabled { opacity: 0.5; cursor: default; }
 
 /* Replying-to context banner, shown above the compose form */
 .reply-context {

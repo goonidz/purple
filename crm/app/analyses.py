@@ -214,7 +214,7 @@ def top_urgent_messages(
     """Return urgent/à-lire messages from the last N days, unseen first.
 
     Each row carries the fields needed to render a clickable list on
-    the home dashboard.
+    the home dashboard. Messages marked as done by the user are excluded.
     """
     cutoff = (
         datetime.now(timezone.utc) - timedelta(days=days)
@@ -229,10 +229,16 @@ def top_urgent_messages(
               AND a.account_slug = m.account_slug
               AND a.folder = m.folder
               AND a.uid = m.uid
+             LEFT JOIN email_done d
+               ON d.user_id = m.user_id
+              AND d.account_slug = m.account_slug
+              AND d.folder = m.folder
+              AND d.uid = m.uid
             WHERE a.user_id = ?
               AND a.folder = ?
               AND m.date_iso >= ?
               AND a.priority IN ('urgent', 'a_lire')
+              AND d.uid IS NULL
             ORDER BY
               CASE a.priority WHEN 'urgent' THEN 0 ELSE 1 END,
               m.date_iso DESC
@@ -264,6 +270,54 @@ def top_urgent_messages(
             }
         )
     return out
+
+
+# ------------------------------------------------------------ done flag
+
+
+def mark_done(
+    user_id: str, slug: str, folder: str, uid: int
+) -> None:
+    """Mark a message as handled/processed by the user (idempotent)."""
+    with cache._lock:
+        cache._db.execute(
+            """INSERT OR IGNORE INTO email_done
+                 (user_id, account_slug, folder, uid, done_at)
+               VALUES (?, ?, ?, ?, ?)""",
+            (user_id, slug, folder, int(uid), _now_iso()),
+        )
+
+
+def unmark_done(
+    user_id: str, slug: str, folder: str, uid: int
+) -> None:
+    with cache._lock:
+        cache._db.execute(
+            """DELETE FROM email_done
+                WHERE user_id=? AND account_slug=? AND folder=? AND uid=?""",
+            (user_id, slug, folder, int(uid)),
+        )
+
+
+def is_done(user_id: str, slug: str, folder: str, uid: int) -> bool:
+    row = cache._db.execute(
+        """SELECT 1 FROM email_done
+            WHERE user_id=? AND account_slug=? AND folder=? AND uid=?
+            LIMIT 1""",
+        (user_id, slug, folder, int(uid)),
+    ).fetchone()
+    return row is not None
+
+
+def done_uids_for_account(
+    user_id: str, slug: str, folder: str
+) -> set[int]:
+    rows = cache._db.execute(
+        """SELECT uid FROM email_done
+            WHERE user_id=? AND account_slug=? AND folder=?""",
+        (user_id, slug, folder),
+    ).fetchall()
+    return {int(r["uid"]) for r in rows}
 
 
 def _get_summary_row(

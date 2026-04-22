@@ -773,6 +773,35 @@ async def analyze_pending(request: Request, slug: str):
     return result
 
 
+@app.post("/api/messages/{slug}/{folder}/{uid}/done")
+async def mark_message_done(
+    request: Request, slug: str, folder: str, uid: int
+):
+    """Mark a message as handled/processed by the user.
+
+    Independent of the IMAP \\Seen / \\Answered flags — lets the user
+    clear a message from the "À traiter en priorité" list once they
+    have dealt with it (replied, forwarded, read and dismissed, ...).
+    """
+    user_id = _user_id(request)
+    accounts = get_accounts(user_id)
+    find_account(slug, accounts)  # 404 if slug doesn't belong to user
+    analyses.mark_done(user_id, slug, folder, uid)
+    return {"ok": True, "done": True}
+
+
+@app.delete("/api/messages/{slug}/{folder}/{uid}/done")
+async def unmark_message_done(
+    request: Request, slug: str, folder: str, uid: int
+):
+    """Undo mark-as-done so the message reappears in the priority list."""
+    user_id = _user_id(request)
+    accounts = get_accounts(user_id)
+    find_account(slug, accounts)
+    analyses.unmark_done(user_id, slug, folder, uid)
+    return {"ok": True, "done": False}
+
+
 @app.post("/api/analyze-all-pending")
 async def analyze_all_pending(request: Request):
     """Manually classify unanalyzed messages across all user accounts."""

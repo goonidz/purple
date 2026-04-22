@@ -89,7 +89,10 @@
     {% for m in urgent_list %}
       {% set prio_label = {'urgent':'Urgent','a_lire':'À lire'}.get(m.priority, m.priority) %}
       {% set cat_label = {'important':'Important','autre':'Autre'}.get(m.category, m.category) %}
-      <li class="urgent-row {% if m.is_unseen %}unseen{% endif %}">
+      <li class="urgent-row {% if m.is_unseen %}unseen{% endif %}"
+          data-slug="{{ m.account_slug }}"
+          data-folder="{{ m.folder }}"
+          data-uid="{{ m.uid }}">
         <a class="urgent-link" href="/crm/mailbox/{{ m.account_slug }}/message/{{ m.uid }}?folder={{ m.folder | urlencode }}">
           <span class="badge badge-priority badge-priority-{{ m.priority }}" title="{{ m.reason }}">{{ prio_label }}</span>
           <span class="badge badge-category badge-category-{{ m.category }}">{{ cat_label }}</span>
@@ -98,6 +101,12 @@
           <span class="urgent-account muted small">({{ m.account_name }})</span>
           <span class="urgent-date muted small">{{ m.date_display }}</span>
         </a>
+        <button type="button"
+                class="btn btn-sm btn-done"
+                title="Marquer ce mail comme traité (il disparaît de la liste)"
+                aria-label="Marquer comme traité">
+          ✓ Traité
+        </button>
       </li>
     {% endfor %}
   </ul>

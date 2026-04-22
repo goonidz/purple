@@ -76,6 +76,21 @@ CREATE TABLE IF NOT EXISTS email_analysis_state (
     last_pass_started_at  TEXT,
     last_pass_finished_at TEXT
 );
+
+-- User-level "done / handled" flag for a message.
+-- Independent of the IMAP \\Seen / \\Answered flags so we can mark a
+-- message as processed even when the user didn't reply (e.g. they
+-- forwarded it manually, or it didn't need a reply).
+CREATE TABLE IF NOT EXISTS email_done (
+    user_id      TEXT NOT NULL,
+    account_slug TEXT NOT NULL,
+    folder       TEXT NOT NULL,
+    uid          INTEGER NOT NULL,
+    done_at      TEXT NOT NULL,
+    PRIMARY KEY (user_id, account_slug, folder, uid)
+);
+CREATE INDEX IF NOT EXISTS idx_email_done_lookup
+    ON email_done (user_id, account_slug);
 """
 
 _lock = threading.Lock()
