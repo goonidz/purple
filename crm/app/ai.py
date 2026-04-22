@@ -43,7 +43,7 @@ _KEY_CACHE_TTL = 600.0  # 10 minutes
 
 
 ALLOWED_PRIORITIES = {"urgent", "a_lire", "spam", "auto"}
-ALLOWED_CATEGORIES = {"client", "facture", "support", "perso"}
+ALLOWED_CATEGORIES = {"important", "autre"}
 
 
 class GeminiError(RuntimeError):
@@ -197,7 +197,7 @@ _CLASSIFY_SCHEMA = {
         },
         "category": {
             "type": "string",
-            "enum": ["client", "facture", "support", "perso"],
+            "enum": ["important", "autre"],
         },
         "reason": {"type": "string"},
     },
@@ -219,20 +219,24 @@ async def classify_email(
     safe_preview = _strip_noise(preview or "")[:500]
 
     prompt = (
-        "Tu es un assistant de triage d'emails. Analyse l'email ci-dessous "
-        "et réponds UNIQUEMENT en JSON avec deux champs obligatoires "
-        "(priority, category) et un champ optionnel (reason, 1 phrase en "
-        "français).\n\n"
+        "Tu es un assistant de triage d'emails pour un service client. "
+        "Tous les expéditeurs sont des clients ou prospects (ne jamais "
+        "classer comme 'perso'). Analyse l'email ci-dessous et réponds "
+        "UNIQUEMENT en JSON avec deux champs obligatoires (priority, "
+        "category) et un champ optionnel (reason, 1 phrase en français).\n\n"
         "priority :\n"
-        "  - 'urgent' : action immédiate attendue (deadline, panne, client fâché)\n"
+        "  - 'urgent' : action immédiate attendue (deadline, panne, client fâché, réclamation)\n"
         "  - 'a_lire' : important à lire mais pas bloquant\n"
-        "  - 'spam' : publicité, phishing, notification marketing\n"
-        "  - 'auto' : notification automatique système banale (CI, monitoring, rappel)\n\n"
+        "  - 'spam' : publicité, phishing, newsletter commerciale non sollicitée\n"
+        "  - 'auto' : notification automatique système banale (livraison, confirmation, rappel)\n\n"
         "category :\n"
-        "  - 'client' : échange avec un client / prospect\n"
-        "  - 'facture' : facturation, paiement, comptabilité\n"
-        "  - 'support' : demande d'aide, ticket, bug\n"
-        "  - 'perso' : personnel, amis, famille, admin perso\n\n"
+        "  - 'important' : vraie demande du client qui attend une réponse de notre part "
+        "(question, demande d'aide, réclamation, bug, demande de devis, négociation)\n"
+        "  - 'autre' : tout le reste — réponse automatique, accusé de réception, "
+        "« merci », réponse à une de NOS newsletters sans question, out-of-office, "
+        "bounce, transfert informatif qui n'appelle pas de réponse\n\n"
+        "Ne classe 'important' que si un humain doit vraiment répondre. "
+        "Un simple 'merci beaucoup' = 'autre'.\n\n"
         f"Expéditeur : {safe_from}\n"
         f"Objet : {safe_subject}\n"
         f"Extrait : {safe_preview}\n"
@@ -247,11 +251,11 @@ async def classify_email(
     )
     data = _parse_json_reply(text)
     priority = str(data.get("priority", "a_lire")).lower()
-    category = str(data.get("category", "perso")).lower()
+    category = str(data.get("category", "autre")).lower()
     if priority not in ALLOWED_PRIORITIES:
         priority = "a_lire"
     if category not in ALLOWED_CATEGORIES:
-        category = "perso"
+        category = "autre"
     reason = str(data.get("reason", ""))[:300]
     return {"priority": priority, "category": category, "reason": reason}
 

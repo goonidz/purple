@@ -71,21 +71,13 @@
     </span>
   </div>
   <div class="ai-pills ai-pills-cat">
-    <span class="ai-pill badge-category badge-category-client">
-      <span class="ai-pill-value">{{ category_counts.client }}</span>
-      <span class="ai-pill-label">Client</span>
+    <span class="ai-pill badge-category badge-category-important">
+      <span class="ai-pill-value">{{ category_counts.important }}</span>
+      <span class="ai-pill-label">Importants (à répondre)</span>
     </span>
-    <span class="ai-pill badge-category badge-category-facture">
-      <span class="ai-pill-value">{{ category_counts.facture }}</span>
-      <span class="ai-pill-label">Facture</span>
-    </span>
-    <span class="ai-pill badge-category badge-category-support">
-      <span class="ai-pill-value">{{ category_counts.support }}</span>
-      <span class="ai-pill-label">Support</span>
-    </span>
-    <span class="ai-pill badge-category badge-category-perso">
-      <span class="ai-pill-value">{{ category_counts.perso }}</span>
-      <span class="ai-pill-label">Perso</span>
+    <span class="ai-pill badge-category badge-category-autre">
+      <span class="ai-pill-value">{{ category_counts.autre }}</span>
+      <span class="ai-pill-label">Autres (newsletters, auto)</span>
     </span>
   </div>
 </section>
@@ -96,7 +88,7 @@
   <ul class="urgent-list">
     {% for m in urgent_list %}
       {% set prio_label = {'urgent':'Urgent','a_lire':'À lire'}.get(m.priority, m.priority) %}
-      {% set cat_label = {'client':'Client','facture':'Facture','support':'Support','perso':'Perso'}.get(m.category, m.category) %}
+      {% set cat_label = {'important':'Important','autre':'Autre'}.get(m.category, m.category) %}
       <li class="urgent-row {% if m.is_unseen %}unseen{% endif %}">
         <a class="urgent-link" href="/crm/mailbox/{{ m.account_slug }}/message/{{ m.uid }}?folder={{ m.folder | urlencode }}">
           <span class="badge badge-priority badge-priority-{{ m.priority }}" title="{{ m.reason }}">{{ prio_label }}</span>

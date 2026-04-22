@@ -40,7 +40,7 @@
 {% if analysis %}
   <div class="analysis-banner">
     {% set prio_label = {'urgent':'Urgent','a_lire':'À lire','spam':'Spam','auto':'Auto'}.get(analysis.priority, analysis.priority) %}
-    {% set cat_label = {'client':'Client','facture':'Facture','support':'Support','perso':'Perso'}.get(analysis.category, analysis.category) %}
+    {% set cat_label = {'important':'Important','autre':'Autre'}.get(analysis.category, analysis.category) %}
     <span class="badge badge-priority badge-priority-{{ analysis.priority }}">{{ prio_label }}</span>
     <span class="badge badge-category badge-category-{{ analysis.category }}">{{ cat_label }}</span>
     {% if analysis.reason %}

@@ -59,9 +59,8 @@
               {% set prio_label = {'urgent':'Urgent','a_lire':'À lire','spam':'Spam','auto':'Auto'}.get(m.priority, m.priority) %}
               <span class="badge badge-priority badge-priority-{{ m.priority }}" title="{{ m.reason or '' }}">{{ prio_label }}</span>
             {% endif %}
-            {% if m.category %}
-              {% set cat_label = {'client':'Client','facture':'Facture','support':'Support','perso':'Perso'}.get(m.category, m.category) %}
-              <span class="badge badge-category badge-category-{{ m.category }}">{{ cat_label }}</span>
+            {% if m.category == 'important' %}
+              <span class="badge badge-category badge-category-important">Important</span>
             {% endif %}
           </div>
           {% if m.preview %}

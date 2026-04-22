@@ -197,9 +197,10 @@ def category_stats(
             GROUP BY a.category""",
         (user_id, folder, cutoff),
     ).fetchall()
-    out = {"client": 0, "facture": 0, "support": 0, "perso": 0}
+    out = {"important": 0, "autre": 0}
     for r in rows:
-        out[r["category"]] = int(r["c"])
+        if r["category"] in out:
+            out[r["category"]] = int(r["c"])
     return out
 
 

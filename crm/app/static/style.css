@@ -531,10 +531,12 @@ code {
   color: var(--text);
   border-color: var(--border);
 }
-.badge-category-client { color: hsl(142, 70%, 65%); }
-.badge-category-facture { color: hsl(16, 90%, 68%); }
-.badge-category-support { color: hsl(200, 70%, 70%); }
-.badge-category-perso { color: hsl(280, 60%, 75%); }
+.badge-category-important {
+  color: hsl(142, 70%, 65%);
+  background: hsla(142, 70%, 55%, 0.14);
+  border-color: hsla(142, 70%, 55%, 0.35);
+}
+.badge-category-autre { color: hsl(220, 10%, 70%); }
 
 .analysis-banner {
   display: flex;
