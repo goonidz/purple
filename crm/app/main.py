@@ -751,6 +751,37 @@ async def translate_text(request: Request):
     return {"translated": translated}
 
 
+@app.post("/api/polish")
+async def polish_text_api(request: Request):
+    """Proofread / reformat the composer body in its own language."""
+    user_id = _user_id(request)
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="invalid json")
+
+    text = (payload.get("text") or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="missing text")
+
+    api_key = await ai.fetch_user_gemini_key(user_id)
+    if not api_key:
+        return _missing_gemini_response()
+
+    try:
+        polished = await ai.polish_text(api_key, text)
+    except ai.GeminiError as e:
+        return JSONResponse(
+            {"error": "gemini_error", "message": str(e)}, status_code=502
+        )
+    except Exception as e:
+        log.warning("polish failed user=%s err=%s", user_id, e)
+        return JSONResponse(
+            {"error": "polish_failed", "message": str(e)}, status_code=500
+        )
+    return {"polished": polished}
+
+
 @app.post("/api/mailbox/{slug}/analyze-pending")
 async def analyze_pending(request: Request, slug: str):
     """Manually classify the account's recent unanalyzed messages."""

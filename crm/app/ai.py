@@ -324,6 +324,46 @@ async def generate_reply_drafts(
 # -------------------------------------------------------- translation
 
 
+async def polish_text(api_key: str, text: str) -> str:
+    """Proofread and reformat the email body in its own language.
+
+    Fixes typos, grammar, punctuation, capitalisation and reformats the
+    text (sentence structure, flow, politeness) while keeping:
+      - the meaning strictly unchanged,
+      - the original language (auto-detected),
+      - line breaks, lists, quoted replies (lines starting with ``>``)
+        exactly where they are.
+
+    Returns just the cleaned text — no preamble, no quotes.
+    """
+    safe = (text or "")[:10000]
+    prompt = (
+        "You are a professional email proofreader. The input below is the "
+        "body of an email (any language). Your job:\n"
+        "  1. Detect the language and REPLY IN THAT SAME LANGUAGE. "
+        "Never switch languages.\n"
+        "  2. Fix typos, grammar, punctuation, accents, capitalisation.\n"
+        "  3. Lightly improve phrasing, flow and politeness where needed, "
+        "but keep the meaning strictly unchanged and the tone similar.\n"
+        "  4. Preserve the layout exactly: line breaks, blank lines, "
+        "bullet lists, and quoted lines starting with '>' stay in place.\n"
+        "  5. Do NOT add an introduction, commentary, quotation marks or "
+        "explain what you changed. Return ONLY the rewritten body.\n"
+        "  6. Do NOT add or remove a signature — if one is present, keep "
+        "it as-is (just fix typos in it).\n\n"
+        "---\n"
+        f"{safe}\n"
+        "---"
+    )
+    reply = await _call_gemini(
+        api_key,
+        prompt,
+        expect_json=False,
+        max_output_tokens=2500,
+    )
+    return reply.strip()
+
+
 async def translate_to_english(api_key: str, text: str) -> str:
     """Translate French (or any language) email body to English."""
     safe = (text or "")[:10000]

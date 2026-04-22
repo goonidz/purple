@@ -74,13 +74,17 @@
     <label for="compose-body" class="compose-body-label">Message</label>
     <div class="compose-body-col">
       <div class="body-actions">
+        <button id="polish-btn" type="button" class="btn btn-ghost btn-sm"
+                title="Corriger fautes, ponctuation et remettre en forme (dans la langue actuelle) via Gemini">
+          ✨ Corriger / remettre en forme
+        </button>
         <button id="translate-btn" type="button" class="btn btn-ghost btn-sm"
                 title="Traduire le message en anglais via Gemini">
           🇬🇧 Traduire en anglais
         </button>
-        <button id="translate-undo-btn" type="button" class="btn btn-ghost btn-sm" hidden
+        <button id="compose-undo-btn" type="button" class="btn btn-ghost btn-sm" hidden
                 title="Restaurer le texte précédent">
-          ↶ Annuler la traduction
+          ↶ Annuler
         </button>
         <span id="translate-status" class="muted small" hidden></span>
       </div>

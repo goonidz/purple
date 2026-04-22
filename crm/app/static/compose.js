@@ -1,10 +1,13 @@
 (function () {
-  const btn = document.getElementById('translate-btn');
-  const undoBtn = document.getElementById('translate-undo-btn');
+  const translateBtn = document.getElementById('translate-btn');
+  const polishBtn = document.getElementById('polish-btn');
+  const undoBtn = document.getElementById('compose-undo-btn');
   const status = document.getElementById('translate-status');
   const textarea = document.getElementById('compose-body');
-  if (!btn || !undoBtn || !status || !textarea) return;
+  if (!undoBtn || !status || !textarea) return;
 
+  // Shared undo buffer: whatever AI action (translate, polish) ran
+  // last can be reverted via the same button.
   let previousValue = null;
 
   function setStatus(text, kind) {
@@ -13,21 +16,23 @@
     status.hidden = !text;
   }
 
-  btn.addEventListener('click', async function () {
+  async function runAiAction(opts) {
     const current = textarea.value;
     if (!current.trim()) {
-      setStatus('Rien à traduire.', 'error');
+      setStatus(opts.emptyMsg, 'error');
       setTimeout(function () { setStatus('', ''); }, 2000);
       return;
     }
 
-    btn.disabled = true;
-    const originalLabel = btn.textContent;
-    btn.textContent = 'Traduction…';
-    setStatus('Traduction en cours…', 'info');
+    opts.button.disabled = true;
+    if (translateBtn) translateBtn.disabled = true;
+    if (polishBtn) polishBtn.disabled = true;
+    const originalLabel = opts.button.textContent;
+    opts.button.textContent = opts.workingLabel;
+    setStatus(opts.workingStatus, 'info');
 
     try {
-      const res = await fetch('/crm/api/translate', {
+      const res = await fetch(opts.url, {
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
@@ -35,25 +40,58 @@
       });
       const data = await res.json().catch(function () { return {}; });
       if (!res.ok) {
-        setStatus(data.message || 'Échec de la traduction.', 'error');
+        setStatus(data.message || opts.failMsg, 'error');
         return;
       }
-      if (!data.translated) {
+      const output = data[opts.responseKey];
+      if (!output) {
         setStatus('Réponse vide du modèle.', 'error');
         return;
       }
       previousValue = current;
-      textarea.value = data.translated;
+      textarea.value = output;
       undoBtn.hidden = false;
-      setStatus('Traduction terminée.', 'ok');
+      setStatus(opts.doneMsg, 'ok');
       setTimeout(function () { setStatus('', ''); }, 2500);
     } catch (e) {
       setStatus('Erreur réseau : ' + e.message, 'error');
     } finally {
-      btn.disabled = false;
-      btn.textContent = originalLabel;
+      opts.button.disabled = false;
+      opts.button.textContent = originalLabel;
+      if (translateBtn) translateBtn.disabled = false;
+      if (polishBtn) polishBtn.disabled = false;
     }
-  });
+  }
+
+  if (translateBtn) {
+    translateBtn.addEventListener('click', function () {
+      runAiAction({
+        button: translateBtn,
+        url: '/crm/api/translate',
+        responseKey: 'translated',
+        emptyMsg: 'Rien à traduire.',
+        workingLabel: 'Traduction…',
+        workingStatus: 'Traduction en cours…',
+        doneMsg: 'Traduction terminée.',
+        failMsg: 'Échec de la traduction.',
+      });
+    });
+  }
+
+  if (polishBtn) {
+    polishBtn.addEventListener('click', function () {
+      runAiAction({
+        button: polishBtn,
+        url: '/crm/api/polish',
+        responseKey: 'polished',
+        emptyMsg: 'Rien à corriger.',
+        workingLabel: 'Correction…',
+        workingStatus: 'Relecture en cours…',
+        doneMsg: 'Texte corrigé.',
+        failMsg: 'Échec de la correction.',
+      });
+    });
+  }
 
   undoBtn.addEventListener('click', function () {
     if (previousValue === null) return;
