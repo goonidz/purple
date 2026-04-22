@@ -10,6 +10,34 @@
 
 {% if error %}<div class="error banner">{{ error }}</div>{% endif %}
 
+{% if reply_context %}
+<aside class="reply-context" aria-label="Message auquel tu réponds">
+  <div class="reply-context-head">
+    <span class="reply-context-tag">↩ Réponse à</span>
+    <span class="reply-context-from">
+      <strong>{{ reply_context.from_name }}</strong>
+      <span class="muted small">&lt;{{ reply_context.from_email }}&gt;</span>
+    </span>
+    <span class="muted small reply-context-date">· {{ reply_context.date_display }}</span>
+    <a class="btn btn-ghost btn-sm reply-context-open"
+       href="/crm/mailbox/{{ reply_context.slug }}/message/{{ reply_context.uid }}?folder={{ reply_context.folder | urlencode }}"
+       target="_blank" rel="noopener"
+       title="Ouvrir le message original dans un nouvel onglet">
+      Voir l'original ↗
+    </a>
+  </div>
+  <div class="reply-context-subject" title="Sujet du message original">
+    {{ reply_context.subject }}
+  </div>
+  {% if reply_context.preview %}
+    <details class="reply-context-preview">
+      <summary class="muted small">Aperçu du message original</summary>
+      <pre>{{ reply_context.preview }}</pre>
+    </details>
+  {% endif %}
+</aside>
+{% endif %}
+
 <form class="compose-form" method="post" action="/crm/compose" enctype="multipart/form-data">
   <label>
     <span>De</span>

@@ -446,6 +446,7 @@ def compose_get(
         "reply_source_uid": "",
     }
 
+    reply_context = None
     if reply_to_slug and reply_to_folder and reply_to_uid:
         src_account = find_account(reply_to_slug, accounts)
         original = mail.fetch_message(
@@ -477,6 +478,22 @@ def compose_get(
             prefill["reply_source_folder"] = reply_to_folder
             prefill["reply_source_uid"] = reply_to_uid
 
+            preview = (original.text or _html_to_text(original.html or ""))
+            preview = preview.strip()
+            if len(preview) > 600:
+                preview = preview[:600].rstrip() + "…"
+            reply_context = {
+                "from_name": original.from_name or original.from_email,
+                "from_email": original.from_email,
+                "subject": original.subject or "(sans objet)",
+                "date_display": original.date_display,
+                "account_email": src_account.email,
+                "slug": reply_to_slug,
+                "folder": reply_to_folder,
+                "uid": reply_to_uid,
+                "preview": preview,
+            }
+
     if draft:
         # Gemini-generated draft overrides the quoted-reply body.
         prefill["body"] = draft
@@ -488,6 +505,7 @@ def compose_get(
             "accounts": accounts,
             "selected": selected,
             "prefill": prefill,
+            "reply_context": reply_context,
             "unseen_counts": cache.unseen_counts_by_account(user_id, "INBOX"),
         },
     )
