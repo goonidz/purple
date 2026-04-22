@@ -11,14 +11,21 @@
 
   let drafts = null;
   let activeTone = 'professionnel';
+  let pendingController = null;
 
   function openModal() {
     modal.hidden = false;
+    modal.setAttribute('aria-hidden', 'false');
     document.body.classList.add('modal-open');
   }
   function closeModal() {
     modal.hidden = true;
+    modal.setAttribute('aria-hidden', 'true');
     document.body.classList.remove('modal-open');
+    if (pendingController) {
+      try { pendingController.abort(); } catch (e) { /* ignore */ }
+      pendingController = null;
+    }
   }
 
   function renderActive() {
@@ -45,6 +52,9 @@
   closeBtn.addEventListener('click', closeModal);
   modal.addEventListener('click', function (e) {
     if (e.target === modal) closeModal();
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && !modal.hidden) closeModal();
   });
 
   useBtn.addEventListener('click', function () {
@@ -82,12 +92,22 @@
       + encodeURIComponent(folder) + '/'
       + encodeURIComponent(uid) + '/drafts';
 
+    if (pendingController) { try { pendingController.abort(); } catch (_) {} }
+    pendingController = new AbortController();
+    const controller = pendingController;
+    const timeoutId = setTimeout(function () {
+      try { controller.abort(); } catch (_) {}
+    }, 45000);
+
     try {
       const res = await fetch(url, {
         method: 'POST',
         credentials: 'same-origin',
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
       const data = await res.json().catch(function () { return {}; });
+      if (controller !== pendingController) return;
       if (!res.ok) {
         contentBox.innerHTML = '';
         const p = document.createElement('p');
@@ -98,12 +118,20 @@
       }
       drafts = data.drafts || {};
       renderActive();
+      pendingController = null;
     } catch (e) {
+      clearTimeout(timeoutId);
+      if (controller !== pendingController) return;
       contentBox.innerHTML = '';
       const p = document.createElement('p');
       p.className = 'error';
-      p.textContent = 'Erreur réseau : ' + e.message;
+      if (e.name === 'AbortError') {
+        p.textContent = 'Délai dépassé (45 s). Réessaie ou ferme la fenêtre.';
+      } else {
+        p.textContent = 'Erreur réseau : ' + e.message;
+      }
       contentBox.appendChild(p);
+      pendingController = null;
     }
   });
 })();

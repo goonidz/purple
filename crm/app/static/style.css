@@ -571,6 +571,7 @@ code {
 
 body.modal-open { overflow: hidden; }
 
+.modal-backdrop[hidden] { display: none !important; }
 .modal-backdrop {
   position: fixed;
   inset: 0;
