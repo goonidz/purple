@@ -171,6 +171,46 @@ function fixJSXAndWriteFile(filePath, content, maxRetries = 15) {
   return code;
 }
 
+// Parse an esbuild / webpack build error produced while bundling a Preview_<hash>.tsx
+// file and figure out which Seg<N> component contains the bad line. We do this by
+// reading the actual .tsx on disk and walking backwards from the error line until
+// we hit a `const Seg<N> = ...` or `function Seg<N>(...)` declaration.
+function extractBrokenSceneFromError(errorMessage) {
+  if (!errorMessage) return null;
+  const m = errorMessage.match(/([^\s:]+\/Preview_[a-f0-9]+\.tsx):(\d+):(\d+):\s*ERROR:\s*([^\n]+)/);
+  if (!m) return null;
+  const [, filePath, lineStr, colStr, detail] = m;
+  const line = parseInt(lineStr, 10);
+  const col = parseInt(colStr, 10);
+  try {
+    if (!fs.existsSync(filePath)) return null;
+    const lines = fs.readFileSync(filePath, 'utf-8').split('\n');
+    const segDeclRe = /^\s*(?:const|function)\s+Seg(\d+)\b/;
+    for (let i = Math.min(line - 1, lines.length - 1); i >= 0; i--) {
+      const match = lines[i]?.match(segDeclRe);
+      if (match) {
+        const sceneNumber = parseInt(match[1], 10);
+        const start = Math.max(0, line - 3);
+        const end = Math.min(lines.length, line + 2);
+        const excerpt = lines.slice(start, end)
+          .map((l, idx) => `${start + idx + 1}: ${l}`)
+          .join('\n');
+        return {
+          sceneNumber,
+          sceneIndex: sceneNumber - 1,
+          line,
+          col,
+          detail: detail.trim(),
+          excerpt,
+        };
+      }
+    }
+  } catch (e) {
+    console.warn('[Preview] Could not extract broken scene:', e.message);
+  }
+  return null;
+}
+
 const activeJobs = new Map();
 const activeBundles = new Set();
 
@@ -1754,6 +1794,14 @@ createRoot(container).render(<App />);
   } catch (err) {
     console.error(`[Preview] Bundle failed:`, err.message);
     cleanupStaleBundles();
+    const brokenScene = extractBrokenSceneFromError(err.message || '');
+    if (brokenScene) {
+      console.warn(`[Preview] Identified broken scene: Seg${brokenScene.sceneNumber} (line ${brokenScene.line})`);
+      return res.status(422).json({
+        error: `Scène ${brokenScene.sceneNumber} contient une erreur de syntaxe (ligne ${brokenScene.line}). Régénérez-la depuis l'onglet Vidéo.`,
+        brokenScene,
+      });
+    }
     res.status(500).json({ error: err.message });
   }
 });

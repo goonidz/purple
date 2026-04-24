@@ -5615,15 +5615,34 @@ const Index = () => {
                                 {scene.text || '—'}
                               </span>
                               <div className="flex items-center gap-1 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
-                                {isFailed && !isRetrying && (
+                                {(isFailed || isCompleted) && !isRetrying && !isGenerating && (
                                   <Button
                                     size="sm"
                                     variant="ghost"
-                                    className="h-6 px-2 text-xs text-red-500 hover:text-red-600 hover:bg-red-500/10"
+                                    className={`h-6 px-2 text-xs ${
+                                      isFailed
+                                        ? 'text-red-500 hover:text-red-600 hover:bg-red-500/10'
+                                        : 'text-muted-foreground hover:text-purple-500 hover:bg-purple-500/10'
+                                    }`}
                                     onClick={async () => {
                                       if (!currentProjectId) return;
+                                      if (isCompleted && !window.confirm(`Régénérer la scène ${index + 1} ? Le code actuel sera remplacé.`)) {
+                                        return;
+                                      }
                                       setIsRetryingScene(index);
                                       try {
+                                        await supabase
+                                          .from('project_scenes')
+                                          .update({ animator_code: null, animator_code_status: 'pending' })
+                                          .eq('project_id', currentProjectId)
+                                          .eq('scene_index', index);
+                                        setAnimatorSceneStatuses(prev =>
+                                          prev.map(s =>
+                                            s.scene_index === index
+                                              ? { ...s, animator_code: null, animator_code_status: 'pending' }
+                                              : s
+                                          )
+                                        );
                                         await startJob('animator_scene' as any, {
                                           sceneIndex: index,
                                           segment: { start: scene.startTime, end: scene.endTime, text: scene.text },
@@ -5634,9 +5653,10 @@ const Index = () => {
                                         setIsRetryingScene(null);
                                       }
                                     }}
+                                    title={isFailed ? 'Relancer la génération' : 'Régénérer cette scène'}
                                   >
                                     <RotateCcw className="h-3 w-3 mr-1" />
-                                    Retry
+                                    {isFailed ? 'Retry' : 'Régénérer'}
                                   </Button>
                                 )}
                                 {isExpanded ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}

@@ -69,6 +69,16 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
   const [showBefore, setShowBefore] = useState(false);
   const [qaFixInput, setQaFixInput] = useState("");
 
+  // Broken scene detection (when a Seg<N> has invalid JSX/TS, the whole bundle fails)
+  const [brokenScene, setBrokenScene] = useState<{
+    sceneNumber: number;
+    sceneIndex: number;
+    line: number;
+    col: number;
+    detail: string;
+    excerpt: string;
+  } | null>(null);
+
   // QA Agent (job-based)
   const [qaChildJobs, setQaChildJobs] = useState<any[]>([]);
   const [lastQaResult, setLastQaResult] = useState<{ job: any; children: any[] } | null>(null);
@@ -134,6 +144,7 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
   const loadPreview = useCallback(async () => {
     if (!projectId) return;
     setIsLoading(true);
+    setBrokenScene(null);
     try {
       const resp = await fetch(`${REMOTION_SERVICE_URL}/animator/preview-bundle`, {
         method: "POST",
@@ -141,7 +152,17 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
         body: JSON.stringify({ projectId }),
       });
       const data = await resp.json();
-      if (!resp.ok) throw new Error(data.error || "Preview generation failed");
+      if (!resp.ok) {
+        if (data.brokenScene) {
+          setBrokenScene(data.brokenScene);
+          toast.error(
+            `Scène ${data.brokenScene.sceneNumber} contient une erreur de syntaxe. Régénérez-la depuis l'onglet Vidéo.`,
+            { duration: 10000 }
+          );
+          return;
+        }
+        throw new Error(data.error || "Preview generation failed");
+      }
 
       setPreviewUrl(data.previewUrl);
       setPreviewMeta({
@@ -382,7 +403,43 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
 
   return (
     <div className="space-y-4">
-      {!previewUrl && !isLoading && (
+      {brokenScene && (
+        <Card className="p-4 border-2 border-red-500/40 bg-red-500/5">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="h-5 w-5 text-red-500 mt-0.5 shrink-0" />
+            <div className="flex-1 min-w-0 space-y-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-sm font-semibold text-red-400">
+                  Scène {brokenScene.sceneNumber} contient une erreur de syntaxe
+                </h3>
+                <Badge variant="secondary" className="bg-red-500/10 text-red-400 border-red-500/20 text-[10px]">
+                  Ligne {brokenScene.line}
+                </Badge>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Le bundle Remotion ne peut pas être compilé tant que ce problème n'est pas corrigé.
+                Rendez-vous dans l'onglet <strong className="text-foreground">Vidéo</strong>, dépliez la scène {brokenScene.sceneNumber} et cliquez sur <strong className="text-foreground">Régénérer</strong>.
+              </p>
+              <div className="text-[11px] text-muted-foreground/80">
+                <span className="text-red-400/80 font-medium">Erreur :</span> {brokenScene.detail}
+              </div>
+              {brokenScene.excerpt && (
+                <pre className="text-[10px] font-mono bg-zinc-950 text-zinc-300 p-2 rounded border border-red-500/20 overflow-x-auto whitespace-pre max-h-32">
+                  {brokenScene.excerpt}
+                </pre>
+              )}
+              <div className="flex gap-2 pt-1">
+                <Button size="sm" variant="outline" onClick={loadPreview} className="h-7 text-xs gap-1.5">
+                  <RefreshCw className="h-3 w-3" />
+                  Réessayer
+                </Button>
+              </div>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {!previewUrl && !isLoading && !brokenScene && (
         <Card className="p-12 text-center space-y-4">
           <div className="flex flex-col items-center gap-3">
             <Play className="h-12 w-12 text-purple-500/50" />
