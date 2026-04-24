@@ -3224,11 +3224,19 @@ async function acquireTTSRateToken() {
   }
 }
 
-async function generateTTSChunk(geminiKey, text, voice = 'Puck', styleInstruction = '') {
+const DEFAULT_GEMINI_TTS_MODEL = 'gemini-2.5-pro-preview-tts';
+const ALLOWED_GEMINI_TTS_MODELS = new Set([
+  'gemini-2.5-pro-preview-tts',
+  'gemini-2.5-flash-preview-tts',
+  'gemini-3.1-flash-tts-preview',
+]);
+
+async function generateTTSChunk(geminiKey, text, voice = 'Puck', styleInstruction = '', model = DEFAULT_GEMINI_TTS_MODEL) {
   const fullText = styleInstruction ? `${styleInstruction}\n${text}` : text;
+  const resolvedModel = ALLOWED_GEMINI_TTS_MODELS.has(model) ? model : DEFAULT_GEMINI_TTS_MODEL;
 
   const response = await fetch(
-    'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro-preview-tts:generateContent',
+    `https://generativelanguage.googleapis.com/v1beta/models/${resolvedModel}:generateContent`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-goog-api-key': geminiKey },
@@ -3272,6 +3280,7 @@ async function processAudioTTSPipeline(job) {
     const meta = job.metadata || {};
     const text = applyAudioTags(meta.text, meta);
     const voice = meta.voice || 'Puck';
+    const ttsModel = ALLOWED_GEMINI_TTS_MODELS.has(meta.model) ? meta.model : DEFAULT_GEMINI_TTS_MODEL;
     const styleInstruction = meta.styleInstruction || 'energetic YouTube narrator. Natural and conversational, confident and slightly playful. Medium-fast pace. Strong emphasis on key words. Vary pitch and intonation to avoid monotone. Short pauses after punchlines and before important numbers. Sound curious, occasionally skeptical. Smile in the voice. Avoid robotic cadence.';
     const projectId = job.project_id;
 
@@ -3279,7 +3288,7 @@ async function processAudioTTSPipeline(job) {
       throw new Error('No text provided for TTS generation');
     }
 
-    log(`[TTS ${jobId}] Starting audio generation (voice=${voice}, text=${text.length} chars)`);
+    log(`[TTS ${jobId}] Starting audio generation (model=${ttsModel}, voice=${voice}, text=${text.length} chars)`);
 
     const geminiKey = await getUserApiKey(job.user_id, 'gemini');
 
@@ -3304,7 +3313,7 @@ async function processAudioTTSPipeline(job) {
         try {
           log(`[TTS ${jobId}] Generating chunk ${index + 1}/${chunks.length} (${chunks[index].split(/\s+/).length} words)${attempt > 1 ? ` [retry ${attempt}]` : ''}...`);
           await acquireTTSRateToken();
-          pcmBuffer = await generateTTSChunk(geminiKey, chunks[index], voice, styleInstruction);
+          pcmBuffer = await generateTTSChunk(geminiKey, chunks[index], voice, styleInstruction, ttsModel);
           break;
         } catch (genErr) {
           logError(`[TTS ${jobId}] Chunk ${index + 1} attempt ${attempt}/${CHUNK_MAX_RETRIES} failed:`, genErr.message);

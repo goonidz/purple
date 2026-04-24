@@ -23,6 +23,13 @@ const VOICES = [
   { id: "Zephyr", label: "Zephyr (neutre)" },
 ];
 
+const TTS_MODELS = [
+  { id: "gemini-2.5-pro-preview-tts", label: "Gemini 2.5 Pro TTS (stable)" },
+  { id: "gemini-2.5-flash-preview-tts", label: "Gemini 2.5 Flash TTS (rapide)" },
+  { id: "gemini-3.1-flash-tts-preview", label: "Gemini 3.1 Flash TTS (preview)" },
+];
+const DEFAULT_TTS_MODEL = "gemini-2.5-pro-preview-tts";
+
 interface HistoryJob {
   id: string;
   status: string;
@@ -54,6 +61,7 @@ interface AudioTTSGeneratorProps {
 export function AudioTTSGenerator({ initialText }: AudioTTSGeneratorProps) {
   const [text, setText] = useState(initialText || "");
   const [voice, setVoice] = useState("Puck");
+  const [ttsModel, setTtsModel] = useState<string>(DEFAULT_TTS_MODEL);
   const [styleInstruction, setStyleInstruction] = useState("energetic YouTube narrator. Natural and conversational, confident and slightly playful. Medium-fast pace. Strong emphasis on key words. Vary pitch and intonation to avoid monotone. Short pauses after punchlines and before important numbers. Sound curious, occasionally skeptical. Smile in the voice. Avoid robotic cadence.");
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedAudioUrl, setGeneratedAudioUrl] = useState<string | null>(null);
@@ -115,6 +123,9 @@ export function AudioTTSGenerator({ initialText }: AudioTTSGeneratorProps) {
     // For Gemini TTS presets, load voice from voice_id
     if (preset.provider === "gemini_tts") {
       if (preset.voice_id) setVoice(preset.voice_id);
+      if (preset.model && TTS_MODELS.some(m => m.id === preset.model)) {
+        setTtsModel(preset.model);
+      }
     }
 
     // Load RVC + style from emotion JSON
@@ -159,6 +170,7 @@ export function AudioTTSGenerator({ initialText }: AudioTTSGeneratorProps) {
           name: newPresetName.trim(),
           provider: "gemini_tts",
           voice_id: voice,
+          model: ttsModel,
           emotion: JSON.stringify(emotionData),
         }]);
 
@@ -199,6 +211,7 @@ export function AudioTTSGenerator({ initialText }: AudioTTSGeneratorProps) {
           name: editPresetName.trim(),
           provider: "gemini_tts",
           voice_id: voice,
+          model: ttsModel,
           emotion: JSON.stringify(emotionData),
         })
         .eq("id", editingPresetId);
@@ -374,6 +387,7 @@ export function AudioTTSGenerator({ initialText }: AudioTTSGeneratorProps) {
           metadata: {
             text: text.trim(),
             voice,
+            model: ttsModel,
             styleInstruction,
             provider: "gemini_tts",
             standalone: true,
@@ -588,14 +602,28 @@ export function AudioTTSGenerator({ initialText }: AudioTTSGeneratorProps) {
           </div>
 
           <div className="space-y-2">
-            <Label>Style instruction</Label>
-            <Input
-              value={styleInstruction}
-              onChange={(e) => setStyleInstruction(e.target.value)}
-              placeholder="Read naturally..."
-              disabled={isGenerating}
-            />
+            <Label>Modèle</Label>
+            <Select value={ttsModel} onValueChange={setTtsModel} disabled={isGenerating}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {TTS_MODELS.map((m) => (
+                  <SelectItem key={m.id} value={m.id}>{m.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
+        </div>
+
+        <div className="space-y-2">
+          <Label>Style instruction</Label>
+          <Input
+            value={styleInstruction}
+            onChange={(e) => setStyleInstruction(e.target.value)}
+            placeholder="Read naturally..."
+            disabled={isGenerating}
+          />
         </div>
 
         {/* RVC Voice Conversion */}
