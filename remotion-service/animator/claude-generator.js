@@ -651,7 +651,9 @@ This is scene ${segIndex} of ${totalSegments}.
 
 Segment:
 ${JSON.stringify(segEntry, null, 2)}${contextBlock}
-${extraPrompt ? `\nExtra instructions:\n${extraPrompt}` : ''}`;
+${extraPrompt ? `\nExtra instructions:\n${extraPrompt}` : ''}
+
+IMPORTANT: You MUST return the final code by calling the \`write_segment_components\` tool. Do not put the code in your text response.`;
 
   console.log(`  [Animator/DeepSeek] Scene ${segIndex}/${totalSegments} -> calling ${model}...`);
 
@@ -686,7 +688,6 @@ ${extraPrompt ? `\nExtra instructions:\n${extraPrompt}` : ''}`;
             },
           },
         }],
-        tool_choice: { type: 'function', function: { name: 'write_segment_components' } },
         max_tokens: 16000,
       }),
     });
@@ -760,7 +761,9 @@ NO imports. NO exports. Plain function declarations only.
 
 Segments:
 ${JSON.stringify(segEntries, null, 2)}
-${extraPrompt ? `\nExtra instructions:\n${extraPrompt}` : ''}`;
+${extraPrompt ? `\nExtra instructions:\n${extraPrompt}` : ''}
+
+IMPORTANT: You MUST return the final code by calling the \`write_segment_components\` tool. Do not put the code in your text response.`;
 
   console.log(`  [Animator/DeepSeek] Chunk ${chunkIdx + 1}/${totalChunks} -> calling ${model} (${segEntries.length} segs)...`);
 
@@ -795,7 +798,6 @@ ${extraPrompt ? `\nExtra instructions:\n${extraPrompt}` : ''}`;
             },
           },
         }],
-        tool_choice: { type: 'function', function: { name: 'write_segment_components' } },
         max_tokens: 64000,
       }),
     });
