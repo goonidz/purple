@@ -2781,9 +2781,12 @@ async function processAnimatorSceneJob(job) {
         prevCode: prevScene?.animator_code_status === 'completed' ? prevScene.animator_code : null,
       };
 
-      const useGemini = model && model.startsWith('gemini-');
-      let anthropicKey = null, geminiKey = null;
-      if (useGemini) {
+      const useOpenRouter = Boolean(model && model.includes('/') && !model.startsWith('gemini-'));
+      const useGemini = !useOpenRouter && model && model.startsWith('gemini-');
+      let anthropicKey = null, geminiKey = null, openrouterKey = null;
+      if (useOpenRouter) {
+        openrouterKey = await getUserApiKey(userId, 'openrouter');
+      } else if (useGemini) {
         geminiKey = await getUserApiKey(userId, 'gemini');
       } else {
         anthropicKey = await getUserApiKey(userId, 'anthropic');
@@ -2795,6 +2798,7 @@ async function processAnimatorSceneJob(job) {
         body: JSON.stringify({
           anthropicKey,
           geminiKey,
+          openrouterKey,
           segment,
           segIndex: sceneIndex,
           totalSegments: scenes.length,

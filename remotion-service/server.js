@@ -449,7 +449,7 @@ app.delete('/render/:jobId', (req, res) => {
 });
 
 // --- Animator: Claude generation + Remotion render ---
-const { generateComposition, generateSingleScene, generateSingleSceneGemini, validateComponentCode, sanitizeReservedNames, buildWrapper, stripSharedDeclarations, trimTrailingGarbage, isGeminiModel, getModelPrices } = require('./animator/claude-generator');
+const { generateComposition, generateSingleScene, generateSingleSceneGemini, generateSingleSceneOpenRouter, validateComponentCode, sanitizeReservedNames, buildWrapper, stripSharedDeclarations, trimTrailingGarbage, isGeminiModel, isOpenRouterModel, getModelPrices } = require('./animator/claude-generator');
 const { buildSystemPrompt } = require('./animator/prompt-builder');
 const Anthropic = require('@anthropic-ai/sdk');
 
@@ -866,6 +866,7 @@ app.post('/animator/generate-scene', async (req, res) => {
   const {
     anthropicKey,
     geminiKey,
+    openrouterKey,
     segment,
     segIndex,
     totalSegments,
@@ -883,10 +884,12 @@ app.post('/animator/generate-scene', async (req, res) => {
   if (!model) return res.status(400).json({ error: 'model is required (no silent fallback to Claude)' });
 
   const effectiveModel = model;
-  const useGemini = effectiveModel.startsWith('gemini-');
+  const useOpenRouter = isOpenRouterModel(effectiveModel);
+  const useGemini = !useOpenRouter && effectiveModel.startsWith('gemini-');
 
+  if (useOpenRouter && !openrouterKey) return res.status(400).json({ error: 'openrouterKey is required for OpenRouter models' });
   if (useGemini && !geminiKey) return res.status(400).json({ error: 'geminiKey is required for Gemini models' });
-  if (!useGemini && !anthropicKey) return res.status(400).json({ error: 'anthropicKey is required' });
+  if (!useOpenRouter && !useGemini && !anthropicKey) return res.status(400).json({ error: 'anthropicKey is required' });
 
   try {
     const { systemPrompt } = buildSystemPrompt(brandingConfig, extraPrompt, brandingMarkdown, selectedSkills);
@@ -897,7 +900,11 @@ app.post('/animator/generate-scene', async (req, res) => {
     }
 
     let result;
-    if (useGemini) {
+    if (useOpenRouter) {
+      result = await generateSingleSceneOpenRouter(
+        openrouterKey, effectiveModel, systemPrompt, segment, segIndex + 1, totalSegments || 1, extraPrompt, neighborContext
+      );
+    } else if (useGemini) {
       result = await generateSingleSceneGemini(
         geminiKey, effectiveModel, systemPrompt, segment, segIndex + 1, totalSegments || 1, extraPrompt, neighborContext
       );
@@ -933,7 +940,7 @@ app.post('/animator/generate-scene', async (req, res) => {
         cacheCreated: (prev.cacheCreated || 0) + t.cacheCreated,
       };
       const prices = getModelPrices(effectiveModel);
-      const newCost = useGemini
+      const newCost = (useOpenRouter || useGemini)
         ? (merged.input * prices.input / 1_000_000) + (merged.output * prices.output / 1_000_000)
         : (merged.input * prices.input / 1_000_000) +
           (merged.output * prices.output / 1_000_000) +

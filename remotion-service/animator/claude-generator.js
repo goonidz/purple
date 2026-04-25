@@ -8,12 +8,20 @@ const GEMINI_PRICES = {
   'gemini-3-flash-preview': { input: 0.50, output: 3.00 },
   'gemini-3.1-pro-preview': { input: 2.00, output: 12.00 },
 };
+const OPENROUTER_PRICES = {
+  'deepseek/deepseek-v4-flash': { input: 0.07, output: 1.10 },
+};
 
 function isGeminiModel(model) {
   return model && model.startsWith('gemini-');
 }
 
+function isOpenRouterModel(model) {
+  return Boolean(model && model.includes('/') && !model.startsWith('gemini-'));
+}
+
 function getModelPrices(model) {
+  if (isOpenRouterModel(model)) return OPENROUTER_PRICES[model] || { input: 0.10, output: 0.50 };
   if (isGeminiModel(model)) return GEMINI_PRICES[model] || { input: 0.10, output: 0.40 };
   return CLAUDE_PRICES;
 }
@@ -611,9 +619,214 @@ ${extraPrompt ? `\nExtra instructions:\n${extraPrompt}` : ''}`;
   }
 }
 
+// ============================================================================
+// OPENROUTER: Generate a single scene via OpenRouter chat completions API
+// (OpenAI-compatible) with forced tool calling + reasoning enabled.
+// ============================================================================
+
+async function generateSingleSceneOpenRouter(openrouterKey, model, systemPrompt, segment, segIndex, totalSegments, extraPrompt, neighborContext) {
+  const segName = `Seg${segIndex}`;
+  const segEntry = { name: segName, start: segment.start, end: segment.end, text: segment.text || '' };
+
+  let contextBlock = '';
+  if (neighborContext) {
+    const parts = [];
+    if (neighborContext.prevTexts?.length) parts.push(`Previous scenes: ${JSON.stringify(neighborContext.prevTexts)}`);
+    if (neighborContext.nextTexts?.length) parts.push(`Next scenes: ${JSON.stringify(neighborContext.nextTexts)}`);
+    if (neighborContext.prevCode) parts.push(`Previous scene code (for style reference):\n${neighborContext.prevCode.slice(0, 2000)}`);
+    if (parts.length) contextBlock = `\n\nContext (for narrative/style coherence):\n${parts.join('\n')}`;
+  }
+
+  const userMessage =
+`Generate ONE component function: ${segName}.
+NO imports. NO exports. Plain function declaration only.
+This is scene ${segIndex} of ${totalSegments}.
+
+Segment:
+${JSON.stringify(segEntry, null, 2)}${contextBlock}
+${extraPrompt ? `\nExtra instructions:\n${extraPrompt}` : ''}`;
+
+  try {
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${openrouterKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userMessage },
+        ],
+        tools: [{
+          type: 'function',
+          function: {
+            name: 'write_segment_components',
+            description: 'Write ONE Remotion segment component function (no imports, no exports)',
+            parameters: {
+              type: 'object',
+              properties: {
+                components_code: {
+                  type: 'string',
+                  description: 'A single component function definition. No import or export statements.',
+                },
+              },
+              required: ['components_code'],
+            },
+          },
+        }],
+        tool_choice: { type: 'function', function: { name: 'write_segment_components' } },
+        reasoning: { enabled: true },
+        max_tokens: 16000,
+      }),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`OpenRouter API error ${response.status}: ${errText.substring(0, 300)}`);
+    }
+
+    const data = await response.json();
+    const choice = data.choices?.[0];
+    const toolCall = choice?.message?.tool_calls?.[0];
+
+    if (!toolCall || !toolCall.function?.arguments) {
+      const textContent = choice?.message?.content || '';
+      throw new Error(`OpenRouter returned no tool call. Text: ${String(textContent).substring(0, 200)}`);
+    }
+
+    let parsedArgs;
+    try {
+      parsedArgs = JSON.parse(toolCall.function.arguments);
+    } catch (parseErr) {
+      throw new Error(`OpenRouter tool_call arguments not valid JSON: ${parseErr.message}`);
+    }
+
+    const raw = (parsedArgs.components_code || '').trim();
+    const code = trimTrailingGarbage(sanitizeReservedNames(stripSharedDeclarations(raw)), segName);
+    const u = data.usage || {};
+
+    const validation = validateComponentCode(code, segName);
+    if (!validation.valid) {
+      console.warn(`  [Animator/OpenRouter] Scene ${segIndex}/${totalSegments} validation failed: ${validation.error}`);
+      return { error: `Scene ${segIndex} validation: ${validation.error}`, code };
+    }
+
+    const inputTokens = u.prompt_tokens || 0;
+    const outputTokens = u.completion_tokens || 0;
+
+    console.log(`  [Animator/OpenRouter] Scene ${segIndex}/${totalSegments} | ${segName} | ${code.length} chars | in:${inputTokens} out:${outputTokens}`);
+
+    return {
+      code,
+      segName,
+      tokens: { input: inputTokens, output: outputTokens, cacheRead: 0, cacheCreated: 0 },
+    };
+  } catch (err) {
+    console.error(`  [Animator/OpenRouter] Scene ${segIndex}/${totalSegments} error:`, err.message);
+    return { error: `Scene ${segIndex}: ${err.message}` };
+  }
+}
+
+async function generateChunkOpenRouter(openrouterKey, model, systemPrompt, chunkSegments, chunkIdx, totalChunks, extraPrompt, globalOffset) {
+  const segEntries = chunkSegments.map((s, i) => ({
+    name: `Seg${globalOffset + i}`,
+    start: s.start,
+    end: s.end,
+    text: s.text || '',
+  }));
+
+  const userMessage =
+`Generate component functions: ${segEntries.map(s => s.name).join(', ')}.
+NO imports. NO exports. Plain function declarations only.
+
+Segments:
+${JSON.stringify(segEntries, null, 2)}
+${extraPrompt ? `\nExtra instructions:\n${extraPrompt}` : ''}`;
+
+  try {
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${openrouterKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userMessage },
+        ],
+        tools: [{
+          type: 'function',
+          function: {
+            name: 'write_segment_components',
+            description: 'Write Remotion segment component functions (no imports, no exports)',
+            parameters: {
+              type: 'object',
+              properties: {
+                components_code: {
+                  type: 'string',
+                  description: 'Component function definitions only. No import or export statements.',
+                },
+              },
+              required: ['components_code'],
+            },
+          },
+        }],
+        tool_choice: { type: 'function', function: { name: 'write_segment_components' } },
+        reasoning: { enabled: true },
+        max_tokens: 64000,
+      }),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`OpenRouter API error ${response.status}: ${errText.substring(0, 300)}`);
+    }
+
+    const data = await response.json();
+    const choice = data.choices?.[0];
+    const toolCall = choice?.message?.tool_calls?.[0];
+
+    if (!toolCall || !toolCall.function?.arguments) {
+      return { error: `Chunk ${chunkIdx + 1}/${totalChunks}: OpenRouter returned no tool call` };
+    }
+
+    let parsedArgs;
+    try {
+      parsedArgs = JSON.parse(toolCall.function.arguments);
+    } catch (parseErr) {
+      return { error: `Chunk ${chunkIdx + 1}/${totalChunks}: tool_call arguments not valid JSON: ${parseErr.message}` };
+    }
+
+    const raw = (parsedArgs.components_code || '').trim();
+    const cleaned = sanitizeReservedNames(stripSharedDeclarations(raw));
+    const code = trimTrailingGarbageChunk(cleaned, segEntries.map(s => s.name));
+    const u = data.usage || {};
+
+    console.log(`  [Animator/OpenRouter] Chunk ${chunkIdx + 1}/${totalChunks} | ${segEntries.map(s => s.name).join(',')} | ${code.length} chars | in:${u.prompt_tokens || 0} out:${u.completion_tokens || 0}`);
+
+    return {
+      code,
+      tokens: {
+        input: u.prompt_tokens || 0,
+        output: u.completion_tokens || 0,
+        cacheRead: 0,
+        cacheCreated: 0,
+      },
+    };
+  } catch (err) {
+    console.error(`  [Animator/OpenRouter] Chunk ${chunkIdx + 1}/${totalChunks} error:`, err.message);
+    return { error: `Chunk ${chunkIdx + 1}: ${err.message}` };
+  }
+}
+
 async function generateComposition({
   anthropicKey,
   geminiKey,
+  openrouterKey,
   segments,
   componentName,
   audioFilename,
@@ -629,10 +842,12 @@ async function generateComposition({
 }) {
   if (!model) throw new Error('model is required (no silent fallback to Claude)');
   const effectiveModel = model;
-  const useGemini = isGeminiModel(effectiveModel);
+  const useOpenRouter = isOpenRouterModel(effectiveModel);
+  const useGemini = !useOpenRouter && isGeminiModel(effectiveModel);
 
+  if (useOpenRouter && !openrouterKey) throw new Error('OpenRouter API key is required for OpenRouter models');
   if (useGemini && !geminiKey) throw new Error('Gemini API key is required for Gemini models');
-  if (!useGemini && !anthropicKey) throw new Error('Anthropic API key is required');
+  if (!useOpenRouter && !useGemini && !anthropicKey) throw new Error('Anthropic API key is required');
   if (!segments || segments.length === 0) throw new Error('Segments are required');
 
   const effectiveChunkSize = chunkSize || CHUNK_SIZE_DEFAULT;
@@ -650,7 +865,13 @@ async function generateComposition({
   console.log(`  Skills: ${skillsLoaded.join(', ')}`);
 
   let chunkResults;
-  if (useGemini) {
+  if (useOpenRouter) {
+    chunkResults = await Promise.all(
+      chunks.map((chunk, chunkIdx) =>
+        generateChunkOpenRouter(openrouterKey, effectiveModel, systemPrompt, chunk, chunkIdx, chunks.length, extraPrompt, chunkIdx * effectiveChunkSize + 1)
+      )
+    );
+  } else if (useGemini) {
     chunkResults = await Promise.all(
       chunks.map((chunk, chunkIdx) =>
         generateChunkGemini(geminiKey, effectiveModel, systemPrompt, chunk, chunkIdx, chunks.length, extraPrompt, chunkIdx * effectiveChunkSize + 1)
@@ -679,7 +900,7 @@ async function generateComposition({
   }), { input: 0, output: 0, cacheRead: 0, cacheCreated: 0 });
 
   const prices = getModelPrices(effectiveModel);
-  const costUsd = useGemini
+  const costUsd = (useOpenRouter || useGemini)
     ? (tokensResult.input * prices.input / 1_000_000) + (tokensResult.output * prices.output / 1_000_000)
     : (tokensResult.input * prices.input / 1_000_000) +
       (tokensResult.output * prices.output / 1_000_000) +
@@ -706,4 +927,4 @@ async function generateComposition({
   };
 }
 
-module.exports = { generateComposition, generateSingleScene, generateSingleSceneGemini, validateComponentCode, sanitizeReservedNames, buildWrapper, stripSharedDeclarations, trimTrailingGarbage, trimTrailingGarbageChunk, isGeminiModel, getModelPrices };
+module.exports = { generateComposition, generateSingleScene, generateSingleSceneGemini, generateSingleSceneOpenRouter, validateComponentCode, sanitizeReservedNames, buildWrapper, stripSharedDeclarations, trimTrailingGarbage, trimTrailingGarbageChunk, isGeminiModel, isOpenRouterModel, getModelPrices };
