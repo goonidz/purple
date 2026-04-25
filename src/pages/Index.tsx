@@ -239,6 +239,9 @@ const Index = () => {
   const [regeneratingPromptIndex, setRegeneratingPromptIndex] = useState<number | null>(null);
   const [confirmRegeneratePrompt, setConfirmRegeneratePrompt] = useState<number | null>(null);
   const [confirmRegenerateImage, setConfirmRegenerateImage] = useState<number | null>(null);
+  const [editAnimatorCodeIndex, setEditAnimatorCodeIndex] = useState<number | null>(null);
+  const [editAnimatorCodeValue, setEditAnimatorCodeValue] = useState<string>('');
+  const [savingAnimatorCode, setSavingAnimatorCode] = useState(false);
   const [confirmAnimateScene, setConfirmAnimateScene] = useState<number | null>(null);
   const [animatingSceneIndex, setAnimatingSceneIndex] = useState<number | null>(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
@@ -5615,6 +5618,21 @@ const Index = () => {
                                 {scene.text || '—'}
                               </span>
                               <div className="flex items-center gap-1 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                                {hasCode && !isRetrying && !isGenerating && (
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-6 px-2 text-xs text-muted-foreground hover:text-blue-500 hover:bg-blue-500/10"
+                                    onClick={() => {
+                                      setEditAnimatorCodeIndex(index);
+                                      setEditAnimatorCodeValue(sceneStatus?.animator_code || '');
+                                    }}
+                                    title="Modifier le code de cette scène"
+                                  >
+                                    <Pencil className="h-3 w-3 mr-1" />
+                                    Modifier
+                                  </Button>
+                                )}
                                 {(isFailed || isCompleted) && !isRetrying && !isGenerating && (
                                   <Button
                                     size="sm"
@@ -6086,6 +6104,87 @@ const Index = () => {
               </TabsContent>
             </Tabs>
           )}
+
+        {/* Animator scene code editor */}
+        <Dialog
+          open={editAnimatorCodeIndex !== null}
+          onOpenChange={(open) => {
+            if (!open && !savingAnimatorCode) {
+              setEditAnimatorCodeIndex(null);
+              setEditAnimatorCodeValue('');
+            }
+          }}
+        >
+          <DialogContent className="max-w-4xl">
+            <DialogHeader>
+              <DialogTitle>
+                Modifier le code — scène {editAnimatorCodeIndex !== null ? editAnimatorCodeIndex + 1 : ''}
+              </DialogTitle>
+              <DialogDescription>
+                Édite directement le code Remotion de cette scène. Le statut passera à <code>completed</code> après sauvegarde. Pense à recharger la preview pour voir le rendu.
+              </DialogDescription>
+            </DialogHeader>
+            <Textarea
+              value={editAnimatorCodeValue}
+              onChange={(e) => setEditAnimatorCodeValue(e.target.value)}
+              className="font-mono text-xs min-h-[480px] max-h-[60vh] bg-zinc-950 text-zinc-200 border-zinc-800"
+              spellCheck={false}
+              disabled={savingAnimatorCode}
+            />
+            <DialogFooter>
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setEditAnimatorCodeIndex(null);
+                  setEditAnimatorCodeValue('');
+                }}
+                disabled={savingAnimatorCode}
+              >
+                Annuler
+              </Button>
+              <Button
+                onClick={async () => {
+                  if (editAnimatorCodeIndex === null || !currentProjectId) return;
+                  setSavingAnimatorCode(true);
+                  try {
+                    const idx = editAnimatorCodeIndex;
+                    const newCode = editAnimatorCodeValue;
+                    const { error } = await supabase
+                      .from('project_scenes')
+                      .update({ animator_code: newCode, animator_code_status: 'completed' })
+                      .eq('project_id', currentProjectId)
+                      .eq('scene_index', idx);
+                    if (error) throw error;
+                    setAnimatorSceneStatuses(prev =>
+                      prev.map(s =>
+                        s.scene_index === idx
+                          ? { ...s, animator_code: newCode, animator_code_status: 'completed' }
+                          : s
+                      )
+                    );
+                    toast.success(`Scène ${idx + 1} mise à jour`);
+                    setEditAnimatorCodeIndex(null);
+                    setEditAnimatorCodeValue('');
+                  } catch (e: any) {
+                    toast.error(`Erreur: ${e.message}`);
+                  } finally {
+                    setSavingAnimatorCode(false);
+                  }
+                }}
+                disabled={savingAnimatorCode}
+              >
+                {savingAnimatorCode ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                    Sauvegarde…
+                  </>
+                ) : (
+                  'Sauvegarder'
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {/* Confirmation dialogs */}
         <AlertDialog open={confirmRegeneratePrompt !== null} onOpenChange={(open) => !open && setConfirmRegeneratePrompt(null)}>
