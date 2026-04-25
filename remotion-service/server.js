@@ -449,7 +449,7 @@ app.delete('/render/:jobId', (req, res) => {
 });
 
 // --- Animator: Claude generation + Remotion render ---
-const { generateComposition, generateSingleScene, generateSingleSceneGemini, generateSingleSceneOpenRouter, validateComponentCode, sanitizeReservedNames, buildWrapper, stripSharedDeclarations, trimTrailingGarbage, isGeminiModel, isOpenRouterModel, getModelPrices } = require('./animator/claude-generator');
+const { generateComposition, generateSingleScene, generateSingleSceneGemini, generateSingleSceneDeepSeek, validateComponentCode, sanitizeReservedNames, buildWrapper, stripSharedDeclarations, trimTrailingGarbage, isGeminiModel, isDeepSeekModel, getModelPrices } = require('./animator/claude-generator');
 const { buildSystemPrompt } = require('./animator/prompt-builder');
 const Anthropic = require('@anthropic-ai/sdk');
 
@@ -866,7 +866,7 @@ app.post('/animator/generate-scene', async (req, res) => {
   const {
     anthropicKey,
     geminiKey,
-    openrouterKey,
+    deepseekKey,
     segment,
     segIndex,
     totalSegments,
@@ -884,12 +884,14 @@ app.post('/animator/generate-scene', async (req, res) => {
   if (!model) return res.status(400).json({ error: 'model is required (no silent fallback to Claude)' });
 
   const effectiveModel = model;
-  const useOpenRouter = isOpenRouterModel(effectiveModel);
-  const useGemini = !useOpenRouter && effectiveModel.startsWith('gemini-');
+  const useDeepSeek = isDeepSeekModel(effectiveModel);
+  const useGemini = !useDeepSeek && effectiveModel.startsWith('gemini-');
 
-  if (useOpenRouter && !openrouterKey) return res.status(400).json({ error: 'openrouterKey is required for OpenRouter models' });
+  console.log(`[Animator] generate-scene -> scene ${segIndex} (${effectiveModel}) for project ${(projectId || 'no-pid').substring(0, 8)}`);
+
+  if (useDeepSeek && !deepseekKey) return res.status(400).json({ error: 'deepseekKey is required for DeepSeek models' });
   if (useGemini && !geminiKey) return res.status(400).json({ error: 'geminiKey is required for Gemini models' });
-  if (!useOpenRouter && !useGemini && !anthropicKey) return res.status(400).json({ error: 'anthropicKey is required' });
+  if (!useDeepSeek && !useGemini && !anthropicKey) return res.status(400).json({ error: 'anthropicKey is required' });
 
   try {
     const { systemPrompt } = buildSystemPrompt(brandingConfig, extraPrompt, brandingMarkdown, selectedSkills);
@@ -900,9 +902,9 @@ app.post('/animator/generate-scene', async (req, res) => {
     }
 
     let result;
-    if (useOpenRouter) {
-      result = await generateSingleSceneOpenRouter(
-        openrouterKey, effectiveModel, systemPrompt, segment, segIndex + 1, totalSegments || 1, extraPrompt, neighborContext
+    if (useDeepSeek) {
+      result = await generateSingleSceneDeepSeek(
+        deepseekKey, effectiveModel, systemPrompt, segment, segIndex + 1, totalSegments || 1, extraPrompt, neighborContext
       );
     } else if (useGemini) {
       result = await generateSingleSceneGemini(
@@ -940,12 +942,21 @@ app.post('/animator/generate-scene', async (req, res) => {
         cacheCreated: (prev.cacheCreated || 0) + t.cacheCreated,
       };
       const prices = getModelPrices(effectiveModel);
-      const newCost = (useOpenRouter || useGemini)
-        ? (merged.input * prices.input / 1_000_000) + (merged.output * prices.output / 1_000_000)
-        : (merged.input * prices.input / 1_000_000) +
+      let newCost;
+      if (useDeepSeek) {
+        newCost =
+          (merged.input * prices.input / 1_000_000) +
+          (merged.cacheRead * (prices.cacheHit || prices.input) / 1_000_000) +
+          (merged.output * prices.output / 1_000_000);
+      } else if (useGemini) {
+        newCost = (merged.input * prices.input / 1_000_000) + (merged.output * prices.output / 1_000_000);
+      } else {
+        newCost =
+          (merged.input * prices.input / 1_000_000) +
           (merged.output * prices.output / 1_000_000) +
           (merged.cacheCreated * prices.cacheWrite / 1_000_000) +
           (merged.cacheRead * prices.cacheRead / 1_000_000);
+      }
       await supabase.from('projects').update({
         animator_tokens: merged,
         animator_cost_usd: newCost,

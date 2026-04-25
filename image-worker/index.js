@@ -2781,11 +2781,11 @@ async function processAnimatorSceneJob(job) {
         prevCode: prevScene?.animator_code_status === 'completed' ? prevScene.animator_code : null,
       };
 
-      const useOpenRouter = Boolean(model && model.includes('/') && !model.startsWith('gemini-'));
-      const useGemini = !useOpenRouter && model && model.startsWith('gemini-');
-      let anthropicKey = null, geminiKey = null, openrouterKey = null;
-      if (useOpenRouter) {
-        openrouterKey = await getUserApiKey(userId, 'openrouter');
+      const useDeepSeek = Boolean(model && model.startsWith('deepseek-'));
+      const useGemini = !useDeepSeek && model && model.startsWith('gemini-');
+      let anthropicKey = null, geminiKey = null, deepseekKey = null;
+      if (useDeepSeek) {
+        deepseekKey = await getUserApiKey(userId, 'deepseek');
       } else if (useGemini) {
         geminiKey = await getUserApiKey(userId, 'gemini');
       } else {
@@ -2795,10 +2795,11 @@ async function processAnimatorSceneJob(job) {
       const resp = await fetch(`${REMOTION_SERVICE_URL}/animator/generate-scene`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(330_000), // slightly above DeepSeek's 5min internal timeout
         body: JSON.stringify({
           anthropicKey,
           geminiKey,
-          openrouterKey,
+          deepseekKey,
           segment,
           segIndex: sceneIndex,
           totalSegments: scenes.length,

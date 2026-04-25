@@ -8,20 +8,27 @@ const GEMINI_PRICES = {
   'gemini-3-flash-preview': { input: 0.50, output: 3.00 },
   'gemini-3.1-pro-preview': { input: 2.00, output: 12.00 },
 };
-const OPENROUTER_PRICES = {
-  'deepseek/deepseek-v4-flash': { input: 0.07, output: 1.10 },
+// Per 1M tokens. DeepSeek charges different rates for cache-hit vs cache-miss
+// input tokens; the API returns prompt_cache_hit_tokens / prompt_cache_miss_tokens
+// in the usage object, so we apply the correct rate to each.
+const DEEPSEEK_PRICES = {
+  'deepseek-v4-flash': { input: 0.14, output: 0.28, cacheHit: 0.028 },
+  'deepseek-v4-pro':   { input: 1.74, output: 3.48, cacheHit: 0.145 },
 };
+
+const DEEPSEEK_API_URL = 'https://api.deepseek.com/chat/completions';
+const DEEPSEEK_TIMEOUT_MS = 300_000;
 
 function isGeminiModel(model) {
   return model && model.startsWith('gemini-');
 }
 
-function isOpenRouterModel(model) {
-  return Boolean(model && model.includes('/') && !model.startsWith('gemini-'));
+function isDeepSeekModel(model) {
+  return Boolean(model && model.startsWith('deepseek-'));
 }
 
 function getModelPrices(model) {
-  if (isOpenRouterModel(model)) return OPENROUTER_PRICES[model] || { input: 0.10, output: 0.50 };
+  if (isDeepSeekModel(model)) return DEEPSEEK_PRICES[model] || DEEPSEEK_PRICES['deepseek-v4-flash'];
   if (isGeminiModel(model)) return GEMINI_PRICES[model] || { input: 0.10, output: 0.40 };
   return CLAUDE_PRICES;
 }
@@ -620,11 +627,11 @@ ${extraPrompt ? `\nExtra instructions:\n${extraPrompt}` : ''}`;
 }
 
 // ============================================================================
-// OPENROUTER: Generate a single scene via OpenRouter chat completions API
-// (OpenAI-compatible) with forced tool calling + reasoning enabled.
+// DEEPSEEK: native chat completions API (OpenAI-compatible) with forced
+// tool calling. Thinking mode is enabled by default on deepseek-v4-* models.
 // ============================================================================
 
-async function generateSingleSceneOpenRouter(openrouterKey, model, systemPrompt, segment, segIndex, totalSegments, extraPrompt, neighborContext) {
+async function generateSingleSceneDeepSeek(deepseekKey, model, systemPrompt, segment, segIndex, totalSegments, extraPrompt, neighborContext) {
   const segName = `Seg${segIndex}`;
   const segEntry = { name: segName, start: segment.start, end: segment.end, text: segment.text || '' };
 
@@ -646,13 +653,16 @@ Segment:
 ${JSON.stringify(segEntry, null, 2)}${contextBlock}
 ${extraPrompt ? `\nExtra instructions:\n${extraPrompt}` : ''}`;
 
+  console.log(`  [Animator/DeepSeek] Scene ${segIndex}/${totalSegments} -> calling ${model}...`);
+
   try {
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    const response = await fetch(DEEPSEEK_API_URL, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${openrouterKey}`,
+        'Authorization': `Bearer ${deepseekKey}`,
         'Content-Type': 'application/json',
       },
+      signal: AbortSignal.timeout(DEEPSEEK_TIMEOUT_MS),
       body: JSON.stringify({
         model,
         messages: [
@@ -677,14 +687,13 @@ ${extraPrompt ? `\nExtra instructions:\n${extraPrompt}` : ''}`;
           },
         }],
         tool_choice: { type: 'function', function: { name: 'write_segment_components' } },
-        reasoning: { enabled: true },
         max_tokens: 16000,
       }),
     });
 
     if (!response.ok) {
       const errText = await response.text();
-      throw new Error(`OpenRouter API error ${response.status}: ${errText.substring(0, 300)}`);
+      throw new Error(`DeepSeek API error ${response.status}: ${errText.substring(0, 300)}`);
     }
 
     const data = await response.json();
@@ -693,14 +702,14 @@ ${extraPrompt ? `\nExtra instructions:\n${extraPrompt}` : ''}`;
 
     if (!toolCall || !toolCall.function?.arguments) {
       const textContent = choice?.message?.content || '';
-      throw new Error(`OpenRouter returned no tool call. Text: ${String(textContent).substring(0, 200)}`);
+      throw new Error(`DeepSeek returned no tool call. Text: ${String(textContent).substring(0, 200)}`);
     }
 
     let parsedArgs;
     try {
       parsedArgs = JSON.parse(toolCall.function.arguments);
     } catch (parseErr) {
-      throw new Error(`OpenRouter tool_call arguments not valid JSON: ${parseErr.message}`);
+      throw new Error(`DeepSeek tool_call arguments not valid JSON: ${parseErr.message}`);
     }
 
     const raw = (parsedArgs.components_code || '').trim();
@@ -709,27 +718,35 @@ ${extraPrompt ? `\nExtra instructions:\n${extraPrompt}` : ''}`;
 
     const validation = validateComponentCode(code, segName);
     if (!validation.valid) {
-      console.warn(`  [Animator/OpenRouter] Scene ${segIndex}/${totalSegments} validation failed: ${validation.error}`);
+      console.warn(`  [Animator/DeepSeek] Scene ${segIndex}/${totalSegments} validation failed: ${validation.error}`);
       return { error: `Scene ${segIndex} validation: ${validation.error}`, code };
     }
 
-    const inputTokens = u.prompt_tokens || 0;
+    const cacheHitTokens = u.prompt_cache_hit_tokens || 0;
+    const cacheMissTokens = u.prompt_cache_miss_tokens || ((u.prompt_tokens || 0) - cacheHitTokens);
     const outputTokens = u.completion_tokens || 0;
 
-    console.log(`  [Animator/OpenRouter] Scene ${segIndex}/${totalSegments} | ${segName} | ${code.length} chars | in:${inputTokens} out:${outputTokens}`);
+    console.log(`  [Animator/DeepSeek] Scene ${segIndex}/${totalSegments} | ${segName} | ${code.length} chars | in_miss:${cacheMissTokens} in_hit:${cacheHitTokens} out:${outputTokens}`);
 
     return {
       code,
       segName,
-      tokens: { input: inputTokens, output: outputTokens, cacheRead: 0, cacheCreated: 0 },
+      tokens: {
+        input: cacheMissTokens,
+        output: outputTokens,
+        cacheRead: cacheHitTokens,
+        cacheCreated: 0,
+      },
     };
   } catch (err) {
-    console.error(`  [Animator/OpenRouter] Scene ${segIndex}/${totalSegments} error:`, err.message);
-    return { error: `Scene ${segIndex}: ${err.message}` };
+    const isTimeout = err.name === 'TimeoutError' || err.name === 'AbortError';
+    const msg = isTimeout ? `timeout after ${DEEPSEEK_TIMEOUT_MS}ms` : err.message;
+    console.error(`  [Animator/DeepSeek] Scene ${segIndex}/${totalSegments} error:`, msg);
+    return { error: `Scene ${segIndex}: ${msg}` };
   }
 }
 
-async function generateChunkOpenRouter(openrouterKey, model, systemPrompt, chunkSegments, chunkIdx, totalChunks, extraPrompt, globalOffset) {
+async function generateChunkDeepSeek(deepseekKey, model, systemPrompt, chunkSegments, chunkIdx, totalChunks, extraPrompt, globalOffset) {
   const segEntries = chunkSegments.map((s, i) => ({
     name: `Seg${globalOffset + i}`,
     start: s.start,
@@ -745,13 +762,16 @@ Segments:
 ${JSON.stringify(segEntries, null, 2)}
 ${extraPrompt ? `\nExtra instructions:\n${extraPrompt}` : ''}`;
 
+  console.log(`  [Animator/DeepSeek] Chunk ${chunkIdx + 1}/${totalChunks} -> calling ${model} (${segEntries.length} segs)...`);
+
   try {
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    const response = await fetch(DEEPSEEK_API_URL, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${openrouterKey}`,
+        'Authorization': `Bearer ${deepseekKey}`,
         'Content-Type': 'application/json',
       },
+      signal: AbortSignal.timeout(DEEPSEEK_TIMEOUT_MS),
       body: JSON.stringify({
         model,
         messages: [
@@ -776,14 +796,13 @@ ${extraPrompt ? `\nExtra instructions:\n${extraPrompt}` : ''}`;
           },
         }],
         tool_choice: { type: 'function', function: { name: 'write_segment_components' } },
-        reasoning: { enabled: true },
         max_tokens: 64000,
       }),
     });
 
     if (!response.ok) {
       const errText = await response.text();
-      throw new Error(`OpenRouter API error ${response.status}: ${errText.substring(0, 300)}`);
+      throw new Error(`DeepSeek API error ${response.status}: ${errText.substring(0, 300)}`);
     }
 
     const data = await response.json();
@@ -791,7 +810,7 @@ ${extraPrompt ? `\nExtra instructions:\n${extraPrompt}` : ''}`;
     const toolCall = choice?.message?.tool_calls?.[0];
 
     if (!toolCall || !toolCall.function?.arguments) {
-      return { error: `Chunk ${chunkIdx + 1}/${totalChunks}: OpenRouter returned no tool call` };
+      return { error: `Chunk ${chunkIdx + 1}/${totalChunks}: DeepSeek returned no tool call` };
     }
 
     let parsedArgs;
@@ -805,28 +824,33 @@ ${extraPrompt ? `\nExtra instructions:\n${extraPrompt}` : ''}`;
     const cleaned = sanitizeReservedNames(stripSharedDeclarations(raw));
     const code = trimTrailingGarbageChunk(cleaned, segEntries.map(s => s.name));
     const u = data.usage || {};
+    const cacheHitTokens = u.prompt_cache_hit_tokens || 0;
+    const cacheMissTokens = u.prompt_cache_miss_tokens || ((u.prompt_tokens || 0) - cacheHitTokens);
+    const outputTokens = u.completion_tokens || 0;
 
-    console.log(`  [Animator/OpenRouter] Chunk ${chunkIdx + 1}/${totalChunks} | ${segEntries.map(s => s.name).join(',')} | ${code.length} chars | in:${u.prompt_tokens || 0} out:${u.completion_tokens || 0}`);
+    console.log(`  [Animator/DeepSeek] Chunk ${chunkIdx + 1}/${totalChunks} | ${segEntries.map(s => s.name).join(',')} | ${code.length} chars | in_miss:${cacheMissTokens} in_hit:${cacheHitTokens} out:${outputTokens}`);
 
     return {
       code,
       tokens: {
-        input: u.prompt_tokens || 0,
-        output: u.completion_tokens || 0,
-        cacheRead: 0,
+        input: cacheMissTokens,
+        output: outputTokens,
+        cacheRead: cacheHitTokens,
         cacheCreated: 0,
       },
     };
   } catch (err) {
-    console.error(`  [Animator/OpenRouter] Chunk ${chunkIdx + 1}/${totalChunks} error:`, err.message);
-    return { error: `Chunk ${chunkIdx + 1}: ${err.message}` };
+    const isTimeout = err.name === 'TimeoutError' || err.name === 'AbortError';
+    const msg = isTimeout ? `timeout after ${DEEPSEEK_TIMEOUT_MS}ms` : err.message;
+    console.error(`  [Animator/DeepSeek] Chunk ${chunkIdx + 1}/${totalChunks} error:`, msg);
+    return { error: `Chunk ${chunkIdx + 1}: ${msg}` };
   }
 }
 
 async function generateComposition({
   anthropicKey,
   geminiKey,
-  openrouterKey,
+  deepseekKey,
   segments,
   componentName,
   audioFilename,
@@ -842,12 +866,12 @@ async function generateComposition({
 }) {
   if (!model) throw new Error('model is required (no silent fallback to Claude)');
   const effectiveModel = model;
-  const useOpenRouter = isOpenRouterModel(effectiveModel);
-  const useGemini = !useOpenRouter && isGeminiModel(effectiveModel);
+  const useDeepSeek = isDeepSeekModel(effectiveModel);
+  const useGemini = !useDeepSeek && isGeminiModel(effectiveModel);
 
-  if (useOpenRouter && !openrouterKey) throw new Error('OpenRouter API key is required for OpenRouter models');
+  if (useDeepSeek && !deepseekKey) throw new Error('DeepSeek API key is required for DeepSeek models');
   if (useGemini && !geminiKey) throw new Error('Gemini API key is required for Gemini models');
-  if (!useOpenRouter && !useGemini && !anthropicKey) throw new Error('Anthropic API key is required');
+  if (!useDeepSeek && !useGemini && !anthropicKey) throw new Error('Anthropic API key is required');
   if (!segments || segments.length === 0) throw new Error('Segments are required');
 
   const effectiveChunkSize = chunkSize || CHUNK_SIZE_DEFAULT;
@@ -865,10 +889,10 @@ async function generateComposition({
   console.log(`  Skills: ${skillsLoaded.join(', ')}`);
 
   let chunkResults;
-  if (useOpenRouter) {
+  if (useDeepSeek) {
     chunkResults = await Promise.all(
       chunks.map((chunk, chunkIdx) =>
-        generateChunkOpenRouter(openrouterKey, effectiveModel, systemPrompt, chunk, chunkIdx, chunks.length, extraPrompt, chunkIdx * effectiveChunkSize + 1)
+        generateChunkDeepSeek(deepseekKey, effectiveModel, systemPrompt, chunk, chunkIdx, chunks.length, extraPrompt, chunkIdx * effectiveChunkSize + 1)
       )
     );
   } else if (useGemini) {
@@ -900,12 +924,23 @@ async function generateComposition({
   }), { input: 0, output: 0, cacheRead: 0, cacheCreated: 0 });
 
   const prices = getModelPrices(effectiveModel);
-  const costUsd = (useOpenRouter || useGemini)
-    ? (tokensResult.input * prices.input / 1_000_000) + (tokensResult.output * prices.output / 1_000_000)
-    : (tokensResult.input * prices.input / 1_000_000) +
+  let costUsd;
+  if (useDeepSeek) {
+    // DeepSeek bills cache hits at a discounted rate; tokensResult.cacheRead carries
+    // the cache-hit count, tokensResult.input carries cache-miss only.
+    costUsd =
+      (tokensResult.input * prices.input / 1_000_000) +
+      (tokensResult.cacheRead * (prices.cacheHit || prices.input) / 1_000_000) +
+      (tokensResult.output * prices.output / 1_000_000);
+  } else if (useGemini) {
+    costUsd = (tokensResult.input * prices.input / 1_000_000) + (tokensResult.output * prices.output / 1_000_000);
+  } else {
+    costUsd =
+      (tokensResult.input * prices.input / 1_000_000) +
       (tokensResult.output * prices.output / 1_000_000) +
       (tokensResult.cacheCreated * prices.cacheWrite / 1_000_000) +
       (tokensResult.cacheRead * prices.cacheRead / 1_000_000);
+  }
 
   const totalDuration = segments[segments.length - 1].end;
   const durationInFrames = Math.ceil(totalDuration * effectiveFps);
@@ -927,4 +962,4 @@ async function generateComposition({
   };
 }
 
-module.exports = { generateComposition, generateSingleScene, generateSingleSceneGemini, generateSingleSceneOpenRouter, validateComponentCode, sanitizeReservedNames, buildWrapper, stripSharedDeclarations, trimTrailingGarbage, trimTrailingGarbageChunk, isGeminiModel, isOpenRouterModel, getModelPrices };
+module.exports = { generateComposition, generateSingleScene, generateSingleSceneGemini, generateSingleSceneDeepSeek, validateComponentCode, sanitizeReservedNames, buildWrapper, stripSharedDeclarations, trimTrailingGarbage, trimTrailingGarbageChunk, isGeminiModel, isDeepSeekModel, getModelPrices };

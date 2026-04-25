@@ -869,7 +869,8 @@ function PresetConfigDialog({
                         <SelectItem value="claude-sonnet-4-5-20250620">Claude Sonnet 4.5</SelectItem>
                         <SelectItem value="gemini-3-flash-preview">Gemini 3 Flash</SelectItem>
                         <SelectItem value="gemini-3.1-pro-preview">Gemini 3.1 Pro</SelectItem>
-                        <SelectItem value="deepseek/deepseek-v4-flash">Deepseek V4 Flash (OpenRouter)</SelectItem>
+                        <SelectItem value="deepseek-v4-flash">DeepSeek V4 Flash</SelectItem>
+                        <SelectItem value="deepseek-v4-pro">DeepSeek V4 Pro</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>

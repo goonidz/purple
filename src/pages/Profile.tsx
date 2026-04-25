@@ -30,6 +30,7 @@ const Profile = () => {
   const [ai33ApiKey, setAi33ApiKey] = useState("");
   const [zaiApiKey, setZaiApiKey] = useState("");
   const [openrouterApiKey, setOpenrouterApiKey] = useState("");
+  const [deepseekApiKey, setDeepseekApiKey] = useState("");
   const [groqApiKey, setGroqApiKey] = useState("");
   const [fishAudioApiKey, setFishAudioApiKey] = useState("");
   const [pexelsApiKey, setPexelsApiKey] = useState("");
@@ -49,6 +50,7 @@ const Profile = () => {
     ai33: "",
     zai: "",
     openrouter: "",
+    deepseek: "",
     groq: "",
     fish_audio: "",
     pexels: ""
@@ -67,6 +69,7 @@ const Profile = () => {
     ai33: false,
     zai: false,
     openrouter: false,
+    deepseek: false,
     groq: false,
     fish_audio: false,
     pexels: false
@@ -105,7 +108,7 @@ const Profile = () => {
     setIsLoading(true);
     try {
       // Try to get API keys from Vault
-      const [replicateResult, elevenLabsResult, minimaxResult, anthropicResult, braveResult, keiResult, apifyResult, inworldResult, geminiResult, genaiproResult, ai33Result, zaiResult, openrouterResult, groqResult, fishAudioResult, pexelsResult] = await Promise.all([
+      const [replicateResult, elevenLabsResult, minimaxResult, anthropicResult, braveResult, keiResult, apifyResult, inworldResult, geminiResult, genaiproResult, ai33Result, zaiResult, openrouterResult, deepseekResult, groqResult, fishAudioResult, pexelsResult] = await Promise.all([
         supabase.rpc('get_user_api_key', { key_name: 'replicate' }),
         supabase.rpc('get_user_api_key', { key_name: 'eleven_labs' }),
         supabase.rpc('get_user_api_key', { key_name: 'minimax' }),
@@ -119,6 +122,7 @@ const Profile = () => {
         supabase.rpc('get_user_api_key', { key_name: 'ai33' }),
         supabase.rpc('get_user_api_key', { key_name: 'zai' }),
         supabase.rpc('get_user_api_key', { key_name: 'openrouter' }),
+        supabase.rpc('get_user_api_key', { key_name: 'deepseek' }),
         supabase.rpc('get_user_api_key', { key_name: 'groq' }),
         supabase.rpc('get_user_api_key', { key_name: 'fish_audio' }),
         supabase.rpc('get_user_api_key', { key_name: 'pexels' }),
@@ -137,6 +141,7 @@ const Profile = () => {
       const ai33Value = ai33Result.data || "";
       const zaiValue = zaiResult.data || "";
       const openrouterValue = openrouterResult.data || "";
+      const deepseekValue = deepseekResult.data || "";
       const groqValue = groqResult.data || "";
       const fishAudioValue = fishAudioResult.data || "";
       const pexelsValue = pexelsResult.data || "";
@@ -155,6 +160,7 @@ const Profile = () => {
       setAi33ApiKey(ai33Value);
       setZaiApiKey(zaiValue);
       setOpenrouterApiKey(openrouterValue);
+      setDeepseekApiKey(deepseekValue);
       setGroqApiKey(groqValue);
       setFishAudioApiKey(fishAudioValue);
       setPexelsApiKey(pexelsValue);
@@ -174,6 +180,7 @@ const Profile = () => {
         ai33: ai33Value,
         zai: zaiValue,
         openrouter: openrouterValue,
+        deepseek: deepseekValue,
         groq: groqValue,
         fish_audio: fishAudioValue,
         pexels: pexelsValue
@@ -244,6 +251,9 @@ const Profile = () => {
     if (openrouterApiKey.trim() !== originalKeys.openrouter) {
       changedKeys.push({ key_name: 'openrouter', key_value: openrouterApiKey.trim() });
     }
+    if (deepseekApiKey.trim() !== originalKeys.deepseek) {
+      changedKeys.push({ key_name: 'deepseek', key_value: deepseekApiKey.trim() });
+    }
     if (groqApiKey.trim() !== originalKeys.groq) {
       changedKeys.push({ key_name: 'groq', key_value: groqApiKey.trim() });
     }
@@ -296,6 +306,7 @@ const Profile = () => {
         ai33: ai33ApiKey.trim(),
         zai: zaiApiKey.trim(),
         openrouter: openrouterApiKey.trim(),
+        deepseek: deepseekApiKey.trim(),
         groq: groqApiKey.trim(),
         fish_audio: fishAudioApiKey.trim(),
         pexels: pexelsApiKey.trim()
@@ -673,6 +684,42 @@ const Profile = () => {
                   </div>
 
                   <div className="space-y-2">
+                    <Label htmlFor="deepseek-key">
+                      DeepSeek API Key
+                    </Label>
+                    <div className="relative">
+                      <Input
+                        id="deepseek-key"
+                        type={showKeys.deepseek ? "text" : "password"}
+                        value={deepseekApiKey}
+                        onChange={(e) => setDeepseekApiKey(e.target.value)}
+                        placeholder="sk-..."
+                        className="pr-10"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                        onClick={() => setShowKeys(prev => ({ ...prev, deepseek: !prev.deepseek }))}
+                      >
+                        {showKeys.deepseek ? <EyeOff className="h-4 w-4 text-muted-foreground" /> : <Eye className="h-4 w-4 text-muted-foreground" />}
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Utilisée pour la génération Animator avec DeepSeek V4 Flash / Pro (API native, pricing officiel).{" "}
+                      <a
+                        href="https://platform.deepseek.com/api_keys"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary hover:underline"
+                      >
+                        Obtenir une clé
+                      </a>
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
                     <Label htmlFor="brave-key">
                       Brave Search API Key
                     </Label>
@@ -1000,7 +1047,7 @@ const Profile = () => {
 
                 <Button
                   onClick={handleSave}
-                  disabled={isSaving || (!replicateApiKey.trim() && !elevenLabsApiKey.trim() && !minimaxApiKey.trim() && !anthropicApiKey.trim() && !zaiApiKey.trim() && !openrouterApiKey.trim() && !braveApiKey.trim() && !keiApiKey.trim() && !apifyApiKey.trim() && !inworldApiKey.trim() && !geminiApiKey.trim() && !genaiproApiKey.trim() && !ai33ApiKey.trim())}
+                  disabled={isSaving || (!replicateApiKey.trim() && !elevenLabsApiKey.trim() && !minimaxApiKey.trim() && !anthropicApiKey.trim() && !zaiApiKey.trim() && !openrouterApiKey.trim() && !deepseekApiKey.trim() && !braveApiKey.trim() && !keiApiKey.trim() && !apifyApiKey.trim() && !inworldApiKey.trim() && !geminiApiKey.trim() && !genaiproApiKey.trim() && !ai33ApiKey.trim())}
                   className="w-full"
                   size="lg"
                 >
