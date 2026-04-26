@@ -1047,7 +1047,7 @@ const Profile = () => {
 
                 <Button
                   onClick={handleSave}
-                  disabled={isSaving || (!replicateApiKey.trim() && !elevenLabsApiKey.trim() && !minimaxApiKey.trim() && !anthropicApiKey.trim() && !zaiApiKey.trim() && !openrouterApiKey.trim() && !deepseekApiKey.trim() && !braveApiKey.trim() && !keiApiKey.trim() && !apifyApiKey.trim() && !inworldApiKey.trim() && !geminiApiKey.trim() && !genaiproApiKey.trim() && !ai33ApiKey.trim())}
+                  disabled={isSaving || ![replicateApiKey, elevenLabsApiKey, minimaxApiKey, anthropicApiKey, zaiApiKey, openrouterApiKey, deepseekApiKey, braveApiKey, keiApiKey, apifyApiKey, inworldApiKey, geminiApiKey, genaiproApiKey, ai33ApiKey, groqApiKey, fishAudioApiKey, pexelsApiKey].some(k => k.trim())}
                   className="w-full"
                   size="lg"
                 >
