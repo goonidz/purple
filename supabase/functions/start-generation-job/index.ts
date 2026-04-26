@@ -161,7 +161,12 @@ serve(async (req) => {
       
       if (activeJobs.length > 0) {
         // For single jobs, check if the same scene is already being processed
-        if (jobType === 'single_prompt' || jobType === 'single_image') {
+        if (
+          jobType === 'single_prompt' ||
+          jobType === 'single_image' ||
+          jobType === 'animator_scene' ||
+          jobType === 'qa_scene'
+        ) {
           const sceneIndex = metadata.sceneIndex;
           const sameSceneJob = activeJobs.find(
             (j: any) => j.metadata?.sceneIndex === sceneIndex

@@ -289,7 +289,7 @@ const Index = () => {
   const [animatorSegments, setAnimatorSegments] = useState<{ start: number; end: number; text: string }[] | null>(null);
   const [animatorSegmentsProcessed, setAnimatorSegmentsProcessed] = useState<{ start: number; end: number; text: string }[] | null>(null);
   const [animatorSceneStatuses, setAnimatorSceneStatuses] = useState<{ scene_index: number; animator_code_status: string | null; animator_code: string | null }[]>([]);
-  const [isRetryingScene, setIsRetryingScene] = useState<number | null>(null);
+  const [retryingSceneIndices, setRetryingSceneIndices] = useState<Set<number>>(new Set());
   const [expandedAnimatorScenes, setExpandedAnimatorScenes] = useState<Set<number>>(new Set());
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [isUploadingAudio, setIsUploadingAudio] = useState(false);
@@ -5573,7 +5573,7 @@ const Index = () => {
                         const isCompleted = status === 'completed';
                         const isGenerating = status === 'generating' || status === 'pending';
                         const hasCode = !!sceneStatus?.animator_code;
-                        const isRetrying = isRetryingScene === index;
+                        const isRetrying = retryingSceneIndices.has(index);
                         const isExpanded = expandedAnimatorScenes.has(index);
                         const duration = (scene.endTime - scene.startTime).toFixed(1);
 
@@ -5647,7 +5647,14 @@ const Index = () => {
                                       if (isCompleted && !window.confirm(`Régénérer la scène ${index + 1} ? Le code actuel sera remplacé.`)) {
                                         return;
                                       }
-                                      setIsRetryingScene(index);
+                                      setRetryingSceneIndices(prev => {
+                                        const next = new Set(prev);
+                                        next.add(index);
+                                        return next;
+                                      });
+                                      // Snapshot prior status so we can roll back if startJob fails
+                                      const previousStatus = sceneStatus?.animator_code_status ?? null;
+                                      const previousCode = sceneStatus?.animator_code ?? null;
                                       try {
                                         await supabase
                                           .from('project_scenes')
@@ -5661,14 +5668,55 @@ const Index = () => {
                                               : s
                                           )
                                         );
-                                        await startJob('animator_scene' as any, {
+                                        const result = await startJob('animator_scene' as any, {
                                           sceneIndex: index,
                                           segment: { start: scene.startTime, end: scene.endTime, text: scene.text },
                                         });
+                                        // If the edge function rejected (returns null), roll back so the
+                                        // scene doesn't stay stuck in "pending" with no worker job
+                                        if (!result) {
+                                          await supabase
+                                            .from('project_scenes')
+                                            .update({
+                                              animator_code: previousCode,
+                                              animator_code_status: previousStatus,
+                                            })
+                                            .eq('project_id', currentProjectId)
+                                            .eq('scene_index', index);
+                                          setAnimatorSceneStatuses(prev =>
+                                            prev.map(s =>
+                                              s.scene_index === index
+                                                ? { ...s, animator_code: previousCode, animator_code_status: previousStatus }
+                                                : s
+                                            )
+                                          );
+                                        }
                                       } catch (e: any) {
                                         toast.error(`Erreur: ${e.message}`);
+                                        // Roll back DB so the scene icon doesn't get stuck loading forever
+                                        try {
+                                          await supabase
+                                            .from('project_scenes')
+                                            .update({
+                                              animator_code: previousCode,
+                                              animator_code_status: previousStatus,
+                                            })
+                                            .eq('project_id', currentProjectId)
+                                            .eq('scene_index', index);
+                                          setAnimatorSceneStatuses(prev =>
+                                            prev.map(s =>
+                                              s.scene_index === index
+                                                ? { ...s, animator_code: previousCode, animator_code_status: previousStatus }
+                                                : s
+                                            )
+                                          );
+                                        } catch {}
                                       } finally {
-                                        setIsRetryingScene(null);
+                                        setRetryingSceneIndices(prev => {
+                                          const next = new Set(prev);
+                                          next.delete(index);
+                                          return next;
+                                        });
                                       }
                                     }}
                                     title={isFailed ? 'Relancer la génération' : 'Régénérer cette scène'}
