@@ -116,6 +116,18 @@ if [ -d "$HOME/purple/crm" ] && [ -f "$HOME/purple/crm/setup-vps.sh" ]; then
     fi
 fi
 
+# Safety net: ensure nginx is up at the end of every deploy, even if a
+# previous step failed silently. Otherwise the site is unreachable until
+# someone notices.
+if ! sudo systemctl is-active --quiet nginx; then
+    echo -e "${YELLOW}⚠️  nginx is not active — starting it now${NC}"
+    if sudo systemctl start nginx; then
+        echo -e "${GREEN}✅ nginx started${NC}"
+    else
+        echo -e "${RED}❌ Failed to start nginx — site will be unreachable. Check 'sudo nginx -t' and 'sudo journalctl -u nginx -n 50'${NC}"
+    fi
+fi
+
 echo -e "${GREEN}✅ Deployment complete!${NC}"
 echo ""
 echo "Your application should be available at: http://$(hostname -I | awk '{print $1}')"

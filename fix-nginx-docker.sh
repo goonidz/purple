@@ -13,7 +13,12 @@
 set -euo pipefail
 
 readonly DOMAIN="purpleai.duckdns.org"
-readonly REPO_CONF="$HOME/purple/nginx-purpleai.conf"
+# Resolve repo conf path relative to this script so it works regardless
+# of who runs it (root via sudo, ubuntu, etc.) — $HOME would point to
+# /root under sudo and break the lookup at /root/purple/...
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+readonly SCRIPT_DIR
+readonly REPO_CONF="$SCRIPT_DIR/nginx-purpleai.conf"
 readonly LIVE_CONF="/etc/nginx/sites-available/purpleai"
 readonly ENABLED_LINK="/etc/nginx/sites-enabled/purpleai"
 readonly LEGACY_AVAILABLE="/etc/nginx/sites-available/videoflow"
@@ -52,8 +57,10 @@ die()  { printf "\033[1;31m✗ %s\033[0m\n" "$*" >&2; exit 1; }
 log "🔧 nginx + Docker setup for ${DOMAIN}"
 
 # 1. Docker frontend container -------------------------------------------------
+# Note: we no longer stop nginx here. Docker binds to 127.0.0.1:8080 so
+# there is zero port conflict. Stopping nginx unconditionally was a bug
+# that left the site offline whenever step 2 (preflight) failed.
 log "🐳 (Re)starting Docker frontend on 127.0.0.1:8080..."
-sudo systemctl stop nginx 2>/dev/null || true
 sudo docker stop videoflow 2>/dev/null || true
 sudo docker rm   videoflow 2>/dev/null || true
 sudo docker run -d \
