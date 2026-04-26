@@ -3638,9 +3638,42 @@ app.post('/concat-audio', async (req, res) => {
       console.log(`[${jobId}] Audio ${i + 1}/${audioUrls.length} duration: ${duration ?? 'unknown'}s`);
     }
 
-    // Create concat file for FFmpeg
+    // Per-chunk loudness normalization (EBU R128, target -16 LUFS).
+    // Runs chunks in parallel batches to avoid saturating CPU; ensures
+    // consistent perceived volume between chunks (no audible "jumps").
+    console.log(`[${jobId}] Normalizing loudness on ${audioFiles.length} chunks (loudnorm I=-16 TP=-1.5 LRA=7)...`);
+    const normStart = Date.now();
+    const normalizedFiles = new Array(audioFiles.length);
+    const NORM_CONCURRENCY = 4;
+    for (let batchStart = 0; batchStart < audioFiles.length; batchStart += NORM_CONCURRENCY) {
+      const batch = audioFiles.slice(batchStart, batchStart + NORM_CONCURRENCY);
+      await Promise.all(batch.map((srcPath, batchIdx) => {
+        const i = batchStart + batchIdx;
+        const normPath = path.join(workDir, `audio_${i}_norm.mp3`);
+        return new Promise((resolve, reject) => {
+          ffmpeg(srcPath)
+            .audioFilters('loudnorm=I=-16:TP=-1.5:LRA=7')
+            .audioCodec('libmp3lame')
+            .audioBitrate('192k')
+            .output(normPath)
+            .on('end', () => {
+              normalizedFiles[i] = normPath;
+              resolve();
+            })
+            .on('error', (err) => {
+              console.warn(`[${jobId}] loudnorm failed on chunk ${i}, falling back to raw: ${err.message}`);
+              normalizedFiles[i] = srcPath;
+              resolve();
+            })
+            .run();
+        });
+      }));
+    }
+    console.log(`[${jobId}] Loudness normalization done in ${Date.now() - normStart}ms`);
+
+    // Create concat file for FFmpeg (using normalized versions)
     const concatFilePath = path.join(workDir, 'concat.txt');
-    const concatContent = audioFiles.map(f => `file '${f}'`).join('\n');
+    const concatContent = normalizedFiles.map(f => `file '${f}'`).join('\n');
     await writeFile(concatFilePath, concatContent);
 
     // Output file
