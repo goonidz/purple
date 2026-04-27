@@ -3597,8 +3597,14 @@ app.post('/cleanup', async (req, res) => {
 });
 
 // Concatenate multiple audio files into one
+// Optional `normalize: true` runs per-chunk EBU R128 loudness normalization
+// (loudnorm) before concat. Defaults to false: most TTS providers produce
+// consistent loudness chunk-to-chunk and the loudnorm pass is expensive
+// (2-3 min for 50+ chunks), which used to time out the worker fetch.
+// Currently only enabled for Gemini TTS, which exhibits noticeable
+// volume drift between chunks.
 app.post('/concat-audio', async (req, res) => {
-  const { audioUrls, userId, projectId } = req.body;
+  const { audioUrls, userId, projectId, normalize = false } = req.body;
   
   if (!audioUrls || !Array.isArray(audioUrls) || audioUrls.length === 0) {
     return res.status(400).json({ error: 'audioUrls array is required' });
@@ -3607,7 +3613,7 @@ app.post('/concat-audio', async (req, res) => {
   const jobId = `concat_${Date.now()}_${Math.random().toString(36).substring(7)}`;
   const workDir = path.join(TEMP_DIR, jobId);
   
-  console.log(`[${jobId}] Starting audio concatenation for ${audioUrls.length} files`);
+  console.log(`[${jobId}] Starting audio concatenation for ${audioUrls.length} files (normalize=${normalize})`);
 
   try {
     // Create work directory
@@ -3638,42 +3644,46 @@ app.post('/concat-audio', async (req, res) => {
       console.log(`[${jobId}] Audio ${i + 1}/${audioUrls.length} duration: ${duration ?? 'unknown'}s`);
     }
 
-    // Per-chunk loudness normalization (EBU R128, target -16 LUFS).
-    // Runs chunks in parallel batches to avoid saturating CPU; ensures
-    // consistent perceived volume between chunks (no audible "jumps").
-    console.log(`[${jobId}] Normalizing loudness on ${audioFiles.length} chunks (loudnorm I=-16 TP=-1.5 LRA=7)...`);
-    const normStart = Date.now();
-    const normalizedFiles = new Array(audioFiles.length);
-    const NORM_CONCURRENCY = 4;
-    for (let batchStart = 0; batchStart < audioFiles.length; batchStart += NORM_CONCURRENCY) {
-      const batch = audioFiles.slice(batchStart, batchStart + NORM_CONCURRENCY);
-      await Promise.all(batch.map((srcPath, batchIdx) => {
-        const i = batchStart + batchIdx;
-        const normPath = path.join(workDir, `audio_${i}_norm.mp3`);
-        return new Promise((resolve, reject) => {
-          ffmpeg(srcPath)
-            .audioFilters('loudnorm=I=-16:TP=-1.5:LRA=7')
-            .audioCodec('libmp3lame')
-            .audioBitrate('192k')
-            .output(normPath)
-            .on('end', () => {
-              normalizedFiles[i] = normPath;
-              resolve();
-            })
-            .on('error', (err) => {
-              console.warn(`[${jobId}] loudnorm failed on chunk ${i}, falling back to raw: ${err.message}`);
-              normalizedFiles[i] = srcPath;
-              resolve();
-            })
-            .run();
-        });
-      }));
+    // Optional per-chunk loudness normalization (EBU R128, target -16 LUFS).
+    // Skipped by default to keep concat fast on long scripts.
+    let filesToConcat = audioFiles;
+    if (normalize) {
+      console.log(`[${jobId}] Normalizing loudness on ${audioFiles.length} chunks (loudnorm I=-16 TP=-1.5 LRA=7)...`);
+      const normStart = Date.now();
+      const normalizedFiles = new Array(audioFiles.length);
+      const NORM_CONCURRENCY = 4;
+      for (let batchStart = 0; batchStart < audioFiles.length; batchStart += NORM_CONCURRENCY) {
+        const batch = audioFiles.slice(batchStart, batchStart + NORM_CONCURRENCY);
+        await Promise.all(batch.map((srcPath, batchIdx) => {
+          const i = batchStart + batchIdx;
+          const normPath = path.join(workDir, `audio_${i}_norm.mp3`);
+          return new Promise((resolve) => {
+            ffmpeg(srcPath)
+              .audioFilters('loudnorm=I=-16:TP=-1.5:LRA=7')
+              .audioCodec('libmp3lame')
+              .audioBitrate('192k')
+              .output(normPath)
+              .on('end', () => {
+                normalizedFiles[i] = normPath;
+                resolve();
+              })
+              .on('error', (err) => {
+                console.warn(`[${jobId}] loudnorm failed on chunk ${i}, falling back to raw: ${err.message}`);
+                normalizedFiles[i] = srcPath;
+                resolve();
+              })
+              .run();
+          });
+        }));
+      }
+      console.log(`[${jobId}] Loudness normalization done in ${Date.now() - normStart}ms`);
+      filesToConcat = normalizedFiles;
+    } else {
+      console.log(`[${jobId}] Skipping loudness normalization (normalize=false)`);
     }
-    console.log(`[${jobId}] Loudness normalization done in ${Date.now() - normStart}ms`);
 
-    // Create concat file for FFmpeg (using normalized versions)
     const concatFilePath = path.join(workDir, 'concat.txt');
-    const concatContent = normalizedFiles.map(f => `file '${f}'`).join('\n');
+    const concatContent = filesToConcat.map(f => `file '${f}'`).join('\n');
     await writeFile(concatFilePath, concatContent);
 
     // Output file

@@ -3382,7 +3382,12 @@ async function processAudioTTSPipeline(job) {
           body: JSON.stringify({
             audioUrls: chunkUrls,
             userId: job.user_id,
-            projectId: projectId
+            projectId: projectId,
+            // Gemini TTS exhibits noticeable per-chunk volume drift (different
+            // multispeaker context); enable EBU R128 loudness normalization
+            // here only. Other providers (Inworld/Edge/Kokoro/Fish/Qwen3) are
+            // consistent enough to skip it and avoid the 2-3min cost.
+            normalize: true
           }),
           signal: controller.signal
         });
