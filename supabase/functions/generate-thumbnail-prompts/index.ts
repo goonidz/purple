@@ -102,7 +102,7 @@ serve(async (req) => {
     }
     // Service role calls are allowed without user verification (internal backend calls)
 
-    const { videoScript, videoTitle, exampleUrls, characterRefUrl, previousPrompts, customPrompt, userIdea, textModel, userId: bodyUserId } = await req.json();
+    const { videoScript, videoTitle, exampleUrls, characterRefUrl, previousPrompts, customPrompt, userIdea, userIdeaCount, textModel, userId: bodyUserId } = await req.json();
 
     if (!videoScript) {
       return new Response(
@@ -247,36 +247,79 @@ STRICT REQUIREMENTS:
 Think: "What aspects of the script have NOT been explored yet?"`;
     }
 
-    // Ajouter l'idée de l'utilisateur si fournie
-    if (userIdea && userIdea.trim()) {
+    // Determine how many of the 5 prompts should be variations of the user idea.
+    // Falls back to 2 (legacy default) if userIdea is provided but no count is sent
+    // (e.g. older clients). Clamped to [0..5]. If userIdea is missing/empty, count = 0.
+    const ideaCountRaw = typeof userIdeaCount === 'number'
+      ? userIdeaCount
+      : (userIdea && userIdea.trim() ? 2 : 0);
+    const ideaCount = Math.max(0, Math.min(5, Math.floor(ideaCountRaw)));
+    const hasUserIdea = !!(userIdea && userIdea.trim()) && ideaCount > 0;
+
+    // Helper: format slot lists like ["#1"] -> "#1", ["#1","#2"] -> "#1 and #2",
+    // ["#1","#2","#3"] -> "#1, #2, and #3"
+    const formatSlots = (slots: string[]): string => {
+      if (slots.length === 0) return '';
+      if (slots.length === 1) return slots[0];
+      if (slots.length === 2) return `${slots[0]} and ${slots[1]}`;
+      return `${slots.slice(0, -1).join(', ')}, and ${slots[slots.length - 1]}`;
+    };
+
+    if (hasUserIdea) {
+      const appliedSlots = Array.from({ length: ideaCount }, (_, i) => `#${i + 1}`);
+      const ignoredSlots = Array.from({ length: 5 - ideaCount }, (_, i) => `#${ideaCount + i + 1}`);
+      const ignoredCount = 5 - ideaCount;
+      const appliedLabel = formatSlots(appliedSlots);
+      const ignoredLabel = formatSlots(ignoredSlots);
+
       systemPrompt += `
 
-💡 USER'S IDEA - MANDATORY DIRECTION:
-The user wants ALL 5 thumbnails to be variations of this specific idea: "${userIdea.trim()}"
+💡 USER'S IDEA — PARTIAL DIRECTION:
+The user provided this idea: "${userIdea.trim()}"
 
-CRITICAL REQUIREMENT:
-- ALL 5 prompts MUST be variations/interpretations of the user's idea above
-- Each prompt should explore a different angle or visual approach to the same concept
-- The user's idea is the PRIMARY direction - adapt it to fit the video script content
-- Still follow ALL the rules above (style from examples, content from script, simplicity, etc.)
-- Create 5 distinct variations that all relate to the user's idea but with different visual compositions, angles, or emphasis`;
+APPLY IT TO EXACTLY ${ideaCount} OF THE 5 PROMPTS (prompt${ideaCount > 1 ? 's' : ''} ${appliedLabel}):
+- ${ideaCount === 1 ? 'This prompt' : `These ${ideaCount} prompts`} must be variation${ideaCount > 1 ? 's' : ''}/interpretation${ideaCount > 1 ? 's' : ''} of the user's idea above
+${ideaCount > 1 ? '- They should explore different angles/compositions of the SAME concept\n' : ''}- Adapt the idea to fit the video script content${ignoredCount > 0 ? `
+
+IGNORE THE USER'S IDEA FOR THE ${ignoredCount} REMAINING PROMPT${ignoredCount > 1 ? 'S' : ''} (prompt${ignoredCount > 1 ? 's' : ''} ${ignoredLabel}):
+- ${ignoredCount === 1 ? 'This prompt' : `These ${ignoredCount} prompts`} must be based ONLY on the video script/title
+- Do NOT reference, hint at, or visually echo the user's idea
+- ${ignoredCount === 1 ? 'It should be a distinct angle' : `They should be ${ignoredCount} DISTINCT angles drawn from the script itself (different from each other)`}` : ''}
+
+This produces a balanced batch: ${ideaCount} user-aligned + ${ignoredCount} script-only thumbnail${ideaCount + ignoredCount > 1 || ignoredCount > 1 ? 's' : ''}.`;
     }
 
-    // Always append the JSON format instruction
-    const variationInstruction = userIdea && userIdea.trim()
-      ? " (tous les 5 doivent être des variations de l'idée de l'utilisateur)"
-      : "";
+    // Per-slot tags — mark each of the 5 JSON slots so the model can't drift.
+    // First `ideaCount` slots = variations of the user idea; the rest = script-only.
+    const buildSlotTag = (slotIdx: number /* 0-based */): string => {
+      if (!hasUserIdea) return '';
+      if (slotIdx < ideaCount) {
+        if (slotIdx === 0) return " (VARIATION DE L'IDÉE UTILISATEUR — première interprétation)";
+        return ` (VARIATION DE L'IDÉE UTILISATEUR — angle/composition différent du #${slotIdx})`;
+      }
+      const ignoredOrdinal = slotIdx - ideaCount; // 0, 1, 2...
+      if (ignoredOrdinal === 0) {
+        return " (INDÉPENDANT — ignore l'idée user, basé uniquement sur le script)";
+      }
+      const prevIgnoredRefs = Array.from({ length: ignoredOrdinal }, (_, i) => `#${ideaCount + i + 1}`).join(', ');
+      return ` (INDÉPENDANT — ignore l'idée user, autre angle du script, différent du/des ${prevIgnoredRefs})`;
+    };
+    const slot1Tag = buildSlotTag(0);
+    const slot2Tag = buildSlotTag(1);
+    const slot3Tag = buildSlotTag(2);
+    const slot4Tag = buildSlotTag(3);
+    const slot5Tag = buildSlotTag(4);
 
     systemPrompt += `
 
 Retourne UNIQUEMENT un JSON avec ce format exact:
 {
   "prompts": [
-    "premier prompt détaillé reprenant le style des exemples${variationInstruction}...",
-    "deuxième prompt avec même style mais variation différente${variationInstruction}...",
-    "troisième prompt toujours dans le même style, autre variation${variationInstruction}...",
-    "quatrième prompt dans le même style, nouvelle variation${variationInstruction}...",
-    "cinquième prompt dans le même style, dernière variation${variationInstruction}..."
+    "premier prompt détaillé reprenant le style des exemples${slot1Tag}...",
+    "deuxième prompt avec même style mais variation différente${slot2Tag}...",
+    "troisième prompt toujours dans le même style, autre variation${slot3Tag}...",
+    "quatrième prompt dans le même style, nouvelle variation${slot4Tag}...",
+    "cinquième prompt dans le même style, dernière variation${slot5Tag}..."
   ]
 }`;
 

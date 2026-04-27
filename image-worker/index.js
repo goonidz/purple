@@ -1244,7 +1244,7 @@ async function processThumbnailsPipeline(job) {
   const { id: jobId, project_id: projectId, user_id: userId, metadata } = job;
   const {
     videoScript, videoTitle, exampleUrls, characterRefUrl,
-    previousPrompts, customPrompt, userIdea, imageModel, textModel,
+    previousPrompts, customPrompt, userIdea, userIdeaCount, imageModel, textModel,
     thumbnailProjectId, presetName, standalone,
   } = metadata || {};
 
@@ -1279,7 +1279,7 @@ async function processThumbnailsPipeline(job) {
       },
       body: JSON.stringify({
         videoScript, videoTitle, exampleUrls, characterRefUrl,
-        previousPrompts, customPrompt, userIdea, textModel, userId,
+        previousPrompts, customPrompt, userIdea, userIdeaCount, textModel, userId,
       }),
     });
 

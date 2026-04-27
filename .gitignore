@@ -1,3 +1,6 @@
+# Local backups (manual snapshots before risky edits, never deployed)
+.backups/
+
 # Logs
 logs
 *.log

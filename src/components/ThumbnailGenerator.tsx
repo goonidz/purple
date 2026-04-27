@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
@@ -100,6 +100,11 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
   const [imageModel, setImageModel] = useState<string>("ai33-seedream-4.5");
   const [textModel, setTextModel] = useState<string>("claude-sonnet-4-6");
   const [userIdea, setUserIdea] = useState<string>("");
+  // How many of the 5 prompts should be variations of the user idea.
+  // Default 0 when the textarea is empty, auto-bumped to 2 when it becomes non-empty
+  // (see effect below). Editable in the UI (0..5).
+  const [userIdeaCount, setUserIdeaCount] = useState<number>(0);
+  const prevUserIdeaEmptyRef = useRef<boolean>(true);
   const [isDescribingThumbnail, setIsDescribingThumbnail] = useState(false);
   const [isUploadingThumbnail, setIsUploadingThumbnail] = useState(false);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
@@ -107,6 +112,21 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
   const [sourceVideoUrl, setSourceVideoUrl] = useState<string | null>(null);
   const [sourceVideoThumbnailUrl, setSourceVideoThumbnailUrl] = useState<string | null>(null);
   const [hasAutoLoadedPreset, setHasAutoLoadedPreset] = useState<boolean>(false);
+
+  // Auto-adjust userIdeaCount on empty <-> non-empty transitions of the idea textarea:
+  // - empty -> non-empty : bump count to 2
+  // - non-empty -> empty : reset count to 0
+  // Mid-typing (still non-empty) leaves the user-chosen count untouched.
+  useEffect(() => {
+    const isEmpty = !userIdea.trim();
+    const wasEmpty = prevUserIdeaEmptyRef.current;
+    if (wasEmpty && !isEmpty) {
+      setUserIdeaCount(2);
+    } else if (!wasEmpty && isEmpty) {
+      setUserIdeaCount(0);
+    }
+    prevUserIdeaEmptyRef.current = isEmpty;
+  }, [userIdea]);
 
   const extractYouTubeId = (url: string): string | null => {
     try {
@@ -886,6 +906,7 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
         previousPrompts: previousPrompts.length > 0 ? previousPrompts : undefined,
         customPrompt: customPrompt !== DEFAULT_THUMBNAIL_PROMPT ? customPrompt : undefined,
         userIdea: userIdea.trim() || undefined,
+        userIdeaCount: userIdea.trim() ? userIdeaCount : 0,
         imageModel,
         textModel,
         presetName,
@@ -1355,6 +1376,37 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
               className="text-sm"
               placeholder="Ex: Je veux une miniature avec un effet avant/après, ou un visage choqué avec du texte rouge..."
             />
+            <div className="flex items-center gap-3 pt-1">
+              <Label className="text-xs text-muted-foreground whitespace-nowrap">
+                Variations basées sur cette idée
+              </Label>
+              <Select
+                value={String(userIdeaCount)}
+                onValueChange={(v) => setUserIdeaCount(Number(v))}
+                disabled={!userIdea.trim()}
+              >
+                <SelectTrigger className="h-8 w-24 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="0">0 / 5</SelectItem>
+                  <SelectItem value="1">1 / 5</SelectItem>
+                  <SelectItem value="2">2 / 5</SelectItem>
+                  <SelectItem value="3">3 / 5</SelectItem>
+                  <SelectItem value="4">4 / 5</SelectItem>
+                  <SelectItem value="5">5 / 5</SelectItem>
+                </SelectContent>
+              </Select>
+              <span className="text-xs text-muted-foreground">
+                {!userIdea.trim()
+                  ? "Remplis l'idée ci-dessus pour activer"
+                  : userIdeaCount === 0
+                    ? "Idée ignorée"
+                    : userIdeaCount === 5
+                      ? "Toutes les miniatures suivent l'idée"
+                      : `${userIdeaCount} miniature(s) suivent l'idée, ${5 - userIdeaCount} indépendante(s) du script`}
+              </span>
+            </div>
           </div>
 
           {/* Prompt système personnalisable */}
