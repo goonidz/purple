@@ -274,52 +274,71 @@ Think: "What aspects of the script have NOT been explored yet?"`;
 
       systemPrompt += `
 
-💡 USER'S IDEA — PARTIAL DIRECTION:
+💡 USER'S IDEA — PARTIAL DIRECTION (TWO MODES IN ONE BATCH):
 The user provided this idea: "${userIdea.trim()}"
 
-APPLY IT TO EXACTLY ${ideaCount} OF THE 5 PROMPTS (prompt${ideaCount > 1 ? 's' : ''} ${appliedLabel}):
-- ${ideaCount === 1 ? 'This prompt' : `These ${ideaCount} prompts`} must be variation${ideaCount > 1 ? 's' : ''}/interpretation${ideaCount > 1 ? 's' : ''} of the user's idea above
-${ideaCount > 1 ? '- They should explore different angles/compositions of the SAME concept\n' : ''}- Adapt the idea to fit the video script content${ignoredCount > 0 ? `
+═══════════════════════════════════════════════════════════
+MODE A — IDEA-DRIVEN PROMPTS (prompt${ideaCount > 1 ? 's' : ''} ${appliedLabel}, ${ideaCount} of 5):
+═══════════════════════════════════════════════════════════
+For these ${ideaCount} prompt${ideaCount > 1 ? 's' : ''}, THE USER'S IDEA ABOVE IS THE SOLE SOURCE OF TRUTH for visual style.
 
-IGNORE THE USER'S IDEA FOR THE ${ignoredCount} REMAINING PROMPT${ignoredCount > 1 ? 'S' : ''} (prompt${ignoredCount > 1 ? 's' : ''} ${ignoredLabel}):
-- ${ignoredCount === 1 ? 'This prompt' : `These ${ignoredCount} prompts`} must be based ONLY on the video script/title
-- Do NOT reference, hint at, or visually echo the user's idea
-- ${ignoredCount === 1 ? 'It should be a distinct angle' : `They should be ${ignoredCount} DISTINCT angles drawn from the script itself (different from each other)`}` : ''}
+STRICT OVERRIDE RULES — these ${ideaCount > 1 ? 'prompts' : 'prompt'} MUST:
+1. Follow STRICTLY and ONLY what is described in the user's idea
+2. OVERRIDE / IGNORE any conflicting visual rule from this system prompt
+   (background color, lighting, color palette, framing, composition style, etc.)
+   For example: if the system prompt says "white background" but the user's idea
+   says "fond sombre" / "dark background", these prompts MUST use a dark background.
+3. IGNORE the visual style of the example thumbnails when it conflicts with the user's idea
+4. Use the script ONLY to pick the SUBJECT/CONTENT (what to depict), NOT the style
+${ideaCount > 1 ? `5. Each of the ${ideaCount} prompts explores a DIFFERENT angle/composition of the user's idea (varied between each other, but all faithful to the idea)\n` : ''}
+The ONLY rules that still apply: 60-100 words per prompt, English, simple composition (3-4 elements max), no banned words ("dead").${ignoredCount > 0 ? `
 
-This produces a balanced batch: ${ideaCount} user-aligned + ${ignoredCount} script-only thumbnail${ideaCount + ignoredCount > 1 || ignoredCount > 1 ? 's' : ''}.`;
+═══════════════════════════════════════════════════════════
+MODE B — SCRIPT-ONLY PROMPTS (prompt${ignoredCount > 1 ? 's' : ''} ${ignoredLabel}, ${ignoredCount} of 5):
+═══════════════════════════════════════════════════════════
+For these ${ignoredCount} prompt${ignoredCount > 1 ? 's' : ''}, COMPLETELY IGNORE the user's idea above. Apply all the standard rules from this system prompt:
+- Use the visual style from the example thumbnails (colors, composition, typography)
+- Base the content ONLY on the video script/title
+- Do NOT reference, hint at, or visually echo the user's idea${ignoredCount > 1 ? `
+- The ${ignoredCount} prompts must be DISTINCT angles drawn from the script (different from each other)` : ''}` : ''}
+
+Final result: ${ideaCount} idea-driven + ${ignoredCount} script-only thumbnail${(ideaCount + ignoredCount) > 1 ? 's' : ''}.`;
     }
 
-    // Per-slot tags — mark each of the 5 JSON slots so the model can't drift.
-    // First `ideaCount` slots = variations of the user idea; the rest = script-only.
-    const buildSlotTag = (slotIdx: number /* 0-based */): string => {
-      if (!hasUserIdea) return '';
-      if (slotIdx < ideaCount) {
-        if (slotIdx === 0) return " (VARIATION DE L'IDÉE UTILISATEUR — première interprétation)";
-        return ` (VARIATION DE L'IDÉE UTILISATEUR — angle/composition différent du #${slotIdx})`;
+    // Per-slot lines — each line in the JSON template is rebuilt to match the slot's mode
+    // (idea-driven vs script-only) so the model cannot drift back to mixing the two.
+    const ordinals = ['premier', 'deuxième', 'troisième', 'quatrième', 'cinquième'];
+    const buildSlotLine = (slotIdx: number /* 0-based */): string => {
+      const ord = ordinals[slotIdx];
+      if (!hasUserIdea) {
+        if (slotIdx === 0) return `"${ord} prompt détaillé reprenant le style des exemples..."`;
+        if (slotIdx === 1) return `"${ord} prompt avec même style mais variation différente..."`;
+        return `"${ord} prompt toujours dans le même style, autre variation..."`;
       }
-      const ignoredOrdinal = slotIdx - ideaCount; // 0, 1, 2...
+      if (slotIdx < ideaCount) {
+        const variantHint = slotIdx === 0
+          ? 'première interprétation de l\'idée'
+          : `interprétation #${slotIdx + 1} de l'idée (angle/composition différent des précédentes)`;
+        return `"${ord} prompt — MODE A : suit STRICTEMENT et UNIQUEMENT l'idée utilisateur, IGNORE les exemples et toute règle stylistique contradictoire du prompt système (fond, couleurs, lighting, etc.) — ${variantHint}..."`;
+      }
+      const ignoredOrdinal = slotIdx - ideaCount;
       if (ignoredOrdinal === 0) {
-        return " (INDÉPENDANT — ignore l'idée user, basé uniquement sur le script)";
+        return `"${ord} prompt — MODE B : reprenant le style des exemples, basé uniquement sur le script, ignore complètement l'idée utilisateur..."`;
       }
       const prevIgnoredRefs = Array.from({ length: ignoredOrdinal }, (_, i) => `#${ideaCount + i + 1}`).join(', ');
-      return ` (INDÉPENDANT — ignore l'idée user, autre angle du script, différent du/des ${prevIgnoredRefs})`;
+      return `"${ord} prompt — MODE B : reprenant le style des exemples, basé uniquement sur le script, ignore l'idée utilisateur, autre angle du script (différent du/des ${prevIgnoredRefs})..."`;
     };
-    const slot1Tag = buildSlotTag(0);
-    const slot2Tag = buildSlotTag(1);
-    const slot3Tag = buildSlotTag(2);
-    const slot4Tag = buildSlotTag(3);
-    const slot5Tag = buildSlotTag(4);
 
     systemPrompt += `
 
 Retourne UNIQUEMENT un JSON avec ce format exact:
 {
   "prompts": [
-    "premier prompt détaillé reprenant le style des exemples${slot1Tag}...",
-    "deuxième prompt avec même style mais variation différente${slot2Tag}...",
-    "troisième prompt toujours dans le même style, autre variation${slot3Tag}...",
-    "quatrième prompt dans le même style, nouvelle variation${slot4Tag}...",
-    "cinquième prompt dans le même style, dernière variation${slot5Tag}..."
+    ${buildSlotLine(0)},
+    ${buildSlotLine(1)},
+    ${buildSlotLine(2)},
+    ${buildSlotLine(3)},
+    ${buildSlotLine(4)}
   ]
 }`;
 
