@@ -773,6 +773,25 @@ def delete_message(account: Account, folder: str, uid: str) -> None:
 # ----------------------------------------------------------------- send
 
 
+def _sanitize_header(value: str) -> str:
+    """Strip CR/LF from a header value.
+
+    Python's ``email`` package raises
+    ``ValueError: Header values may not contain linefeed or carriage return characters``
+    if a header contains a raw ``\\n`` or ``\\r``. This happens intermittently on
+    replies because the original ``Subject`` / ``Message-Id`` / ``References``
+    pulled from IMAP can preserve RFC 2047 line folding that wasn't recombined.
+    Collapsing CR/LF into a single space here defangs the injection and unblocks
+    the send. The caller already escapes display names via ``formataddr``.
+    """
+    if not value:
+        return value
+    cleaned = value.replace("\r", " ").replace("\n", " ")
+    while "  " in cleaned:
+        cleaned = cleaned.replace("  ", " ")
+    return cleaned.strip()
+
+
 def send_message(
     account: Account,
     to: list[str],
@@ -785,6 +804,13 @@ def send_message(
     references: str | None = None,
     attachments: list[OutgoingAttachment] | None = None,
 ) -> str:
+    to = [_sanitize_header(a) for a in to if a]
+    cc = [_sanitize_header(a) for a in (cc or []) if a]
+    bcc = [_sanitize_header(a) for a in (bcc or []) if a]
+    subject = _sanitize_header(subject or "")
+    in_reply_to = _sanitize_header(in_reply_to) if in_reply_to else None
+    references = _sanitize_header(references) if references else None
+
     msg = EmailMessage()
     msg["From"] = formataddr((account.display_name, account.email))
     msg["To"] = ", ".join(to)
