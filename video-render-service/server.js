@@ -89,6 +89,56 @@ function buildZaiWebSearchTool(webSearch) {
   };
 }
 
+/**
+ * Logs web_search usage from an Anthropic /v1/messages response.
+ *
+ * Inspects two sources:
+ *   1. `usage.server_tool_use.web_search_requests` — the official counter
+ *      (most reliable, surfaces empty/cached searches too)
+ *   2. `content[]` blocks of type `server_tool_use` (the actual search calls)
+ *      and `web_search_tool_result` (the results blocks)
+ *
+ * Logs each search query and a count summary so we can see in PM2 logs
+ * exactly how many searches Claude actually performed for a given job.
+ */
+function logWebSearchUsage(label, contentBlocks, usage) {
+  const tag = label ? `[${label}] ` : '';
+  const searchBlocks = (contentBlocks || []).filter(
+    (b) => b && b.type === 'server_tool_use' && b.name === 'web_search'
+  );
+  const resultBlocks = (contentBlocks || []).filter(
+    (b) => b && b.type === 'web_search_tool_result'
+  );
+  const usageCount = usage?.server_tool_use?.web_search_requests;
+
+  if ((usageCount === undefined || usageCount === 0) && searchBlocks.length === 0) {
+    console.log(`[web-search] ${tag}❌ NO web searches performed by Claude`);
+    return;
+  }
+
+  const effectiveCount = usageCount ?? searchBlocks.length;
+  console.log(
+    `[web-search] ${tag}✅ ${effectiveCount} web search(es) performed ` +
+    `(usage.web_search_requests=${usageCount ?? 'n/a'}, ` +
+    `server_tool_use blocks=${searchBlocks.length}, ` +
+    `result blocks=${resultBlocks.length})`
+  );
+
+  searchBlocks.forEach((b, i) => {
+    const query = b.input?.query || '<unknown>';
+    const resultBlock = resultBlocks[i];
+    let resultInfo = '';
+    if (resultBlock) {
+      if (Array.isArray(resultBlock.content)) {
+        resultInfo = ` → ${resultBlock.content.length} result(s)`;
+      } else if (resultBlock.content?.type === 'web_search_tool_result_error') {
+        resultInfo = ` → ERROR: ${resultBlock.content.error_code || 'unknown'}`;
+      }
+    }
+    console.log(`[web-search] ${tag}  #${i + 1}: "${query}"${resultInfo}`);
+  });
+}
+
 function buildAnthropicWebSearchTool(webSearch) {
   // Anthropic native web search tool (per docs)
   if (!webSearch || webSearch.enabled !== true) return null;
@@ -391,6 +441,7 @@ async function pollBatchUntilDone({ batchId, anthropicApiKey, jobId, projectId, 
     if (entry.custom_id === jobId && entry.result?.type === 'succeeded') {
       const content = entry.result.message?.content;
       if (content && Array.isArray(content)) {
+        logWebSearchUsage(`${jobId} batch`, content, entry.result.message?.usage);
         script = content.filter(b => b.type === 'text').map(b => b.text).join('\n\n');
       }
       break;
@@ -1385,6 +1436,9 @@ RÈGLE CRITIQUE SUR LA LONGUEUR:
           const blocks = anthropicResponse.data.content;
           const blockTypes = blocks.map(b => b.type);
           console.log(`[generate-script] [${jobId}] Response: ${blocks.length} blocks, types=[${blockTypes.join(',')}], stop_reason=${anthropicResponse.data.stop_reason}`);
+          if (webSearchTool) {
+            logWebSearchUsage(jobId, blocks, anthropicResponse.data.usage);
+          }
           script = blocks
             .filter((block) => block.type === 'text')
             .map((block) => block.text)
@@ -3487,6 +3541,9 @@ RÈGLE CRITIQUE SUR LA LONGUEUR:
       });
 
       if (anthropicResponse.data.content && anthropicResponse.data.content.length > 0) {
+        if (webSearchTool) {
+          logWebSearchUsage('sync', anthropicResponse.data.content, anthropicResponse.data.usage);
+        }
         script = anthropicResponse.data.content
           .filter(block => block.type === 'text')
           .map(block => block.text)
