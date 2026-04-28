@@ -224,9 +224,10 @@ const Projects = () => {
           sessionStorage.setItem("auto_load_project_preset_id", projectPresetId);
         }
         if (thumbnailPresetId) {
-          // Store for use in ThumbnailGenerator (UI loading)
-          sessionStorage.setItem("auto_load_thumbnail_preset_id", thumbnailPresetId);
-          // Also set in state so it gets saved to the project database
+          // Set in state so it gets saved to projects.thumbnail_preset_id when the
+          // project row is created. ThumbnailGenerator will then read it back from
+          // the DB on mount (we no longer mirror this into sessionStorage to avoid
+          // cross-project leaks).
           setSelectedThumbnailPresetId(thumbnailPresetId);
         }
         

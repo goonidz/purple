@@ -116,26 +116,21 @@ export const ProjectConfigurationModal = ({
     loadThumbnailPresets();
   }, []);
 
-  // Auto-load preset from calendar if available
+  // Auto-load project preset from calendar if available.
+  // NOTE: thumbnail preset auto-load was removed from this effect — it now flows
+  // entirely through projects.thumbnail_preset_id (DB) and is resolved by
+  // ThumbnailGenerator on mount, which avoids the cross-project sessionStorage leak.
   useEffect(() => {
     const autoLoadPresetId = sessionStorage.getItem("auto_load_project_preset_id");
-    const autoLoadThumbnailPresetId = sessionStorage.getItem("auto_load_thumbnail_preset_id");
-    
+
     if (autoLoadPresetId && presets.length > 0) {
+      // Single-shot: always consume the signal, even if the preset isn't in this user's list,
+      // so it can never leak to the next project.
+      sessionStorage.removeItem("auto_load_project_preset_id");
       const preset = presets.find(p => p.id === autoLoadPresetId);
       if (preset) {
         handleLoadPreset(autoLoadPresetId);
         toast.success(`Preset projet "${preset.name}" chargé automatiquement`);
-        sessionStorage.removeItem("auto_load_project_preset_id");
-      }
-    }
-    
-    if (autoLoadThumbnailPresetId && thumbnailPresets.length > 0) {
-      setSelectedThumbnailPresetId(autoLoadThumbnailPresetId);
-      const preset = thumbnailPresets.find(p => p.id === autoLoadThumbnailPresetId);
-      if (preset) {
-        toast.success(`Preset miniatures "${preset.name}" sélectionné automatiquement`);
-        sessionStorage.removeItem("auto_load_thumbnail_preset_id");
       }
     }
   }, [presets, thumbnailPresets]);

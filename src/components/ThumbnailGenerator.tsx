@@ -267,33 +267,22 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
     setHasAutoLoadedPreset(false);
   }, [projectId]);
 
-  // Auto-load preset from sessionStorage (from calendar channel) or from project DB
+  // Auto-load preset from project DB (direct project assignment, then channel via calendar).
+  // The previous sessionStorage-based "Priority 1" was removed: it was a redundant cache of
+  // the same channel preset that we resolve below from the DB, and it leaked between
+  // projects when the Miniatures tab was never opened on the previous project (the
+  // "consume on read" was conditional on the preset existing in the user's list).
   useEffect(() => {
     if (presets.length === 0 || standalone || hasAutoLoadedPreset) return;
-    
-    console.log("[ThumbnailGenerator] Auto-load check:", { 
-      presetsCount: presets.length, 
-      projectId, 
+
+    console.log("[ThumbnailGenerator] Auto-load check:", {
+      presetsCount: presets.length,
+      projectId,
       selectedPresetId,
-      hasAutoLoadedPreset 
+      hasAutoLoadedPreset
     });
-    
-    // Priority 1: Load from sessionStorage (new project from calendar)
-    const autoLoadPresetId = sessionStorage.getItem("auto_load_thumbnail_preset_id");
-    if (autoLoadPresetId) {
-      console.log("[ThumbnailGenerator] Loading from sessionStorage:", autoLoadPresetId);
-      const preset = presets.find(p => p.id === autoLoadPresetId);
-      if (preset) {
-        loadPreset(autoLoadPresetId);
-        setSelectedPresetId(autoLoadPresetId);
-        setHasAutoLoadedPreset(true);
-        toast.success(`Preset miniatures "${preset.name}" chargé automatiquement`);
-        sessionStorage.removeItem("auto_load_thumbnail_preset_id");
-        return;
-      }
-    }
-    
-    // Priority 2: Load from channel (via content_calendar relation)
+
+    // Load from project (direct assignment) or from channel (via content_calendar relation)
     if (projectId) {
       (async () => {
         try {

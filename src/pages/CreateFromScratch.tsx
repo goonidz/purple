@@ -482,9 +482,8 @@ const CreateFromScratch = () => {
           if (projectPresetId) {
             sessionStorage.setItem("auto_load_project_preset_id", projectPresetId);
           }
-          if (thumbnailPresetId) {
-            sessionStorage.setItem("auto_load_thumbnail_preset_id", thumbnailPresetId);
-          }
+          // NOTE: We no longer mirror the thumbnail preset id into sessionStorage —
+          // ThumbnailGenerator resolves it directly from the project/channel in DB.
           
           // Transfer thumbnail chain enabled flag (for auto-generation behavior)
           const thumbnailChainEnabled = sessionStorage.getItem("calendar_thumbnail_chain_enabled");
@@ -596,7 +595,10 @@ const CreateFromScratch = () => {
           if (ch?.script_preset_id) sessionStorage.setItem("calendar_script_preset_id", ch.script_preset_id);
           if (ch?.tts_preset_id) sessionStorage.setItem("calendar_tts_preset_id", ch.tts_preset_id);
           if (ch?.project_preset_id) sessionStorage.setItem("auto_load_project_preset_id", ch.project_preset_id);
-          if (ch?.thumbnail_preset_id) sessionStorage.setItem("auto_load_thumbnail_preset_id", ch.thumbnail_preset_id);
+          // NOTE: thumbnail preset id is NOT mirrored into sessionStorage anymore —
+          // ThumbnailGenerator queries it from the project/channel in DB directly,
+          // which avoids the cross-project leak we used to have when sessionStorage
+          // was never consumed (Miniatures tab not opened on the previous project).
           if (ch?.thumbnail_preset_enabled) sessionStorage.setItem("auto_thumbnail_chain_enabled", "true");
         }
       } catch (_) {}
