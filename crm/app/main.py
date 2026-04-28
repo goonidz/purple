@@ -29,6 +29,24 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 
 
+def crm_url(path: str) -> str:
+    """Prepend the FastAPI ``root_path`` to an internal absolute path so
+    ``RedirectResponse`` lands on the right host segment when the app runs
+    behind an Nginx prefix mount (``/crm/``).
+
+    Starlette's ``RedirectResponse`` returns the string verbatim — it does NOT
+    auto-prefix ``root_path`` (only ``request.url_for`` does). Without this
+    helper, every ``RedirectResponse("/mailbox/...")`` ends up on the parent
+    frontend host and renders a 404. Relative paths (no leading slash) are
+    returned unchanged.
+    """
+    if not ROOT_PATH or not path.startswith("/"):
+        return path
+    if path.startswith(f"{ROOT_PATH}/"):
+        return path  # already prefixed, don't double it
+    return f"{ROOT_PATH}{path}"
+
+
 # Captured at startup so sync routes (running in the threadpool) can
 # still schedule background coroutines onto the main event loop.
 _main_loop: asyncio.AbstractEventLoop | None = None
@@ -428,9 +446,11 @@ def delete_message_route(
         mail.delete_message(account, folder, str(uid))
     except Exception as e:
         return RedirectResponse(
-            f"/mailbox/{slug}?folder={folder}&error={e}", status_code=303
+            crm_url(f"/mailbox/{slug}?folder={folder}&error={e}"), status_code=303
         )
-    return RedirectResponse(f"/mailbox/{slug}?folder={folder}", status_code=303)
+    return RedirectResponse(
+        crm_url(f"/mailbox/{slug}?folder={folder}"), status_code=303
+    )
 
 
 @app.get("/compose", response_class=HTMLResponse)
@@ -629,7 +649,9 @@ async def compose_post(
             status_code=500,
         )
 
-    return RedirectResponse(f"/mailbox/{account.slug}?sent=1", status_code=303)
+    return RedirectResponse(
+        crm_url(f"/mailbox/{account.slug}?sent=1"), status_code=303
+    )
 
 
 # -------------------------------------------------- test account JSON API
