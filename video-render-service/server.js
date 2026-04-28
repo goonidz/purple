@@ -96,7 +96,7 @@ function buildAnthropicWebSearchTool(webSearch) {
   const tool = {
     type: 'web_search_20250305',
     name: 'web_search',
-    max_uses: Math.max(1, Math.min(10, Number(webSearch.maxUses) || 5)),
+    max_uses: Math.max(1, Math.min(15, Number(webSearch.maxUses) || 5)),
   };
 
   // Optional advanced fields (pass-through if provided by caller)

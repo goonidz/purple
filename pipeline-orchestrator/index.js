@@ -164,7 +164,7 @@ async function stepGenerateScript(pipeline) {
     userId: user_id,
     asyncMode: true,
     batch: scriptConfig.use_batch || false,
-    webSearch: { enabled: scriptConfig.use_web_search || false, maxUses: 5 },
+    webSearch: { enabled: scriptConfig.use_web_search || false, maxUses: 15 },
   };
   if (effort) body.effort = effort;
 

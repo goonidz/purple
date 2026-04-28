@@ -1549,7 +1549,7 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
               userId: user!.id,
               webSearch: {
                 enabled: useWebSearch,
-                maxUses: 5,
+                maxUses: 15,
               },
             }),
           });
@@ -1827,7 +1827,7 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
               userId: user!.id,
               webSearch: {
                 enabled: useWebSearch,
-                maxUses: 5,
+                maxUses: 15,
               },
             }),
           });
