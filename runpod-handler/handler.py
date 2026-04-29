@@ -319,47 +319,125 @@ def detect_gpu_encoder() -> bool:
     return False
 
 
-def download_file(url: str, dest_path: str, session: Optional[requests.Session] = None) -> bool:
-    """Download a file from URL to destination path (sync version for backward compat)"""
-    try:
-        print(f"Downloading: {url}")
-        
-        # Use session if provided (connection pooling), otherwise create new request
-        if session:
-            response = session.get(url, stream=True, timeout=120)
-        else:
-            response = requests.get(url, stream=True, timeout=120)
-        
-        response.raise_for_status()
-
-        with open(dest_path, 'wb') as f:
-            for chunk in response.iter_content(chunk_size=8192):
-                f.write(chunk)
-
-        print(f"Downloaded to: {dest_path}")
-        return True
-    except Exception as e:
-        print(f"Error downloading {url}: {e}")
-        return False
+def _is_retryable_status(status_code: int) -> bool:
+    """5xx and 408/429 are transient and worth retrying."""
+    return status_code >= 500 or status_code in (408, 429)
 
 
-async def download_file_async(url: str, dest_path: str, client: httpx.AsyncClient) -> bool:
-    """Download a file from URL using async httpx with HTTP/2 (like axios)"""
-    try:
-        print(f"Downloading: {url}")
-        
-        async with client.stream('GET', url, timeout=120.0) as response:
+def download_file(
+    url: str,
+    dest_path: str,
+    session: Optional[requests.Session] = None,
+    max_attempts: int = 4,
+    base_delay: float = 1.0,
+) -> bool:
+    """Download a file from URL to destination path (sync version for backward compat).
+
+    Retries transient failures (network errors, 5xx, 408, 429) with exponential
+    backoff. A single 502 from Supabase Storage used to abort entire renders;
+    this defends against that.
+    """
+    import random
+
+    last_err: Optional[str] = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            print(f"Downloading: {url} (attempt {attempt}/{max_attempts})")
+
+            if session:
+                response = session.get(url, stream=True, timeout=120)
+            else:
+                response = requests.get(url, stream=True, timeout=120)
+
+            if _is_retryable_status(response.status_code):
+                response.close()
+                raise requests.HTTPError(
+                    f"{response.status_code} {response.reason}", response=response
+                )
             response.raise_for_status()
-            
+
             with open(dest_path, 'wb') as f:
-                async for chunk in response.aiter_bytes(chunk_size=8192):
+                for chunk in response.iter_content(chunk_size=8192):
                     f.write(chunk)
-        
-        print(f"Downloaded to: {dest_path}")
-        return True
-    except Exception as e:
-        print(f"Error downloading {url}: {e}")
-        return False
+
+            print(f"Downloaded to: {dest_path}")
+            return True
+        except requests.HTTPError as e:
+            status = getattr(e.response, 'status_code', 0) if e.response is not None else 0
+            last_err = f"HTTP {status}: {e}"
+            if not _is_retryable_status(status) or attempt >= max_attempts:
+                break
+        except (requests.ConnectionError, requests.Timeout) as e:
+            last_err = f"{type(e).__name__}: {e}"
+            if attempt >= max_attempts:
+                break
+        except Exception as e:
+            print(f"Error downloading {url}: {e}")
+            return False
+
+        delay = base_delay * (2 ** (attempt - 1)) + random.uniform(0, 0.5)
+        print(f"Retrying {url} in {delay:.1f}s after {last_err}")
+        time.sleep(delay)
+
+    print(f"Error downloading {url} after {max_attempts} attempt(s): {last_err}")
+    return False
+
+
+async def download_file_async(
+    url: str,
+    dest_path: str,
+    client: httpx.AsyncClient,
+    max_attempts: int = 4,
+    base_delay: float = 1.0,
+) -> bool:
+    """Download a file from URL using async httpx with HTTP/2 (like axios).
+
+    Retries transient failures (network errors, 5xx, 408, 429) with exponential
+    backoff + jitter. Without this, a single 502 from the Supabase Storage CDN
+    on any one of the N scene images aborts the entire render — and on 100+
+    scene jobs that becomes a near-certain failure mode.
+    """
+    import random
+
+    last_err: Optional[str] = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            print(f"Downloading: {url} (attempt {attempt}/{max_attempts})")
+
+            async with client.stream('GET', url, timeout=120.0) as response:
+                if _is_retryable_status(response.status_code):
+                    raise httpx.HTTPStatusError(
+                        f"Server error '{response.status_code}' for url '{url}'",
+                        request=response.request,
+                        response=response,
+                    )
+                response.raise_for_status()
+
+                with open(dest_path, 'wb') as f:
+                    async for chunk in response.aiter_bytes(chunk_size=8192):
+                        f.write(chunk)
+
+            print(f"Downloaded to: {dest_path}")
+            return True
+        except httpx.HTTPStatusError as e:
+            status = e.response.status_code if e.response is not None else 0
+            last_err = f"HTTP {status}: {e}"
+            if not _is_retryable_status(status) or attempt >= max_attempts:
+                break
+        except (httpx.TimeoutException, httpx.TransportError, httpx.RequestError) as e:
+            last_err = f"{type(e).__name__}: {e}"
+            if attempt >= max_attempts:
+                break
+        except Exception as e:
+            print(f"Error downloading {url}: {e}")
+            return False
+
+        delay = base_delay * (2 ** (attempt - 1)) + random.uniform(0, 0.5)
+        print(f"Retrying {url} in {delay:.1f}s after {last_err}")
+        await asyncio.sleep(delay)
+
+    print(f"Error downloading {url} after {max_attempts} attempt(s): {last_err}")
+    return False
 
 
 def upload_to_vps(file_path: str, filename: str) -> dict:
