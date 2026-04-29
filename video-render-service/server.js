@@ -133,6 +133,68 @@ function stripHallucinatedToolXml(text) {
 }
 
 /**
+ * Resolves Handlebars-lite conditional blocks in a user prompt against a
+ * small bag of boolean flags. Supports:
+ *
+ *   {{#if webSearch}}...{{/if}}        — kept iff vars.webSearch is truthy
+ *   {{#unless webSearch}}...{{/unless}} — kept iff vars.webSearch is falsy
+ *
+ * Why this exists: when a user template hardcodes "PHASE 1 — RESEARCH (utilise
+ * web_search, minimum 6 fois)" but the pipeline config has `use_web_search=false`,
+ * Claude receives an order to call a tool that wasn't actually exposed in the
+ * request body, and "simulates" the calls as antml XML inline in the script
+ * (verified on projects 292c150f and 6d57aba8: 17 and 15 hallucinated blocks
+ * respectively). Wrapping the research phase in `{{#if webSearch}}...{{/if}}`
+ * keeps the prompt and the tool config in sync automatically.
+ *
+ * Stray opening tags without a matching closer are left intact and logged so
+ * the user can fix the template.
+ */
+function processConditionalBlocks(text, vars) {
+  if (!text || typeof text !== 'string') return text;
+  let out = text;
+  let stripped = 0;
+  let kept = 0;
+  for (const flag of Object.keys(vars || {})) {
+    const truthy = vars[flag] === true;
+    // [\s\S] (not /s flag) for Node compatibility on older runtimes.
+    const ifRegex = new RegExp(
+      `\\{\\{\\s*#if\\s+${flag}\\s*\\}\\}([\\s\\S]*?)\\{\\{\\s*\\/if\\s*\\}\\}`,
+      'g'
+    );
+    const unlessRegex = new RegExp(
+      `\\{\\{\\s*#unless\\s+${flag}\\s*\\}\\}([\\s\\S]*?)\\{\\{\\s*\\/unless\\s*\\}\\}`,
+      'g'
+    );
+    out = out.replace(ifRegex, (_, body) => {
+      if (truthy) { kept++; return body; }
+      stripped++;
+      return '';
+    });
+    out = out.replace(unlessRegex, (_, body) => {
+      if (!truthy) { kept++; return body; }
+      stripped++;
+      return '';
+    });
+  }
+  // Collapse the runs of empty lines produced by stripped blocks.
+  if (stripped > 0) out = out.replace(/\n{3,}/g, '\n\n').trim();
+  if (stripped + kept > 0) {
+    console.log(
+      `[prompt-template] Conditional blocks resolved: kept=${kept}, stripped=${stripped}, vars=${JSON.stringify(vars)}`
+    );
+  }
+  // Detect orphan opening tags (template typo) — log but don't blow up.
+  const orphans = (out.match(/\{\{\s*#(?:if|unless)\s+\w+\s*\}\}/g) || []).length;
+  if (orphans > 0) {
+    console.warn(
+      `[prompt-template] WARNING: ${orphans} orphan {{#if/#unless}} tag(s) without matching closer in customPrompt`
+    );
+  }
+  return out;
+}
+
+/**
  * Logs web_search usage from an Anthropic /v1/messages response.
  *
  * Inspects two sources:
@@ -1163,7 +1225,7 @@ Write ONLY the content, nothing else.`;
 
 async function processGenerateScriptJob(jobId, payload) {
   const startTime = Date.now();
-  const {
+  let {
     anthropicApiKey,
     zaiApiKey,
     openrouterApiKey,
@@ -1181,6 +1243,21 @@ async function processGenerateScriptJob(jobId, payload) {
 
   const isOpenRouter = provider === 'openrouter';
   const isGlm5 = !isOpenRouter && model === 'glm-5';
+
+  // Resolve {{#if webSearch}}...{{/if}} conditional blocks before the prompt
+  // is shipped anywhere downstream. Keeps the prompt and the tool-availability
+  // in sync — see processConditionalBlocks() docstring for the failure mode.
+  const webSearchEnabled = webSearch?.enabled === true;
+  customPrompt = processConditionalBlocks(customPrompt, { webSearch: webSearchEnabled });
+
+  // Heuristic safety net: if the user forgot to wrap their research phase but
+  // web search is OFF, the prompt still asks Claude to call a tool that isn't
+  // available. Log a warning so we can spot the template typo in PM2 logs.
+  if (!webSearchEnabled && customPrompt && /\bweb_search\b/i.test(customPrompt)) {
+    console.warn(
+      `[generate-script] [${jobId}] WARNING: customPrompt mentions "web_search" but webSearch is disabled — Claude will likely hallucinate tool-call XML. Wrap the research phase in {{#if webSearch}}...{{/if}} to fix.`
+    );
+  }
 
   // Update job to processing
   jobs.set(jobId, {
@@ -3379,7 +3456,7 @@ async function cleanupOldJobs(maxAgeHours = 1) {
 
 // Generate script endpoint - calls Anthropic API without timeout
 app.post('/generate-script', async (req, res) => {
-  const {
+  let {
     anthropicApiKey,
     zaiApiKey,
     openrouterApiKey,
@@ -3398,7 +3475,16 @@ app.post('/generate-script', async (req, res) => {
 
   const isOpenRouter = provider === 'openrouter';
   const isGlm5 = !isOpenRouter && model === 'glm-5';
-  
+
+  // Resolve conditional template blocks on the user prompt — see helper docs.
+  const webSearchEnabledForPrompt = webSearch?.enabled === true;
+  customPrompt = processConditionalBlocks(customPrompt, { webSearch: webSearchEnabledForPrompt });
+  if (!webSearchEnabledForPrompt && customPrompt && /\bweb_search\b/i.test(customPrompt)) {
+    console.warn(
+      `[generate-script] WARNING: customPrompt mentions "web_search" but webSearch is disabled — Claude will likely hallucinate tool-call XML. Wrap research phase in {{#if webSearch}}...{{/if}} to fix.`
+    );
+  }
+
   // DEBUG: Log received parameters
   console.log('[generate-script] Received parameters:', {
     hasAnthropicKey: !!anthropicApiKey,
