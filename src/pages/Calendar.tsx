@@ -7,7 +7,7 @@ import { ChevronLeft, ChevronRight, ChevronDown, Filter, Calendar as CalendarIco
 import { Input } from "@/components/ui/input";
 import AppHeader from "@/components/AppHeader";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths, subDays, addDays } from "date-fns";
+import { format, eachDayOfInterval, isSameMonth, isSameDay, addDays, startOfWeek, addWeeks, subWeeks } from "date-fns";
 import { fr } from "date-fns/locale";
 import { toast } from "sonner";
 import CalendarVideoModal from "@/components/CalendarVideoModal";
@@ -221,14 +221,11 @@ function MobileDayList({
     return dayEntries.length > 0 || isSameDay(day, new Date());
   });
 
-  const nextMonthLabel = format(addMonths(currentMonth, 1), "MMMM yyyy", { locale: fr });
-  const prevMonthLabel = format(subMonths(currentMonth, 1), "MMMM yyyy", { locale: fr });
-
   return (
     <div className="md:hidden space-y-2">
       {visibleDays.length === 0 ? (
         <div className="text-center text-muted-foreground py-12">
-          Aucune vidéo planifiée ce mois-ci
+          Aucune vidéo planifiée sur ces 3 semaines
         </div>
       ) : (
         visibleDays.map((day) => {
@@ -248,22 +245,14 @@ function MobileDayList({
         })
       )}
 
-      {/* Month navigation */}
+      {/* Week navigation: shifts the 3-week window by one week */}
       <div className="flex items-center gap-2 pt-4 pb-2">
-        <Button
-          variant="outline"
-          className="flex-1 gap-2 capitalize"
-          onClick={onPrevMonth}
-        >
+        <Button variant="outline" className="flex-1 gap-2" onClick={onPrevMonth}>
           <ChevronLeft className="h-4 w-4" />
-          {prevMonthLabel}
+          Semaine précédente
         </Button>
-        <Button
-          variant="outline"
-          className="flex-1 gap-2 capitalize"
-          onClick={onNextMonth}
-        >
-          {nextMonthLabel}
+        <Button variant="outline" className="flex-1 gap-2" onClick={onNextMonth}>
+          Semaine suivante
           <ChevronRight className="h-4 w-4" />
         </Button>
       </div>
@@ -315,15 +304,12 @@ export default function Calendar() {
   const fetchEntries = useCallback(async () => {
     if (!user) return;
     
-    // Use ref to always get the current month value (avoids stale closures in subscriptions)
-    const month = currentMonthRef.current;
+    // Use ref to always get the current anchor date (avoids stale closures in subscriptions)
+    const anchor = currentMonthRef.current;
     setIsLoading(true);
-    const start = startOfMonth(month);
-    const end = endOfMonth(month);
-
-    // Extend range to cover overflow days visible in the grid (up to 6 days before/after)
-    const fetchStart = subDays(start, 7);
-    const fetchEnd = addDays(end, 7);
+    // Match the 21-day visible window: prev week + current week + next week (Mon-start).
+    const fetchStart = subWeeks(startOfWeek(anchor, { weekStartsOn: 1 }), 1);
+    const fetchEnd = addDays(fetchStart, 20);
 
     const { data, error } = await supabase
       .from("content_calendar")
@@ -458,8 +444,9 @@ export default function Calendar() {
     };
   }, [user, fetchEntries, fetchChannels]);
 
-  const handlePrevMonth = () => setCurrentMonth(subMonths(currentMonth, 1));
-  const handleNextMonth = () => setCurrentMonth(addMonths(currentMonth, 1));
+  // Navigation slides the 3-week window by one week at a time.
+  const handlePrevMonth = () => setCurrentMonth(subWeeks(currentMonth, 1));
+  const handleNextMonth = () => setCurrentMonth(addWeeks(currentMonth, 1));
   const handleToday = () => setCurrentMonth(new Date());
 
   const handleDayClick = (date: Date) => {
@@ -640,29 +627,12 @@ export default function Calendar() {
     setIsSearching(false);
   };
 
-  const daysInMonth = eachDayOfInterval({
-    start: startOfMonth(currentMonth),
-    end: endOfMonth(currentMonth),
-  });
-
-  const startDay = startOfMonth(currentMonth).getDay();
-  const adjustedStartDay = startDay === 0 ? 6 : startDay - 1;
-
-  // Overflow days from previous month (fill leading empty cells)
-  const prevOverflowDays = adjustedStartDay > 0
-    ? eachDayOfInterval({
-        start: subDays(startOfMonth(currentMonth), adjustedStartDay),
-        end: subDays(startOfMonth(currentMonth), 1),
-      })
-    : [];
-
-  // Overflow days from next month (fill trailing empty cells + one extra row)
-  const trailingEmpty = (7 - ((adjustedStartDay + daysInMonth.length) % 7)) % 7;
-  const trailingTotal = trailingEmpty + 7;
-  const nextOverflowDays = eachDayOfInterval({
-    start: addDays(endOfMonth(currentMonth), 1),
-    end: addDays(endOfMonth(currentMonth), trailingTotal),
-  });
+  // Three-week sliding window centered on the anchor date (currentMonth):
+  // previous week + current week + next week, always 21 days starting Monday.
+  const currentWeekStart = startOfWeek(currentMonth, { weekStartsOn: 1 });
+  const windowStart = subWeeks(currentWeekStart, 1);
+  const windowEnd = addDays(windowStart, 20);
+  const daysInMonth = eachDayOfInterval({ start: windowStart, end: windowEnd });
 
   const getEntriesForDay = (date: Date) => {
     return entries.filter(entry => {
@@ -700,7 +670,16 @@ export default function Calendar() {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
           <div className="flex items-center gap-3">
             <h1 className="text-xl sm:text-2xl font-bold capitalize">
-              {viewMode === 'calendar' ? format(currentMonth, "MMMM yyyy", { locale: fr }) : "Vue Kanban"}
+              {viewMode === 'calendar'
+                ? (() => {
+                    const ws = subWeeks(startOfWeek(currentMonth, { weekStartsOn: 1 }), 1);
+                    const we = addDays(ws, 20);
+                    const sameMonth = isSameMonth(ws, we);
+                    return sameMonth
+                      ? `${format(ws, "d", { locale: fr })} – ${format(we, "d MMM yyyy", { locale: fr })}`
+                      : `${format(ws, "d MMM", { locale: fr })} – ${format(we, "d MMM yyyy", { locale: fr })}`;
+                  })()
+                : "Vue Kanban"}
             </h1>
             {viewMode === 'calendar' && (
               <div className="flex items-center gap-1">
@@ -865,27 +844,8 @@ export default function Calendar() {
                 ))}
               </div>
 
-              {/* Calendar Days */}
+              {/* Three-week sliding window: previous + current + next */}
               <div className="grid grid-cols-7">
-                {/* Previous month overflow days */}
-                {prevOverflowDays.map((day) => (
-                  <CalendarDayCell
-                    key={day.toISOString()}
-                    date={day}
-                    entries={getEntriesForDay(day)}
-                    channels={channels}
-                    isToday={isSameDay(day, new Date())}
-                    isCurrentMonth={false}
-                    maxPerDay={compactMode ? 5 : null}
-                    blurTitles={blurTitles}
-                    onDayClick={handleDayClick}
-                    onEntryClick={handleEntryClick}
-                    onEntryDrop={handleEntryDrop}
-                    onAutoGenerateEntries={handleAutoGenerateEntries}
-                  />
-                ))}
-
-                {/* Days of the month */}
                 {daysInMonth.map((day) => (
                   <CalendarDayCell
                     key={day.toISOString()}
@@ -894,24 +854,6 @@ export default function Calendar() {
                     channels={channels}
                     isToday={isSameDay(day, new Date())}
                     isCurrentMonth={true}
-                    maxPerDay={compactMode ? 5 : null}
-                    blurTitles={blurTitles}
-                    onDayClick={handleDayClick}
-                    onEntryClick={handleEntryClick}
-                    onEntryDrop={handleEntryDrop}
-                    onAutoGenerateEntries={handleAutoGenerateEntries}
-                  />
-                ))}
-
-                {/* Next month overflow days */}
-                {nextOverflowDays.map((day) => (
-                  <CalendarDayCell
-                    key={day.toISOString()}
-                    date={day}
-                    entries={getEntriesForDay(day)}
-                    channels={channels}
-                    isToday={isSameDay(day, new Date())}
-                    isCurrentMonth={false}
                     maxPerDay={compactMode ? 5 : null}
                     blurTitles={blurTitles}
                     onDayClick={handleDayClick}
