@@ -28,6 +28,7 @@ interface Channel {
   tts_preset_id: string | null;
   project_preset_id: string | null;
   thumbnail_preset_id: string | null;
+  thumbnail_preset_id_2: string | null;
   thumbnail_preset_enabled: boolean | null;
 }
 
@@ -781,6 +782,11 @@ export default function CalendarVideoModal({
         if (selectedChannel.thumbnail_preset_id) {
           sessionStorage.setItem("calendar_thumbnail_preset_id", selectedChannel.thumbnail_preset_id);
         }
+        if (selectedChannel.thumbnail_preset_id_2) {
+          sessionStorage.setItem("calendar_thumbnail_preset_id_2", selectedChannel.thumbnail_preset_id_2);
+        } else {
+          sessionStorage.removeItem("calendar_thumbnail_preset_id_2");
+        }
         // Store enabled state separately (for auto-chaining behavior)
         if (selectedChannel.thumbnail_preset_enabled) {
           sessionStorage.setItem("calendar_thumbnail_chain_enabled", "true");
@@ -795,6 +801,7 @@ export default function CalendarVideoModal({
       sessionStorage.removeItem("calendar_tts_preset_id");
       sessionStorage.removeItem("calendar_project_preset_id");
       sessionStorage.removeItem("calendar_thumbnail_preset_id");
+      sessionStorage.removeItem("calendar_thumbnail_preset_id_2");
     }
     onClose();
     window.location.href = "/create-from-scratch?from_calendar=true";
@@ -822,6 +829,11 @@ export default function CalendarVideoModal({
           if (selectedChannel.thumbnail_preset_id) {
             sessionStorage.setItem("calendar_thumbnail_preset_id", selectedChannel.thumbnail_preset_id);
           }
+          if (selectedChannel.thumbnail_preset_id_2) {
+            sessionStorage.setItem("calendar_thumbnail_preset_id_2", selectedChannel.thumbnail_preset_id_2);
+          } else {
+            sessionStorage.removeItem("calendar_thumbnail_preset_id_2");
+          }
           // Store enabled state separately (for auto-chaining behavior)
           if (selectedChannel.thumbnail_preset_enabled) {
             sessionStorage.setItem("calendar_thumbnail_chain_enabled", "true");
@@ -834,6 +846,7 @@ export default function CalendarVideoModal({
         sessionStorage.removeItem("calendar_channel_color");
         sessionStorage.removeItem("calendar_project_preset_id");
         sessionStorage.removeItem("calendar_thumbnail_preset_id");
+        sessionStorage.removeItem("calendar_thumbnail_preset_id_2");
       }
       onClose();
       window.location.href = "/projects?from_calendar=true";

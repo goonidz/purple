@@ -75,6 +75,7 @@ const Projects = () => {
   const [semiAutoMode, setSemiAutoMode] = useState(false);
   const [thumbnailPresets, setThumbnailPresets] = useState<any[]>([]);
   const [selectedThumbnailPresetId, setSelectedThumbnailPresetId] = useState<string>("");
+  const [selectedThumbnailPreset2Id, setSelectedThumbnailPreset2Id] = useState<string>("");
   const [isDraggingAudio, setIsDraggingAudio] = useState(false);
   const [viewMode, setViewMode] = useState<"list" | "grid">(() => {
     return (localStorage.getItem("projects_view_mode") as "list" | "grid") || "list";
@@ -230,6 +231,10 @@ const Projects = () => {
           // cross-project leaks).
           setSelectedThumbnailPresetId(thumbnailPresetId);
         }
+        const thumbnailPreset2Id = sessionStorage.getItem("calendar_thumbnail_preset_id_2");
+        if (thumbnailPreset2Id) {
+          setSelectedThumbnailPreset2Id(thumbnailPreset2Id);
+        }
         
         // Transfer thumbnail chain enabled flag (for auto-generation behavior)
         const thumbnailChainEnabled = sessionStorage.getItem("calendar_thumbnail_chain_enabled");
@@ -244,6 +249,7 @@ const Projects = () => {
         sessionStorage.removeItem("calendar_entry_id");
         sessionStorage.removeItem("calendar_project_preset_id");
         sessionStorage.removeItem("calendar_thumbnail_preset_id");
+        sessionStorage.removeItem("calendar_thumbnail_preset_id_2");
         sessionStorage.removeItem("calendar_thumbnail_chain_enabled");
         
         // Clear URL params
@@ -573,6 +579,7 @@ const Projects = () => {
     const projectId = currentProjectId; // Sauvegarder l'ID avant de réinitialiser
     const shouldSemiAuto = semiAutoMode; // Sauvegarder le mode avant de réinitialiser
     const thumbnailPresetId = selectedThumbnailPresetId; // Sauvegarder le preset de miniatures
+    const thumbnailPreset2Id = selectedThumbnailPreset2Id; // Preset 2 (A/B test, optionnel)
     const transcript = transcriptData; // Sauvegarder les données de transcription
     
     setIsCreating(true);
@@ -612,6 +619,7 @@ const Projects = () => {
           style_reference_url: serializeStyleReferenceUrls(styleReferenceUrls),
           scenes: generatedScenes as any,
           thumbnail_preset_id: thumbnailPresetId || null,
+          thumbnail_preset_id_2: thumbnailPreset2Id || null,
         } as any)
         .eq("id", projectId);
 

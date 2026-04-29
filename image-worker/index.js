@@ -1246,6 +1246,7 @@ async function processThumbnailsPipeline(job) {
     videoScript, videoTitle, exampleUrls, characterRefUrl,
     previousPrompts, customPrompt, userIdea, userIdeaCount, imageModel, textModel,
     thumbnailProjectId, presetName, standalone,
+    selectedPreset2Id, preset2Count: preset2CountRaw,
   } = metadata || {};
 
   log(`Processing thumbnails (job ${jobId.substring(0, 8)}...)`);
@@ -1270,31 +1271,85 @@ async function processThumbnailsPipeline(job) {
     }
 
     // ---- STEP 2: Generate 5 prompts via Edge Function ----
-    log('  Thumbnails: generating 5 prompts...');
-    const promptsResponse = await fetch(`${SUPABASE_URL}/functions/v1/generate-thumbnail-prompts`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
+    // A/B test mode: when a second preset is selected with preset2Count > 0,
+    // we split the 5 prompts between preset 1 (+ user idea) and preset 2 (script-only),
+    // making 2 parallel Edge Function calls and concatenating the results.
+    const TOTAL_THUMBNAILS = 5;
+    const preset2Count = Math.max(0, Math.min(TOTAL_THUMBNAILS, Math.floor(
+      typeof preset2CountRaw === 'number' ? preset2CountRaw : 0
+    )));
+    const useABTest = !!selectedPreset2Id && preset2Count > 0;
+    const preset1Count = TOTAL_THUMBNAILS - preset2Count;
+
+    const callEdge = async (label, body) => {
+      const r = await fetch(`${SUPABASE_URL}/functions/v1/generate-thumbnail-prompts`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      });
+      if (!r.ok) {
+        const errorText = await r.text();
+        throw new Error(`[${label}] Failed to generate thumbnail prompts: ${errorText.substring(0, 200)}`);
+      }
+      const data = await r.json();
+      if (data.error || !data.prompts || !Array.isArray(data.prompts)) {
+        throw new Error(`[${label}] ${data.error || 'Failed to generate thumbnail prompts'}`);
+      }
+      return data.prompts;
+    };
+
+    let creativePrompts;
+    if (useABTest) {
+      log(`  Thumbnails: A/B mode — preset1=${preset1Count} + preset2=${preset2Count} (preset2Id=${selectedPreset2Id.substring(0, 8)}...)`);
+
+      // Fetch preset 2 details (custom_prompt, example_urls, character_ref_url)
+      const { data: preset2Row, error: preset2Err } = await supabase
+        .from('thumbnail_presets')
+        .select('custom_prompt, example_urls, character_ref_url')
+        .eq('id', selectedPreset2Id)
+        .single();
+      if (preset2Err || !preset2Row) {
+        throw new Error(`Preset 2 not found (id=${selectedPreset2Id}): ${preset2Err?.message || 'no row'}`);
+      }
+
+      const callA = callEdge('preset1+idea', {
         videoScript, videoTitle, exampleUrls, characterRefUrl,
-        previousPrompts, customPrompt, userIdea, userIdeaCount, textModel, userId,
-      }),
-    });
+        previousPrompts, customPrompt, userIdea, userIdeaCount,
+        totalCount: preset1Count,
+        textModel, userId,
+      });
+      const callB = callEdge('preset2', {
+        videoScript, videoTitle,
+        exampleUrls: preset2Row.example_urls || [],
+        characterRefUrl: preset2Row.character_ref_url || null,
+        previousPrompts,
+        customPrompt: preset2Row.custom_prompt || null,
+        userIdea: null,
+        userIdeaCount: 0,
+        totalCount: preset2Count,
+        textModel, userId,
+      });
 
-    if (!promptsResponse.ok) {
-      const errorText = await promptsResponse.text();
-      throw new Error(`Failed to generate thumbnail prompts: ${errorText.substring(0, 200)}`);
+      const [aPrompts, bPrompts] = await Promise.all([callA, callB]);
+      creativePrompts = [...aPrompts, ...bPrompts];
+      log(`  Thumbnails: A/B got ${aPrompts.length} (preset1) + ${bPrompts.length} (preset2) = ${creativePrompts.length} prompts`);
+    } else {
+      log('  Thumbnails: generating 5 prompts...');
+      creativePrompts = await callEdge('default', {
+        videoScript, videoTitle, exampleUrls, characterRefUrl,
+        previousPrompts, customPrompt, userIdea, userIdeaCount,
+        totalCount: TOTAL_THUMBNAILS,
+        textModel, userId,
+      });
+      log(`  Thumbnails: got ${creativePrompts.length} prompts`);
     }
 
-    const promptsData = await promptsResponse.json();
-    if (promptsData.error || !promptsData.prompts || promptsData.prompts.length < 3) {
-      throw new Error(promptsData.error || 'Failed to generate thumbnail prompts');
+    if (creativePrompts.length < 1) {
+      throw new Error('No thumbnail prompts were generated');
     }
-
-    const creativePrompts = promptsData.prompts;
-    log(`  Thumbnails: got ${creativePrompts.length} prompts`);
 
     // Update job metadata with prompts
     await supabase

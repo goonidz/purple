@@ -105,6 +105,12 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
   // (see effect below). Editable in the UI (0..5).
   const [userIdeaCount, setUserIdeaCount] = useState<number>(0);
   const prevUserIdeaEmptyRef = useRef<boolean>(true);
+  // A/B test mode: optional second preset for splitting the 5 prompts.
+  // selectedPreset2Id = "" means A/B disabled. preset2Count is editable in the UI.
+  // Auto-defaults: empty -> selected = 2 (clamped to 5 - userIdeaCount).
+  const [selectedPreset2Id, setSelectedPreset2Id] = useState<string>("");
+  const [preset2Count, setPreset2Count] = useState<number>(0);
+  const prevPreset2EmptyRef = useRef<boolean>(true);
   const [isDescribingThumbnail, setIsDescribingThumbnail] = useState(false);
   const [isUploadingThumbnail, setIsUploadingThumbnail] = useState(false);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
@@ -114,19 +120,48 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
   const [hasAutoLoadedPreset, setHasAutoLoadedPreset] = useState<boolean>(false);
 
   // Auto-adjust userIdeaCount on empty <-> non-empty transitions of the idea textarea:
-  // - empty -> non-empty : bump count to 2
+  // - empty -> non-empty : bump count (1 if preset 2 also active to leave room, else 2)
   // - non-empty -> empty : reset count to 0
   // Mid-typing (still non-empty) leaves the user-chosen count untouched.
   useEffect(() => {
     const isEmpty = !userIdea.trim();
     const wasEmpty = prevUserIdeaEmptyRef.current;
     if (wasEmpty && !isEmpty) {
-      setUserIdeaCount(2);
+      setUserIdeaCount(selectedPreset2Id ? 1 : 2);
     } else if (!wasEmpty && isEmpty) {
       setUserIdeaCount(0);
     }
     prevUserIdeaEmptyRef.current = isEmpty;
-  }, [userIdea]);
+  }, [userIdea, selectedPreset2Id]);
+
+  // Auto-adjust preset2Count on empty <-> selected transitions of the preset 2 select.
+  // When activating preset 2, default to 2; if the user idea is also active, lower
+  // userIdeaCount to 1 (so distribution stays 1+2+2 = 5).
+  useEffect(() => {
+    const isEmpty = !selectedPreset2Id;
+    const wasEmpty = prevPreset2EmptyRef.current;
+    if (wasEmpty && !isEmpty) {
+      const ideaActive = !!userIdea.trim() && userIdeaCount > 0;
+      const newPreset2Count = Math.min(2, ideaActive ? 5 - 1 : 5);
+      setPreset2Count(newPreset2Count);
+      if (ideaActive && userIdeaCount > 5 - newPreset2Count) {
+        setUserIdeaCount(Math.max(1, 5 - newPreset2Count));
+      }
+    } else if (!wasEmpty && isEmpty) {
+      setPreset2Count(0);
+    }
+    prevPreset2EmptyRef.current = isEmpty;
+    // userIdeaCount intentionally not in deps: we only react to preset2 select changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedPreset2Id]);
+
+  // Clamp preset2Count whenever userIdeaCount grows so the sum never exceeds 5.
+  useEffect(() => {
+    const max = 5 - userIdeaCount;
+    if (preset2Count > max) {
+      setPreset2Count(Math.max(0, max));
+    }
+  }, [userIdeaCount, preset2Count]);
 
   const extractYouTubeId = (url: string): string | null => {
     try {
@@ -288,10 +323,10 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
         try {
           console.log("[ThumbnailGenerator] Fetching channel preset for project:", projectId);
           
-          // First, try to get preset from project.thumbnail_preset_id (direct assignment)
+          // First, try to get presets from project (direct assignment)
           const { data: projectData, error: projectError } = await supabase
             .from("projects")
-            .select("thumbnail_preset_id")
+            .select("thumbnail_preset_id, thumbnail_preset_id_2")
             .eq("id", projectId)
             .single();
           
@@ -300,17 +335,19 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
           }
           
           let presetId = projectData?.thumbnail_preset_id;
-          console.log("[ThumbnailGenerator] Project thumbnail_preset_id:", presetId);
+          let preset2Id = projectData?.thumbnail_preset_id_2;
+          console.log("[ThumbnailGenerator] Project thumbnail presets:", { presetId, preset2Id });
           
           // If no direct preset, try to get it from the linked channel
-          if (!presetId) {
-            console.log("[ThumbnailGenerator] No direct preset, checking channel via calendar...");
+          if (!presetId || !preset2Id) {
+            console.log("[ThumbnailGenerator] Missing project preset(s), checking channel via calendar...");
             const { data: calendarData, error: calendarError } = await supabase
               .from("content_calendar")
               .select(`
                 channel_id,
                 channels!inner (
                   thumbnail_preset_id,
+                  thumbnail_preset_id_2,
                   thumbnail_preset_enabled,
                   name
                 )
@@ -322,10 +359,12 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
               console.error("[ThumbnailGenerator] Error fetching calendar:", calendarError);
             } else if (calendarData) {
               const channelData = (calendarData as any).channels;
-              presetId = channelData?.thumbnail_preset_id;
-              console.log("[ThumbnailGenerator] Channel preset:", {
+              if (!presetId) presetId = channelData?.thumbnail_preset_id;
+              if (!preset2Id) preset2Id = channelData?.thumbnail_preset_id_2;
+              console.log("[ThumbnailGenerator] Channel presets:", {
                 channelName: channelData?.name,
                 presetId,
+                preset2Id,
                 enabled: channelData?.thumbnail_preset_enabled
               });
             } else {
@@ -333,10 +372,10 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
             }
           }
           
-          // Load the preset if found
+          // Load preset 1 if found (this populates the active fields: customPrompt, exampleUrls, etc.)
           if (presetId) {
             const preset = presets.find(p => p.id === presetId);
-            console.log("[ThumbnailGenerator] Found preset:", preset?.name);
+            console.log("[ThumbnailGenerator] Found preset 1:", preset?.name);
             if (preset) {
               loadPreset(presetId);
               setSelectedPresetId(presetId);
@@ -345,6 +384,16 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
             }
           } else {
             console.log("[ThumbnailGenerator] No thumbnail preset found (project or channel)");
+          }
+          // Apply preset 2 separately — does NOT call loadPreset() (it must not overwrite
+          // the active fields that are governed by preset 1)
+          if (preset2Id && preset2Id !== presetId) {
+            const preset2 = presets.find(p => p.id === preset2Id);
+            if (preset2) {
+              setSelectedPreset2Id(preset2Id);
+              prevPreset2EmptyRef.current = false; // skip the auto-default that would override
+              console.log("[ThumbnailGenerator] Auto-loaded preset 2:", preset2.name);
+            }
           }
         } catch (error) {
           console.error("[ThumbnailGenerator] Error loading thumbnail preset:", error);
@@ -896,6 +945,8 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
         customPrompt: customPrompt !== DEFAULT_THUMBNAIL_PROMPT ? customPrompt : undefined,
         userIdea: userIdea.trim() || undefined,
         userIdeaCount: userIdea.trim() ? userIdeaCount : 0,
+        selectedPreset2Id: selectedPreset2Id || undefined,
+        preset2Count: selectedPreset2Id ? preset2Count : 0,
         imageModel,
         textModel,
         presetName,
@@ -1242,6 +1293,99 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
                 )}
               </Button>
             </div>
+
+            {/* A/B test (preset 2 optionnel) */}
+            <Collapsible className="mt-4">
+              <CollapsibleTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="w-full flex items-center justify-between text-xs"
+                >
+                  <span className="flex items-center gap-2">
+                    A/B test (optionnel)
+                    <span
+                      className={`text-[10px] px-1.5 py-0.5 rounded ${
+                        selectedPreset2Id
+                          ? 'bg-primary/15 text-primary'
+                          : 'bg-muted text-muted-foreground'
+                      }`}
+                    >
+                      {selectedPreset2Id ? 'On' : 'Off'}
+                    </span>
+                  </span>
+                  <ChevronDown className="w-3.5 h-3.5" />
+                </Button>
+              </CollapsibleTrigger>
+              <CollapsibleContent className="space-y-2 pt-3">
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">Preset miniature B</Label>
+                  <Select
+                    value={selectedPreset2Id || "none"}
+                    onValueChange={async (value) => {
+                      const newId = value === "none" ? "" : value;
+                      setSelectedPreset2Id(newId);
+                      // Persist on real projects so the user's choice survives reload
+                      if (!standalone && projectId) {
+                        try {
+                          const { error } = await supabase
+                            .from("projects")
+                            .update({ thumbnail_preset_id_2: newId || null })
+                            .eq("id", projectId);
+                          if (error) {
+                            console.error("[ThumbnailGenerator] Failed to save preset 2:", error);
+                          }
+                        } catch (err) {
+                          console.error("[ThumbnailGenerator] Failed to save preset 2:", err);
+                        }
+                      }
+                    }}
+                  >
+                    <SelectTrigger className="h-9 text-xs">
+                      <SelectValue placeholder="Aucun (A/B désactivé)" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Aucun (A/B désactivé)</SelectItem>
+                      {presets
+                        .filter((p) => p.id !== selectedPresetId)
+                        .map((preset) => (
+                          <SelectItem key={preset.id} value={preset.id}>
+                            {preset.name}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {selectedPreset2Id && (
+                  <>
+                    <div className="flex items-center gap-3 pt-1">
+                      <Label className="text-xs text-muted-foreground whitespace-nowrap">
+                        Variations preset B
+                      </Label>
+                      <Select
+                        value={String(preset2Count)}
+                        onValueChange={(v) => setPreset2Count(Number(v))}
+                      >
+                        <SelectTrigger className="h-8 w-24 text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {Array.from({ length: 5 - userIdeaCount + 1 }, (_, i) => (
+                            <SelectItem key={i} value={String(i)}>
+                              {i} / 5
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="text-xs text-muted-foreground pt-1">
+                      Distribution : Preset A: {Math.max(0, 5 - userIdeaCount - preset2Count)} · Preset B: {preset2Count} · Décrire: {userIdeaCount}
+                    </div>
+                  </>
+                )}
+              </CollapsibleContent>
+            </Collapsible>
           </Card>
 
           {/* Exemples de miniatures */}
@@ -1378,12 +1522,11 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="0">0 / 5</SelectItem>
-                  <SelectItem value="1">1 / 5</SelectItem>
-                  <SelectItem value="2">2 / 5</SelectItem>
-                  <SelectItem value="3">3 / 5</SelectItem>
-                  <SelectItem value="4">4 / 5</SelectItem>
-                  <SelectItem value="5">5 / 5</SelectItem>
+                  {Array.from({ length: 5 - preset2Count + 1 }, (_, i) => (
+                    <SelectItem key={i} value={String(i)}>
+                      {i} / 5
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
               <span className="text-xs text-muted-foreground">
@@ -1393,7 +1536,9 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
                     ? "Idée ignorée"
                     : userIdeaCount === 5
                       ? "Toutes les miniatures suivent l'idée"
-                      : `${userIdeaCount} miniature(s) suivent l'idée, ${5 - userIdeaCount} indépendante(s) du script`}
+                      : selectedPreset2Id && preset2Count > 0
+                        ? `${userIdeaCount} idée + ${preset2Count} preset B + ${Math.max(0, 5 - userIdeaCount - preset2Count)} preset A`
+                        : `${userIdeaCount} miniature(s) suivent l'idée, ${5 - userIdeaCount} indépendante(s) du script`}
               </span>
             </div>
           </div>

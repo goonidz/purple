@@ -91,6 +91,7 @@ export const ProjectConfigurationModal = ({
   // Thumbnail preset for semi-auto mode
   const [thumbnailPresets, setThumbnailPresets] = useState<any[]>([]);
   const [selectedThumbnailPresetId, setSelectedThumbnailPresetId] = useState<string>("");
+  const [selectedThumbnailPreset2Id, setSelectedThumbnailPreset2Id] = useState<string>("");
   
   // LoRA presets
   const [loraPresets, setLoraPresets] = useState<LoraPreset[]>([]);
@@ -657,6 +658,7 @@ export const ProjectConfigurationModal = ({
           preset_id: selectedPresetId || null,
           style_reference_url: styleReferenceUrls.length > 0 ? JSON.stringify(styleReferenceUrls) : null,
           thumbnail_preset_id: selectedThumbnailPresetId || null,
+          thumbnail_preset_id_2: selectedThumbnailPreset2Id || null,
           qa_enabled: qaEnabled,
           visual_mode: visualMode,
           gameplay_urls: visualMode === 'gameplay' && gameplayUrls.length > 0 ? gameplayUrls : null,
@@ -1311,6 +1313,32 @@ export const ProjectConfigurationModal = ({
             </Select>
             <p className="text-xs text-muted-foreground">
               Requis si le mode semi-automatique est activé pour générer les miniatures
+            </p>
+          </div>
+
+          {/* Thumbnail preset 2 selector (A/B test) */}
+          <div className="space-y-2">
+            <Label>Preset miniatures B (A/B test, optionnel)</Label>
+            <Select
+              value={selectedThumbnailPreset2Id || "none"}
+              onValueChange={(v) => setSelectedThumbnailPreset2Id(v === "none" ? "" : v)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Aucun (A/B désactivé)" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Aucun (A/B désactivé)</SelectItem>
+                {thumbnailPresets
+                  .filter((p) => p.id !== selectedThumbnailPresetId)
+                  .map((preset) => (
+                    <SelectItem key={preset.id} value={preset.id}>
+                      {preset.name}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Si défini, génère un mix de miniatures issues des deux presets (A/B test).
             </p>
           </div>
 

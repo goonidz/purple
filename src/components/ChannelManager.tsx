@@ -20,6 +20,7 @@ interface Channel {
   tts_preset_id: string | null;
   project_preset_id: string | null;
   thumbnail_preset_id: string | null;
+  thumbnail_preset_id_2: string | null;
   thumbnail_preset_enabled: boolean | null;
   thumbnail_v2_preset_id: string | null;
   render_preset_id: string | null;
@@ -98,6 +99,7 @@ export default function ChannelManager({
   const [selectedTtsPresetId, setSelectedTtsPresetId] = useState<string>("");
   const [selectedProjectPresetId, setSelectedProjectPresetId] = useState<string>("");
   const [selectedThumbnailPresetId, setSelectedThumbnailPresetId] = useState<string>("");
+  const [selectedThumbnailPreset2Id, setSelectedThumbnailPreset2Id] = useState<string>("");
   const [selectedThumbnailV2PresetId, setSelectedThumbnailV2PresetId] = useState<string>("");
   const [selectedRenderPresetId, setSelectedRenderPresetId] = useState<string>("");
   const [thumbnailPresetEnabled, setThumbnailPresetEnabled] = useState<boolean>(true);
@@ -283,6 +285,7 @@ export default function ChannelManager({
     setSelectedTtsPresetId(channel.tts_preset_id || "none");
     setSelectedProjectPresetId(channel.project_preset_id || "none");
     setSelectedThumbnailPresetId(channel.thumbnail_preset_id || "none");
+    setSelectedThumbnailPreset2Id(channel.thumbnail_preset_id_2 || "none");
     setSelectedThumbnailV2PresetId(channel.thumbnail_v2_preset_id || "none");
     setSelectedRenderPresetId(channel.render_preset_id || "none");
     setThumbnailPresetEnabled(channel.thumbnail_preset_enabled ?? true);
@@ -358,6 +361,7 @@ export default function ChannelManager({
           tts_preset_id: selectedTtsPresetId === "none" ? null : selectedTtsPresetId,
           project_preset_id: selectedProjectPresetId === "none" ? null : selectedProjectPresetId,
           thumbnail_preset_id: selectedThumbnailPresetId === "none" ? null : selectedThumbnailPresetId,
+          thumbnail_preset_id_2: selectedThumbnailPreset2Id === "none" ? null : selectedThumbnailPreset2Id,
           thumbnail_v2_preset_id: selectedThumbnailV2PresetId === "none" ? null : selectedThumbnailV2PresetId,
           render_preset_id: selectedRenderPresetId === "none" ? null : selectedRenderPresetId,
           thumbnail_preset_enabled: thumbnailPresetEnabled,
@@ -550,6 +554,8 @@ export default function ChannelManager({
       setSelectedProjectPresetId={setSelectedProjectPresetId}
       selectedThumbnailPresetId={selectedThumbnailPresetId}
       setSelectedThumbnailPresetId={setSelectedThumbnailPresetId}
+      selectedThumbnailPreset2Id={selectedThumbnailPreset2Id}
+      setSelectedThumbnailPreset2Id={setSelectedThumbnailPreset2Id}
       selectedThumbnailV2PresetId={selectedThumbnailV2PresetId}
       setSelectedThumbnailV2PresetId={setSelectedThumbnailV2PresetId}
       selectedRenderPresetId={selectedRenderPresetId}
@@ -597,6 +603,8 @@ function PresetConfigDialog({
   setSelectedProjectPresetId,
   selectedThumbnailPresetId,
   setSelectedThumbnailPresetId,
+  selectedThumbnailPreset2Id,
+  setSelectedThumbnailPreset2Id,
   selectedThumbnailV2PresetId,
   setSelectedThumbnailV2PresetId,
   selectedRenderPresetId,
@@ -639,6 +647,8 @@ function PresetConfigDialog({
   setSelectedProjectPresetId: (id: string) => void;
   selectedThumbnailPresetId: string;
   setSelectedThumbnailPresetId: (id: string) => void;
+  selectedThumbnailPreset2Id: string;
+  setSelectedThumbnailPreset2Id: (id: string) => void;
   selectedThumbnailV2PresetId: string;
   setSelectedThumbnailV2PresetId: (id: string) => void;
   selectedRenderPresetId: string;
@@ -794,6 +804,35 @@ function PresetConfigDialog({
               <p className="text-xs text-muted-foreground">
                 Définit les images d'exemple et le style pour la génération de miniatures
               </p>
+
+              {/* Thumbnail Preset 2 (A/B test) */}
+              <div className="space-y-1 pt-1">
+                <Label htmlFor="thumbnail-preset-2" className="text-sm font-normal">
+                  Preset miniatures B (A/B test, optionnel)
+                </Label>
+                <Select
+                  value={selectedThumbnailPreset2Id || "none"}
+                  onValueChange={setSelectedThumbnailPreset2Id}
+                  disabled={!thumbnailPresetEnabled}
+                >
+                  <SelectTrigger id="thumbnail-preset-2">
+                    <SelectValue placeholder="Aucun (A/B désactivé)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Aucun (A/B désactivé)</SelectItem>
+                    {thumbnailPresets
+                      .filter((p) => p.id !== selectedThumbnailPresetId)
+                      .map((preset) => (
+                        <SelectItem key={preset.id} value={preset.id}>
+                          {preset.name}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Si défini, propage le 2e preset à chaque nouveau projet (A/B sur les miniatures).
+                </p>
+              </div>
             </div>
 
             {/* Thumbnail V2 Preset */}

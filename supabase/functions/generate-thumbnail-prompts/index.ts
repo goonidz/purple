@@ -102,7 +102,14 @@ serve(async (req) => {
     }
     // Service role calls are allowed without user verification (internal backend calls)
 
-    const { videoScript, videoTitle, exampleUrls, characterRefUrl, previousPrompts, customPrompt, userIdea, userIdeaCount, textModel, userId: bodyUserId } = await req.json();
+    const { videoScript, videoTitle, exampleUrls, characterRefUrl, previousPrompts, customPrompt, userIdea, userIdeaCount, totalCount: totalCountRaw, textModel, userId: bodyUserId } = await req.json();
+
+    // totalCount controls how many prompts the model should produce.
+    // Default 5 keeps backward compatibility for legacy callers.
+    // Clamped to [1..5] (the JSON template + downstream image generation expect ≤ 5 slots).
+    const totalCount = Math.max(1, Math.min(5, Math.floor(
+      typeof totalCountRaw === 'number' ? totalCountRaw : 5
+    )));
 
     if (!videoScript) {
       return new Response(
@@ -247,13 +254,14 @@ STRICT REQUIREMENTS:
 Think: "What aspects of the script have NOT been explored yet?"`;
     }
 
-    // Determine how many of the 5 prompts should be variations of the user idea.
-    // Falls back to 2 (legacy default) if userIdea is provided but no count is sent
-    // (e.g. older clients). Clamped to [0..5]. If userIdea is missing/empty, count = 0.
+    // Determine how many of the totalCount prompts should be variations of the user idea.
+    // Falls back to min(2, totalCount) (legacy default) if userIdea is provided but no count
+    // is sent (e.g. older clients). Clamped to [0..totalCount]. If userIdea is missing/empty,
+    // count = 0.
     const ideaCountRaw = typeof userIdeaCount === 'number'
       ? userIdeaCount
-      : (userIdea && userIdea.trim() ? 2 : 0);
-    const ideaCount = Math.max(0, Math.min(5, Math.floor(ideaCountRaw)));
+      : (userIdea && userIdea.trim() ? Math.min(2, totalCount) : 0);
+    const ideaCount = Math.max(0, Math.min(totalCount, Math.floor(ideaCountRaw)));
     const hasUserIdea = !!(userIdea && userIdea.trim()) && ideaCount > 0;
 
     // Helper: format slot lists like ["#1"] -> "#1", ["#1","#2"] -> "#1 and #2",
@@ -267,8 +275,8 @@ Think: "What aspects of the script have NOT been explored yet?"`;
 
     if (hasUserIdea) {
       const appliedSlots = Array.from({ length: ideaCount }, (_, i) => `#${i + 1}`);
-      const ignoredSlots = Array.from({ length: 5 - ideaCount }, (_, i) => `#${ideaCount + i + 1}`);
-      const ignoredCount = 5 - ideaCount;
+      const ignoredSlots = Array.from({ length: totalCount - ideaCount }, (_, i) => `#${ideaCount + i + 1}`);
+      const ignoredCount = totalCount - ideaCount;
       const appliedLabel = formatSlots(appliedSlots);
       const ignoredLabel = formatSlots(ignoredSlots);
 
@@ -278,7 +286,7 @@ Think: "What aspects of the script have NOT been explored yet?"`;
 The user provided this idea: "${userIdea.trim()}"
 
 ═══════════════════════════════════════════════════════════
-MODE A — IDEA-DRIVEN PROMPTS (prompt${ideaCount > 1 ? 's' : ''} ${appliedLabel}, ${ideaCount} of 5):
+MODE A — IDEA-DRIVEN PROMPTS (prompt${ideaCount > 1 ? 's' : ''} ${appliedLabel}, ${ideaCount} of ${totalCount}):
 ═══════════════════════════════════════════════════════════
 For these ${ideaCount} prompt${ideaCount > 1 ? 's' : ''}, THE USER'S IDEA ABOVE IS THE SOLE SOURCE OF TRUTH for visual style.
 
@@ -294,7 +302,7 @@ ${ideaCount > 1 ? `5. Each of the ${ideaCount} prompts explores a DIFFERENT angl
 The ONLY rules that still apply: 60-100 words per prompt, English, simple composition (3-4 elements max), no banned words ("dead").${ignoredCount > 0 ? `
 
 ═══════════════════════════════════════════════════════════
-MODE B — SCRIPT-ONLY PROMPTS (prompt${ignoredCount > 1 ? 's' : ''} ${ignoredLabel}, ${ignoredCount} of 5):
+MODE B — SCRIPT-ONLY PROMPTS (prompt${ignoredCount > 1 ? 's' : ''} ${ignoredLabel}, ${ignoredCount} of ${totalCount}):
 ═══════════════════════════════════════════════════════════
 For these ${ignoredCount} prompt${ignoredCount > 1 ? 's' : ''}, COMPLETELY IGNORE the user's idea above. Apply all the standard rules from this system prompt:
 - Use the visual style from the example thumbnails (colors, composition, typography)
@@ -309,7 +317,7 @@ Final result: ${ideaCount} idea-driven + ${ignoredCount} script-only thumbnail${
     // (idea-driven vs script-only) so the model cannot drift back to mixing the two.
     const ordinals = ['premier', 'deuxième', 'troisième', 'quatrième', 'cinquième'];
     const buildSlotLine = (slotIdx: number /* 0-based */): string => {
-      const ord = ordinals[slotIdx];
+      const ord = ordinals[slotIdx] || `prompt #${slotIdx + 1}`;
       if (!hasUserIdea) {
         if (slotIdx === 0) return `"${ord} prompt détaillé reprenant le style des exemples..."`;
         if (slotIdx === 1) return `"${ord} prompt avec même style mais variation différente..."`;
@@ -329,16 +337,13 @@ Final result: ${ideaCount} idea-driven + ${ignoredCount} script-only thumbnail${
       return `"${ord} prompt — MODE B : reprenant le style des exemples, basé uniquement sur le script, ignore l'idée utilisateur, autre angle du script (différent du/des ${prevIgnoredRefs})..."`;
     };
 
+    const slotLines = Array.from({ length: totalCount }, (_, i) => buildSlotLine(i)).join(',\n    ');
     systemPrompt += `
 
-Retourne UNIQUEMENT un JSON avec ce format exact:
+Retourne UNIQUEMENT un JSON avec ce format exact (${totalCount} prompt${totalCount > 1 ? 's' : ''}):
 {
   "prompts": [
-    ${buildSlotLine(0)},
-    ${buildSlotLine(1)},
-    ${buildSlotLine(2)},
-    ${buildSlotLine(3)},
-    ${buildSlotLine(4)}
+    ${slotLines}
   ]
 }`;
 
@@ -419,6 +424,7 @@ Crée des designs SIMPLES (3-4 éléments max) mais PERTINENTS au script.`
     });
 
     console.log(`Generating thumbnail prompts with ${useClaudeModel ? 'Claude Sonnet 4.6 (Anthropic)' : 'Gemini 2.0 Flash'}...`);
+    console.log(`[generate-thumbnail-prompts] totalCount=${totalCount}, ideaCount=${ideaCount}, hasUserIdea=${hasUserIdea}`);
     console.log(`Processed ${hasExamples ? exampleUrls.length : 0} example images and ${characterRefUrl ? '1' : '0'} character image`);
 
     let generatedContent: string;
@@ -485,7 +491,7 @@ Le CONTENU des miniatures vient UNIQUEMENT du script ci-dessus.
 
 Crée des designs SIMPLES (3-4 éléments max) mais PERTINENTS au script.
 
-CRITICAL OUTPUT INSTRUCTION: You MUST call the generate_prompts tool with exactly 5 detailed image generation prompts in the "prompts" array. Each prompt must be a complete, standalone text description for an AI image generator. Do NOT return an empty object.` });
+CRITICAL OUTPUT INSTRUCTION: You MUST call the generate_prompts tool with exactly ${totalCount} detailed image generation prompt${totalCount > 1 ? 's' : ''} in the "prompts" array. Each prompt must be a complete, standalone text description for an AI image generator. Do NOT return an empty object.` });
 
       try {
         const anthropicResponse = await fetch('https://api.anthropic.com/v1/messages', {
@@ -503,16 +509,16 @@ CRITICAL OUTPUT INSTRUCTION: You MUST call the generate_prompts tool with exactl
             messages: [{ role: 'user', content: userContent }],
             tools: [{
               name: 'generate_prompts',
-              description: 'You MUST use this tool to return your 5 thumbnail prompts. Put each image generation prompt as a string in the prompts array. Each prompt should be a complete standalone text description (60-100 words) that an AI image generator can use to create a YouTube thumbnail.',
+              description: `You MUST use this tool to return your ${totalCount} thumbnail prompt${totalCount > 1 ? 's' : ''}. Put each image generation prompt as a string in the prompts array. Each prompt should be a complete standalone text description (60-100 words) that an AI image generator can use to create a YouTube thumbnail.`,
               input_schema: {
                 type: 'object',
                 properties: {
                   prompts: {
                     type: 'array',
                     items: { type: 'string' },
-                    minItems: 5,
-                    maxItems: 5,
-                    description: 'Array of exactly 5 detailed image generation prompt strings. Each string is a complete image description.'
+                    minItems: totalCount,
+                    maxItems: totalCount,
+                    description: `Array of exactly ${totalCount} detailed image generation prompt string${totalCount > 1 ? 's' : ''}. Each string is a complete image description.`
                   }
                 },
                 required: ['prompts']
@@ -561,7 +567,7 @@ CRITICAL OUTPUT INSTRUCTION: You MUST call the generate_prompts tool with exactl
               model: 'claude-sonnet-4-6',
               max_tokens: 8192,
               temperature: previousPrompts && previousPrompts.length > 0 ? 0.95 : 0.7,
-              system: systemPrompt + '\n\nYou MUST respond with ONLY a valid JSON object: {"prompts": ["prompt1", "prompt2", "prompt3", "prompt4", "prompt5"]}. No other text.',
+              system: systemPrompt + `\n\nYou MUST respond with ONLY a valid JSON object containing exactly ${totalCount} prompt${totalCount > 1 ? 's' : ''}: {"prompts": [${Array.from({ length: totalCount }, (_, i) => `"prompt${i + 1}"`).join(', ')}]}. No other text.`,
               messages: [{ role: 'user', content: userContent }],
             }),
           });
@@ -676,7 +682,7 @@ CRITICAL OUTPUT INSTRUCTION: You MUST call the generate_prompts tool with exactl
       );
     }
 
-    console.log("Successfully generated 5 thumbnail prompts");
+    console.log(`Successfully generated ${parsedResponse.prompts.length} thumbnail prompt${parsedResponse.prompts.length > 1 ? 's' : ''} (requested: ${totalCount})`);
 
     return new Response(
       JSON.stringify({ prompts: parsedResponse.prompts }),

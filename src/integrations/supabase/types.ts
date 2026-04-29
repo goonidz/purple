@@ -166,6 +166,7 @@ export type Database = {
           script_preset_id: string | null
           thumbnail_preset_enabled: boolean | null
           thumbnail_preset_id: string | null
+          thumbnail_preset_id_2: string | null
           thumbnail_v2_preset_id: string | null
           tts_preset_id: string | null
           updated_at: string
@@ -181,6 +182,7 @@ export type Database = {
           script_preset_id?: string | null
           thumbnail_preset_enabled?: boolean | null
           thumbnail_preset_id?: string | null
+          thumbnail_preset_id_2?: string | null
           thumbnail_v2_preset_id?: string | null
           tts_preset_id?: string | null
           updated_at?: string
@@ -196,6 +198,7 @@ export type Database = {
           script_preset_id?: string | null
           thumbnail_preset_enabled?: boolean | null
           thumbnail_preset_id?: string | null
+          thumbnail_preset_id_2?: string | null
           thumbnail_v2_preset_id?: string | null
           tts_preset_id?: string | null
           updated_at?: string
@@ -219,6 +222,13 @@ export type Database = {
           {
             foreignKeyName: "channels_thumbnail_preset_id_fkey"
             columns: ["thumbnail_preset_id"]
+            isOneToOne: false
+            referencedRelation: "thumbnail_presets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "channels_thumbnail_preset_id_2_fkey"
+            columns: ["thumbnail_preset_id_2"]
             isOneToOne: false
             referencedRelation: "thumbnail_presets"
             referencedColumns: ["id"]
@@ -694,6 +704,7 @@ export type Database = {
           style_reference_url: string | null
           summary: string | null
           thumbnail_preset_id: string | null
+          thumbnail_preset_id_2: string | null
           transcript_json: Json | null
           updated_at: string
           user_id: string
@@ -722,6 +733,7 @@ export type Database = {
           style_reference_url?: string | null
           summary?: string | null
           thumbnail_preset_id?: string | null
+          thumbnail_preset_id_2?: string | null
           transcript_json?: Json | null
           updated_at?: string
           user_id: string
@@ -750,6 +762,7 @@ export type Database = {
           style_reference_url?: string | null
           summary?: string | null
           thumbnail_preset_id?: string | null
+          thumbnail_preset_id_2?: string | null
           transcript_json?: Json | null
           updated_at?: string
           user_id?: string
@@ -758,6 +771,13 @@ export type Database = {
           {
             foreignKeyName: "projects_thumbnail_preset_id_fkey"
             columns: ["thumbnail_preset_id"]
+            isOneToOne: false
+            referencedRelation: "thumbnail_presets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "projects_thumbnail_preset_id_2_fkey"
+            columns: ["thumbnail_preset_id_2"]
             isOneToOne: false
             referencedRelation: "thumbnail_presets"
             referencedColumns: ["id"]
