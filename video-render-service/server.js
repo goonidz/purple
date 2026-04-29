@@ -90,6 +90,49 @@ function buildZaiWebSearchTool(webSearch) {
 }
 
 /**
+ * Strips raw tool-use XML that Claude sometimes hallucinates into its `text`
+ * blocks when extended thinking + native web_search + batch mode are combined.
+ *
+ * The native `web_search_20250305` tool returns structured `server_tool_use` /
+ * `web_search_tool_result` blocks (which we already filter out by keeping only
+ * `type === 'text'`), but Sonnet 4.x can ALSO emit a textual rendering of its
+ * planned tool calls inside the final prose, e.g.:
+ *
+ *   <function_calls>
+ *   <invoke name="web_search">
+ *   <parameter name="query">...</parameter>
+ *   </invoke>
+ *   </function_calls>
+ *
+ * That artefact ends up displayed verbatim to the user in the script. Strip it.
+ */
+function stripHallucinatedToolXml(text) {
+  if (!text || typeof text !== 'string') return text;
+  // Detect any artefact before stripping so we only log real removals
+  // (and not the trailing-whitespace-trim that always changes length).
+  const detector = /<\/?(function_calls|invoke|parameter)\b|<\/?antml:/i;
+  const had = detector.test(text);
+  let out = text;
+  // The whole function_calls block (most common artefact).
+  out = out.replace(/<function_calls>[\s\S]*?<\/function_calls>/gi, '');
+  // Standalone invoke / parameter / antml-style tags that may leak without a
+  // surrounding function_calls wrapper if generation was truncated mid-block.
+  out = out.replace(/<invoke[\s\S]*?<\/invoke>/gi, '');
+  out = out.replace(/<\/?function_calls>/gi, '');
+  out = out.replace(/<\/?invoke[^>]*>/gi, '');
+  out = out.replace(/<\/?parameter[^>]*>/gi, '');
+  out = out.replace(/<\/?antml:[a-z_]+[^>]*>/gi, '');
+  // Collapse the empty lines those removals leave behind.
+  out = out.replace(/\n{3,}/g, '\n\n').trim();
+  if (had) {
+    console.log(
+      `[strip-tool-xml] Removed hallucinated tool-call XML from script (before=${text.length}ch → after=${out.length}ch)`
+    );
+  }
+  return out;
+}
+
+/**
  * Logs web_search usage from an Anthropic /v1/messages response.
  *
  * Inspects two sources:
@@ -442,7 +485,9 @@ async function pollBatchUntilDone({ batchId, anthropicApiKey, jobId, projectId, 
       const content = entry.result.message?.content;
       if (content && Array.isArray(content)) {
         logWebSearchUsage(`${jobId} batch`, content, entry.result.message?.usage);
-        script = content.filter(b => b.type === 'text').map(b => b.text).join('\n\n');
+        script = stripHallucinatedToolXml(
+          content.filter(b => b.type === 'text').map(b => b.text).join('\n\n')
+        );
       }
       break;
     }
@@ -843,10 +888,12 @@ async function callModel(sysPrompt, userPrompt, modelConfig) {
   });
 
   if (resp.data.content && resp.data.content.length > 0) {
-    return resp.data.content
-      .filter((block) => block.type === 'text')
-      .map((block) => block.text)
-      .join('\n\n');
+    return stripHallucinatedToolXml(
+      resp.data.content
+        .filter((block) => block.type === 'text')
+        .map((block) => block.text)
+        .join('\n\n')
+    );
   }
   return '';
 }
@@ -1439,10 +1486,12 @@ RÈGLE CRITIQUE SUR LA LONGUEUR:
           if (webSearchTool) {
             logWebSearchUsage(jobId, blocks, anthropicResponse.data.usage);
           }
-          script = blocks
-            .filter((block) => block.type === 'text')
-            .map((block) => block.text)
-            .join('\n\n');
+          script = stripHallucinatedToolXml(
+            blocks
+              .filter((block) => block.type === 'text')
+              .map((block) => block.text)
+              .join('\n\n')
+          );
         }
 
         if (!script) {
@@ -3544,10 +3593,12 @@ RÈGLE CRITIQUE SUR LA LONGUEUR:
         if (webSearchTool) {
           logWebSearchUsage('sync', anthropicResponse.data.content, anthropicResponse.data.usage);
         }
-        script = anthropicResponse.data.content
-          .filter(block => block.type === 'text')
-          .map(block => block.text)
-          .join('\n\n');
+        script = stripHallucinatedToolXml(
+          anthropicResponse.data.content
+            .filter(block => block.type === 'text')
+            .map(block => block.text)
+            .join('\n\n')
+        );
       }
 
       if (!script) throw new Error('No script content returned from Anthropic API');
