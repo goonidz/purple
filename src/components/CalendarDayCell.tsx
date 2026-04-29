@@ -132,7 +132,7 @@ export default function CalendarDayCell({
       className={cn(
         "min-h-[120px] border-b border-r p-2 group cursor-pointer hover:bg-muted/50 transition-colors",
         isToday && "bg-primary/5",
-        !isCurrentMonth && "bg-muted/20 opacity-50",
+        !isCurrentMonth && "bg-muted/30",
         isDragOver && "bg-primary/10 ring-2 ring-primary ring-inset"
       )}
       onClick={() => onDayClick(date)}
