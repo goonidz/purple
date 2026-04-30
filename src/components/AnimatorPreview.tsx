@@ -58,6 +58,7 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
   const [chatInput, setChatInput] = useState("");
   const [isEditing, setIsEditing] = useState(false);
   const [isRebuilding, setIsRebuilding] = useState(false);
+  const [isRegeneratingScene, setIsRegeneratingScene] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const resumeFrameRef = useRef<number | null>(null);
 
@@ -876,6 +877,52 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
                       >
                         {isEditing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wrench className="h-3.5 w-3.5" />}
                         Fix it
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-9 px-3 gap-1.5 shrink-0 border-orange-500/40 text-orange-400 hover:bg-orange-500/10 hover:text-orange-300"
+                        disabled={isEditing || isRegeneratingScene}
+                        onClick={async () => {
+                          const seg = segments[shot.sceneIndex];
+                          if (!seg) {
+                            toast.error("Scène introuvable");
+                            return;
+                          }
+                          if (!window.confirm(`Régénérer la scène ${shot.sceneIndex + 1} ? Le code actuel sera remplacé.`)) {
+                            return;
+                          }
+                          setIsRegeneratingScene(true);
+                          try {
+                            const { error: updErr } = await supabase
+                              .from('project_scenes')
+                              .update({ animator_code: null, animator_code_status: 'pending' })
+                              .eq('project_id', projectId)
+                              .eq('scene_index', shot.sceneIndex);
+                            if (updErr) throw updErr;
+
+                            const result = await startJob('animator_scene' as any, {
+                              sceneIndex: shot.sceneIndex,
+                              segment: { start: seg.start, end: seg.end, text: seg.text },
+                            });
+                            if (!result) {
+                              await supabase
+                                .from('project_scenes')
+                                .update({ animator_code_status: 'failed' })
+                                .eq('project_id', projectId)
+                                .eq('scene_index', shot.sceneIndex);
+                              throw new Error("Impossible de créer le job de régénération");
+                            }
+                            toast.success(`Scène ${shot.sceneIndex + 1} en cours de régénération — suivez l'avancement dans l'onglet Vidéo`);
+                          } catch (e: any) {
+                            toast.error(`Erreur: ${e.message}`);
+                          } finally {
+                            setIsRegeneratingScene(false);
+                          }
+                        }}
+                      >
+                        {isRegeneratingScene ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                        Régénérer
                       </Button>
                     </div>
                   </div>
