@@ -133,6 +133,106 @@ function stripHallucinatedToolXml(text) {
 }
 
 /**
+ * Strips natural-language planning preambles that Claude sometimes narrates
+ * inside a `text` block when extended thinking is enabled and the prompt asks
+ * for actions the model can't perform (e.g. "use web_search" without the tool).
+ *
+ * Cousin to stripHallucinatedToolXml — same root cause (model simulating tool
+ * usage), different shape (prose narration instead of XML).
+ *
+ * Detected shapes (loose, opt-in only — we never strip unless we see a marker):
+ *   - "Based on my research, I now have sufficient data to write the script."
+ *   - "Let me compile the key facts:"
+ *   - "Now let me write the script:" / "Let me draft the script:" / "I'll write the script now"
+ *   - "Let me write this out now, aiming for X words"
+ *
+ * Strategy: when a marker is found, search forward for a script-start anchor
+ * (a "---" separator on its own line, or a known opener like "COLD OPEN:"),
+ * and drop everything up to that anchor. Fail-safe: if we can't find an
+ * anchor, log + return the original text unchanged.
+ */
+function stripPlanningPreamble(text) {
+  if (!text || typeof text !== 'string') return text;
+
+  const planningMarkers = [
+    /Based on my research,? I (?:now )?have sufficient data\b/i,
+    /Let me compile the key facts\b/i,
+    /Now let me write the (?:full )?script\b/i,
+    /Let me draft the script\b/i,
+    /I(?:'ll| will) write the (?:full )?script now\b/i,
+    /Let me write this out now\b/i,
+    /Let me count carefully\b/i,
+    /I(?:'ll| will) be careful about\s*:?\s*\n[\s-]*No visual cues/i,
+  ];
+  const hasMarker = planningMarkers.some((re) => re.test(text));
+  if (!hasMarker) return text;
+
+  let out = text;
+  let strippedHead = false;
+  let strippedMid = 0;
+
+  // Phase 1 — leading preamble: from start of text up to the first script anchor.
+  // Anchors (in priority order):
+  //   1. A line containing only "---" (the separator Claude uses between plan & script)
+  //   2. A line starting with "COLD OPEN:" / "Cold open:"
+  // Only strip if the preamble length is reasonable (< 4000 chars) AND the
+  // anchor is found within the first 6000 chars — beyond that, the doc shape
+  // is unknown and silent stripping is too risky.
+  const head = out.slice(0, 6000);
+  const sepIdx = head.search(/\n-{3,}\s*\n/);
+  const coldOpenIdx = head.search(/\n\s*COLD OPEN\s*:/i);
+  let anchorIdx = -1;
+  let anchorMatch = null;
+  if (sepIdx >= 0 && (coldOpenIdx < 0 || sepIdx < coldOpenIdx)) {
+    anchorIdx = sepIdx;
+    anchorMatch = head.match(/\n-{3,}\s*\n/);
+  } else if (coldOpenIdx >= 0) {
+    anchorIdx = coldOpenIdx;
+    anchorMatch = head.match(/\n\s*COLD OPEN\s*:/i);
+  }
+  if (anchorIdx >= 0 && anchorMatch && anchorIdx < 4000) {
+    // Drop everything up to (and including) the anchor line for "---";
+    // for "COLD OPEN:" keep that line and everything after — but the script
+    // requirement says "no headers / no titles", so drop the COLD OPEN: word
+    // itself and start at the next line.
+    if (anchorMatch[0].includes('---')) {
+      out = out.slice(anchorIdx + anchorMatch[0].length).trimStart();
+    } else {
+      // After "COLD OPEN:" line, the actual narration starts; skip the marker.
+      const after = anchorIdx + anchorMatch[0].length;
+      out = out.slice(after).replace(/^[^\n]*\n+/, '').trimStart();
+    }
+    strippedHead = true;
+  }
+
+  // Phase 2 — mid-script narration relapses (Claude restarting its plan
+  // mid-flow, e.g. "I'll write the full script now. Let me be careful about:
+  // - No visual cues - Numbers spelled out ..."). These stand out because
+  // they sit between two paragraphs of normal prose AND list the same
+  // structural rules the user already gave the model.
+  const midRelapse = /\n\n(?:I(?:'ll| will) write the (?:full )?script now\. Let me be careful about[\s\S]{0,1500}?)\n\n(?=[A-Z])/g;
+  out = out.replace(midRelapse, () => {
+    strippedMid++;
+    return '\n\n';
+  });
+
+  // Phase 3 — collapse double-blank-lines created by removals.
+  out = out.replace(/\n{3,}/g, '\n\n').trim();
+
+  if (strippedHead || strippedMid > 0) {
+    console.log(
+      `[strip-preamble] Removed planning narration from script (head=${strippedHead}, mid=${strippedMid}, before=${text.length}ch → after=${out.length}ch)`
+    );
+  } else {
+    // Found a marker but no safe anchor — leave text untouched, just warn.
+    console.warn(
+      `[strip-preamble] WARNING: planning marker detected but no safe anchor found — script may contain narration leak. Length=${text.length}ch`
+    );
+  }
+  return out;
+}
+
+/**
  * Resolves Handlebars-lite conditional blocks in a user prompt against a
  * small bag of boolean flags. Supports:
  *
@@ -547,9 +647,9 @@ async function pollBatchUntilDone({ batchId, anthropicApiKey, jobId, projectId, 
       const content = entry.result.message?.content;
       if (content && Array.isArray(content)) {
         logWebSearchUsage(`${jobId} batch`, content, entry.result.message?.usage);
-        script = stripHallucinatedToolXml(
+        script = stripPlanningPreamble(stripHallucinatedToolXml(
           content.filter(b => b.type === 'text').map(b => b.text).join('\n\n')
-        );
+        ));
       }
       break;
     }
@@ -950,12 +1050,12 @@ async function callModel(sysPrompt, userPrompt, modelConfig) {
   });
 
   if (resp.data.content && resp.data.content.length > 0) {
-    return stripHallucinatedToolXml(
+    return stripPlanningPreamble(stripHallucinatedToolXml(
       resp.data.content
         .filter((block) => block.type === 'text')
         .map((block) => block.text)
         .join('\n\n')
-    );
+    ));
   }
   return '';
 }
@@ -1563,12 +1663,12 @@ RÈGLE CRITIQUE SUR LA LONGUEUR:
           if (webSearchTool) {
             logWebSearchUsage(jobId, blocks, anthropicResponse.data.usage);
           }
-          script = stripHallucinatedToolXml(
+          script = stripPlanningPreamble(stripHallucinatedToolXml(
             blocks
               .filter((block) => block.type === 'text')
               .map((block) => block.text)
               .join('\n\n')
-          );
+          ));
         }
 
         if (!script) {
@@ -3679,12 +3779,12 @@ RÈGLE CRITIQUE SUR LA LONGUEUR:
         if (webSearchTool) {
           logWebSearchUsage('sync', anthropicResponse.data.content, anthropicResponse.data.usage);
         }
-        script = stripHallucinatedToolXml(
+        script = stripPlanningPreamble(stripHallucinatedToolXml(
           anthropicResponse.data.content
             .filter(block => block.type === 'text')
             .map(block => block.text)
             .join('\n\n')
-        );
+        ));
       }
 
       if (!script) throw new Error('No script content returned from Anthropic API');

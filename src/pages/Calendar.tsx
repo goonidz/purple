@@ -543,6 +543,8 @@ export default function Calendar() {
           projectConfig.example_prompts = projectPreset.example_prompts || undefined;
           projectConfig.prompt_system_message = (projectPreset as any).prompt_system_message || undefined;
           projectConfig.style_reference_url = projectPreset.style_reference_url || undefined;
+          projectConfig.visual_mode = (projectPreset as any).visual_mode || 'images';
+          projectConfig.gameplay_urls = (projectPreset as any).gameplay_urls || undefined;
         }
 
         // Check for existing active pipeline on this calendar entry
@@ -563,7 +565,12 @@ export default function Calendar() {
           current_step: "create_project",
           step_status: "pending",
           config: {
-            script: { model: (scriptPreset as any).script_model || "glm5-openrouter", custom_prompt: scriptPreset.custom_prompt || "", use_batch: (scriptPreset as any).use_batch || false },
+            script: {
+              model: (scriptPreset as any).script_model || "glm5-openrouter",
+              custom_prompt: scriptPreset.custom_prompt || "",
+              use_batch: (scriptPreset as any).use_batch || false,
+              use_web_search: (scriptPreset as any).use_web_search || false,
+            },
             tts: ttsConfig,
             project: projectConfig,
           },
