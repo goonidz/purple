@@ -46,13 +46,20 @@ export function useVideoRenderJobs({ projectId, onJobComplete, onJobFailed }: Us
     projectIdRef.current = projectId;
   }, [onJobComplete, onJobFailed, projectId]);
 
-  // Initial fetch on mount
+  // Track previously-seen jobs so the periodic re-fetch can detect new
+  // completions/failures the realtime subscription may have missed (Supabase
+  // realtime occasionally drops INSERT events on reconnects or under load —
+  // the safety-net polling lifts that constraint, mirroring useGpuRenderJobs).
+  const allJobsRef = useRef<VideoRenderJob[]>([]);
+  useEffect(() => { allJobsRef.current = allJobs; }, [allJobs]);
+
+  // Initial fetch on mount + periodic re-fetch as a realtime fallback
   useEffect(() => {
     if (!projectId) return;
 
-    const doInitialFetch = async () => {
+    const doFetch = async (isInitial = false) => {
       try {
-        setIsLoading(true);
+        if (isInitial) setIsLoading(true);
         const { data, error } = await supabase
           .from('video_render_jobs')
           .select('*')
@@ -60,26 +67,45 @@ export function useVideoRenderJobs({ projectId, onJobComplete, onJobFailed }: Us
           .order('created_at', { ascending: false });
 
         if (error) {
-          console.error('❌ Error fetching video render jobs:', error);
-          setAllJobs([]);
-          setActiveJobs([]);
+          if (isInitial) {
+            console.error('❌ Error fetching video render jobs:', error);
+            setAllJobs([]);
+            setActiveJobs([]);
+          }
           return;
         }
-        
+
         const jobs = (data || []) as VideoRenderJob[];
-        console.log('📥 Initial fetch - video render jobs:', jobs.length);
+        if (isInitial) {
+          console.log('📥 Initial fetch - video render jobs:', jobs.length);
+        }
+
+        // Detect newly-completed/failed jobs the realtime subscription may
+        // have missed, and fire the callbacks once.
+        const prevJobs = allJobsRef.current;
+        for (const fresh of jobs) {
+          const prev = prevJobs.find(p => p.id === fresh.id);
+          const wasOpen = !prev || prev.status === 'pending' || prev.status === 'processing';
+          if (wasOpen && fresh.status === 'completed' && onJobCompleteRef.current) {
+            onJobCompleteRef.current(fresh);
+          } else if (wasOpen && fresh.status === 'failed' && onJobFailedRef.current) {
+            onJobFailedRef.current(fresh);
+          }
+        }
+
         setAllJobs(jobs);
         const active = jobs.filter(j => j.status === 'pending' || j.status === 'processing');
-        console.log('📥 Initial fetch - active jobs:', active.length);
         setActiveJobs(active);
       } catch (error) {
         console.error('Error fetching video render jobs:', error);
       } finally {
-        setIsLoading(false);
+        if (isInitial) setIsLoading(false);
       }
     };
-    
-    doInitialFetch();
+
+    doFetch(true);
+    const interval = setInterval(() => doFetch(false), 5000);
+    return () => clearInterval(interval);
   }, [projectId]);
 
   // Poll for job updates from VPS
