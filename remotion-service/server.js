@@ -214,6 +214,27 @@ function extractBrokenSceneFromError(errorMessage) {
 const activeJobs = new Map();
 const activeBundles = new Set();
 
+/**
+ * Serializes the assembled-render bundle phase. The animator render endpoint
+ * mutates the shared `remotion-service/src/` directory (deletes old AnimAssembled
+ * files, writes new tsx, edits Root.jsx) before calling bundle(). When two
+ * renders fire near-simultaneously they trample each other's files, producing
+ * bundles that miss the requested compositionId on Lambda
+ * ("Could not find composition with ID AnimAssembledmoky…").
+ *
+ * Each holder of the lock owns srcDir + bundle() exclusively. Once bundle()
+ * returns, the output dir is frozen on disk and the rest of the pipeline
+ * (Lambda deploy + render) is safe to run concurrently.
+ */
+let assembleBundleLock = Promise.resolve();
+function acquireAssembleBundleLock() {
+  let release;
+  const next = new Promise((resolve) => { release = resolve; });
+  const prev = assembleBundleLock;
+  assembleBundleLock = prev.then(() => next);
+  return prev.then(() => release);
+}
+
 function registerBundle(bundlePath) {
   if (bundlePath) activeBundles.add(path.basename(bundlePath));
   return bundlePath;
@@ -1453,47 +1474,66 @@ app.post('/animator/render-assembled', async (req, res) => {
 
     (async () => {
       let newBundle = null;
+      let entryPoint = null;
       try {
-        const srcDir = path.join(__dirname, 'src');
+        // Serialize the "mutate srcDir + bundle()" critical section. Two
+        // animator renders firing within ~seconds of each other share the same
+        // local srcDir (remotion-service/src/) and previously trampled each
+        // other's tsx files & Root.jsx, producing bundles missing the
+        // requested compositionId on Lambda. See acquireAssembleBundleLock
+        // docstring for the failure mode this guards against.
+        const lockStart = Date.now();
+        const releaseLock = await acquireAssembleBundleLock();
+        const lockWaitMs = Date.now() - lockStart;
+        if (lockWaitMs > 100) {
+          console.log(`[Animator] [${jobId}] Waited ${lockWaitMs}ms for bundle lock`);
+        }
 
-        const namePrefix = effectiveName.replace(/[a-z0-9]{6,12}$/i, '');
-        if (namePrefix.length >= 8) {
-          const oldFiles = fs.readdirSync(srcDir).filter(f => f.startsWith(namePrefix) && f.endsWith('.tsx') && f !== `${effectiveName}.tsx`);
-          if (oldFiles.length > 0) {
-            const rootPath = path.join(srcDir, 'Root.jsx');
-            let rootClean = fs.readFileSync(rootPath, 'utf-8');
-            for (const f of oldFiles) {
-              const oldName = f.replace('.tsx', '');
-              fs.unlinkSync(path.join(srcDir, f));
-              rootClean = rootClean.split('\n').filter(line => !line.includes(oldName)).join('\n');
+        try {
+          const srcDir = path.join(__dirname, 'src');
+
+          const namePrefix = effectiveName.replace(/[a-z0-9]{6,12}$/i, '');
+          if (namePrefix.length >= 8) {
+            const oldFiles = fs.readdirSync(srcDir).filter(f => f.startsWith(namePrefix) && f.endsWith('.tsx') && f !== `${effectiveName}.tsx`);
+            if (oldFiles.length > 0) {
+              const rootPath = path.join(srcDir, 'Root.jsx');
+              let rootClean = fs.readFileSync(rootPath, 'utf-8');
+              for (const f of oldFiles) {
+                const oldName = f.replace('.tsx', '');
+                fs.unlinkSync(path.join(srcDir, f));
+                rootClean = rootClean.split('\n').filter(line => !line.includes(oldName)).join('\n');
+              }
+              fs.writeFileSync(rootPath, rootClean, 'utf-8');
             }
-            fs.writeFileSync(rootPath, rootClean, 'utf-8');
           }
+
+          fixJSXAndWriteFile(path.join(srcDir, `${effectiveName}.tsx`), finalCode);
+
+          const rootPath = path.join(srcDir, 'Root.jsx');
+          let rootContent = fs.readFileSync(rootPath, 'utf-8');
+          const importLine = `import { ${effectiveName} } from './${effectiveName}';`;
+          if (!rootContent.includes(importLine)) {
+            const lastImportIdx = rootContent.lastIndexOf('import ');
+            const lineEnd = rootContent.indexOf('\n', lastImportIdx);
+            rootContent = rootContent.slice(0, lineEnd + 1) + importLine + '\n' + rootContent.slice(lineEnd + 1);
+          }
+          const compBlock = `      <Composition id="${compositionId}" component={${effectiveName}} durationInFrames={${durationInFrames}} fps={${fps}} width={${width}} height={${height}} defaultProps={{}} />`;
+          if (!rootContent.includes(`id="${compositionId}"`)) {
+            const closingIdx = rootContent.lastIndexOf('    </>');
+            if (closingIdx !== -1) rootContent = rootContent.slice(0, closingIdx) + compBlock + '\n' + rootContent.slice(closingIdx);
+          }
+          fs.writeFileSync(rootPath, rootContent, 'utf-8');
+
+          const useLambda = LAMBDA_ENABLED && renderMediaOnLambda && deploySite && LAMBDA_FUNCTION_NAME;
+          if (!useLambda) throw new Error('Lambda rendering not configured — no fallback enabled');
+
+          console.log(`[Animator] Re-bundling assembled composition: ${effectiveName}`);
+          entryPoint = path.join(srcDir, 'index.js');
+          newBundle = registerBundle(await bundle({ entryPoint, webpackOverride: (config) => config }));
+        } finally {
+          releaseLock();
         }
 
-        fixJSXAndWriteFile(path.join(srcDir, `${effectiveName}.tsx`), finalCode);
-
-        const rootPath = path.join(srcDir, 'Root.jsx');
-        let rootContent = fs.readFileSync(rootPath, 'utf-8');
-        const importLine = `import { ${effectiveName} } from './${effectiveName}';`;
-        if (!rootContent.includes(importLine)) {
-          const lastImportIdx = rootContent.lastIndexOf('import ');
-          const lineEnd = rootContent.indexOf('\n', lastImportIdx);
-          rootContent = rootContent.slice(0, lineEnd + 1) + importLine + '\n' + rootContent.slice(lineEnd + 1);
-        }
-        const compBlock = `      <Composition id="${compositionId}" component={${effectiveName}} durationInFrames={${durationInFrames}} fps={${fps}} width={${width}} height={${height}} defaultProps={{}} />`;
-        if (!rootContent.includes(`id="${compositionId}"`)) {
-          const closingIdx = rootContent.lastIndexOf('    </>');
-          if (closingIdx !== -1) rootContent = rootContent.slice(0, closingIdx) + compBlock + '\n' + rootContent.slice(closingIdx);
-        }
-        fs.writeFileSync(rootPath, rootContent, 'utf-8');
-
-        const useLambda = LAMBDA_ENABLED && renderMediaOnLambda && deploySite && LAMBDA_FUNCTION_NAME;
-        if (!useLambda) throw new Error('Lambda rendering not configured — no fallback enabled');
-
-        console.log(`[Animator] Re-bundling assembled composition: ${effectiveName}`);
-        const entryPoint = path.join(srcDir, 'index.js');
-        newBundle = registerBundle(await bundle({ entryPoint, webpackOverride: (config) => config }));
         const renderArgs = { jobId, compositionId, newBundle, entryPoint, durationInFrames, fps, width, height, codec, crf, projectId };
         const neededSlots = Math.min(LAMBDA_MAX_LAMBDAS, Math.ceil(durationInFrames / 20));
         await acquireLambdaSlots(neededSlots);
