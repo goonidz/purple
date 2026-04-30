@@ -250,6 +250,101 @@ function stripPlanningPreamble(text) {
  * Stray opening tags without a matching closer are left intact and logged so
  * the user can fix the template.
  */
+/**
+ * Final safety net: ask Gemini Flash Lite to identify where the actual script
+ * narration starts, then slice locally. We never let Gemini rewrite the script
+ * — it only returns the first 8-12 words of the real narration, and we use
+ * that as an offset to drop any preamble (e.g. "Here is the full script:\n\n---\n\n").
+ *
+ * Runs AFTER stripHallucinatedToolXml + stripPlanningPreamble so it only
+ * catches the residual cases the regex doesn't know about. Per-user only:
+ * skipped when the user has no Gemini API key.
+ *
+ * Heuristic skip: if the head of the script doesn't look "preamble-like"
+ * (no leading "Here is", "Let me", "Now", "Based on", or stand-alone "---"),
+ * we don't bother calling Gemini — saves ~95% of calls.
+ */
+async function geminiTrimPreamble({ script, userId, jobId }) {
+  if (!script || typeof script !== 'string' || script.length < 200) return script;
+  if (!userId || !supabase) return script;
+
+  const head = script.slice(0, 2000);
+  // Cheap heuristic: skip Gemini call if the head doesn't smell like a preamble.
+  const looksLikePreamble = /^(?:\s*(?:here(?:'s| is)|let me|now (?:let me|i(?:'ll| will))|based on(?:\s+my)?|i(?:'ll| will) (?:write|draft|now)))\b/i.test(head)
+    || /^[\s\S]{0,500}?\n-{3,}\s*\n/.test(head);
+  if (!looksLikePreamble) return script;
+
+  let geminiKey;
+  try {
+    const { data } = await supabase.rpc('get_user_api_key_for_service', {
+      target_user_id: userId,
+      key_name: 'gemini',
+    });
+    geminiKey = data;
+  } catch (e) {
+    console.warn(`[gemini-trim] [${jobId}] Failed to fetch user Gemini key:`, e.message || e);
+    return script;
+  }
+  if (!geminiKey) return script;
+
+  const prompt = `You are a script cleaner. Below is the START of a YouTube script. The author sometimes adds an unwanted preamble before the actual narration (e.g. "Here is the full script:", "---", "Now let me write…", "Based on my research…"). Sometimes there is no preamble at all.
+
+Find where the ACTUAL spoken narration begins. Return ONLY this JSON, no markdown, no extra text:
+{"first_words": "<exactly the first 8 to 12 words of the narration, copied verbatim>"}
+
+If there is no preamble (text already starts with the narration), return the first 8-12 words of the input as-is. Never paraphrase, never translate.
+
+START OF TEXT:
+${head}`;
+
+  try {
+    const resp = await axios.post(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite-latest:generateContent`,
+      {
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature: 0,
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: 'OBJECT',
+            properties: { first_words: { type: 'STRING' } },
+            required: ['first_words'],
+          },
+        },
+      },
+      {
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': geminiKey },
+        timeout: 15000,
+      }
+    );
+    const text = resp.data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    let parsed;
+    try { parsed = JSON.parse(text); } catch { return script; }
+    const firstWords = String(parsed?.first_words || '').trim();
+    if (!firstWords || firstWords.length < 10) return script;
+
+    const idx = script.indexOf(firstWords);
+    if (idx < 0) {
+      console.warn(`[gemini-trim] [${jobId}] Gemini returned phrase not found in script ("${firstWords.slice(0, 60)}…") — keeping original`);
+      return script;
+    }
+    if (idx === 0) {
+      console.log(`[gemini-trim] [${jobId}] Script already clean (no preamble detected)`);
+      return script;
+    }
+    if (idx > 4000) {
+      console.warn(`[gemini-trim] [${jobId}] Trim offset suspiciously large (${idx}ch) — keeping original`);
+      return script;
+    }
+    const trimmed = script.slice(idx).trimStart();
+    console.log(`[gemini-trim] [${jobId}] Removed ${idx} chars of preamble (${script.length}ch → ${trimmed.length}ch)`);
+    return trimmed;
+  } catch (e) {
+    console.warn(`[gemini-trim] [${jobId}] Gemini check failed, keeping original:`, e.message || e);
+    return script;
+  }
+}
+
 function processConditionalBlocks(text, vars) {
   if (!text || typeof text !== 'string') return text;
   let out = text;
@@ -650,6 +745,7 @@ async function pollBatchUntilDone({ batchId, anthropicApiKey, jobId, projectId, 
         script = stripPlanningPreamble(stripHallucinatedToolXml(
           content.filter(b => b.type === 'text').map(b => b.text).join('\n\n')
         ));
+        script = await geminiTrimPreamble({ script, userId, jobId: `${jobId} batch` });
       }
       break;
     }
@@ -1669,6 +1765,7 @@ RÈGLE CRITIQUE SUR LA LONGUEUR:
               .map((block) => block.text)
               .join('\n\n')
           ));
+          script = await geminiTrimPreamble({ script, userId, jobId });
         }
 
         if (!script) {
@@ -3785,6 +3882,7 @@ RÈGLE CRITIQUE SUR LA LONGUEUR:
             .map(block => block.text)
             .join('\n\n')
         ));
+        script = await geminiTrimPreamble({ script, userId, jobId: `sync ${projectId || ''}`.trim() });
       }
 
       if (!script) throw new Error('No script content returned from Anthropic API');
