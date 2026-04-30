@@ -58,7 +58,6 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
   const [chatInput, setChatInput] = useState("");
   const [isEditing, setIsEditing] = useState(false);
   const [isRebuilding, setIsRebuilding] = useState(false);
-  const [isRegeneratingScene, setIsRegeneratingScene] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const resumeFrameRef = useRef<number | null>(null);
 
@@ -272,6 +271,125 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
       setIsEditing(false);
     }
   }, [chatInput, activeSceneIndex, isEditing, projectId, currentFrame, qaScreenshots.length]);
+
+  // Full regeneration of a scene from scratch via the animator_scene job.
+  // Mirrors sendEdit's UX (isEditing loader, chat message, preview rebuild,
+  // QA screenshot refresh) but the work happens server-side in the worker,
+  // so we poll project_scenes.animator_code_status until it leaves 'pending'.
+  const regenerateScene = useCallback(async (sceneIdx: number, screenshotUrl?: string) => {
+    if (isEditing) return;
+    const seg = segments[sceneIdx];
+    if (!seg) {
+      toast.error("Scène introuvable");
+      return;
+    }
+    if (!window.confirm(`Régénérer la scène ${sceneIdx + 1} ? Le code actuel sera remplacé.`)) return;
+
+    setChatMessages((prev) => [
+      ...prev,
+      { role: "user", content: `Régénérer la scène ${sceneIdx + 1} from scratch 🔄`, sceneIndex: sceneIdx },
+    ]);
+    setIsEditing(true);
+
+    try {
+      const { error: updErr } = await supabase
+        .from('project_scenes')
+        .update({ animator_code: null, animator_code_status: 'pending' })
+        .eq('project_id', projectId)
+        .eq('scene_index', sceneIdx);
+      if (updErr) throw updErr;
+
+      const result = await startJob('animator_scene' as any, {
+        sceneIndex: sceneIdx,
+        segment: { start: seg.start, end: seg.end, text: seg.text },
+      });
+      if (!result) {
+        await supabase
+          .from('project_scenes')
+          .update({ animator_code_status: 'failed' })
+          .eq('project_id', projectId)
+          .eq('scene_index', sceneIdx);
+        throw new Error("Impossible de créer le job de régénération");
+      }
+
+      // Poll until the worker finishes (timeout: 5 min).
+      const startedAt = Date.now();
+      const TIMEOUT_MS = 5 * 60 * 1000;
+      let finalStatus: string | null = null;
+      while (Date.now() - startedAt < TIMEOUT_MS) {
+        await new Promise(r => setTimeout(r, 3000));
+        const { data: row } = await supabase
+          .from('project_scenes')
+          .select('animator_code_status')
+          .eq('project_id', projectId)
+          .eq('scene_index', sceneIdx)
+          .single();
+        const st = row?.animator_code_status;
+        if (st && st !== 'pending' && st !== 'generating') {
+          finalStatus = st;
+          break;
+        }
+      }
+      if (!finalStatus) throw new Error("Régénération trop longue (>5 min) — vérifiez l'onglet Vidéo");
+      if (finalStatus !== 'completed') throw new Error(`Régénération échouée (${finalStatus})`);
+
+      setChatMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: `Scene ${sceneIdx + 1} régénérée. Mise à jour...`, sceneIndex: sceneIdx },
+      ]);
+
+      // Rebuild preview with the freshly generated code.
+      resumeFrameRef.current = currentFrame;
+      setIsRebuilding(true);
+      try {
+        const resp2 = await fetch(`${REMOTION_SERVICE_URL}/animator/preview-bundle`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ projectId }),
+        });
+        const data2 = await resp2.json();
+        if (!resp2.ok) throw new Error(data2.error || "Preview rebuild failed");
+        setPreviewUrl(data2.previewUrl);
+        if (data2.segments) setSegments(data2.segments);
+      } finally {
+        setIsRebuilding(false);
+      }
+
+      // Refresh QA screenshot for this scene if open.
+      if (qaScreenshots.length > 0 && qaScreenshots.some(s => s.sceneIndex === sceneIdx)) {
+        setQaScreenshots((prev) =>
+          prev.map((s) => s.sceneIndex === sceneIdx ? { ...s, success: true, url: null, error: undefined } : s)
+        );
+        try {
+          const resp3 = await fetch(`${REMOTION_SERVICE_URL}/animator/qa-screenshots`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ projectId, sceneIndex: sceneIdx }),
+          });
+          const data3 = await resp3.json();
+          if (data3.screenshot) {
+            setQaScreenshots((prev) =>
+              prev.map((s) => s.sceneIndex === sceneIdx ? data3.screenshot : s)
+            );
+            toast.success(`Scène ${sceneIdx + 1} régénérée et screenshot mis à jour`);
+          }
+        } catch (e) {
+          console.warn("[AnimatorPreview] Screenshot refresh failed:", e);
+        }
+      } else {
+        toast.success(`Scène ${sceneIdx + 1} régénérée`);
+      }
+    } catch (err: any) {
+      console.error("[AnimatorPreview] Regenerate error:", err);
+      setChatMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: `Erreur: ${err.message}`, sceneIndex: sceneIdx },
+      ]);
+      toast.error(`Erreur: ${err.message}`);
+    } finally {
+      setIsEditing(false);
+    }
+  }, [isEditing, segments, projectId, startJob, currentFrame, qaScreenshots]);
 
   const loadQAScreenshots = useCallback(async () => {
     if (!projectId || isLoadingQA) return;
@@ -882,46 +1000,12 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
                         size="sm"
                         variant="outline"
                         className="h-9 px-3 gap-1.5 shrink-0 border-orange-500/40 text-orange-400 hover:bg-orange-500/10 hover:text-orange-300"
-                        disabled={isEditing || isRegeneratingScene}
-                        onClick={async () => {
-                          const seg = segments[shot.sceneIndex];
-                          if (!seg) {
-                            toast.error("Scène introuvable");
-                            return;
-                          }
-                          if (!window.confirm(`Régénérer la scène ${shot.sceneIndex + 1} ? Le code actuel sera remplacé.`)) {
-                            return;
-                          }
-                          setIsRegeneratingScene(true);
-                          try {
-                            const { error: updErr } = await supabase
-                              .from('project_scenes')
-                              .update({ animator_code: null, animator_code_status: 'pending' })
-                              .eq('project_id', projectId)
-                              .eq('scene_index', shot.sceneIndex);
-                            if (updErr) throw updErr;
-
-                            const result = await startJob('animator_scene' as any, {
-                              sceneIndex: shot.sceneIndex,
-                              segment: { start: seg.start, end: seg.end, text: seg.text },
-                            });
-                            if (!result) {
-                              await supabase
-                                .from('project_scenes')
-                                .update({ animator_code_status: 'failed' })
-                                .eq('project_id', projectId)
-                                .eq('scene_index', shot.sceneIndex);
-                              throw new Error("Impossible de créer le job de régénération");
-                            }
-                            toast.success(`Scène ${shot.sceneIndex + 1} en cours de régénération — suivez l'avancement dans l'onglet Vidéo`);
-                          } catch (e: any) {
-                            toast.error(`Erreur: ${e.message}`);
-                          } finally {
-                            setIsRegeneratingScene(false);
-                          }
+                        disabled={isEditing || !shot.url}
+                        onClick={() => {
+                          if (shot.url) regenerateScene(shot.sceneIndex, shot.url);
                         }}
                       >
-                        {isRegeneratingScene ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                        {isEditing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
                         Régénérer
                       </Button>
                     </div>
