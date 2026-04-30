@@ -4316,7 +4316,15 @@ const Index = () => {
                                       .not("channel_id", "is", null)
                                       .limit(1)
                                       .single();
-                                    const userId = (await supabase.auth.getUser()).data.user?.id;
+                                    const { data: sessionData } = await supabase.auth.getSession();
+                                    let userId = sessionData.session?.user?.id;
+                                    if (!userId) {
+                                      const { data: userData } = await supabase.auth.getUser();
+                                      userId = userData.user?.id;
+                                    }
+                                    if (!userId) {
+                                      throw new Error("Session expirée — reconnecte-toi puis réessaie.");
+                                    }
                                     const { error } = await (supabase.from("auto_pipelines" as any) as any).insert({
                                       project_id: currentProjectId,
                                       user_id: userId,
