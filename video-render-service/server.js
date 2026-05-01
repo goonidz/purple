@@ -299,7 +299,7 @@ ${head}`;
 
   try {
     const resp = await axios.post(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite-latest:generateContent`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent`,
       {
         contents: [{ parts: [{ text: prompt }] }],
         generationConfig: {
