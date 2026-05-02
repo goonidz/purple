@@ -24,6 +24,7 @@ interface Channel {
   thumbnail_preset_enabled: boolean | null;
   thumbnail_v2_preset_id: string | null;
   render_preset_id: string | null;
+  youtube_url: string | null;
 }
 
 interface ScriptPreset {
@@ -103,6 +104,7 @@ export default function ChannelManager({
   const [selectedThumbnailV2PresetId, setSelectedThumbnailV2PresetId] = useState<string>("");
   const [selectedRenderPresetId, setSelectedRenderPresetId] = useState<string>("");
   const [thumbnailPresetEnabled, setThumbnailPresetEnabled] = useState<boolean>(true);
+  const [youtubeUrl, setYoutubeUrl] = useState<string>("");
   const [isLoadingPresets, setIsLoadingPresets] = useState(false);
   const [isSavingPresets, setIsSavingPresets] = useState(false);
 
@@ -289,6 +291,7 @@ export default function ChannelManager({
     setSelectedThumbnailV2PresetId(channel.thumbnail_v2_preset_id || "none");
     setSelectedRenderPresetId(channel.render_preset_id || "none");
     setThumbnailPresetEnabled(channel.thumbnail_preset_enabled ?? true);
+    setYoutubeUrl((channel as any).youtube_url || "");
 
     // Load animator preset if exists
     const chAny = channel as any;
@@ -366,6 +369,7 @@ export default function ChannelManager({
           render_preset_id: selectedRenderPresetId === "none" ? null : selectedRenderPresetId,
           thumbnail_preset_enabled: thumbnailPresetEnabled,
           animator_preset_id: finalAnimatorPresetId || null,
+          youtube_url: youtubeUrl.trim() || null,
         } as any)
         .eq("id", configuringChannelId);
 
@@ -579,6 +583,8 @@ export default function ChannelManager({
       setSelectedSkillsList={setSelectedSkillsList}
       animatorMinSegDuration={animatorMinSegDuration}
       setAnimatorMinSegDuration={setAnimatorMinSegDuration}
+      youtubeUrl={youtubeUrl}
+      setYoutubeUrl={setYoutubeUrl}
     />
     </>
   );
@@ -628,6 +634,8 @@ function PresetConfigDialog({
   setSelectedSkillsList,
   animatorMinSegDuration,
   setAnimatorMinSegDuration,
+  youtubeUrl,
+  setYoutubeUrl,
 }: {
   isOpen: boolean;
   onClose: () => void;
@@ -672,6 +680,8 @@ function PresetConfigDialog({
   setSelectedSkillsList: (skills: string[] | ((prev: string[]) => string[])) => void;
   animatorMinSegDuration: number;
   setAnimatorMinSegDuration: (v: number) => void;
+  youtubeUrl: string;
+  setYoutubeUrl: (url: string) => void;
 }) {
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
@@ -704,6 +714,20 @@ function PresetConfigDialog({
                 onChange={(e) => onChannelNameChange(e.target.value)}
                 placeholder="Nom de la chaîne"
               />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="channel-youtube-url">URL de la chaîne YouTube</Label>
+              <Input
+                id="channel-youtube-url"
+                type="url"
+                value={youtubeUrl}
+                onChange={(e) => setYoutubeUrl(e.target.value)}
+                placeholder="https://www.youtube.com/@nom-de-la-chaine"
+              />
+              <p className="text-xs text-muted-foreground">
+                Lien vers la chaîne YouTube correspondante (optionnel).
+              </p>
             </div>
 
             {/* Script Preset */}

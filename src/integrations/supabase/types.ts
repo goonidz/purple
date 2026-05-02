@@ -171,6 +171,7 @@ export type Database = {
           tts_preset_id: string | null
           updated_at: string
           user_id: string
+          youtube_url: string | null
         }
         Insert: {
           color?: string
@@ -187,6 +188,7 @@ export type Database = {
           tts_preset_id?: string | null
           updated_at?: string
           user_id: string
+          youtube_url?: string | null
         }
         Update: {
           color?: string
@@ -203,6 +205,7 @@ export type Database = {
           tts_preset_id?: string | null
           updated_at?: string
           user_id?: string
+          youtube_url?: string | null
         }
         Relationships: [
           {
