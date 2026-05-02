@@ -5279,6 +5279,89 @@ Based on this data, give me exactly 10 viral video ideas. For each idea, provide
   return ideas;
 }
 
+async function callDeepSeekForIdeas(deepseekKey, model, channelData, customInstructions) {
+  const { channelTitle, subscriberCount, videos } = channelData;
+
+  const videoSummary = videos.map((v, i) =>
+    `${i + 1}. "${v.title}" — ${v.views.toLocaleString()} views, ${v.likes.toLocaleString()} likes, ${v.comments.toLocaleString()} comments, ${v.viewsPerDay.toLocaleString()} views/day, ${v.engagementRate}% engagement, published ${v.publishedAt}`
+  ).join('\n');
+
+  const systemPrompt = `You're a world class copywriter writing the best youtube titles. Analyze those topics and how they went viral or not, and find me some similar topics that I can do to go viral.
+
+You MUST respond with valid JSON in this exact shape:
+{"ideas": [{"title": "...", "reasoning": "...", "viralScore": 0-10}, ... 10 items]}
+
+Return exactly 10 ideas. No markdown fences, no extra text — just the JSON object.`;
+
+  let userMessage = `Here are the last ${videos.length} videos from the YouTube channel "${channelTitle}" (${subscriberCount.toLocaleString()} subscribers):
+
+${videoSummary}
+
+Based on this data, give me exactly 10 viral video ideas. For each idea, provide:
+1. A catchy title
+2. A brief explanation of why this topic could go viral (2-3 sentences)
+3. An estimated viral potential score from 1 to 10`;
+
+  if (customInstructions) {
+    userMessage += `\n\nAdditional instructions from the user:\n${customInstructions}`;
+  }
+
+  log(`[IDEAS] Calling DeepSeek ${model}...`);
+  const response = await fetch('https://api.deepseek.com/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${deepseekKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userMessage },
+      ],
+      response_format: { type: 'json_object' },
+      max_tokens: 16000,
+    }),
+  });
+
+  if (!response.ok) {
+    const errBody = await response.text();
+    throw new Error(`DeepSeek API error (${response.status}): ${errBody.slice(0, 500)}`);
+  }
+
+  const result = await response.json();
+  const text = result?.choices?.[0]?.message?.content || '';
+  if (!text) throw new Error('DeepSeek returned no content');
+
+  let parsed;
+  try { parsed = JSON.parse(text); }
+  catch (e) {
+    const match = text.match(/\{[\s\S]*\}/);
+    if (!match) throw new Error('Could not parse ideas JSON from DeepSeek response');
+    parsed = JSON.parse(match[0]);
+  }
+  const ideas = Array.isArray(parsed) ? parsed : (parsed.ideas || parsed.items || []);
+  if (!Array.isArray(ideas) || ideas.length === 0) {
+    throw new Error('DeepSeek returned an empty ideas array');
+  }
+  log(`[IDEAS] Got ${ideas.length} ideas from DeepSeek ${model}`);
+  return ideas;
+}
+
+async function callAIForIdeas({ userId, model, channelData, customInstructions, useWebSearch }) {
+  if (model && model.startsWith('deepseek-')) {
+    if (useWebSearch) {
+      log('[IDEAS] Web search requested but ignored for DeepSeek (Claude-only feature)');
+    }
+    const deepseekKey = await getUserApiKey(userId, 'deepseek');
+    if (!deepseekKey) throw new Error('DeepSeek API key not configured for this user');
+    return callDeepSeekForIdeas(deepseekKey, model, channelData, customInstructions);
+  }
+  const anthropicKey = await getUserApiKey(userId, 'anthropic');
+  if (!anthropicKey) throw new Error('Anthropic API key not configured for this user');
+  return callAnthropicForIdeas(anthropicKey, channelData, customInstructions, !!useWebSearch);
+}
+
 async function processIdeaGenerationPipeline(job) {
   const { id: jobId, user_id: userId, metadata: meta } = job;
   const channelHandle = meta?.channelHandle;
@@ -5299,8 +5382,14 @@ async function processIdeaGenerationPipeline(job) {
       .update({ progress: 1, metadata: { ...meta, step: 'calling_ai', channelTitle: channelData.channelTitle, videoCount: channelData.videos.length } })
       .eq('id', jobId);
 
-    const anthropicKey = await getUserApiKey(userId, 'anthropic');
-    const ideas = await callAnthropicForIdeas(anthropicKey, channelData, meta?.customInstructions, !!meta?.useWebSearch);
+    const requestedModel = meta?.model || 'claude-sonnet-4-6';
+    const ideas = await callAIForIdeas({
+      userId,
+      model: requestedModel,
+      channelData,
+      customInstructions: meta?.customInstructions,
+      useWebSearch: !!meta?.useWebSearch,
+    });
 
     await supabase.from('generation_jobs')
       .update({ progress: 2, metadata: { ...meta, step: 'saving_results' } })

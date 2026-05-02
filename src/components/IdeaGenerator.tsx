@@ -32,7 +32,7 @@ interface HistoryJob {
 
 const STEP_LABELS: Record<string, string> = {
   fetching_videos: "Fetching YouTube videos...",
-  calling_ai: "Analyzing with Claude Sonnet...",
+  calling_ai: "Analyzing with AI...",
   saving_results: "Saving results...",
 };
 
@@ -40,6 +40,7 @@ export function IdeaGenerator() {
   const [channelHandle, setChannelHandle] = useState("");
   const [customInstructions, setCustomInstructions] = useState("");
   const [useWebSearch, setUseWebSearch] = useState(false);
+  const [model, setModel] = useState<string>("claude-sonnet-4-6");
   const [isGenerating, setIsGenerating] = useState(false);
   const [jobId, setJobId] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
@@ -161,8 +162,9 @@ export function IdeaGenerator() {
           metadata: {
             pipeline: "idea_generation",
             channelHandle: channelHandle.trim(),
+            model,
             ...(customInstructions.trim() && { customInstructions: customInstructions.trim() }),
-            ...(useWebSearch && { useWebSearch: true }),
+            ...(useWebSearch && model.startsWith("claude") && { useWebSearch: true }),
           },
         })
         .select()
@@ -261,7 +263,24 @@ export function IdeaGenerator() {
             </Button>
           </div>
           <p className="text-xs text-muted-foreground">
-            Scrapes the last 50 videos + stats, then asks Claude Sonnet for 10 viral ideas
+            Scrapes the last 50 videos + stats, then asks the selected AI model for 10 viral ideas
+          </p>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="idea-model">Modèle</Label>
+          <Select value={model} onValueChange={setModel} disabled={isGenerating}>
+            <SelectTrigger id="idea-model">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="claude-sonnet-4-6">Claude Sonnet 4.6</SelectItem>
+              <SelectItem value="deepseek-v4-pro">DeepSeek V4 Pro</SelectItem>
+              <SelectItem value="deepseek-v4-flash">DeepSeek V4 Flash</SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            Le modèle utilisé pour analyser les titres et générer les idées. Web search disponible uniquement avec Claude.
           </p>
         </div>
 
@@ -301,15 +320,19 @@ export function IdeaGenerator() {
         <div className="flex items-center gap-2">
           <Checkbox
             id="web-search"
-            checked={useWebSearch}
+            checked={useWebSearch && model.startsWith("claude")}
             onCheckedChange={(checked) => setUseWebSearch(checked === true)}
-            disabled={isGenerating}
+            disabled={isGenerating || !model.startsWith("claude")}
           />
           <Label htmlFor="web-search" className="flex items-center gap-1.5 text-sm cursor-pointer">
             <Globe className="h-3.5 w-3.5 text-muted-foreground" />
             Web Search
           </Label>
-          <span className="text-xs text-muted-foreground">— Claude recherche sur le web les tendances actuelles (coûte plus cher en tokens)</span>
+          <span className="text-xs text-muted-foreground">
+            {model.startsWith("claude")
+              ? "— Claude recherche sur le web les tendances actuelles (coûte plus cher en tokens)"
+              : "— Disponible uniquement avec Claude"}
+          </span>
         </div>
 
         {isGenerating && (
