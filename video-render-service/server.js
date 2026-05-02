@@ -290,9 +290,11 @@ async function geminiTrimPreamble({ script, userId, jobId }) {
   const prompt = `You are a script cleaner. Below is the START of a YouTube script. The author sometimes adds an unwanted preamble before the actual narration (e.g. "Here is the full script:", "---", "Now let me write…", "Based on my research…"). Sometimes there is no preamble at all.
 
 Find where the ACTUAL spoken narration begins. Return ONLY this JSON, no markdown, no extra text:
-{"first_words": "<exactly the first 8 to 12 words of the narration, copied verbatim>"}
+{"first_words": "<exactly the first 4 to 6 words of the narration, copied verbatim>"}
 
-If there is no preamble (text already starts with the narration), return the first 8-12 words of the input as-is. Never paraphrase, never translate.
+CRITICAL: Copy the first 4-6 words character-for-character from the text. Do NOT paraphrase. Do NOT translate. Do NOT change capitalization or punctuation. Do NOT add or remove words. Keep numbers, dashes and quotes exactly as they appear.
+
+If there is no preamble (text already starts with the narration), return the first 4-6 words of the input as-is.
 
 START OF TEXT:
 ${head}`;
@@ -321,23 +323,34 @@ ${head}`;
     let parsed;
     try { parsed = JSON.parse(text); } catch { return script; }
     const firstWords = String(parsed?.first_words || '').trim();
-    if (!firstWords || firstWords.length < 10) return script;
+    if (!firstWords || firstWords.length < 5) return script;
 
-    const idx = script.indexOf(firstWords);
+    // Try exact match first, then degrade to shorter prefixes (Gemini sometimes
+    // paraphrases a word or two even when told not to — fewer words = higher
+    // chance of an exact byte-for-byte match against the script).
+    const tokens = firstWords.split(/\s+/).filter(Boolean);
+    let idx = -1;
+    let matched = '';
+    for (let n = tokens.length; n >= 3; n--) {
+      const probe = tokens.slice(0, n).join(' ');
+      if (probe.length < 10) break;
+      const found = script.indexOf(probe);
+      if (found >= 0) { idx = found; matched = probe; break; }
+    }
     if (idx < 0) {
-      console.warn(`[gemini-trim] [${jobId}] Gemini returned phrase not found in script ("${firstWords.slice(0, 60)}…") — keeping original`);
+      console.warn(`[gemini-trim] [${jobId}] Gemini phrase not found even after degrading prefixes — keeping original. Returned="${firstWords}"`);
       return script;
     }
     if (idx === 0) {
-      console.log(`[gemini-trim] [${jobId}] Script already clean (no preamble detected)`);
+      console.log(`[gemini-trim] [${jobId}] Script already clean (no preamble detected) — matched="${matched}"`);
       return script;
     }
     if (idx > 4000) {
-      console.warn(`[gemini-trim] [${jobId}] Trim offset suspiciously large (${idx}ch) — keeping original`);
+      console.warn(`[gemini-trim] [${jobId}] Trim offset suspiciously large (${idx}ch) — keeping original. matched="${matched}"`);
       return script;
     }
     const trimmed = script.slice(idx).trimStart();
-    console.log(`[gemini-trim] [${jobId}] Removed ${idx} chars of preamble (${script.length}ch → ${trimmed.length}ch)`);
+    console.log(`[gemini-trim] [${jobId}] Removed ${idx} chars of preamble (${script.length}ch → ${trimmed.length}ch) — matched="${matched}"`);
     return trimmed;
   } catch (e) {
     console.warn(`[gemini-trim] [${jobId}] Gemini check failed, keeping original:`, e.message || e);
