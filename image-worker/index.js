@@ -5306,13 +5306,20 @@ Based on this data, give me exactly 10 viral video ideas. For each idea, provide
     userMessage += `\n\nAdditional instructions from the user:\n${customInstructions}`;
   }
 
-  log(`[IDEAS] Calling DeepSeek ${model}...`);
+  log(`[IDEAS] Calling DeepSeek ${model} (streaming)...`);
+  // DeepSeek's reasoning model (V4 Pro) can take 2-5 minutes to first byte.
+  // Streaming is the official recommendation to avoid undici 60s headers
+  // timeout (UND_ERR_SOCKET → \"terminated\"). We accumulate delta.content
+  // chunks and parse the JSON once the stream closes.
+  const startedAt = Date.now();
   const response = await fetch('https://api.deepseek.com/chat/completions', {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${deepseekKey}`,
       'Content-Type': 'application/json',
+      'Accept': 'text/event-stream',
     },
+    signal: AbortSignal.timeout(600_000),
     body: JSON.stringify({
       model,
       messages: [
@@ -5321,6 +5328,7 @@ Based on this data, give me exactly 10 viral video ideas. For each idea, provide
       ],
       response_format: { type: 'json_object' },
       max_tokens: 16000,
+      stream: true,
     }),
   });
 
@@ -5328,10 +5336,44 @@ Based on this data, give me exactly 10 viral video ideas. For each idea, provide
     const errBody = await response.text();
     throw new Error(`DeepSeek API error (${response.status}): ${errBody.slice(0, 500)}`);
   }
+  if (!response.body) throw new Error('DeepSeek returned an empty response body');
 
-  const result = await response.json();
-  const text = result?.choices?.[0]?.message?.content || '';
-  if (!text) throw new Error('DeepSeek returned no content');
+  let text = '';
+  let lastLog = Date.now();
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      for (const raw of lines) {
+        const line = raw.trim();
+        if (!line || !line.startsWith('data:')) continue;
+        const payload = line.slice(5).trim();
+        if (payload === '[DONE]') continue;
+        try {
+          const evt = JSON.parse(payload);
+          const delta = evt?.choices?.[0]?.delta?.content;
+          if (typeof delta === 'string' && delta) text += delta;
+        } catch {
+          // ignore non-JSON keepalive lines
+        }
+      }
+      if (Date.now() - lastLog > 15000) {
+        log(`[IDEAS] DeepSeek ${model} streaming... ${text.length} chars after ${Math.round((Date.now() - startedAt) / 1000)}s`);
+        lastLog = Date.now();
+      }
+    }
+  } finally {
+    try { reader.releaseLock(); } catch {}
+  }
+
+  log(`[IDEAS] DeepSeek ${model} stream closed after ${Math.round((Date.now() - startedAt) / 1000)}s, ${text.length} chars`);
+  if (!text) throw new Error('DeepSeek returned no streamed content');
 
   let parsed;
   try { parsed = JSON.parse(text); }
