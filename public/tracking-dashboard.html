@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>YouTube Growth Dashboard</title>
+</head>
+<body style="margin:0;padding:24px;font-family:system-ui,sans-serif;background:#f5f5f3;min-height:100vh;box-sizing:border-box;">
+<div style="max-width:1060px;margin:0 auto;">
+
+  <div id="upload-zone" style="border:1.5px dashed #ccc;border-radius:10px;padding:2.5rem;text-align:center;background:#fff;margin-bottom:1.5rem;">
+    <div style="font-size:15px;font-weight:500;margin-bottom:6px;">Glissez votre CSV ici</div>
+    <div style="font-size:13px;color:#888;margin-bottom:1rem;">Google Sheets → Fichier → Télécharger → CSV</div>
+    <input type="file" id="file-input" accept=".csv,.txt" style="display:none">
+    <button onclick="document.getElementById('file-input').click()" style="font-size:13px;padding:6px 18px;border:1px solid #ccc;border-radius:6px;background:#fff;cursor:pointer;">Choisir un fichier</button>
+    <div id="error-msg" style="display:none;margin-top:12px;color:#b91c1c;font-size:13px;padding:8px 12px;background:#fef2f2;border-radius:6px;"></div>
+  </div>
+
+  <div id="dashboard" style="display:none">
+    <div id="congrats-banner" style="display:none;margin-bottom:1.25rem;padding:16px 20px;border-radius:10px;">
+      <div id="congrats-title" style="font-size:18px;font-weight:700;margin-bottom:4px;"></div>
+      <div id="congrats-body" style="font-size:13px;"></div>
+    </div>
+
+    <div id="month-tabs" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:1.25rem;"></div>
+
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:12px;">
+      <div style="background:#fff;border:1px solid #e5e5e5;border-radius:8px;padding:1rem;">
+        <div style="font-size:11px;color:#888;margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em;">Total du mois</div>
+        <div id="kpi-total" style="font-size:24px;font-weight:600;">—</div>
+        <div id="kpi-vs-prev" style="font-size:12px;margin-top:5px;font-weight:500;"></div>
+      </div>
+      <div style="background:#fff;border:1px solid #e5e5e5;border-radius:8px;padding:1rem;">
+        <div style="font-size:11px;color:#888;margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em;">YouTube</div>
+        <div id="kpi-ytb" style="font-size:24px;font-weight:600;">—</div>
+        <div id="kpi-ytb-pct" style="font-size:11px;color:#aaa;margin-top:4px;"></div>
+      </div>
+      <div style="background:#fff;border:1px solid #e5e5e5;border-radius:8px;padding:1rem;">
+        <div style="font-size:11px;color:#888;margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em;">Stripe</div>
+        <div id="kpi-stripe" style="font-size:24px;font-weight:600;">—</div>
+        <div id="kpi-stripe-pct" style="font-size:11px;color:#aaa;margin-top:4px;"></div>
+      </div>
+      <div style="background:#fff;border:1px solid #e5e5e5;border-radius:8px;padding:1rem;">
+        <div style="font-size:11px;color:#888;margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em;">Moy / jour</div>
+        <div id="kpi-avg" style="font-size:24px;font-weight:600;">—</div>
+        <div id="kpi-avg-vs" style="font-size:11px;color:#aaa;margin-top:4px;"></div>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:1.25rem;">
+      <div style="background:#fff;border:1px solid #e5e5e5;border-radius:8px;padding:1rem;">
+        <div style="font-size:11px;color:#888;margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em;">Meilleur jour</div>
+        <div id="kpi-best-val" style="font-size:20px;font-weight:600;">—</div>
+        <div id="kpi-best-date" style="font-size:11px;color:#aaa;margin-top:4px;"></div>
+      </div>
+      <div style="background:#fff;border:1px solid #e5e5e5;border-radius:8px;padding:1rem;">
+        <div style="font-size:11px;color:#888;margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em;">Pire jour</div>
+        <div id="kpi-worst-val" style="font-size:20px;font-weight:600;">—</div>
+        <div id="kpi-worst-date" style="font-size:11px;color:#aaa;margin-top:4px;"></div>
+      </div>
+      <div style="background:#fff;border:1px solid #e5e5e5;border-radius:8px;padding:1rem;">
+        <div style="font-size:11px;color:#888;margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em;">Jours > moy</div>
+        <div id="kpi-above" style="font-size:20px;font-weight:600;">—</div>
+        <div id="kpi-above-sub" style="font-size:11px;color:#aaa;margin-top:4px;"></div>
+      </div>
+      <div style="background:#fff;border:1px solid #e5e5e5;border-radius:8px;padding:1rem;">
+        <div style="font-size:11px;color:#888;margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em;">Rythme annuel</div>
+        <div id="kpi-pace" style="font-size:20px;font-weight:600;">—</div>
+        <div id="kpi-pace-sub" style="font-size:11px;color:#aaa;margin-top:4px;"></div>
+      </div>
+    </div>
+
+    <div style="background:#fff;border:1px solid #e5e5e5;border-radius:10px;padding:1.25rem;margin-bottom:1rem;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.05em;">Vue d'ensemble</div>
+        <div style="display:flex;gap:12px;font-size:11px;color:#888;">
+          <span><span style="display:inline-block;width:8px;height:8px;background:#1a1a1a;border-radius:1px;margin-right:4px;"></span>YouTube</span>
+          <span><span style="display:inline-block;width:8px;height:8px;background:#999;border-radius:1px;margin-right:4px;"></span>Stripe</span>
+        </div>
+      </div>
+      <canvas id="overview-chart" height="70"></canvas>
+    </div>
+
+    <div style="background:#fff;border:1px solid #e5e5e5;border-radius:10px;padding:1.25rem;margin-bottom:1rem;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <div id="daily-title" style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.05em;">Détail journalier</div>
+        <div style="display:flex;gap:12px;font-size:11px;color:#888;">
+          <span><span style="display:inline-block;width:8px;height:8px;background:#1a1a1a;border-radius:1px;margin-right:4px;"></span>YouTube</span>
+          <span><span style="display:inline-block;width:8px;height:8px;background:#999;border-radius:1px;margin-right:4px;"></span>Stripe</span>
+        </div>
+      </div>
+      <canvas id="daily-chart" height="80"></canvas>
+    </div>
+
+    <div id="subchan-section" style="display:none;background:#fff;border:1px solid #e5e5e5;border-radius:10px;padding:1.25rem;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.05em;">YouTube — canaux</div>
+        <div id="subchan-legend" style="display:flex;gap:12px;font-size:11px;color:#888;"></div>
+      </div>
+      <canvas id="subchan-chart" height="60"></canvas>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const C_YTB  = '#1a1a1a';
+const C_STR  = '#999';
+const C_SUBS = ['#1a1a1a','#555','#bbb'];
+
+function parseNum(s) {
+  if (!s) return 0;
+  const n = parseFloat(String(s).replace(/[\u202f\u00a0\s]/g,'').replace(',','.'));
+  return isNaN(n) ? 0 : n;
+}
+function isDateFR(s) { return /^\d{1,2}\/\d{2}\/\d{2,4}$/.test((s||'').trim()); }
+function fmt(n)  { return Math.round(n).toLocaleString('fr-FR') + '$'; }
+function fmtK(n) { return n>=1000?(n/1000).toFixed(1).replace('.',',')+' k$':fmt(n); }
+function fmtPct(n){ return (n>=0?'+':'')+Math.round(n)+'%'; }
+
+function parseCSV(raw) {
+  if (raw.charCodeAt(0)===0xFEFF) raw=raw.slice(1);
+  raw=raw.replace(/\r\n/g,'\n').replace(/\r/g,'\n');
+  const rows=[]; let field='',row=[],inQ=false;
+  for(let i=0;i<raw.length;i++){
+    const c=raw[i],nx=raw[i+1];
+    if(inQ){if(c==='"'&&nx==='"'){field+='"';i++;}else if(c==='"')inQ=false;else field+=c;}
+    else{if(c==='"')inQ=true;else if(c===','){row.push(field);field='';}else if(c==='\n'){row.push(field);rows.push(row);row=[];field='';}else field+=c;}
+  }
+  if(field!==''||row.length){row.push(field);rows.push(row);}
+  return rows;
+}
+
+function loadData(text) {
+  const rows = parseCSV(text);
+  if (rows.length < 3) throw new Error('Fichier trop court');
+  const maxCols = Math.max(...rows.map(r=>r.length));
+  const get = (ri,ci) => (rows[ri]&&rows[ri][ci]!==undefined ? rows[ri][ci].trim() : '');
+
+  // Row 0: detect months
+  const months = [];
+  for (let c=0;c<maxCols;c++) {
+    const v=get(0,c);
+    if (v&&!v.startsWith('$')&&v.length>3) months.push({name:v,startCol:c});
+  }
+  if (!months.length) throw new Error('Aucun mois détecté');
+  for (let i=0;i<months.length;i++)
+    months[i].endCol = i+1<months.length ? months[i+1].startCol : maxCols;
+
+  months.forEach(m => {
+    const s = m.startCol;
+
+    // Row 1: find key columns by label
+    let colDate=-1, colStripe=-1, colTotal=-1;
+    const ytbCols = []; // ALL cols between date and Stripe = YouTube
+
+    for (let c=s;c<m.endCol;c++) {
+      const v = get(1,c).toLowerCase();
+      if (v==='date')   colDate   = c;
+      if (v==='stripe') colStripe = c;
+      if (v==='total')  colTotal  = c;
+    }
+    // Default date = first col of block
+    if (colDate<0) colDate = s;
+
+    // All cols strictly between date and Stripe = YouTube sub-channels
+    const stripeOrTotal = colStripe>=0 ? colStripe : (colTotal>=0 ? colTotal : m.endCol);
+    for (let c=colDate+1; c<stripeOrTotal; c++) ytbCols.push(c);
+
+    // Sub-channel labels from row 2
+    m.ytbChannels = [];
+    ytbCols.forEach(c => {
+      const label2 = get(2,c);
+      const label1 = get(1,c);
+      const label  = label2 && !label2.startsWith('$') ? label2 : (label1 && !label1.startsWith('$') ? label1 : null);
+      if (label) m.ytbChannels.push({name:label, col:c});
+      else       m.ytbChannels.push({name:'YouTube', col:c});
+    });
+
+    // Parse daily rows (start at row 3 to skip the subtotal row 2)
+    m.days = [];
+    for (let ri=3; ri<rows.length; ri++) {
+      const dateStr = get(ri, colDate);
+      if (!isDateFR(dateStr)) continue;
+
+      // YouTube = sum of all ytbCols
+      let ytb = 0;
+      const ytbSubs = {};
+      m.ytbChannels.forEach(ch => {
+        const v = parseNum(get(ri, ch.col));
+        ytbSubs[ch.name] = v;
+        ytb += v;
+      });
+
+      // Stripe
+      const stripe = colStripe>=0 ? parseNum(get(ri, colStripe)) : 0;
+
+      // Total: use Total col (ground truth), fallback to ytb+stripe
+      let total = colTotal>=0 ? parseNum(get(ri, colTotal)) : 0;
+      if (!total) total = ytb + stripe;
+
+      m.days.push({date:dateStr, ytb, stripe, total, ytbSubs});
+    }
+
+    m.totalYtb    = m.days.reduce((a,d)=>a+d.ytb,    0);
+    m.totalStripe = m.days.reduce((a,d)=>a+d.stripe,  0);
+    m.totalRev    = m.days.reduce((a,d)=>a+d.total,   0);
+
+    // Only keep multi-channel info if more than 1 YTB col
+    m.hasSubChannels = m.ytbChannels.length > 1;
+  });
+
+  return months.filter(m=>m.days.length>0);
+}
+
+let charts={};
+function kill(id){if(charts[id]){charts[id].destroy();delete charts[id];}}
+const TC='#aaa', GC='rgba(0,0,0,0.06)';
+const TK={color:TC,font:{size:11},autoSkip:true,maxRotation:45};
+
+let allMonths=[];
+
+function renderOverview() {
+  kill('overview');
+  charts['overview'] = new Chart($('overview-chart'), {
+    type:'bar',
+    data:{
+      labels: allMonths.map(m=>m.name),
+      datasets:[
+        {label:'YouTube', data:allMonths.map(m=>m.totalYtb),    backgroundColor:C_YTB, borderRadius:3},
+        {label:'Stripe',  data:allMonths.map(m=>m.totalStripe), backgroundColor:C_STR, borderRadius:3},
+      ]
+    },
+    options:{
+      responsive:true,
+      plugins:{legend:{display:false}, tooltip:{callbacks:{label:c=>' '+fmt(c.raw)}}},
+      scales:{
+        x:{ticks:TK, grid:{display:false}, stacked:true},
+        y:{ticks:{...TK, callback:v=>fmt(v)}, grid:{color:GC}, stacked:true}
+      }
+    }
+  });
+}
+
+function renderCongrats(m, prev) {
+  const banner=$('congrats-banner');
+  if (!prev) { banner.style.display='none'; return; }
+  const diff = m.totalRev - prev.totalRev;
+  const pct  = Math.round(diff/prev.totalRev*100);
+  const curAvg  = m.totalRev/m.days.length;
+  const prevAvg = prev.totalRev/prev.days.length;
+  if (diff>0) {
+    banner.style.cssText='display:block;margin-bottom:1.25rem;padding:16px 20px;border-radius:10px;background:#f0fdf4;border:1px solid #bbf7d0;';
+    $('congrats-title').style.color='#15803d';
+    $('congrats-body').style.color='#166534';
+    $('congrats-title').textContent='🎉 Record battu vs '+prev.name+' !';
+    $('congrats-body').textContent='+'+fmt(diff)+' ('+fmtPct(pct)+') · Moy/jour: '+fmt(curAvg)+' vs '+fmt(prevAvg)+' · Rythme annuel: '+fmtK(curAvg*365);
+  } else {
+    banner.style.cssText='display:block;margin-bottom:1.25rem;padding:16px 20px;border-radius:10px;background:#fff7ed;border:1px solid #fed7aa;';
+    $('congrats-title').style.color='#c2410c';
+    $('congrats-body').style.color='#9a3412';
+    $('congrats-title').textContent='📉 En dessous de '+prev.name+' pour l\'instant';
+    $('congrats-body').textContent=fmt(Math.abs(diff))+' de moins ('+fmtPct(pct)+') · Il manque '+fmt(Math.abs(diff))+' pour battre le record · Moy/jour: '+fmt(curAvg);
+  }
+}
+
+function renderMonth(idx) {
+  const m=allMonths[idx];
+  const prev=idx>0?allMonths[idx-1]:null;
+
+  document.querySelectorAll('.mtab').forEach((t,i)=>{
+    t.style.background  = i===idx?'#1a1a1a':'#fff';
+    t.style.color       = i===idx?'#fff':'#555';
+    t.style.borderColor = i===idx?'#1a1a1a':'#ddd';
+  });
+
+  renderCongrats(m, prev);
+
+  // KPIs row 1
+  const diff = prev ? m.totalRev-prev.totalRev : 0;
+  const pct  = prev&&prev.totalRev ? diff/prev.totalRev*100 : 0;
+  $('kpi-total').textContent = fmt(m.totalRev);
+  if (prev) {
+    const col=diff>=0?'#16a34a':'#dc2626', arr=diff>=0?'↑':'↓';
+    $('kpi-vs-prev').innerHTML='<span style="color:'+col+'">'+arr+' '+fmt(Math.abs(diff))+' ('+fmtPct(pct)+') vs '+prev.name+'</span>';
+  } else $('kpi-vs-prev').textContent='';
+
+  $('kpi-ytb').textContent      = fmt(m.totalYtb);
+  $('kpi-ytb-pct').textContent  = m.totalRev?Math.round(m.totalYtb/m.totalRev*100)+'% du total':'';
+  $('kpi-stripe').textContent   = fmt(m.totalStripe);
+  $('kpi-stripe-pct').textContent = m.totalRev?Math.round(m.totalStripe/m.totalRev*100)+'% du total':'';
+
+  const avg=m.days.length?m.totalRev/m.days.length:0;
+  const prevAvg=prev&&prev.days.length?prev.totalRev/prev.days.length:0;
+  $('kpi-avg').textContent = Math.round(avg).toLocaleString('fr-FR')+'$/j';
+  if (prev) {
+    const d=avg-prevAvg, col=d>=0?'#16a34a':'#dc2626';
+    $('kpi-avg-vs').innerHTML='<span style="color:'+col+'">'+(d>=0?'↑':'↓')+' '+(Math.abs(d)|0)+'$/j vs mois préc.</span>';
+  } else $('kpi-avg-vs').textContent='';
+
+  // KPIs row 2
+  const best  = m.days.reduce((a,b)=>b.total>a.total?b:a, m.days[0]);
+  const worst = m.days.reduce((a,b)=>b.total<a.total?b:a, m.days[0]);
+  const above = m.days.filter(d=>d.total>=avg).length;
+  $('kpi-best-val').textContent  = fmt(best.total);
+  $('kpi-best-date').textContent = best.date;
+  $('kpi-worst-val').textContent = fmt(worst.total);
+  $('kpi-worst-date').textContent= worst.date;
+  $('kpi-above').textContent     = above+' / '+m.days.length;
+  $('kpi-above-sub').textContent = Math.round(above/m.days.length*100)+'% des jours';
+  $('kpi-pace').textContent      = fmtK(avg*365);
+  $('kpi-pace-sub').textContent  = 'si ce rythme continue';
+
+  $('daily-title').textContent = 'Détail journalier — '+m.name;
+  const labels = m.days.map(d=>d.date.slice(0,5));
+
+  kill('daily');
+  charts['daily'] = new Chart($('daily-chart'),{
+    type:'bar',
+    data:{labels, datasets:[
+      {label:'YouTube', data:m.days.map(d=>d.ytb),    backgroundColor:C_YTB, borderRadius:2},
+      {label:'Stripe',  data:m.days.map(d=>d.stripe), backgroundColor:C_STR, borderRadius:2},
+    ]},
+    options:{
+      responsive:true,
+      plugins:{legend:{display:false}, tooltip:{callbacks:{
+        label:c=>' '+fmt(c.raw),
+        afterBody:items=>['Total: '+fmt(m.days[items[0].dataIndex].total)]
+      }}},
+      scales:{
+        x:{ticks:TK,grid:{display:false},stacked:true},
+        y:{ticks:{...TK,callback:v=>fmt(v)},grid:{color:GC},stacked:true}
+      }
+    }
+  });
+
+  // Sub-channels (YouTube breakdown)
+  if (m.hasSubChannels) {
+    $('subchan-section').style.display='block';
+    $('subchan-legend').innerHTML = m.ytbChannels.map((ch,i)=>
+      '<span style="display:flex;align-items:center;gap:4px"><span style="width:8px;height:8px;border-radius:1px;background:'+C_SUBS[i%C_SUBS.length]+';display:inline-block"></span>'+ch.name+'</span>'
+    ).join('');
+    kill('subchan');
+    charts['subchan'] = new Chart($('subchan-chart'),{
+      type:'bar',
+      data:{labels, datasets:m.ytbChannels.map((ch,i)=>({
+        label:ch.name,
+        data:m.days.map(d=>d.ytbSubs[ch.name]||0),
+        backgroundColor:C_SUBS[i%C_SUBS.length], borderRadius:2
+      }))},
+      options:{
+        responsive:true,
+        plugins:{legend:{display:false}, tooltip:{callbacks:{label:c=>' '+fmt(c.raw)}}},
+        scales:{
+          x:{ticks:TK,grid:{display:false},stacked:true},
+          y:{ticks:{...TK,callback:v=>fmt(v)},grid:{color:GC},stacked:true}
+        }
+      }
+    });
+  } else {
+    $('subchan-section').style.display='none';
+  }
+
+  renderOverview();
+}
+
+function buildTabs() {
+  const c=$('month-tabs'); c.innerHTML='';
+  allMonths.forEach((m,i)=>{
+    const btn=document.createElement('button');
+    btn.textContent=m.name; btn.className='mtab';
+    btn.style.cssText='font-size:12px;padding:5px 14px;border-radius:20px;cursor:pointer;border:1.5px solid #ddd;background:#fff;color:#555;';
+    btn.onclick=()=>renderMonth(i);
+    c.appendChild(btn);
+  });
+  const all=document.createElement('button');
+  all.textContent='Vue d\'ensemble';
+  all.style.cssText='font-size:12px;padding:5px 14px;border-radius:20px;cursor:pointer;border:1.5px solid #ddd;background:#fff;color:#555;margin-left:auto;';
+  all.onclick=()=>{
+    document.querySelectorAll('.mtab').forEach(t=>{t.style.background='#fff';t.style.color='#555';t.style.borderColor='#ddd';});
+    $('congrats-banner').style.display='none';
+    renderOverview();
+  };
+  c.appendChild(all);
+}
+
+function init(months) {
+  allMonths=months; buildTabs();
+  renderMonth(months.length-1);
+  $('upload-zone').style.display='none';
+  $('dashboard').style.display='block';
+}
+
+function handleFile(file) {
+  if(!file) return;
+  const errEl=$('error-msg'); errEl.style.display='none';
+  const reader=new FileReader();
+  reader.onerror=()=>{errEl.textContent='Impossible de lire le fichier.';errEl.style.display='block';};
+  reader.onload=e=>{
+    try{
+      const months=loadData(e.target.result);
+      if(!months.length){errEl.textContent='Aucune donnée trouvée.';errEl.style.display='block';return;}
+      init(months);
+    }catch(err){errEl.textContent='Erreur: '+err.message;errEl.style.display='block';}
+  };
+  reader.readAsText(file,'UTF-8');
+}
+
+$('file-input').addEventListener('change',e=>handleFile(e.target.files[0]));
+const zone=$('upload-zone');
+zone.addEventListener('dragover', e=>{e.preventDefault();zone.style.background='#f0f0ee';});
+zone.addEventListener('dragleave',()=>{zone.style.background='#fff';});
+zone.addEventListener('drop',e=>{e.preventDefault();zone.style.background='#fff';handleFile(e.dataTransfer.files[0]);});
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+</body>
+</html>

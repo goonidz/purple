@@ -21,6 +21,7 @@ import StandaloneAudio from "./pages/StandaloneAudio";
 import StandaloneIdeas from "./pages/StandaloneIdeas";
 import Feed from "./pages/Feed";
 import Presets from "./pages/Presets";
+import Tracking from "./pages/Tracking";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -74,6 +75,7 @@ const App = () => (
           <Route path="/presets" element={<Presets />} />
           <Route path="/auth" element={<Auth />} />
           <Route path="/feed" element={<Feed />} />
+          <Route path="/tracking" element={<Tracking />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
