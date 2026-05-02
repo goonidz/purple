@@ -4,100 +4,214 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>YouTube Growth Dashboard</title>
-</head>
-<body style="margin:0;padding:24px;font-family:system-ui,sans-serif;background:#f5f5f3;min-height:100vh;box-sizing:border-box;">
-<div style="max-width:1060px;margin:0 auto;">
+<style>
+  *,*::before,*::after { box-sizing: border-box; }
+  html, body { margin:0; padding:0; }
+  body {
+    font-family: system-ui, -apple-system, sans-serif;
+    background: #f5f5f3;
+    min-height: 100vh;
+    padding: 16px;
+    color: #1a1a1a;
+  }
+  .wrap { max-width: 1060px; margin: 0 auto; }
 
-  <div id="upload-zone" style="border:1.5px dashed #ccc;border-radius:10px;padding:2.5rem;text-align:center;background:#fff;margin-bottom:1.5rem;">
-    <div style="font-size:15px;font-weight:500;margin-bottom:6px;">Glissez votre CSV ici</div>
-    <div style="font-size:13px;color:#888;margin-bottom:1rem;">Google Sheets → Fichier → Télécharger → CSV</div>
+  /* ─ upload zone ─ */
+  .upload {
+    border: 1.5px dashed #ccc; border-radius: 10px;
+    padding: 2rem 1rem; text-align: center;
+    background: #fff; margin-bottom: 1.25rem;
+  }
+  .upload-title { font-size: 15px; font-weight: 500; margin-bottom: 6px; }
+  .upload-sub   { font-size: 13px; color: #888; margin-bottom: 1rem; }
+  .btn { font-size: 13px; padding: 8px 18px; border:1px solid #ccc; border-radius:6px; background:#fff; cursor:pointer; }
+  .err { display:none; margin-top:12px; color:#b91c1c; font-size:13px; padding:8px 12px; background:#fef2f2; border-radius:6px; text-align:left; }
+
+  /* ─ congrats banner ─ */
+  .banner { display:none; margin-bottom:1.25rem; padding:14px 16px; border-radius:10px; }
+  .banner-title { font-size:16px; font-weight:700; margin-bottom:4px; line-height:1.3; }
+  .banner-body  { font-size:12.5px; line-height:1.5; }
+
+  /* ─ tabs ─ */
+  .tabs { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:1.25rem; }
+  .tabs-spacer { flex:1; min-width:0; }
+  .tab {
+    font-size:12px; padding:6px 12px; border-radius:18px; cursor:pointer;
+    border:1.5px solid #ddd; background:#fff; color:#555;
+    white-space: nowrap;
+  }
+  .tab.active { background:#1a1a1a; color:#fff; border-color:#1a1a1a; }
+
+  /* ─ KPI grid: responsive ─ */
+  .kpi-grid {
+    display: grid;
+    gap: 10px;
+    margin-bottom: 12px;
+    grid-template-columns: repeat(2, 1fr);
+  }
+  @media (min-width: 640px) {
+    .kpi-grid { grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  }
+
+  .kpi {
+    background:#fff; border:1px solid #e5e5e5; border-radius:8px;
+    padding: 12px 14px; min-width: 0; /* allow shrinking */
+  }
+  .kpi-label {
+    font-size: 10px; color:#888; margin-bottom:4px;
+    text-transform: uppercase; letter-spacing: .05em;
+  }
+  .kpi-val {
+    font-size: 19px; font-weight: 600;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .kpi-sub {
+    font-size: 10.5px; color:#aaa; margin-top:3px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  @media (min-width: 640px) {
+    .kpi { padding: 14px 16px; }
+    .kpi-label { font-size: 11px; }
+    .kpi-val { font-size: 22px; }
+    .kpi-sub { font-size: 11px; }
+  }
+  @media (min-width: 900px) {
+    .kpi-val { font-size: 24px; }
+  }
+
+  /* ─ Chart card ─ */
+  .card {
+    background:#fff; border:1px solid #e5e5e5; border-radius:10px;
+    padding: 14px; margin-bottom: 12px;
+  }
+  @media (min-width: 640px) { .card { padding: 1.25rem; margin-bottom: 1rem; } }
+
+  .card-header {
+    display:flex; justify-content:space-between; align-items:center;
+    margin-bottom: 12px; gap: 8px; flex-wrap: wrap;
+  }
+  .card-title {
+    font-size: 10.5px; color:#888;
+    text-transform: uppercase; letter-spacing: .05em;
+  }
+  .legend { display:flex; gap:10px; font-size:10.5px; color:#888; flex-wrap: wrap; }
+  .legend span { display:inline-flex; align-items:center; gap:4px; }
+  .swatch { display:inline-block; width:8px; height:8px; border-radius:1px; }
+
+  /* ─ Chart container: prevents Chart.js from blowing up vertically on mobile ─ */
+  .chart-box { position: relative; width: 100%; height: 220px; }
+  .chart-box.tall { height: 240px; }
+  @media (min-width: 640px) { .chart-box { height: 260px; } .chart-box.tall { height: 300px; } }
+
+  /* hide kpi-vs-prev secondary text inline color overrides */
+  .kpi-pct-up   { color:#16a34a; }
+  .kpi-pct-down { color:#dc2626; }
+
+  /* Touch-friendly */
+  button { -webkit-tap-highlight-color: rgba(0,0,0,0.1); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- Upload zone -->
+  <div id="upload-zone" class="upload">
+    <div class="upload-title">Glissez votre CSV ici</div>
+    <div class="upload-sub">Google Sheets → Fichier → Télécharger → CSV</div>
     <input type="file" id="file-input" accept=".csv,.txt" style="display:none">
-    <button onclick="document.getElementById('file-input').click()" style="font-size:13px;padding:6px 18px;border:1px solid #ccc;border-radius:6px;background:#fff;cursor:pointer;">Choisir un fichier</button>
-    <div id="error-msg" style="display:none;margin-top:12px;color:#b91c1c;font-size:13px;padding:8px 12px;background:#fef2f2;border-radius:6px;"></div>
+    <button class="btn" onclick="document.getElementById('file-input').click()">Choisir un fichier</button>
+    <div id="error-msg" class="err"></div>
   </div>
 
   <div id="dashboard" style="display:none">
-    <div id="congrats-banner" style="display:none;margin-bottom:1.25rem;padding:16px 20px;border-radius:10px;">
-      <div id="congrats-title" style="font-size:18px;font-weight:700;margin-bottom:4px;"></div>
-      <div id="congrats-body" style="font-size:13px;"></div>
+    <!-- Congrats banner -->
+    <div id="banner" class="banner">
+      <div id="banner-title" class="banner-title"></div>
+      <div id="banner-body"  class="banner-body"></div>
     </div>
 
-    <div id="month-tabs" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:1.25rem;"></div>
+    <!-- Month tabs -->
+    <div id="month-tabs" class="tabs"></div>
 
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:12px;">
-      <div style="background:#fff;border:1px solid #e5e5e5;border-radius:8px;padding:1rem;">
-        <div style="font-size:11px;color:#888;margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em;">Total du mois</div>
-        <div id="kpi-total" style="font-size:24px;font-weight:600;">—</div>
-        <div id="kpi-vs-prev" style="font-size:12px;margin-top:5px;font-weight:500;"></div>
+    <!-- KPI row 1 -->
+    <div class="kpi-grid">
+      <div class="kpi">
+        <div class="kpi-label">Total du mois</div>
+        <div id="kpi-total" class="kpi-val">—</div>
+        <div id="kpi-vs-prev" class="kpi-sub" style="font-weight:500"></div>
       </div>
-      <div style="background:#fff;border:1px solid #e5e5e5;border-radius:8px;padding:1rem;">
-        <div style="font-size:11px;color:#888;margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em;">YouTube</div>
-        <div id="kpi-ytb" style="font-size:24px;font-weight:600;">—</div>
-        <div id="kpi-ytb-pct" style="font-size:11px;color:#aaa;margin-top:4px;"></div>
+      <div class="kpi">
+        <div class="kpi-label">YouTube</div>
+        <div id="kpi-ytb" class="kpi-val">—</div>
+        <div id="kpi-ytb-pct" class="kpi-sub"></div>
       </div>
-      <div style="background:#fff;border:1px solid #e5e5e5;border-radius:8px;padding:1rem;">
-        <div style="font-size:11px;color:#888;margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em;">Stripe</div>
-        <div id="kpi-stripe" style="font-size:24px;font-weight:600;">—</div>
-        <div id="kpi-stripe-pct" style="font-size:11px;color:#aaa;margin-top:4px;"></div>
+      <div class="kpi">
+        <div class="kpi-label">Stripe</div>
+        <div id="kpi-stripe" class="kpi-val">—</div>
+        <div id="kpi-stripe-pct" class="kpi-sub"></div>
       </div>
-      <div style="background:#fff;border:1px solid #e5e5e5;border-radius:8px;padding:1rem;">
-        <div style="font-size:11px;color:#888;margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em;">Moy / jour</div>
-        <div id="kpi-avg" style="font-size:24px;font-weight:600;">—</div>
-        <div id="kpi-avg-vs" style="font-size:11px;color:#aaa;margin-top:4px;"></div>
-      </div>
-    </div>
-
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:1.25rem;">
-      <div style="background:#fff;border:1px solid #e5e5e5;border-radius:8px;padding:1rem;">
-        <div style="font-size:11px;color:#888;margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em;">Meilleur jour</div>
-        <div id="kpi-best-val" style="font-size:20px;font-weight:600;">—</div>
-        <div id="kpi-best-date" style="font-size:11px;color:#aaa;margin-top:4px;"></div>
-      </div>
-      <div style="background:#fff;border:1px solid #e5e5e5;border-radius:8px;padding:1rem;">
-        <div style="font-size:11px;color:#888;margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em;">Pire jour</div>
-        <div id="kpi-worst-val" style="font-size:20px;font-weight:600;">—</div>
-        <div id="kpi-worst-date" style="font-size:11px;color:#aaa;margin-top:4px;"></div>
-      </div>
-      <div style="background:#fff;border:1px solid #e5e5e5;border-radius:8px;padding:1rem;">
-        <div style="font-size:11px;color:#888;margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em;">Jours > moy</div>
-        <div id="kpi-above" style="font-size:20px;font-weight:600;">—</div>
-        <div id="kpi-above-sub" style="font-size:11px;color:#aaa;margin-top:4px;"></div>
-      </div>
-      <div style="background:#fff;border:1px solid #e5e5e5;border-radius:8px;padding:1rem;">
-        <div style="font-size:11px;color:#888;margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em;">Rythme annuel</div>
-        <div id="kpi-pace" style="font-size:20px;font-weight:600;">—</div>
-        <div id="kpi-pace-sub" style="font-size:11px;color:#aaa;margin-top:4px;"></div>
+      <div class="kpi">
+        <div class="kpi-label">Moy / jour</div>
+        <div id="kpi-avg" class="kpi-val">—</div>
+        <div id="kpi-avg-vs" class="kpi-sub"></div>
       </div>
     </div>
 
-    <div style="background:#fff;border:1px solid #e5e5e5;border-radius:10px;padding:1.25rem;margin-bottom:1rem;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-        <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.05em;">Vue d'ensemble</div>
-        <div style="display:flex;gap:12px;font-size:11px;color:#888;">
-          <span><span style="display:inline-block;width:8px;height:8px;background:#1a1a1a;border-radius:1px;margin-right:4px;"></span>YouTube</span>
-          <span><span style="display:inline-block;width:8px;height:8px;background:#999;border-radius:1px;margin-right:4px;"></span>Stripe</span>
+    <!-- KPI row 2 -->
+    <div class="kpi-grid" style="margin-bottom:1.25rem">
+      <div class="kpi">
+        <div class="kpi-label">Meilleur jour</div>
+        <div id="kpi-best-val" class="kpi-val">—</div>
+        <div id="kpi-best-date" class="kpi-sub"></div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">Pire jour</div>
+        <div id="kpi-worst-val" class="kpi-val">—</div>
+        <div id="kpi-worst-date" class="kpi-sub"></div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">Jours > moy</div>
+        <div id="kpi-above" class="kpi-val">—</div>
+        <div id="kpi-above-sub" class="kpi-sub"></div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">Rythme annuel</div>
+        <div id="kpi-pace" class="kpi-val">—</div>
+        <div id="kpi-pace-sub" class="kpi-sub"></div>
+      </div>
+    </div>
+
+    <!-- Overview chart -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">Vue d'ensemble</div>
+        <div class="legend">
+          <span><span class="swatch" style="background:#1a1a1a"></span>YouTube</span>
+          <span><span class="swatch" style="background:#999"></span>Stripe</span>
         </div>
       </div>
-      <canvas id="overview-chart" height="70"></canvas>
+      <div class="chart-box"><canvas id="overview-chart"></canvas></div>
     </div>
 
-    <div style="background:#fff;border:1px solid #e5e5e5;border-radius:10px;padding:1.25rem;margin-bottom:1rem;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-        <div id="daily-title" style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.05em;">Détail journalier</div>
-        <div style="display:flex;gap:12px;font-size:11px;color:#888;">
-          <span><span style="display:inline-block;width:8px;height:8px;background:#1a1a1a;border-radius:1px;margin-right:4px;"></span>YouTube</span>
-          <span><span style="display:inline-block;width:8px;height:8px;background:#999;border-radius:1px;margin-right:4px;"></span>Stripe</span>
+    <!-- Daily chart -->
+    <div class="card">
+      <div class="card-header">
+        <div id="daily-title" class="card-title">Détail journalier</div>
+        <div class="legend">
+          <span><span class="swatch" style="background:#1a1a1a"></span>YouTube</span>
+          <span><span class="swatch" style="background:#999"></span>Stripe</span>
         </div>
       </div>
-      <canvas id="daily-chart" height="80"></canvas>
+      <div class="chart-box tall"><canvas id="daily-chart"></canvas></div>
     </div>
 
-    <div id="subchan-section" style="display:none;background:#fff;border:1px solid #e5e5e5;border-radius:10px;padding:1.25rem;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-        <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.05em;">YouTube — canaux</div>
-        <div id="subchan-legend" style="display:flex;gap:12px;font-size:11px;color:#888;"></div>
+    <!-- Sub-channels -->
+    <div id="subchan-section" class="card" style="display:none">
+      <div class="card-header">
+        <div class="card-title">YouTube — canaux</div>
+        <div id="subchan-legend" class="legend"></div>
       </div>
-      <canvas id="subchan-chart" height="60"></canvas>
+      <div class="chart-box"><canvas id="subchan-chart"></canvas></div>
     </div>
   </div>
 </div>
@@ -108,106 +222,83 @@ const C_YTB  = '#1a1a1a';
 const C_STR  = '#999';
 const C_SUBS = ['#1a1a1a','#555','#bbb'];
 
-function parseNum(s) {
-  if (!s) return 0;
+function parseNum(s){
+  if(!s) return 0;
   const n = parseFloat(String(s).replace(/[\u202f\u00a0\s]/g,'').replace(',','.'));
-  return isNaN(n) ? 0 : n;
+  return isNaN(n)?0:n;
 }
-function isDateFR(s) { return /^\d{1,2}\/\d{2}\/\d{2,4}$/.test((s||'').trim()); }
-function fmt(n)  { return Math.round(n).toLocaleString('fr-FR') + '$'; }
-function fmtK(n) { return n>=1000?(n/1000).toFixed(1).replace('.',',')+' k$':fmt(n); }
+function isDateFR(s){ return /^\d{1,2}\/\d{2}\/\d{2,4}$/.test((s||'').trim()); }
+function fmt(n){ return Math.round(n).toLocaleString('fr-FR') + '$'; }
+function fmtShort(n){
+  const a=Math.abs(n);
+  if(a>=10000) return Math.round(n/1000)+'k$';
+  if(a>=1000)  return (n/1000).toFixed(1).replace('.',',')+'k$';
+  return Math.round(n)+'$';
+}
+function fmtK(n){ return n>=1000?(n/1000).toFixed(1).replace('.',',')+' k$':fmt(n); }
 function fmtPct(n){ return (n>=0?'+':'')+Math.round(n)+'%'; }
 
-function parseCSV(raw) {
-  if (raw.charCodeAt(0)===0xFEFF) raw=raw.slice(1);
+function parseCSV(raw){
+  if(raw.charCodeAt(0)===0xFEFF) raw=raw.slice(1);
   raw=raw.replace(/\r\n/g,'\n').replace(/\r/g,'\n');
-  const rows=[]; let field='',row=[],inQ=false;
+  const rows=[]; let f='',r=[],q=false;
   for(let i=0;i<raw.length;i++){
-    const c=raw[i],nx=raw[i+1];
-    if(inQ){if(c==='"'&&nx==='"'){field+='"';i++;}else if(c==='"')inQ=false;else field+=c;}
-    else{if(c==='"')inQ=true;else if(c===','){row.push(field);field='';}else if(c==='\n'){row.push(field);rows.push(row);row=[];field='';}else field+=c;}
+    const c=raw[i],n=raw[i+1];
+    if(q){if(c==='"'&&n==='"'){f+='"';i++;}else if(c==='"')q=false;else f+=c;}
+    else{if(c==='"')q=true;else if(c===','){r.push(f);f='';}else if(c==='\n'){r.push(f);rows.push(r);r=[];f='';}else f+=c;}
   }
-  if(field!==''||row.length){row.push(field);rows.push(row);}
+  if(f!==''||r.length){r.push(f);rows.push(r);}
   return rows;
 }
 
-function loadData(text) {
-  const rows = parseCSV(text);
-  if (rows.length < 3) throw new Error('Fichier trop court');
-  const maxCols = Math.max(...rows.map(r=>r.length));
-  const get = (ri,ci) => (rows[ri]&&rows[ri][ci]!==undefined ? rows[ri][ci].trim() : '');
+function loadData(text){
+  const rows=parseCSV(text);
+  if(rows.length<3) throw new Error('Fichier trop court');
+  const maxCols=Math.max(...rows.map(r=>r.length));
+  const get=(ri,ci)=>(rows[ri]&&rows[ri][ci]!==undefined?rows[ri][ci].trim():'');
 
-  // Row 0: detect months
-  const months = [];
-  for (let c=0;c<maxCols;c++) {
+  const months=[];
+  for(let c=0;c<maxCols;c++){
     const v=get(0,c);
-    if (v&&!v.startsWith('$')&&v.length>3) months.push({name:v,startCol:c});
+    if(v&&!v.startsWith('$')&&v.length>3) months.push({name:v,startCol:c});
   }
-  if (!months.length) throw new Error('Aucun mois détecté');
-  for (let i=0;i<months.length;i++)
-    months[i].endCol = i+1<months.length ? months[i+1].startCol : maxCols;
+  if(!months.length) throw new Error('Aucun mois détecté');
+  for(let i=0;i<months.length;i++) months[i].endCol=i+1<months.length?months[i+1].startCol:maxCols;
 
-  months.forEach(m => {
-    const s = m.startCol;
-
-    // Row 1: find key columns by label
-    let colDate=-1, colStripe=-1, colTotal=-1;
-    const ytbCols = []; // ALL cols between date and Stripe = YouTube
-
-    for (let c=s;c<m.endCol;c++) {
-      const v = get(1,c).toLowerCase();
-      if (v==='date')   colDate   = c;
-      if (v==='stripe') colStripe = c;
-      if (v==='total')  colTotal  = c;
+  months.forEach(m=>{
+    const s=m.startCol;
+    let colDate=-1,colStripe=-1,colTotal=-1;
+    for(let c=s;c<m.endCol;c++){
+      const v=get(1,c).toLowerCase();
+      if(v==='date')   colDate=c;
+      if(v==='stripe') colStripe=c;
+      if(v==='total')  colTotal=c;
     }
-    // Default date = first col of block
-    if (colDate<0) colDate = s;
+    if(colDate<0) colDate=s;
+    const stripeOrTotal = colStripe>=0?colStripe:(colTotal>=0?colTotal:m.endCol);
 
-    // All cols strictly between date and Stripe = YouTube sub-channels
-    const stripeOrTotal = colStripe>=0 ? colStripe : (colTotal>=0 ? colTotal : m.endCol);
-    for (let c=colDate+1; c<stripeOrTotal; c++) ytbCols.push(c);
-
-    // Sub-channel labels from row 2
-    m.ytbChannels = [];
-    ytbCols.forEach(c => {
-      const label2 = get(2,c);
-      const label1 = get(1,c);
-      const label  = label2 && !label2.startsWith('$') ? label2 : (label1 && !label1.startsWith('$') ? label1 : null);
-      if (label) m.ytbChannels.push({name:label, col:c});
-      else       m.ytbChannels.push({name:'YouTube', col:c});
-    });
-
-    // Parse daily rows (start at row 3 to skip the subtotal row 2)
-    m.days = [];
-    for (let ri=3; ri<rows.length; ri++) {
-      const dateStr = get(ri, colDate);
-      if (!isDateFR(dateStr)) continue;
-
-      // YouTube = sum of all ytbCols
-      let ytb = 0;
-      const ytbSubs = {};
-      m.ytbChannels.forEach(ch => {
-        const v = parseNum(get(ri, ch.col));
-        ytbSubs[ch.name] = v;
-        ytb += v;
-      });
-
-      // Stripe
-      const stripe = colStripe>=0 ? parseNum(get(ri, colStripe)) : 0;
-
-      // Total: use Total col (ground truth), fallback to ytb+stripe
-      let total = colTotal>=0 ? parseNum(get(ri, colTotal)) : 0;
-      if (!total) total = ytb + stripe;
-
-      m.days.push({date:dateStr, ytb, stripe, total, ytbSubs});
+    m.ytbChannels=[];
+    for(let c=colDate+1;c<stripeOrTotal;c++){
+      const l2=get(2,c), l1=get(1,c);
+      const label = (l2&&!l2.startsWith('$'))?l2 : ((l1&&!l1.startsWith('$'))?l1 : 'YouTube');
+      m.ytbChannels.push({name:label,col:c});
     }
 
+    m.days=[];
+    for(let ri=3;ri<rows.length;ri++){
+      const dateStr=get(ri,colDate);
+      if(!isDateFR(dateStr)) continue;
+      let ytb=0; const subs={};
+      m.ytbChannels.forEach(ch=>{ const v=parseNum(get(ri,ch.col)); subs[ch.name]=v; ytb+=v; });
+      const stripe=colStripe>=0?parseNum(get(ri,colStripe)):0;
+      let total=colTotal>=0?parseNum(get(ri,colTotal)):0;
+      if(!total) total=ytb+stripe;
+      m.days.push({date:dateStr,ytb,stripe,total,ytbSubs:subs});
+    }
     m.totalYtb    = m.days.reduce((a,d)=>a+d.ytb,    0);
     m.totalStripe = m.days.reduce((a,d)=>a+d.stripe,  0);
     m.totalRev    = m.days.reduce((a,d)=>a+d.total,   0);
-
-    // Only keep multi-channel info if more than 1 YTB col
-    m.hasSubChannels = m.ytbChannels.length > 1;
+    m.hasSubChannels = m.ytbChannels.length>1;
   });
 
   return months.filter(m=>m.days.length>0);
@@ -215,183 +306,186 @@ function loadData(text) {
 
 let charts={};
 function kill(id){if(charts[id]){charts[id].destroy();delete charts[id];}}
+
 const TC='#aaa', GC='rgba(0,0,0,0.06)';
-const TK={color:TC,font:{size:11},autoSkip:true,maxRotation:45};
+const isMobile = () => window.innerWidth < 640;
+
+function tickOpts(forValueAxis){
+  const opts = { color:TC, font:{size: isMobile()?9:11}, autoSkip:true, maxRotation:isMobile()?0:45 };
+  if (forValueAxis) opts.callback = v => isMobile() ? fmtShort(v) : fmt(v);
+  return opts;
+}
 
 let allMonths=[];
 
-function renderOverview() {
+function renderOverview(){
   kill('overview');
-  charts['overview'] = new Chart($('overview-chart'), {
+  charts['overview']=new Chart($('overview-chart'),{
     type:'bar',
     data:{
-      labels: allMonths.map(m=>m.name),
+      labels: allMonths.map(m=>isMobile() ? m.name.split(' ')[0].slice(0,4) : m.name),
       datasets:[
-        {label:'YouTube', data:allMonths.map(m=>m.totalYtb),    backgroundColor:C_YTB, borderRadius:3},
-        {label:'Stripe',  data:allMonths.map(m=>m.totalStripe), backgroundColor:C_STR, borderRadius:3},
+        {label:'YouTube',data:allMonths.map(m=>m.totalYtb),    backgroundColor:C_YTB,borderRadius:3},
+        {label:'Stripe', data:allMonths.map(m=>m.totalStripe), backgroundColor:C_STR,borderRadius:3},
       ]
     },
     options:{
-      responsive:true,
-      plugins:{legend:{display:false}, tooltip:{callbacks:{label:c=>' '+fmt(c.raw)}}},
+      responsive:true, maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>' '+fmt(c.raw)}}},
       scales:{
-        x:{ticks:TK, grid:{display:false}, stacked:true},
-        y:{ticks:{...TK, callback:v=>fmt(v)}, grid:{color:GC}, stacked:true}
+        x:{ticks:tickOpts(false),grid:{display:false},stacked:true},
+        y:{ticks:tickOpts(true),grid:{color:GC},stacked:true}
       }
     }
   });
 }
 
-function renderCongrats(m, prev) {
-  const banner=$('congrats-banner');
-  if (!prev) { banner.style.display='none'; return; }
-  const diff = m.totalRev - prev.totalRev;
-  const pct  = Math.round(diff/prev.totalRev*100);
-  const curAvg  = m.totalRev/m.days.length;
-  const prevAvg = prev.totalRev/prev.days.length;
-  if (diff>0) {
-    banner.style.cssText='display:block;margin-bottom:1.25rem;padding:16px 20px;border-radius:10px;background:#f0fdf4;border:1px solid #bbf7d0;';
-    $('congrats-title').style.color='#15803d';
-    $('congrats-body').style.color='#166534';
-    $('congrats-title').textContent='🎉 Record battu vs '+prev.name+' !';
-    $('congrats-body').textContent='+'+fmt(diff)+' ('+fmtPct(pct)+') · Moy/jour: '+fmt(curAvg)+' vs '+fmt(prevAvg)+' · Rythme annuel: '+fmtK(curAvg*365);
+function renderCongrats(m,prev){
+  const b=$('banner');
+  if(!prev){ b.style.display='none'; return; }
+  const diff=m.totalRev-prev.totalRev;
+  const pct=Math.round(diff/prev.totalRev*100);
+  const curAvg=m.totalRev/m.days.length;
+  const prevAvg=prev.totalRev/prev.days.length;
+  if(diff>0){
+    b.style.cssText='display:block;margin-bottom:1.25rem;padding:14px 16px;border-radius:10px;background:#f0fdf4;border:1px solid #bbf7d0;';
+    $('banner-title').style.color='#15803d';
+    $('banner-body').style.color='#166534';
+    $('banner-title').textContent='🎉 Record battu vs '+prev.name+' !';
+    $('banner-body').textContent='+'+fmt(diff)+' ('+fmtPct(pct)+') · Moy/jour: '+fmt(curAvg)+' vs '+fmt(prevAvg)+' · Rythme annuel: '+fmtK(curAvg*365);
   } else {
-    banner.style.cssText='display:block;margin-bottom:1.25rem;padding:16px 20px;border-radius:10px;background:#fff7ed;border:1px solid #fed7aa;';
-    $('congrats-title').style.color='#c2410c';
-    $('congrats-body').style.color='#9a3412';
-    $('congrats-title').textContent='📉 En dessous de '+prev.name+' pour l\'instant';
-    $('congrats-body').textContent=fmt(Math.abs(diff))+' de moins ('+fmtPct(pct)+') · Il manque '+fmt(Math.abs(diff))+' pour battre le record · Moy/jour: '+fmt(curAvg);
+    b.style.cssText='display:block;margin-bottom:1.25rem;padding:14px 16px;border-radius:10px;background:#fff7ed;border:1px solid #fed7aa;';
+    $('banner-title').style.color='#c2410c';
+    $('banner-body').style.color='#9a3412';
+    $('banner-title').textContent='📉 En dessous de '+prev.name;
+    $('banner-body').textContent=fmt(Math.abs(diff))+' de moins ('+fmtPct(pct)+') · Il manque '+fmt(Math.abs(diff))+' pour battre · Moy/jour: '+fmt(curAvg);
   }
 }
 
-function renderMonth(idx) {
+function renderMonth(idx){
   const m=allMonths[idx];
   const prev=idx>0?allMonths[idx-1]:null;
 
-  document.querySelectorAll('.mtab').forEach((t,i)=>{
-    t.style.background  = i===idx?'#1a1a1a':'#fff';
-    t.style.color       = i===idx?'#fff':'#555';
-    t.style.borderColor = i===idx?'#1a1a1a':'#ddd';
+  document.querySelectorAll('.tab').forEach((t,i)=>{
+    t.classList.toggle('active', i===idx);
   });
 
-  renderCongrats(m, prev);
+  renderCongrats(m,prev);
 
-  // KPIs row 1
-  const diff = prev ? m.totalRev-prev.totalRev : 0;
-  const pct  = prev&&prev.totalRev ? diff/prev.totalRev*100 : 0;
-  $('kpi-total').textContent = fmt(m.totalRev);
-  if (prev) {
-    const col=diff>=0?'#16a34a':'#dc2626', arr=diff>=0?'↑':'↓';
-    $('kpi-vs-prev').innerHTML='<span style="color:'+col+'">'+arr+' '+fmt(Math.abs(diff))+' ('+fmtPct(pct)+') vs '+prev.name+'</span>';
+  const diff=prev?m.totalRev-prev.totalRev:0;
+  const pct=prev&&prev.totalRev?diff/prev.totalRev*100:0;
+  $('kpi-total').textContent=fmt(m.totalRev);
+  if(prev){
+    const cls=diff>=0?'kpi-pct-up':'kpi-pct-down', arr=diff>=0?'↑':'↓';
+    $('kpi-vs-prev').innerHTML='<span class="'+cls+'">'+arr+' '+fmtShort(Math.abs(diff))+' ('+fmtPct(pct)+')</span>';
   } else $('kpi-vs-prev').textContent='';
 
-  $('kpi-ytb').textContent      = fmt(m.totalYtb);
-  $('kpi-ytb-pct').textContent  = m.totalRev?Math.round(m.totalYtb/m.totalRev*100)+'% du total':'';
-  $('kpi-stripe').textContent   = fmt(m.totalStripe);
-  $('kpi-stripe-pct').textContent = m.totalRev?Math.round(m.totalStripe/m.totalRev*100)+'% du total':'';
+  $('kpi-ytb').textContent=fmt(m.totalYtb);
+  $('kpi-ytb-pct').textContent=m.totalRev?Math.round(m.totalYtb/m.totalRev*100)+'% du total':'';
+  $('kpi-stripe').textContent=fmt(m.totalStripe);
+  $('kpi-stripe-pct').textContent=m.totalRev?Math.round(m.totalStripe/m.totalRev*100)+'% du total':'';
 
   const avg=m.days.length?m.totalRev/m.days.length:0;
   const prevAvg=prev&&prev.days.length?prev.totalRev/prev.days.length:0;
-  $('kpi-avg').textContent = Math.round(avg).toLocaleString('fr-FR')+'$/j';
-  if (prev) {
-    const d=avg-prevAvg, col=d>=0?'#16a34a':'#dc2626';
-    $('kpi-avg-vs').innerHTML='<span style="color:'+col+'">'+(d>=0?'↑':'↓')+' '+(Math.abs(d)|0)+'$/j vs mois préc.</span>';
+  $('kpi-avg').textContent=Math.round(avg).toLocaleString('fr-FR')+'$/j';
+  if(prev){
+    const d=avg-prevAvg, cls=d>=0?'kpi-pct-up':'kpi-pct-down';
+    $('kpi-avg-vs').innerHTML='<span class="'+cls+'">'+(d>=0?'↑':'↓')+' '+(Math.abs(d)|0)+'$/j</span>';
   } else $('kpi-avg-vs').textContent='';
 
-  // KPIs row 2
-  const best  = m.days.reduce((a,b)=>b.total>a.total?b:a, m.days[0]);
-  const worst = m.days.reduce((a,b)=>b.total<a.total?b:a, m.days[0]);
-  const above = m.days.filter(d=>d.total>=avg).length;
-  $('kpi-best-val').textContent  = fmt(best.total);
-  $('kpi-best-date').textContent = best.date;
-  $('kpi-worst-val').textContent = fmt(worst.total);
-  $('kpi-worst-date').textContent= worst.date;
-  $('kpi-above').textContent     = above+' / '+m.days.length;
-  $('kpi-above-sub').textContent = Math.round(above/m.days.length*100)+'% des jours';
-  $('kpi-pace').textContent      = fmtK(avg*365);
-  $('kpi-pace-sub').textContent  = 'si ce rythme continue';
+  const best=m.days.reduce((a,b)=>b.total>a.total?b:a,m.days[0]);
+  const worst=m.days.reduce((a,b)=>b.total<a.total?b:a,m.days[0]);
+  const above=m.days.filter(d=>d.total>=avg).length;
+  $('kpi-best-val').textContent=fmt(best.total);
+  $('kpi-best-date').textContent=best.date;
+  $('kpi-worst-val').textContent=fmt(worst.total);
+  $('kpi-worst-date').textContent=worst.date;
+  $('kpi-above').textContent=above+' / '+m.days.length;
+  $('kpi-above-sub').textContent=Math.round(above/m.days.length*100)+'% des jours';
+  $('kpi-pace').textContent=fmtK(avg*365);
+  $('kpi-pace-sub').textContent='si rythme continu';
 
-  $('daily-title').textContent = 'Détail journalier — '+m.name;
-  const labels = m.days.map(d=>d.date.slice(0,5));
+  $('daily-title').textContent='Détail — '+m.name;
+  const labels=m.days.map(d=>d.date.slice(0,5));
 
   kill('daily');
-  charts['daily'] = new Chart($('daily-chart'),{
+  charts['daily']=new Chart($('daily-chart'),{
     type:'bar',
-    data:{labels, datasets:[
-      {label:'YouTube', data:m.days.map(d=>d.ytb),    backgroundColor:C_YTB, borderRadius:2},
-      {label:'Stripe',  data:m.days.map(d=>d.stripe), backgroundColor:C_STR, borderRadius:2},
+    data:{labels,datasets:[
+      {label:'YouTube',data:m.days.map(d=>d.ytb),   backgroundColor:C_YTB,borderRadius:2},
+      {label:'Stripe', data:m.days.map(d=>d.stripe),backgroundColor:C_STR,borderRadius:2},
     ]},
     options:{
-      responsive:true,
-      plugins:{legend:{display:false}, tooltip:{callbacks:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{callbacks:{
         label:c=>' '+fmt(c.raw),
         afterBody:items=>['Total: '+fmt(m.days[items[0].dataIndex].total)]
       }}},
       scales:{
-        x:{ticks:TK,grid:{display:false},stacked:true},
-        y:{ticks:{...TK,callback:v=>fmt(v)},grid:{color:GC},stacked:true}
+        x:{ticks:tickOpts(false),grid:{display:false},stacked:true},
+        y:{ticks:tickOpts(true),grid:{color:GC},stacked:true}
       }
     }
   });
 
-  // Sub-channels (YouTube breakdown)
-  if (m.hasSubChannels) {
+  if(m.hasSubChannels){
     $('subchan-section').style.display='block';
-    $('subchan-legend').innerHTML = m.ytbChannels.map((ch,i)=>
-      '<span style="display:flex;align-items:center;gap:4px"><span style="width:8px;height:8px;border-radius:1px;background:'+C_SUBS[i%C_SUBS.length]+';display:inline-block"></span>'+ch.name+'</span>'
+    $('subchan-legend').innerHTML=m.ytbChannels.map((ch,i)=>
+      '<span><span class="swatch" style="background:'+C_SUBS[i%C_SUBS.length]+'"></span>'+ch.name+'</span>'
     ).join('');
     kill('subchan');
-    charts['subchan'] = new Chart($('subchan-chart'),{
+    charts['subchan']=new Chart($('subchan-chart'),{
       type:'bar',
-      data:{labels, datasets:m.ytbChannels.map((ch,i)=>({
+      data:{labels,datasets:m.ytbChannels.map((ch,i)=>({
         label:ch.name,
         data:m.days.map(d=>d.ytbSubs[ch.name]||0),
-        backgroundColor:C_SUBS[i%C_SUBS.length], borderRadius:2
+        backgroundColor:C_SUBS[i%C_SUBS.length],borderRadius:2
       }))},
       options:{
-        responsive:true,
-        plugins:{legend:{display:false}, tooltip:{callbacks:{label:c=>' '+fmt(c.raw)}}},
+        responsive:true, maintainAspectRatio:false,
+        plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>' '+fmt(c.raw)}}},
         scales:{
-          x:{ticks:TK,grid:{display:false},stacked:true},
-          y:{ticks:{...TK,callback:v=>fmt(v)},grid:{color:GC},stacked:true}
+          x:{ticks:tickOpts(false),grid:{display:false},stacked:true},
+          y:{ticks:tickOpts(true),grid:{color:GC},stacked:true}
         }
       }
     });
-  } else {
-    $('subchan-section').style.display='none';
-  }
+  } else { $('subchan-section').style.display='none'; }
 
   renderOverview();
 }
 
-function buildTabs() {
+function buildTabs(){
   const c=$('month-tabs'); c.innerHTML='';
   allMonths.forEach((m,i)=>{
     const btn=document.createElement('button');
-    btn.textContent=m.name; btn.className='mtab';
-    btn.style.cssText='font-size:12px;padding:5px 14px;border-radius:20px;cursor:pointer;border:1.5px solid #ddd;background:#fff;color:#555;';
+    // shorten on mobile: "janvier 2026" -> "janv."
+    const short = m.name.split(' ')[0];
+    btn.textContent = short;
+    btn.className='tab';
     btn.onclick=()=>renderMonth(i);
     c.appendChild(btn);
   });
   const all=document.createElement('button');
-  all.textContent='Vue d\'ensemble';
-  all.style.cssText='font-size:12px;padding:5px 14px;border-radius:20px;cursor:pointer;border:1.5px solid #ddd;background:#fff;color:#555;margin-left:auto;';
+  all.textContent='Vue';
+  all.className='tab';
+  all.style.marginLeft='auto';
   all.onclick=()=>{
-    document.querySelectorAll('.mtab').forEach(t=>{t.style.background='#fff';t.style.color='#555';t.style.borderColor='#ddd';});
-    $('congrats-banner').style.display='none';
+    document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+    $('banner').style.display='none';
     renderOverview();
   };
   c.appendChild(all);
 }
 
-function init(months) {
+function init(months){
   allMonths=months; buildTabs();
   renderMonth(months.length-1);
   $('upload-zone').style.display='none';
   $('dashboard').style.display='block';
 }
 
-function handleFile(file) {
+function handleFile(file){
   if(!file) return;
   const errEl=$('error-msg'); errEl.style.display='none';
   const reader=new FileReader();
@@ -411,6 +505,19 @@ const zone=$('upload-zone');
 zone.addEventListener('dragover', e=>{e.preventDefault();zone.style.background='#f0f0ee';});
 zone.addEventListener('dragleave',()=>{zone.style.background='#fff';});
 zone.addEventListener('drop',e=>{e.preventDefault();zone.style.background='#fff';handleFile(e.dataTransfer.files[0]);});
+
+// Re-render charts on resize for proper mobile/desktop ticks
+let resizeTimer;
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    if (allMonths.length) {
+      const activeIdx = [...document.querySelectorAll('.tab')].findIndex(t=>t.classList.contains('active'));
+      if (activeIdx >= 0 && activeIdx < allMonths.length) renderMonth(activeIdx);
+      else renderOverview();
+    }
+  }, 200);
+});
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 </body>
