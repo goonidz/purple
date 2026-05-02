@@ -25,6 +25,7 @@ interface Channel {
   thumbnail_v2_preset_id: string | null;
   render_preset_id: string | null;
   youtube_url: string | null;
+  audience_description: string | null;
 }
 
 interface ScriptPreset {
@@ -105,6 +106,7 @@ export default function ChannelManager({
   const [selectedRenderPresetId, setSelectedRenderPresetId] = useState<string>("");
   const [thumbnailPresetEnabled, setThumbnailPresetEnabled] = useState<boolean>(true);
   const [youtubeUrl, setYoutubeUrl] = useState<string>("");
+  const [audienceDescription, setAudienceDescription] = useState<string>("");
   const [isLoadingPresets, setIsLoadingPresets] = useState(false);
   const [isSavingPresets, setIsSavingPresets] = useState(false);
 
@@ -292,6 +294,7 @@ export default function ChannelManager({
     setSelectedRenderPresetId(channel.render_preset_id || "none");
     setThumbnailPresetEnabled(channel.thumbnail_preset_enabled ?? true);
     setYoutubeUrl((channel as any).youtube_url || "");
+    setAudienceDescription((channel as any).audience_description || "");
 
     // Load animator preset if exists
     const chAny = channel as any;
@@ -370,6 +373,7 @@ export default function ChannelManager({
           thumbnail_preset_enabled: thumbnailPresetEnabled,
           animator_preset_id: finalAnimatorPresetId || null,
           youtube_url: youtubeUrl.trim() || null,
+          audience_description: audienceDescription.trim() || null,
         } as any)
         .eq("id", configuringChannelId);
 
@@ -585,6 +589,8 @@ export default function ChannelManager({
       setAnimatorMinSegDuration={setAnimatorMinSegDuration}
       youtubeUrl={youtubeUrl}
       setYoutubeUrl={setYoutubeUrl}
+      audienceDescription={audienceDescription}
+      setAudienceDescription={setAudienceDescription}
     />
     </>
   );
@@ -636,6 +642,8 @@ function PresetConfigDialog({
   setAnimatorMinSegDuration,
   youtubeUrl,
   setYoutubeUrl,
+  audienceDescription,
+  setAudienceDescription,
 }: {
   isOpen: boolean;
   onClose: () => void;
@@ -682,6 +690,8 @@ function PresetConfigDialog({
   setAnimatorMinSegDuration: (v: number) => void;
   youtubeUrl: string;
   setYoutubeUrl: (url: string) => void;
+  audienceDescription: string;
+  setAudienceDescription: (desc: string) => void;
 }) {
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
@@ -727,6 +737,21 @@ function PresetConfigDialog({
               />
               <p className="text-xs text-muted-foreground">
                 Lien vers la chaîne YouTube correspondante (optionnel).
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="channel-audience">Description de l'audience</Label>
+              <textarea
+                id="channel-audience"
+                value={audienceDescription}
+                onChange={(e) => setAudienceDescription(e.target.value)}
+                placeholder="Ex: Hommes 35-55 ans, américains, intéressés par la finance personnelle, retraite anticipée, marchés boursiers. Niveau d'éducation : bac+3 minimum, revenus moyens à élevés..."
+                rows={4}
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring resize-none"
+              />
+              <p className="text-xs text-muted-foreground">
+                Décrit le public cible de la chaîne (démographie, intérêts, langue, niveau...). Sert de contexte pour les futures générations IA.
               </p>
             </div>
 

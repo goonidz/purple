@@ -157,6 +157,7 @@ export type Database = {
       }
       channels: {
         Row: {
+          audience_description: string | null
           color: string
           created_at: string
           icon: string | null
@@ -174,6 +175,7 @@ export type Database = {
           youtube_url: string | null
         }
         Insert: {
+          audience_description?: string | null
           color?: string
           created_at?: string
           icon?: string | null
@@ -191,6 +193,7 @@ export type Database = {
           youtube_url?: string | null
         }
         Update: {
+          audience_description?: string | null
           color?: string
           created_at?: string
           icon?: string | null
