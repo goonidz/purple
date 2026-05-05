@@ -981,15 +981,31 @@ async function stepAnimatorQa(pipeline) {
     }),
   });
 
+  const jobIdKey = pass === 1 ? 'qaJobId' : 'qaJobId2';
+
   if (!resp.ok) {
     const errText = await resp.text();
+    // Defense in depth: if a previous attempt already created the job (e.g.
+    // an earlier in-flight execution this orchestrator restarted across, or
+    // an external trigger), reuse that job id rather than failing the
+    // pipeline. The race condition that originally produced this is now
+    // prevented by the in-flight Set in pollLoop, but this keeps the step
+    // idempotent if it ever recurs.
+    let parsed;
+    try { parsed = JSON.parse(errText); } catch {}
+    if (parsed?.existingJobId) {
+      console.log(`[orchestrator] [${id}] QA pass ${pass} reusing existing qa_scenes job ${parsed.existingJobId}`);
+      await advancePipeline(id, 'wait_animator_qa', {
+        metadata: { ...metadata, [jobIdKey]: parsed.existingJobId, qaPass: pass },
+      });
+      return;
+    }
     throw new Error(`Failed to create qa_scenes job: ${errText}`);
   }
 
   const { jobId } = await resp.json();
   console.log(`[orchestrator] [${id}] QA pass ${pass} job created: ${jobId}`);
 
-  const jobIdKey = pass === 1 ? 'qaJobId' : 'qaJobId2';
   await advancePipeline(id, 'wait_animator_qa', {
     metadata: { ...metadata, [jobIdKey]: jobId, qaPass: pass },
   });
@@ -1221,6 +1237,13 @@ async function processPipeline(pipeline) {
   }
 }
 
+// Tracks pipelines currently being processed by this orchestrator instance.
+// Without this, setInterval(pollLoop) re-enters every POLL_INTERVAL while a
+// long step is still running, processing the same pipeline in parallel and
+// causing duplicate side-effects (e.g. multiple qa_scenes job creations →
+// "already running" errors that fail the pipeline).
+const inFlight = new Set();
+
 async function pollLoop() {
   try {
     // Fetch active pipelines
@@ -1239,10 +1262,18 @@ async function pollLoop() {
 
     if (!pipelines || pipelines.length === 0) return;
 
-    console.log(`[orchestrator] Found ${pipelines.length} active pipeline(s)`);
+    const skipped = pipelines.filter(p => inFlight.has(p.id)).length;
+    if (skipped > 0) {
+      console.log(`[orchestrator] Found ${pipelines.length} active pipeline(s) — ${skipped} already in-flight, processing the rest`);
+    } else {
+      console.log(`[orchestrator] Found ${pipelines.length} active pipeline(s)`);
+    }
 
     for (const pipeline of pipelines) {
-      // Atomic claim for pending pipelines
+      // Skip if this orchestrator instance is already processing this pipeline.
+      if (inFlight.has(pipeline.id)) continue;
+
+      // Atomic claim for pending pipelines (covers multi-instance case).
       if (pipeline.step_status === 'pending') {
         const { data: claimed, error: claimErr } = await supabase
           .from('auto_pipelines')
@@ -1255,7 +1286,13 @@ async function pollLoop() {
         if (claimErr || !claimed) continue; // another process claimed it
       }
 
-      await processPipeline(pipeline);
+      // Fire-and-forget so different pipelines run in parallel, but each
+      // individual pipeline can only have ONE step running at a time within
+      // this process.
+      inFlight.add(pipeline.id);
+      processPipeline(pipeline)
+        .catch((err) => console.error(`[orchestrator] [${pipeline.id}] Unhandled error in processPipeline:`, err))
+        .finally(() => inFlight.delete(pipeline.id));
     }
   } catch (err) {
     console.error('[orchestrator] Poll loop error:', err.message);
