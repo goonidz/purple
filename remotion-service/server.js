@@ -17,9 +17,37 @@ try {
   console.warn(`[Remotion] Failed to setup custom TMPDIR: ${err.message} — falling back to system /tmp`);
 }
 
-const { bundle } = require('@remotion/bundler');
+const { bundle: _rawBundle } = require('@remotion/bundler');
 const { renderMedia, renderStill, selectComposition, getCompositions, ensureBrowser } = require('@remotion/renderer');
 const { execSync } = require('child_process');
+
+// Pin the process cwd to this service's root at startup so that future
+// process.cwd() calls always resolve, even after our cron cleanup wipes
+// preview-bundles/ subdirs that Remotion's bundler may have chdir'd into.
+try { process.chdir(__dirname); } catch (_) {}
+
+// Defensive wrapper around @remotion/bundler#bundle().
+// Symptom we're guarding against:
+//   `bundle({ rootDir })` chdirs into rootDir during webpack/esbuild execution.
+//   When the cron later removes that rootDir, the still-running process keeps
+//   its cwd descriptor open as "(deleted)". Subsequent process.cwd() calls
+//   throw `ENOENT: no such file or directory, uv_cwd`, which breaks every
+//   future bundle() / esbuild operation across ALL projects (not just the one
+//   whose dir was deleted).
+// Fix: snapshot cwd, run bundle(), then unconditionally restore cwd in finally.
+async function bundle(opts) {
+  let cwdBefore;
+  try { cwdBefore = process.cwd(); } catch (_) { cwdBefore = __dirname; }
+  try {
+    return await _rawBundle(opts);
+  } finally {
+    try {
+      process.chdir(cwdBefore);
+    } catch (_) {
+      try { process.chdir(__dirname); } catch (__) {}
+    }
+  }
+}
 
 // Lambda rendering (optional — falls back to local if not configured)
 let deploySite, renderMediaOnLambda, getRenderProgress, getOrCreateBucket;

@@ -70,6 +70,27 @@ ts() { date '+%Y-%m-%d %H:%M:%S'; }
     echo "[$(ts)] rendered-videos: $BEFORE files (${BEFORE_GB} GB) → $AFTER files (${AFTER_GB} GB), deleted $((BEFORE - AFTER)) older than 48h"
   fi
 
+  # Safety net: deleting preview-bundles can leave remotion-service with a
+  # cwd pointing into a now-deleted directory. Once that happens, every
+  # subsequent process.cwd() call in the service throws
+  # `ENOENT: no such file or directory, uv_cwd`, breaking ALL future bundles
+  # (not just the one we just deleted). Detect this and restart the service.
+  REMOTION_PIDS=$(pgrep -f 'remotion-service/server.js' || true)
+  if [ -n "$REMOTION_PIDS" ]; then
+    NEEDS_RESTART=0
+    for pid in $REMOTION_PIDS; do
+      CWD=$(readlink "/proc/$pid/cwd" 2>/dev/null || true)
+      case "$CWD" in
+        *"(deleted)"*) NEEDS_RESTART=1; echo "[$(ts)] remotion-service pid $pid has stale cwd: $CWD";;
+      esac
+    done
+    if [ "$NEEDS_RESTART" -eq 1 ]; then
+      echo "[$(ts)] restarting remotion-service to recover from deleted cwd..."
+      pm2 restart remotion-service >/dev/null 2>&1 || true
+      echo "[$(ts)] remotion-service restart triggered"
+    fi
+  fi
+
   df -h / | tail -1
   echo "[$(ts)] === cleanup-disk done ==="
 } >> "$LOG" 2>&1
