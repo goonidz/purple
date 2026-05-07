@@ -1468,17 +1468,28 @@ app.post('/animator/render-assembled', async (req, res) => {
     }
 
     const allComponentsCode = sanitizeReservedNames(sceneRows.map(s => trimTrailingGarbage(s.animator_code || '', `Seg${s.scene_index + 1}`)).join('\n\n'));
+    // Audio is downloaded to a per-job staging file in temp/ here. Later, in
+    // the render IIFE, it is moved into the per-render publicDir
+    // (animator-renders/<jobId>/public/) so deploySite() uploads ONLY this
+    // render's audio to S3 — never the cumulative pile of everyone else's
+    // audio that used to live in the shared remotion-service/public/.
     let resolvedAudioFilename = null;
+    let stagedAudioPath = null;
     const audioSource = audioUrl || project?.audio_url;
     if (audioSource) {
       try {
         const audioResp = await fetch(audioSource);
         if (audioResp.ok) {
           const audioBuffer = Buffer.from(await audioResp.arrayBuffer());
-          resolvedAudioFilename = `${jobId}-audio.mp3`;
-          const publicDir = path.join(__dirname, 'public');
-          if (!fs.existsSync(publicDir)) fs.mkdirSync(publicDir, { recursive: true });
-          fs.writeFileSync(path.join(publicDir, resolvedAudioFilename), audioBuffer);
+          const stagingDir = path.join(__dirname, 'temp');
+          if (!fs.existsSync(stagingDir)) fs.mkdirSync(stagingDir, { recursive: true });
+          stagedAudioPath = path.join(stagingDir, `${jobId}-staged-audio.mp3`);
+          fs.writeFileSync(stagedAudioPath, audioBuffer);
+          // Stable, generic filename inside the per-render publicDir — the
+          // wrapper bakes this into staticFile(audioFilename) below.
+          resolvedAudioFilename = 'audio.mp3';
+        } else {
+          console.warn(`[Animator] Audio download failed: HTTP ${audioResp.status}`);
         }
       } catch (e) {
         console.warn(`[Animator] Failed to download audio: ${e.message}`);
@@ -1556,16 +1567,32 @@ export const RemotionRoot = () => (
         if (!useLambda) throw new Error('Lambda rendering not configured — no fallback enabled');
 
         entryPoint = path.join(renderDir, 'index.js');
-        // Audio files for this render were written to the master public/ dir
-        // earlier (`${jobId}-audio.mp3`); pass it explicitly so both bundle()
-        // (local sanity) and deploySite() (Lambda upload) resolve staticFile()
-        // correctly from a per-render entryPoint that has no adjacent public/.
-        const masterPublicDir = path.join(__dirname, 'public');
+        // Per-render publicDir. We move the staged audio (downloaded earlier
+        // to temp/<jobId>-staged-audio.mp3) into this folder under the
+        // generic name baked into the wrapper's staticFile() call.
+        // Crucially, this folder contains ONLY this render's audio — so
+        // deploySite() uploads ~50 MB to S3, not the 2 GB pile that
+        // accumulated when we shared the master public/ across all renders
+        // (which caused the AWS SDK socket-idle timeouts on Lambda upload).
+        const renderPublicDir = path.join(renderDir, 'public');
+        fs.mkdirSync(renderPublicDir, { recursive: true });
+        if (stagedAudioPath && fs.existsSync(stagedAudioPath)) {
+          const dest = path.join(renderPublicDir, resolvedAudioFilename);
+          try {
+            fs.renameSync(stagedAudioPath, dest);
+          } catch (e) {
+            // Cross-device fallback (shouldn't happen since both are under
+            // remotion-service/, but defensive).
+            fs.copyFileSync(stagedAudioPath, dest);
+            try { fs.unlinkSync(stagedAudioPath); } catch (_) {}
+          }
+          stagedAudioPath = null;
+        }
 
         console.log(`[Animator] [${jobId}] Bundling assembled composition (isolated): ${effectiveName}`);
         newBundle = registerBundle(await bundle({
           entryPoint,
-          publicDir: masterPublicDir,
+          publicDir: renderPublicDir,
           webpackOverride: (config) => config,
         }));
 
@@ -1574,7 +1601,7 @@ export const RemotionRoot = () => (
           compositionId,
           newBundle,
           entryPoint,
-          publicDir: masterPublicDir,
+          publicDir: renderPublicDir,
           durationInFrames,
           fps,
           width,
@@ -1601,6 +1628,11 @@ export const RemotionRoot = () => (
       } finally {
         unregisterBundle(newBundle);
         cleanupStaleBundles();
+        // Drop the staged audio if it never got moved into the per-render
+        // publicDir (e.g. the IIFE threw before the rename happened).
+        if (stagedAudioPath) {
+          try { fs.unlinkSync(stagedAudioPath); } catch (_) {}
+        }
         if (renderDir) {
           // Cleanup the per-render srcDir. On success, delete immediately.
           // On failure, keep it for ~10 min so the failure can be diagnosed
