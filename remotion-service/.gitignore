@@ -1,4 +1,7 @@
 node_modules/
 temp/
+preview-bundles/
+animator-renders/
 .env
 *.mp4
+src/AnimAssembled*.tsx

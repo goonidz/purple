@@ -15,6 +15,7 @@ set -u
 LOG="/var/log/videoflow-cleanup.log"
 PURPLE="/home/ubuntu/purple"
 PREVIEW_DIR="$PURPLE/remotion-service/preview-bundles"
+ANIMATOR_RENDERS_DIR="$PURPLE/remotion-service/animator-renders"
 WEBPACK_CACHE="$PURPLE/remotion-service/node_modules/.cache/webpack"
 REMOTION_TEMP="$PURPLE/remotion-service/temp"
 VIDEO_RENDER_TEMP="$PURPLE/video-render-service/temp"
@@ -54,6 +55,16 @@ ts() { date '+%Y-%m-%d %H:%M:%S'; }
   if [ -d "$REMOTION_TEMP" ]; then
     find "$REMOTION_TEMP" -mindepth 1 -mmin +1440 -exec rm -rf {} + 2>/dev/null
     echo "[$(ts)] remotion temp/ trimmed (>24h)"
+  fi
+
+  # Per-render isolated srcDirs (animator-renders/<jobId>/). Normally the
+  # render endpoint deletes its own dir on completion; this is a safety net
+  # for orphans (process killed mid-render, OOM, etc.).
+  if [ -d "$ANIMATOR_RENDERS_DIR" ]; then
+    BEFORE=$(find "$ANIMATOR_RENDERS_DIR" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l)
+    find "$ANIMATOR_RENDERS_DIR" -mindepth 1 -maxdepth 1 -type d -mmin +60 -exec rm -rf {} + 2>/dev/null
+    AFTER=$(find "$ANIMATOR_RENDERS_DIR" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l)
+    echo "[$(ts)] animator-renders: $BEFORE → $AFTER (deleted $((BEFORE - AFTER)) older than 1h)"
   fi
 
   if [ -d "$VIDEO_RENDER_TEMP" ]; then
