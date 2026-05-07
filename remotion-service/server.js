@@ -1249,12 +1249,16 @@ async function renderViaLambda({ jobId, compositionId, entryPoint, publicDir, du
 
   console.log(`[Lambda] Deploying site to S3 for ${jobId}...`);
   const { bucketName } = await getOrCreateBucket({ region: LAMBDA_REGION });
+  // NB: in @remotion/lambda v4, `publicDir` lives INSIDE `options`, not at
+  // top-level. Passing it at top-level is silently ignored — the public/
+  // folder then never gets uploaded to S3 and Lambda hits a 404 on
+  // staticFile() lookups.
   const { serveUrl } = await deploySite({
     bucketName,
     region: LAMBDA_REGION,
     entryPoint,
     siteName: `animator-${jobId.slice(-10)}`,
-    ...(publicDir ? { publicDir } : {}),
+    ...(publicDir ? { options: { publicDir } } : {}),
   });
   console.log(`[Lambda] Bundle deployed: ${serveUrl}`);
 
