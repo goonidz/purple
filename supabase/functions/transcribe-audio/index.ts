@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { isInternalServiceCall } from "../_shared/auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -32,8 +33,11 @@ serve(async (req) => {
       throw new Error("audioUrl is required");
     }
 
-    // Allow internal calls using service role key + explicit userId
-    const isInternalCall = authHeader === `Bearer ${supabaseServiceKey}`;
+    // Allow internal calls using service role key + explicit userId. Uses
+    // the shared helper which accepts ANY valid service-role-equivalent
+    // token (legacy SUPABASE_SERVICE_ROLE_KEY JWT, new sb_secret_* keys via
+    // SUPABASE_SECRET_KEYS, or extras in SERVICE_KEY_ALLOWLIST).
+    const isInternalCall = isInternalServiceCall(req);
 
     // Initialize Supabase client
     let targetUserId: string;

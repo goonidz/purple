@@ -327,6 +327,7 @@ async function stepGenerateAudio(pipeline) {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+      'apikey': SUPABASE_SERVICE_KEY,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
@@ -398,6 +399,7 @@ async function stepTranscribe(pipeline) {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+      'apikey': SUPABASE_SERVICE_KEY,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
@@ -549,6 +551,7 @@ async function stepGeneratePrompts(pipeline) {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+      'apikey': SUPABASE_SERVICE_KEY,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
@@ -635,6 +638,7 @@ async function stepGenerateImages(pipeline) {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+      'apikey': SUPABASE_SERVICE_KEY,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
@@ -737,6 +741,7 @@ async function stepRenderVideo(pipeline) {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+      'apikey': SUPABASE_SERVICE_KEY,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(renderPayload),
@@ -877,6 +882,7 @@ async function stepAnimatorGenerate(pipeline) {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+      'apikey': SUPABASE_SERVICE_KEY,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
@@ -972,6 +978,7 @@ async function stepAnimatorQa(pipeline) {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+      'apikey': SUPABASE_SERVICE_KEY,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({

@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { GEMINI_TEXT_MODEL, geminiEndpoint } from '../_shared/gemini.ts';
+import { isInternalServiceCall } from '../_shared/auth.ts';
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -22,9 +23,11 @@ serve(async (req) => {
       });
     }
 
-    // Check if this is an internal call using service role key
-    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
-    const isInternalCall = authHeader === `Bearer ${serviceRoleKey}`;
+    // Check if this is an internal call using service role key. Uses the
+    // shared helper which accepts ANY valid service-role-equivalent token
+    // (legacy SUPABASE_SERVICE_ROLE_KEY JWT, new sb_secret_* keys via
+    // SUPABASE_SECRET_KEYS, or extras in SERVICE_KEY_ALLOWLIST).
+    const isInternalCall = isInternalServiceCall(req);
 
     if (!isInternalCall) {
       // Normal user call - verify user authentication

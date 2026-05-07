@@ -1,5 +1,6 @@
 import Replicate from "https://esm.sh/replicate@0.25.2"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { isInternalServiceCall } from "../_shared/auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -22,16 +23,11 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Check if this is a service role key (internal call)
-    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
-    const expectedHeader = `Bearer ${serviceRoleKey}`;
-    const isServiceRoleCall = authHeader === expectedHeader;
-    
-    // Debug logging
-    console.log(`[AUTH DEBUG] authHeader length: ${authHeader.length}`);
-    console.log(`[AUTH DEBUG] expectedHeader length: ${expectedHeader.length}`);
-    console.log(`[AUTH DEBUG] authHeader first 50 chars: ${authHeader.substring(0, 50)}`);
-    console.log(`[AUTH DEBUG] expectedHeader first 50 chars: ${expectedHeader.substring(0, 50)}`);
+    // Check if this is a service role key (internal call). Uses the shared
+    // helper which accepts ANY valid service-role-equivalent token (legacy
+    // SUPABASE_SERVICE_ROLE_KEY JWT, new sb_secret_* keys via
+    // SUPABASE_SECRET_KEYS, or extras in SERVICE_KEY_ALLOWLIST).
+    const isServiceRoleCall = isInternalServiceCall(req);
     console.log(`[AUTH DEBUG] isServiceRoleCall: ${isServiceRoleCall}`);
     
     let userId: string;

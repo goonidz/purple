@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { isInternalServiceCall } from "../_shared/auth.ts";
 
 // Declare EdgeRuntime for Supabase Edge Functions
 declare const EdgeRuntime: {
@@ -39,8 +40,12 @@ serve(async (req) => {
     const body = await req.json();
     const { projectId, jobType, metadata = {}, jobId: existingJobId, userId: bodyUserId } = body as JobRequest & { jobId?: string; userId?: string };
 
-    // Check if this is an internal call from webhook (using service role key)
-    const isInternalCall = authHeader === `Bearer ${supabaseServiceKey}`;
+    // Check if this is an internal call from webhook/worker/orchestrator
+    // (using service role key). Uses the shared helper which accepts ANY
+    // valid service-role-equivalent token (legacy SUPABASE_SERVICE_ROLE_KEY
+    // JWT, new sb_secret_* keys via SUPABASE_SECRET_KEYS, or extras in
+    // SERVICE_KEY_ALLOWLIST).
+    const isInternalCall = isInternalServiceCall(req);
     
     let userId: string;
     

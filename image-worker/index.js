@@ -1285,7 +1285,12 @@ async function processThumbnailsPipeline(job) {
       const r = await fetch(`${SUPABASE_URL}/functions/v1/generate-thumbnail-prompts`, {
         method: 'POST',
         headers: {
+          // sb_secret_* keys can't be sent in Authorization alone (gateway
+          // rejects them) — they must match the apikey header. We send both
+          // so the function (which reads either) and the gateway are happy.
+          // See https://supabase.com/docs/guides/api/api-keys.md
           'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+          'apikey': SUPABASE_SERVICE_KEY,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(body),
@@ -2666,6 +2671,7 @@ async function processPromptJob(job) {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+          'apikey': SUPABASE_SERVICE_KEY,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ jobId, projectId, userId, jobType: 'single_prompt' }),

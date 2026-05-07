@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { encode as base64Encode } from "https://deno.land/std@0.168.0/encoding/base64.ts";
+import { isInternalServiceCall } from "../_shared/auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -80,10 +81,14 @@ serve(async (req) => {
       });
     }
 
-    // Check if this is a service role key (internal call)
-    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
-    const isServiceRoleCall = authHeader === `Bearer ${serviceRoleKey}`;
-    
+    // Check if this is a service role key (internal call).
+    // Uses the shared helper which accepts ANY valid service-role-equivalent
+    // token (legacy SUPABASE_SERVICE_ROLE_KEY JWT, new sb_secret_* keys
+    // exposed via SUPABASE_SECRET_KEYS, or extras in SERVICE_KEY_ALLOWLIST)
+    // — required since Supabase started auto-rotating the value injected
+    // under SUPABASE_SERVICE_ROLE_KEY in May 2026.
+    const isServiceRoleCall = isInternalServiceCall(req);
+
     if (!isServiceRoleCall) {
       // Normal user call - verify user authentication
       const supabase = createClient(
@@ -148,8 +153,7 @@ serve(async (req) => {
       const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
       
       const authHeader = req.headers.get('Authorization');
-      const token = authHeader?.replace('Bearer ', '');
-      const isServiceRoleCall = token === supabaseServiceKey;
+      const isServiceRoleCall = isInternalServiceCall(req);
       
       let targetUserId: string | null = null;
       

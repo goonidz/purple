@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { isInternalServiceCall } from "../_shared/auth.ts";
 
 // Declare EdgeRuntime for background task support
 declare const EdgeRuntime: { waitUntil: (promise: Promise<unknown>) => void };
@@ -43,9 +44,11 @@ serve(async (req) => {
       });
     }
 
-    // Check if this is a service role key (internal call)
-    const expectedHeader = `Bearer ${supabaseServiceKey}`;
-    const isServiceRoleCall = authHeader === expectedHeader;
+    // Check if this is a service role key (internal call). Uses the shared
+    // helper which accepts ANY valid service-role-equivalent token (legacy
+    // SUPABASE_SERVICE_ROLE_KEY JWT, new sb_secret_* keys via
+    // SUPABASE_SECRET_KEYS, or extras in SERVICE_KEY_ALLOWLIST).
+    const isServiceRoleCall = isInternalServiceCall(req);
 
     let userId: string;
 
