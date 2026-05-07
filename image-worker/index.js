@@ -1787,34 +1787,25 @@ Be EXHAUSTIVE and SPECIFIC. The more detail you give, the better the result. Out
   return text.trim();
 }
 
-const GEMINI_RELAY_URL = 'http://46.250.231.57:3456/gemini-image';
-const GEMINI_RELAY_SECRET = 'thumbv2-sg-relay-2026';
-
+// NOTE: previously this routed through a relay hosted in Singapore
+// (46.250.231.57:3456) to bypass EU restrictions on Gemini Image that were
+// in place around Feb 2026 when `gemini-3-pro-image-preview` first launched.
+// As of May 2026, Google blocks all Gemini API calls (text + image) coming
+// from that Contabo SG IP with `User location is not supported for the API
+// use.`, while EU image-gen restrictions on faces have been relaxed enough
+// that calling Gemini directly from the OVH France VPS works again
+// (verified end-to-end with a typical YouTube thumbnail prompt featuring a
+// human face).
+//
+// We keep the wrapper name `callGeminiViaRelay` to minimise diff at all the
+// existing call sites — it just forwards to the direct API helper.
 async function callGeminiViaRelay(geminiKey, prompt, imageUrls, modelName) {
-  const response = await fetch(GEMINI_RELAY_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${GEMINI_RELAY_SECRET}`,
-    },
-    body: JSON.stringify({
-      geminiKey,
-      prompt,
-      imageUrls,
-      modelName: modelName || 'gemini-3-pro-image-preview',
-      aspectRatio: '16:9',
-      imageSize: '1K',
-    }),
-  });
-
-  const data = await response.json();
-  if (!response.ok || data.error) {
-    const err = new Error(data.error || `Relay error (${response.status})`);
-    if (data.blockReason) err.blockReason = data.blockReason;
-    throw err;
-  }
-  if (!data.imageBase64) throw new Error('Relay returned no image data');
-  return Buffer.from(data.imageBase64, 'base64');
+  return await callGeminiImageApi(
+    geminiKey,
+    prompt,
+    imageUrls,
+    modelName || 'gemini-3-pro-image-preview'
+  );
 }
 
 async function generateWithGemini(geminiKey, prompt, imageUrls, modelName, exampleUrls) {
