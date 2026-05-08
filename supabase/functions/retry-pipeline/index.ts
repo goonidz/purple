@@ -7,12 +7,38 @@ const corsHeaders = {
 
 const MAX_MANUAL_RETRIES = 5;
 
-const REWIND_MAP: Record<string, { step: string; clearKey: string }> = {
-  wait_script: { step: "generate_script", clearKey: "scriptJobId" },
-  wait_audio: { step: "generate_audio", clearKey: "audioJobId" },
-  wait_transcription: { step: "transcribe", clearKey: "transcriptionJobId" },
-  wait_prompts: { step: "generate_prompts", clearKey: "promptsJobId" },
-  wait_images: { step: "generate_images", clearKey: "imagesJobId" },
+// REWIND_MAP: when a step fails, where do we send the pipeline back so the
+// retry actually re-does the failed work (instead of getting stuck)?
+//
+// Two layers:
+//   1. wait_* steps rewind to their generate_* counterpart (and clear the
+//      stale JobId so a new job is launched).
+//   2. generate_* steps rewind to themselves (identity) and clear their
+//      JobId so the launch is re-attempted from scratch. Without this,
+//      a pipeline that fails 3x at e.g. `generate_audio` stays at
+//      `generate_audio` after retry but with no way to make progress —
+//      the orchestrator just re-fails on the same root cause.
+//
+// The `requireScript` flag (only used by `generate_audio`) lets us rewind
+// even further back to `generate_script` when the audio step failed
+// because `projects.script` was empty in DB. This was the symptom of the
+// May 2026 video-render-service dotenv bug — even after we fixed it, the
+// already-failed pipelines needed `Réessayer` to re-trigger script gen,
+// not just re-run audio gen on a still-empty script.
+const REWIND_MAP: Record<
+  string,
+  { step: string; clearKey?: string; requireScript?: boolean }
+> = {
+  wait_script:        { step: "generate_script", clearKey: "scriptJobId" },
+  generate_script:    { step: "generate_script", clearKey: "scriptJobId" },
+  wait_audio:         { step: "generate_audio",  clearKey: "audioJobId" },
+  generate_audio:     { step: "generate_audio",  clearKey: "audioJobId", requireScript: true },
+  wait_transcription: { step: "transcribe",      clearKey: "transcriptionJobId" },
+  transcribe:         { step: "transcribe",      clearKey: "transcriptionJobId" },
+  wait_prompts:       { step: "generate_prompts", clearKey: "promptsJobId" },
+  generate_prompts:   { step: "generate_prompts", clearKey: "promptsJobId" },
+  wait_images:        { step: "generate_images",  clearKey: "imagesJobId" },
+  generate_images:    { step: "generate_images",  clearKey: "imagesJobId" },
 };
 
 Deno.serve(async (req) => {
@@ -86,7 +112,24 @@ Deno.serve(async (req) => {
 
     // Determine the correct step to rewind to
     const currentStep = pipeline.current_step;
-    const rewind = REWIND_MAP[currentStep];
+    let rewind = REWIND_MAP[currentStep];
+
+    // Special case: if we failed at generate_audio but the project has no
+    // script, rewind further back to generate_script so the retry actually
+    // produces a script first. Otherwise the retry would just hit the same
+    // "No script found in project" error 3 times in a row.
+    if (rewind?.requireScript && pipeline.project_id) {
+      const { data: project } = await supabaseAdmin
+        .from('projects')
+        .select('script')
+        .eq('id', pipeline.project_id)
+        .single();
+      const hasScript =
+        typeof project?.script === 'string' && project.script.trim().length > 50;
+      if (!hasScript) {
+        rewind = { step: 'generate_script', clearKey: 'scriptJobId' };
+      }
+    }
 
     const newMetadata = { ...metadata, totalManualRetries };
     if (rewind?.clearKey) {
