@@ -12,7 +12,13 @@ const unlink = promisify(fs.unlink);
 const mkdir = promisify(fs.mkdir);
 const { execSync } = require('child_process');
 
-require('dotenv').config();
+// Load .env from THIS directory regardless of process.cwd().
+// Without the explicit `path`, dotenv resolves `<cwd>/.env` — which silently
+// returned no env vars when pm2 started this service with cwd=/home/ubuntu/purple
+// (no .env there), making `supabase` null and causing saveScriptToSupabase /
+// persistBatchJob to silently bail. Auto-generation pipelines then failed at
+// the next step with "No script found in project".
+require('dotenv').config({ path: path.join(__dirname, '.env') });
 
 const { GEMINI_TEXT_MODEL, geminiEndpoint } = require('./config/gemini');
 
