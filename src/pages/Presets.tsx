@@ -1455,7 +1455,7 @@ export default function Presets() {
 
       {/* Thumbnail dialog */}
       <Dialog open={thumbDialogOpen} onOpenChange={setThumbDialogOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{thumbEditId ? "Modifier le preset miniatures" : "Nouveau preset miniatures"}</DialogTitle>
             <DialogDescription>Nom, chaîne (v2), références et prompts.</DialogDescription>
