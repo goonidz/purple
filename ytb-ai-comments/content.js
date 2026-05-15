@@ -8,6 +8,8 @@
 
   const DEFAULT_PROMPT = `Reply briefly to YouTube comments, like a real human would. Include a natural open-ended question when relevant. No dashes. No preamble. Answer only with the comment response. Write in same language as source comment.
 
+Your question must never be about what they liked / what was the best part etc.. as I answer later, they will have forget. More perosnnal questions related to topic.
+
 Video title: {title}
 source comment : {comment}.
 
