@@ -1111,6 +1111,7 @@ async function processPromptsJob(
   authHeader: string,
   adminClient: any
 ): Promise<{ remainingAfterChunk: number; nextChunkStart: number }> {
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
   const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
   
   // CHUNK SETTINGS - consistent 50 prompts per chunk
@@ -1146,7 +1147,12 @@ async function processPromptsJob(
     const summaryResponse = await fetch(`${supabaseUrl}/functions/v1/generate-summary`, {
       method: 'POST',
       headers: {
-        'Authorization': authHeader,
+        // Internal Edge Function -> Edge Function call: must use the
+        // service-role key in BOTH Authorization and apikey headers
+        // (gateway rejects sb_secret_* in Authorization unless it
+        // matches apikey — see https://supabase.com/docs/guides/api/api-keys.md).
+        'Authorization': `Bearer ${serviceRoleKey}`,
+        'apikey': serviceRoleKey,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ transcript: fullTranscript }),
@@ -1231,7 +1237,12 @@ async function processPromptsJob(
           const continuityResponse = await fetch(`${supabaseUrl}/functions/v1/analyze-scene-continuity`, {
             method: 'POST',
             headers: {
-              'Authorization': authHeader,
+              // Internal Edge Function -> Edge Function call: must use the
+              // service-role key in BOTH Authorization and apikey headers
+              // (gateway rejects sb_secret_* in Authorization unless it
+              // matches apikey — see https://supabase.com/docs/guides/api/api-keys.md).
+              'Authorization': `Bearer ${serviceRoleKey}`,
+              'apikey': serviceRoleKey,
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({
@@ -1348,7 +1359,12 @@ async function processPromptsJob(
             const continuityResponse = await fetch(`${supabaseUrl}/functions/v1/analyze-scene-continuity`, {
               method: 'POST',
               headers: {
-                'Authorization': authHeader,
+                // Internal Edge Function -> Edge Function call: must use the
+                // service-role key in BOTH Authorization and apikey headers
+                // (gateway rejects sb_secret_* in Authorization unless it
+                // matches apikey — see https://supabase.com/docs/guides/api/api-keys.md).
+                'Authorization': `Bearer ${serviceRoleKey}`,
+                'apikey': serviceRoleKey,
                 'Content-Type': 'application/json',
               },
               body: JSON.stringify({
@@ -1390,7 +1406,12 @@ async function processPromptsJob(
         const response = await fetch(`${supabaseUrl}/functions/v1/generate-prompts`, {
           method: 'POST',
           headers: {
-            'Authorization': authHeader,
+            // Internal Edge Function -> Edge Function call: must use the
+            // service-role key in BOTH Authorization and apikey headers
+            // (gateway rejects sb_secret_* in Authorization unless it
+            // matches apikey — see https://supabase.com/docs/guides/api/api-keys.md).
+            'Authorization': `Bearer ${serviceRoleKey}`,
+            'apikey': serviceRoleKey,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
@@ -1598,7 +1619,12 @@ async function processPromptsJob(
         const response = await fetch(`${supabaseUrl}/functions/v1/generate-prompts`, {
           method: 'POST',
           headers: {
-            'Authorization': authHeader,
+            // Internal Edge Function -> Edge Function call: must use the
+            // service-role key in BOTH Authorization and apikey headers
+            // (gateway rejects sb_secret_* in Authorization unless it
+            // matches apikey — see https://supabase.com/docs/guides/api/api-keys.md).
+            'Authorization': `Bearer ${serviceRoleKey}`,
+            'apikey': serviceRoleKey,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
@@ -1699,6 +1725,7 @@ async function analyzeAllContinuities(
   supabaseUrl: string,
   authHeader: string
 ): Promise<Map<number, { hasContinuity: boolean; modifiedPromptSuffix?: string; confidence?: number }>> {
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
   console.log(`[analyzeAllContinuities] Starting analysis for ${prompts.length} scenes`);
   const continuityMap = new Map<number, { hasContinuity: boolean; modifiedPromptSuffix?: string; confidence?: number }>();
   
@@ -1730,7 +1757,12 @@ async function analyzeAllContinuities(
       const response = await fetch(`${supabaseUrl}/functions/v1/analyze-scene-continuity`, {
         method: 'POST',
         headers: {
-          'Authorization': authHeader,
+          // Internal Edge Function -> Edge Function call: must use the
+          // service-role key in BOTH Authorization and apikey headers
+          // (gateway rejects sb_secret_* in Authorization unless it
+          // matches apikey — see https://supabase.com/docs/guides/api/api-keys.md).
+          'Authorization': `Bearer ${serviceRoleKey}`,
+          'apikey': serviceRoleKey,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -1833,6 +1865,7 @@ async function generateImageAndWait(
   authHeader: string,
   maxWaitMs: number = 300000 // 5 minutes
 ): Promise<string | null> {
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
   const pollIntervalMs = 3000; // Poll every 3 seconds
   
   try {
@@ -1840,7 +1873,12 @@ async function generateImageAndWait(
     const startResponse = await fetch(`${supabaseUrl}/functions/v1/generate-image-seedream`, {
       method: 'POST',
       headers: {
-        'Authorization': authHeader,
+        // Internal Edge Function -> Edge Function call: must use the
+        // service-role key in BOTH Authorization and apikey headers
+        // (gateway rejects sb_secret_* in Authorization unless it
+        // matches apikey — see https://supabase.com/docs/guides/api/api-keys.md).
+        'Authorization': `Bearer ${serviceRoleKey}`,
+        'apikey': serviceRoleKey,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(requestBody),
@@ -1872,7 +1910,12 @@ async function generateImageAndWait(
       const statusResponse = await fetch(`${supabaseUrl}/functions/v1/generate-image-seedream`, {
         method: 'POST',
         headers: {
-          'Authorization': authHeader,
+          // Internal Edge Function -> Edge Function call: must use the
+          // service-role key in BOTH Authorization and apikey headers
+          // (gateway rejects sb_secret_* in Authorization unless it
+          // matches apikey — see https://supabase.com/docs/guides/api/api-keys.md).
+          'Authorization': `Bearer ${serviceRoleKey}`,
+          'apikey': serviceRoleKey,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ predictionId }),
@@ -2005,6 +2048,7 @@ async function processImagesJob(
   authHeader: string,
   adminClient: any
 ) {
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
   const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
   const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
   
@@ -2502,7 +2546,12 @@ async function processImagesJob(
               const continuityResponse = await fetch(`${supabaseUrl}/functions/v1/analyze-scene-continuity`, {
                 method: 'POST',
                 headers: {
-                  'Authorization': authHeader,
+                  // Internal Edge Function -> Edge Function call: must use the
+                  // service-role key in BOTH Authorization and apikey headers
+                  // (gateway rejects sb_secret_* in Authorization unless it
+                  // matches apikey — see https://supabase.com/docs/guides/api/api-keys.md).
+                  'Authorization': `Bearer ${serviceRoleKey}`,
+                  'apikey': serviceRoleKey,
                   'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
@@ -2572,7 +2621,12 @@ async function processImagesJob(
           const startResponse = await fetch(`${supabaseUrl}/functions/v1/generate-image-seedream`, {
             method: 'POST',
             headers: {
-              'Authorization': authHeader,
+              // Internal Edge Function -> Edge Function call: must use the
+              // service-role key in BOTH Authorization and apikey headers
+              // (gateway rejects sb_secret_* in Authorization unless it
+              // matches apikey — see https://supabase.com/docs/guides/api/api-keys.md).
+              'Authorization': `Bearer ${serviceRoleKey}`,
+              'apikey': serviceRoleKey,
               'Content-Type': 'application/json',
             },
             body: JSON.stringify(requestBody),
@@ -2932,6 +2986,7 @@ async function processTestImagesJob(
   authHeader: string,
   adminClient: any
 ) {
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
   const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
   
   // Get project data
@@ -3015,7 +3070,12 @@ async function processTestImagesJob(
     const summaryResponse = await fetch(`${supabaseUrl}/functions/v1/generate-summary`, {
       method: 'POST',
       headers: {
-        'Authorization': authHeader,
+        // Internal Edge Function -> Edge Function call: must use the
+        // service-role key in BOTH Authorization and apikey headers
+        // (gateway rejects sb_secret_* in Authorization unless it
+        // matches apikey — see https://supabase.com/docs/guides/api/api-keys.md).
+        'Authorization': `Bearer ${serviceRoleKey}`,
+        'apikey': serviceRoleKey,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ transcript: fullTranscript }),
@@ -3051,7 +3111,12 @@ async function processTestImagesJob(
       const response = await fetch(`${supabaseUrl}/functions/v1/generate-prompts`, {
         method: 'POST',
         headers: {
-          'Authorization': authHeader,
+          // Internal Edge Function -> Edge Function call: must use the
+          // service-role key in BOTH Authorization and apikey headers
+          // (gateway rejects sb_secret_* in Authorization unless it
+          // matches apikey — see https://supabase.com/docs/guides/api/api-keys.md).
+          'Authorization': `Bearer ${serviceRoleKey}`,
+          'apikey': serviceRoleKey,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -3152,7 +3217,12 @@ async function processTestImagesJob(
       const startResponse = await fetch(`${supabaseUrl}/functions/v1/generate-image-seedream`, {
         method: 'POST',
         headers: {
-          'Authorization': authHeader,
+          // Internal Edge Function -> Edge Function call: must use the
+          // service-role key in BOTH Authorization and apikey headers
+          // (gateway rejects sb_secret_* in Authorization unless it
+          // matches apikey — see https://supabase.com/docs/guides/api/api-keys.md).
+          'Authorization': `Bearer ${serviceRoleKey}`,
+          'apikey': serviceRoleKey,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(requestBody),
@@ -3181,7 +3251,12 @@ async function processTestImagesJob(
         const statusResponse = await fetch(`${supabaseUrl}/functions/v1/generate-image-seedream`, {
           method: 'POST',
           headers: {
-            'Authorization': authHeader,
+            // Internal Edge Function -> Edge Function call: must use the
+            // service-role key in BOTH Authorization and apikey headers
+            // (gateway rejects sb_secret_* in Authorization unless it
+            // matches apikey — see https://supabase.com/docs/guides/api/api-keys.md).
+            'Authorization': `Bearer ${serviceRoleKey}`,
+            'apikey': serviceRoleKey,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({ predictionId, userId }),
@@ -3301,7 +3376,12 @@ async function processSinglePromptJob(
     const summaryResponse = await fetch(`${supabaseUrl}/functions/v1/generate-summary`, {
       method: 'POST',
       headers: {
-        'Authorization': authHeader,
+        // Internal Edge Function -> Edge Function call: must use the
+        // service-role key in BOTH Authorization and apikey headers
+        // (gateway rejects sb_secret_* in Authorization unless it
+        // matches apikey — see https://supabase.com/docs/guides/api/api-keys.md).
+        'Authorization': `Bearer ${serviceRoleKey}`,
+        'apikey': serviceRoleKey,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ transcript: fullTranscript }),
@@ -3350,6 +3430,7 @@ async function processSinglePromptJob(
           method: 'POST',
           headers: {
             'Authorization': internalAuthHeader,
+            'apikey': serviceRoleKey,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
@@ -3410,6 +3491,7 @@ async function processSinglePromptJob(
     method: 'POST',
     headers: {
       'Authorization': internalAuthHeader,
+      'apikey': serviceRoleKey,
       'Content-Type': 'application/json',
     },
         body: JSON.stringify({
@@ -3593,7 +3675,8 @@ async function processSinglePromptJob(
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              'Authorization': `Bearer ${serviceRoleKey}`
+              'Authorization': `Bearer ${serviceRoleKey}`,
+              'apikey': serviceRoleKey
             },
             body: JSON.stringify({
               projectId: parentJob.project_id,
@@ -3618,6 +3701,7 @@ async function processSingleImageJob(
   authHeader: string,
   adminClient: any
 ) {
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
   const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
   const sceneIndex = metadata.sceneIndex as number;
 
@@ -3739,7 +3823,12 @@ async function processSingleImageJob(
         const continuityResponse = await fetch(`${supabaseUrl}/functions/v1/analyze-scene-continuity`, {
           method: 'POST',
           headers: {
-            'Authorization': authHeader,
+            // Internal Edge Function -> Edge Function call: must use the
+            // service-role key in BOTH Authorization and apikey headers
+            // (gateway rejects sb_secret_* in Authorization unless it
+            // matches apikey — see https://supabase.com/docs/guides/api/api-keys.md).
+            'Authorization': `Bearer ${serviceRoleKey}`,
+            'apikey': serviceRoleKey,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
@@ -3827,7 +3916,12 @@ async function processSingleImageJob(
   const startResponse = await fetch(`${supabaseUrl}/functions/v1/generate-image-seedream`, {
     method: 'POST',
     headers: {
-      'Authorization': authHeader,
+      // Internal Edge Function -> Edge Function call: must use the
+      // service-role key in BOTH Authorization and apikey headers
+      // (gateway rejects sb_secret_* in Authorization unless it
+      // matches apikey — see https://supabase.com/docs/guides/api/api-keys.md).
+      'Authorization': `Bearer ${serviceRoleKey}`,
+      'apikey': serviceRoleKey,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(requestBody),
@@ -3923,6 +4017,7 @@ async function processThumbnailsJob(
     method: 'POST',
     headers: {
       'Authorization': internalAuthHeader,
+      'apikey': serviceRoleKey,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
@@ -4002,6 +4097,7 @@ async function processThumbnailsJob(
         method: 'POST',
         headers: {
           'Authorization': internalAuthHeader,
+          'apikey': serviceRoleKey,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ ...requestBody, userId }),
@@ -4074,6 +4170,7 @@ async function processScriptGenerationJob(
   authHeader: string,
   adminClient: any
 ) {
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
   const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
   
   const customPrompt = metadata.customPrompt;
@@ -4090,7 +4187,12 @@ async function processScriptGenerationJob(
   const response = await fetch(`${supabaseUrl}/functions/v1/generate-script`, {
     method: 'POST',
     headers: {
-      'Authorization': authHeader,
+      // Internal Edge Function -> Edge Function call: must use the
+      // service-role key in BOTH Authorization and apikey headers
+      // (gateway rejects sb_secret_* in Authorization unless it
+      // matches apikey — see https://supabase.com/docs/guides/api/api-keys.md).
+      'Authorization': `Bearer ${serviceRoleKey}`,
+      'apikey': serviceRoleKey,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
@@ -4514,7 +4616,8 @@ async function processUpscaleJob(
                 method: 'POST',
                 headers: {
                   'Content-Type': 'application/json',
-                  'Authorization': `Bearer ${serviceRoleKey}`
+                  'Authorization': `Bearer ${serviceRoleKey}`,
+                  'apikey': serviceRoleKey
                 },
                 body: JSON.stringify({
                   jobId: retryJob.id,
@@ -4632,6 +4735,7 @@ async function processUpscaleJob(
           method: 'POST',
           headers: {
             'Authorization': internalAuthHeader,
+            'apikey': serviceRoleKey,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify(requestBody),
@@ -4779,7 +4883,8 @@ async function launchNextPendingPromptJob(adminClient: any): Promise<void> {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${serviceRoleKey}`
+      'Authorization': `Bearer ${serviceRoleKey}`,
+      'apikey': serviceRoleKey
     },
     body: JSON.stringify({
       jobId: jobToClaim.id,
@@ -4850,7 +4955,8 @@ async function launchPendingPromptJobs(adminClient: any, count: number): Promise
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${serviceRoleKey}`
+        'Authorization': `Bearer ${serviceRoleKey}`,
+        'apikey': serviceRoleKey
       },
       body: JSON.stringify({
         jobId: job.id,
@@ -5852,7 +5958,8 @@ async function updateQAParentProgress(
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              'Authorization': `Bearer ${serviceRoleKey}`
+              'Authorization': `Bearer ${serviceRoleKey}`,
+              'apikey': serviceRoleKey
             },
             body: JSON.stringify({
               jobId: regenJob.id,
@@ -5873,7 +5980,8 @@ async function updateQAParentProgress(
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${serviceRoleKey}`
+            'Authorization': `Bearer ${serviceRoleKey}`,
+            'apikey': serviceRoleKey
           },
           body: JSON.stringify({
             type: 'chain_next_job',
@@ -5939,7 +6047,7 @@ async function launchNextPendingQAJob(adminClient: any) {
   // No setTimeout - launch immediately
   fetch(`${supabaseUrl}/functions/v1/start-generation-job`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceRoleKey}` },
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceRoleKey}`, 'apikey': serviceRoleKey },
     body: JSON.stringify({ jobId: jobToClaim.id, projectId: jobToClaim.project_id, userId: jobToClaim.user_id, jobType: 'single_qa' })
   }).catch(err => console.error(`[launchNextPendingQAJob] Error starting job ${jobToClaim.id}:`, err));
 }
@@ -5952,6 +6060,7 @@ async function processQARegenJob(
   authHeader: string,
   adminClient: any
 ) {
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
   console.log(`[processQARegenJob] Starting regeneration for rejected images in project ${projectId}`);
   const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
 
@@ -6113,7 +6222,12 @@ async function processQARegenJob(
       const startResponse = await fetch(`${supabaseUrl}/functions/v1/generate-image-seedream`, {
         method: 'POST',
         headers: {
-          'Authorization': authHeader,
+          // Internal Edge Function -> Edge Function call: must use the
+          // service-role key in BOTH Authorization and apikey headers
+          // (gateway rejects sb_secret_* in Authorization unless it
+          // matches apikey — see https://supabase.com/docs/guides/api/api-keys.md).
+          'Authorization': `Bearer ${serviceRoleKey}`,
+          'apikey': serviceRoleKey,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(requestBody),

@@ -3477,6 +3477,96 @@ app.get('/resources', (req, res) => {
   });
 });
 
+// ──────────────────────────────────────────────────────────────────────────
+// Extension API — YouTube AI Comments transcript lookup
+// ──────────────────────────────────────────────────────────────────────────
+//
+// Lets the YouTube AI Comments browser extension fetch the original script
+// of a video from VideoFlow WITHOUT requiring a user login. Needed because
+// the extension runs on AdsPower profiles that are never logged into
+// purpleai.duckdns.org, so the regular auth-token path returns nothing and
+// the prompt falls back to YouTube captions (often missing or ASR garbage).
+//
+// Auth: shared-secret header `X-Extension-Token` checked against the env
+// var `EXTENSION_API_TOKEN`. Anyone with the (unpacked) extension can read
+// the token, so this endpoint is whitelist-only: it returns just
+// { title, script, notes } — never raw rows or other tables. Rotate the
+// secret to revoke every extension copy at once.
+//
+// Lookup chain mirrors the original logged-in flow in
+// ytb-ai-comments/background.js:handleGetVideoContext (kept for users who
+// ARE logged in via the auth-content.js bridge), so behaviour stays
+// consistent regardless of which path the extension takes.
+//
+// Full design rationale and ops notes: docs/EXTENSION_TRANSCRIPT_API.md
+app.get('/extension/transcript', async (req, res) => {
+  const expected = process.env.EXTENSION_API_TOKEN;
+  if (!expected) {
+    return res.status(503).json({ error: 'Extension API not configured (EXTENSION_API_TOKEN missing)' });
+  }
+
+  const token = req.get('X-Extension-Token');
+  if (!token || token !== expected) {
+    return res.status(401).json({ error: 'Invalid or missing X-Extension-Token' });
+  }
+
+  if (!supabase) {
+    return res.status(503).json({ error: 'Supabase client not initialised' });
+  }
+
+  const videoId = String(req.query.videoId || '').trim();
+  // YouTube video IDs are 11 chars [\w-], but Shorts/legacy can vary slightly.
+  // Keep the regex loose but strict enough to prevent injection / abuse.
+  if (!videoId || !/^[A-Za-z0-9_-]{6,20}$/.test(videoId)) {
+    return res.status(400).json({ error: 'Invalid videoId' });
+  }
+
+  try {
+    const { data: calEntries, error: calErr } = await supabase
+      .from('content_calendar')
+      .select('title, notes, script, project_id')
+      .ilike('youtube_url', `%${videoId}%`)
+      .limit(1);
+
+    if (calErr) throw calErr;
+
+    if (!calEntries || calEntries.length === 0) {
+      return res.status(404).json({ error: 'Video not found in VideoFlow DB' });
+    }
+
+    const entry = calEntries[0];
+    let script = entry.script || null;
+    let title = entry.title || null;
+    const notes = entry.notes || null;
+
+    if (entry.project_id && !script) {
+      const { data: projRows } = await supabase
+        .from('projects')
+        .select('name, script, summary')
+        .eq('id', entry.project_id)
+        .limit(1);
+
+      if (projRows && projRows.length > 0) {
+        const proj = projRows[0];
+        script = proj.script || proj.summary || null;
+        if (!title) title = proj.name || null;
+      }
+    }
+
+    console.log(`[extension/transcript] videoId=${videoId} title="${(title || '').substring(0, 60)}" script=${script ? script.length + 'c' : 'null'}`);
+
+    return res.json({
+      source: 'content_calendar',
+      title,
+      script,
+      notes,
+    });
+  } catch (e) {
+    console.error('[extension/transcript] error:', e?.message || e);
+    return res.status(500).json({ error: 'Internal error', detail: e?.message });
+  }
+});
+
 // Cancel endpoint - stops FFmpeg process and cleans up
 app.delete('/cancel/:jobId', async (req, res) => {
   const { jobId } = req.params;

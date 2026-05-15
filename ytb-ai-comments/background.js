@@ -5,6 +5,24 @@ const SUPABASE_URL = 'https://laqgmqyjstisipsbljha.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_h2I-M7p9mIrMFsMFw1Zr8w_JWY3S8nY';
 const SESSION_KEY = 'videoflow_session';
 
+// Personal-use fallback Gemini key. Used when no VideoFlow session and no
+// popup-stored key (typical case on fresh AdsPower profiles where the user
+// is not logged into VideoFlow). Anyone with access to the unpacked
+// extension can read this key — keep this extension private.
+const HARDCODED_GEMINI_KEY = 'AIzaSyDxQ4hNrrbU7T-vRQtjWo91QE3mTVXmNjs';
+
+// Shared-secret API for fetching transcripts WITHOUT a VideoFlow login.
+// Server-side endpoint lives in video-render-service (route /api/extension/
+// via nginx). Same caveat as the Gemini key: anyone unpacking the
+// extension can read this token, so the endpoint only returns whitelisted
+// fields (title/script/notes) and the token can be rotated server-side to
+// invalidate every extension copy.
+//
+// Backend implementation: video-render-service/server.js, route
+// /extension/transcript. Documentation: docs/EXTENSION_TRANSCRIPT_API.md
+const EXTENSION_API_BASE = 'https://purpleai.duckdns.org/api/extension';
+const EXTENSION_API_TOKEN = '0aaf47d93848683737dcd2f75624a8b92e2109ee6eb73a20babeb9dbfb51b721';
+
 // In-memory transcript cache (cleared when service worker restarts)
 const transcriptCache = new Map();
 
@@ -193,69 +211,100 @@ async function fetchTranscriptFromYouTube(videoId) {
 
 // --- VideoFlow video context lookup ---
 
+// Path A: logged-in user — hits Supabase REST directly with their JWT.
+async function fetchVideoContextViaSession(videoId) {
+  const data = await chrome.storage.local.get(SESSION_KEY);
+  const session = data[SESSION_KEY];
+  if (!session?.access_token) return null;
+
+  const supabaseUrl = session.supabase_url || SUPABASE_URL;
+  const anonKey = session.supabase_anon_key || SUPABASE_ANON_KEY;
+  const headers = {
+    'apikey': anonKey,
+    'Authorization': `Bearer ${session.access_token}`
+  };
+
+  const calResp = await fetch(
+    `${supabaseUrl}/rest/v1/content_calendar?youtube_url=ilike.*${videoId}*&select=title,notes,script,project_id&limit=1`,
+    { headers }
+  );
+  if (!calResp.ok) return null;
+  const rows = await calResp.json();
+  if (!rows.length) return null;
+
+  const entry = rows[0];
+  let script = entry.script || null;
+  if (entry.project_id && !script) {
+    const projResp = await fetch(
+      `${supabaseUrl}/rest/v1/projects?id=eq.${entry.project_id}&select=name,script,summary&limit=1`,
+      { headers }
+    );
+    if (projResp.ok) {
+      const projRows = await projResp.json();
+      if (projRows.length > 0) {
+        const proj = projRows[0];
+        script = proj.script || proj.summary || null;
+      }
+    }
+  }
+  return {
+    source: 'content_calendar (session)',
+    title: entry.title || null,
+    notes: entry.notes || null,
+    script
+  };
+}
+
+// Path B: no login — hits the shared-secret API on the VPS, which uses
+// the service role server-side and only returns whitelisted fields.
+// Used on AdsPower profiles that aren't signed into VideoFlow.
+async function fetchVideoContextViaSharedToken(videoId) {
+  const resp = await fetch(
+    `${EXTENSION_API_BASE}/transcript?videoId=${encodeURIComponent(videoId)}`,
+    { headers: { 'X-Extension-Token': EXTENSION_API_TOKEN } }
+  );
+  if (resp.status === 404) return null;
+  if (!resp.ok) {
+    console.warn(`[YT AI BG] Shared-token API returned ${resp.status}`);
+    return null;
+  }
+  const data = await resp.json();
+  return {
+    source: 'content_calendar (shared-token)',
+    title: data.title || null,
+    notes: data.notes || null,
+    script: data.script || null
+  };
+}
+
 async function handleGetVideoContext(videoId) {
   if (!videoId) return { success: false };
 
+  // Try the logged-in path first (preserves per-user RLS scoping for users
+  // who ARE signed into purpleai.duckdns.org via the auth bridge).
   try {
-    const data = await chrome.storage.local.get(SESSION_KEY);
-    const session = data[SESSION_KEY];
-    if (!session?.access_token) return { success: false, error: 'Not connected to VideoFlow' };
-
-    const supabaseUrl = session.supabase_url || SUPABASE_URL;
-    const anonKey = session.supabase_anon_key || SUPABASE_ANON_KEY;
-    const headers = {
-      'apikey': anonKey,
-      'Authorization': `Bearer ${session.access_token}`
-    };
-
-    // 1. Search content_calendar for this video ID
-    const calResp = await fetch(
-      `${supabaseUrl}/rest/v1/content_calendar?youtube_url=ilike.*${videoId}*&select=title,notes,script,project_id&limit=1`,
-      { headers }
-    );
-
-    if (calResp.ok) {
-      const rows = await calResp.json();
-      if (rows.length > 0) {
-        const entry = rows[0];
-        console.log('[YT AI BG] Found video in calendar:', entry.title, '| has script:', !!entry.script, '| project_id:', entry.project_id);
-
-        let script = entry.script || null;
-
-        // 2. If linked to a project, get the project's script (or summary as fallback)
-        if (entry.project_id && !script) {
-          const projResp = await fetch(
-            `${supabaseUrl}/rest/v1/projects?id=eq.${entry.project_id}&select=name,script,summary&limit=1`,
-            { headers }
-          );
-          if (projResp.ok) {
-            const projRows = await projResp.json();
-            if (projRows.length > 0) {
-              const proj = projRows[0];
-              script = proj.script || proj.summary || null;
-              if (script) {
-                console.log('[YT AI BG] Got script from linked project:', proj.name, script.length, 'chars');
-              }
-            }
-          }
-        }
-
-        return {
-          success: true,
-          source: 'content_calendar',
-          title: entry.title || null,
-          notes: entry.notes || null,
-          script: script
-        };
-      }
+    const result = await fetchVideoContextViaSession(videoId);
+    if (result) {
+      console.log('[YT AI BG] Got context via VideoFlow session:', result.title, '| script:', result.script ? result.script.length + 'c' : 'null');
+      return { success: true, ...result };
     }
-
-    console.log('[YT AI BG] Video not found in VideoFlow DB for', videoId);
-    return { success: false };
   } catch (e) {
-    console.warn('[YT AI BG] VideoFlow context lookup failed:', e.message);
-    return { success: false, error: e.message };
+    console.warn('[YT AI BG] Session lookup failed:', e.message);
   }
+
+  // Fallback: shared-secret API (works without any login on AdsPower).
+  try {
+    const result = await fetchVideoContextViaSharedToken(videoId);
+    if (result) {
+      console.log('[YT AI BG] Got context via shared-token API:', result.title, '| script:', result.script ? result.script.length + 'c' : 'null');
+      return { success: true, ...result };
+    }
+  } catch (e) {
+    console.warn('[YT AI BG] Shared-token lookup failed:', e.message);
+  }
+
+  console.log('[YT AI BG] Video not found in VideoFlow DB for', videoId);
+  return { success: false };
 }
 
 // --- API key retrieval via VideoFlow/Supabase ---
@@ -290,6 +339,12 @@ async function handleGetApiKeys() {
       return { success: true, source: 'local', geminiKey: data.apiKey };
     }
   } catch {}
+
+  // Last-resort fallback: hardcoded personal key (works on fresh profiles
+  // without any VideoFlow login or popup configuration).
+  if (HARDCODED_GEMINI_KEY) {
+    return { success: true, source: 'hardcoded', geminiKey: HARDCODED_GEMINI_KEY };
+  }
 
   return { success: false, error: 'No API key configured. Connect to VideoFlow or set key in extension settings.' };
 }
