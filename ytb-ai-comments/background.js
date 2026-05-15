@@ -5,21 +5,20 @@ const SUPABASE_URL = 'https://laqgmqyjstisipsbljha.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_h2I-M7p9mIrMFsMFw1Zr8w_JWY3S8nY';
 const SESSION_KEY = 'videoflow_session';
 
-// Personal-use fallback Gemini key. Used when no VideoFlow session and no
-// popup-stored key (typical case on fresh AdsPower profiles where the user
-// is not logged into VideoFlow). Anyone with access to the unpacked
-// extension can read this key — keep this extension private.
-const HARDCODED_GEMINI_KEY = 'AIzaSyDxQ4hNrrbU7T-vRQtjWo91QE3mTVXmNjs';
-
-// Shared-secret API for fetching transcripts WITHOUT a VideoFlow login.
-// Server-side endpoint lives in video-render-service (route /api/extension/
-// via nginx). Same caveat as the Gemini key: anyone unpacking the
-// extension can read this token, so the endpoint only returns whitelisted
-// fields (title/script/notes) and the token can be rotated server-side to
-// invalidate every extension copy.
+// Shared-secret VPS API used for BOTH transcript lookup and Gemini reply
+// generation. Anyone with the unpacked extension can read this token, so
+// every endpoint behind it is whitelist-only and rate-limited; rotate the
+// server-side env var (EXTENSION_API_TOKEN in video-render-service) to
+// revoke every extension copy at once.
 //
-// Backend implementation: video-render-service/server.js, route
-// /extension/transcript. Documentation: docs/EXTENSION_TRANSCRIPT_API.md
+// IMPORTANT: NEVER hardcode a Gemini key in this file. Google's GitHub
+// leak scanner auto-revoked our previous hardcoded key within minutes of
+// pushing — that's why all generation now goes through the VPS proxy
+// (/extension/generate) which keeps the key server-side.
+//
+// Backend implementation: video-render-service/server.js, routes
+// /extension/transcript and /extension/generate.
+// Documentation: docs/EXTENSION_TRANSCRIPT_API.md
 const EXTENSION_API_BASE = 'https://purpleai.duckdns.org/api/extension';
 const EXTENSION_API_TOKEN = '0aaf47d93848683737dcd2f75624a8b92e2109ee6eb73a20babeb9dbfb51b721';
 
@@ -42,10 +41,61 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (message.type === 'GENERATE_REPLY') {
+    handleGenerateReply(message.prompt).then(sendResponse);
+    return true;
+  }
+
   if (message.type === 'AUTH_SUCCESS') {
     return false;
   }
 });
+
+// --- Gemini proxy (via VPS) ---
+//
+// Replaces the previous direct-from-browser Gemini call with a relay
+// through the VPS so the API key never leaves the server (Google was
+// auto-revoking the hardcoded one as a leaked secret). content.js sends
+// the fully-assembled prompt; the server applies the model + generation
+// config (currently gemini-2.5-flash, temp 0.7, 1024 tokens).
+async function handleGenerateReply(prompt) {
+  if (!prompt || typeof prompt !== 'string' || prompt.length < 4) {
+    return { success: false, error: 'Empty or too-short prompt' };
+  }
+
+  try {
+    const resp = await fetch(`${EXTENSION_API_BASE}/generate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Extension-Token': EXTENSION_API_TOKEN,
+      },
+      body: JSON.stringify({ prompt }),
+    });
+
+    if (!resp.ok) {
+      let detail = '';
+      try {
+        const j = await resp.json();
+        detail = j?.error || j?.detail || '';
+      } catch {}
+      console.warn(`[YT AI BG] /extension/generate failed: ${resp.status} ${detail}`);
+      return {
+        success: false,
+        error: detail || `Proxy returned ${resp.status}`,
+      };
+    }
+
+    const data = await resp.json();
+    if (!data?.text) {
+      return { success: false, error: 'Empty response from proxy' };
+    }
+    return { success: true, text: data.text, finishReason: data.finishReason };
+  } catch (e) {
+    console.error('[YT AI BG] generate error:', e?.message || e);
+    return { success: false, error: e?.message || 'Network error' };
+  }
+}
 
 // --- Transcript fetching ---
 
@@ -340,13 +390,12 @@ async function handleGetApiKeys() {
     }
   } catch {}
 
-  // Last-resort fallback: hardcoded personal key (works on fresh profiles
-  // without any VideoFlow login or popup configuration).
-  if (HARDCODED_GEMINI_KEY) {
-    return { success: true, source: 'hardcoded', geminiKey: HARDCODED_GEMINI_KEY };
-  }
-
-  return { success: false, error: 'No API key configured. Connect to VideoFlow or set key in extension settings.' };
+  // No personal key needed anymore — replies go through the VPS proxy
+  // (handleGenerateReply / GENERATE_REPLY message) which holds the key
+  // server-side. We still expose this RPC so the popup's "API key
+  // configured?" indicator can detect the proxy path, and so the
+  // VideoFlow-logged-in branch above keeps preferring the user's own key.
+  return { success: true, source: 'vps-proxy', geminiKey: null };
 }
 
 async function fetchApiKeyFromVault(supabaseUrl, anonKey, accessToken, keyName) {

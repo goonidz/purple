@@ -126,48 +126,55 @@ Video transcript : {transcript}`;
     }
   }
 
-  // Get API key and prompt: try VideoFlow first, fallback to local storage
+  // Resolve prompt template and the API path to use.
+  //
+  // `apiKey === null` is now a valid result and means "use the VPS proxy"
+  // (no client-side key needed). generateReply() handles both cases.
+  // Priority:
+  //  1. VideoFlow session (per-user Gemini key from Vault, source='videoflow')
+  //  2. Local key stored via the popup (source='local')
+  //  3. VPS proxy (source='vps-proxy', apiKey=null) — default for AdsPower
+  //     profiles that aren't logged into VideoFlow.
   async function getPromptTemplate() {
     if (!isExtensionContextValid()) {
       throw new Error('Extension was updated. Please refresh the page.');
     }
 
-    // Try VideoFlow keys via background worker
+    let promptTemplate = DEFAULT_PROMPT;
+    try {
+      const localData = await new Promise(resolve => {
+        chrome.storage.local.get(['promptTemplate'], result => resolve(result));
+      });
+      if (localData.promptTemplate) promptTemplate = localData.promptTemplate;
+    } catch {}
+
+    // Try VideoFlow keys / proxy decision via background worker
     try {
       const keysResponse = await chrome.runtime.sendMessage({ type: 'GET_API_KEYS' });
-
-      if (keysResponse?.success && keysResponse.geminiKey) {
-        const localData = await new Promise(resolve => {
-          chrome.storage.local.get(['promptTemplate'], result => resolve(result));
-        });
+      if (keysResponse?.success) {
         return {
-          prompt: localData.promptTemplate || DEFAULT_PROMPT,
-          apiKey: keysResponse.geminiKey
+          prompt: promptTemplate,
+          apiKey: keysResponse.geminiKey || null,
+          source: keysResponse.source || 'vps-proxy',
         };
       }
     } catch (e) {
       console.warn('[YT AI] Background key fetch failed:', e.message);
     }
 
-    // Fallback to locally stored key
-    return new Promise((resolve, reject) => {
+    // Hard fallback to locally stored key (popup) — only reached if the
+    // background worker itself errored out.
+    return new Promise((resolve) => {
       try {
-        chrome.storage.local.get(['promptTemplate', 'apiKey'], (result) => {
-          if (chrome.runtime.lastError) {
-            reject(new Error('Extension was updated. Please refresh the page.'));
-            return;
-          }
-          if (!result.apiKey) {
-            reject(new Error('No API key configured. Connect to VideoFlow or set key in extension settings.'));
-            return;
-          }
+        chrome.storage.local.get(['apiKey'], (result) => {
           resolve({
-            prompt: result.promptTemplate || DEFAULT_PROMPT,
-            apiKey: result.apiKey
+            prompt: promptTemplate,
+            apiKey: result.apiKey || null,
+            source: result.apiKey ? 'local' : 'vps-proxy',
           });
         });
-      } catch (e) {
-        reject(new Error('Extension was updated. Please refresh the page.'));
+      } catch {
+        resolve({ prompt: promptTemplate, apiKey: null, source: 'vps-proxy' });
       }
     });
   }
@@ -234,17 +241,31 @@ Video transcript : {transcript}`;
   }
 
   // --- Gemini API ---
-
+  //
+  // Two paths:
+  //  - apiKey provided → direct call to Google (used when the user has a
+  //    personal key via VideoFlow or the popup).
+  //  - apiKey null/empty → relay through the VPS proxy (default), which
+  //    holds the API key server-side. This is the path used on AdsPower
+  //    profiles that aren't signed into VideoFlow.
   async function generateReply(commentText, apiKey, promptTemplate, transcript, title) {
     let prompt = promptTemplate.replace('{comment}', commentText);
     prompt = prompt.replace('{title}', title || '(Unknown)');
+    prompt = prompt.replace('{transcript}', transcript || '(No transcript available)');
 
-    if (transcript) {
-      prompt = prompt.replace('{transcript}', transcript);
-    } else {
-      prompt = prompt.replace('{transcript}', '(No transcript available)');
+    if (!apiKey) {
+      // Proxy path — background worker calls /api/extension/generate.
+      const resp = await chrome.runtime.sendMessage({ type: 'GENERATE_REPLY', prompt });
+      if (!resp?.success) {
+        throw new Error(resp?.error || 'Proxy request failed');
+      }
+      if (resp.finishReason && resp.finishReason !== 'STOP') {
+        console.warn('[YT AI] Unexpected finish reason (proxy):', resp.finishReason);
+      }
+      return resp.text || '';
     }
 
+    // Direct path — user has a personal Gemini key.
     const response = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -259,17 +280,15 @@ Video transcript : {transcript}`;
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await response.json().catch(() => ({}));
       throw new Error(error.error?.message || 'API request failed');
     }
 
     const data = await response.json();
-
     const finishReason = data.candidates?.[0]?.finishReason;
     if (finishReason && finishReason !== 'STOP') {
       console.warn('[YT AI] Unexpected finish reason:', finishReason);
     }
-
     return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
   }
 

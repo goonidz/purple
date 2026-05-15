@@ -3567,6 +3567,119 @@ app.get('/extension/transcript', async (req, res) => {
   }
 });
 
+// ──────────────────────────────────────────────────────────────────────────
+// Extension API — Gemini proxy for YouTube AI Comments
+// ──────────────────────────────────────────────────────────────────────────
+//
+// Why: hardcoding a Gemini key in the extension (background.js) gets it
+// auto-revoked by Google's GitHub leak scanner the moment the repo is
+// pushed (this happened in prod — symptom: "Your API key was reported as
+// leaked. Please use another API key." 403). Routing through the VPS
+// keeps the real key server-side, behind the same X-Extension-Token
+// shared secret used by /extension/transcript.
+//
+// Auth: X-Extension-Token (same env var as the transcript route).
+// Body: { prompt: string }                — full prompt assembled client-side
+//       (model + generationConfig are server-controlled so the surface
+//       stays minimal and we can change models without re-deploying the
+//       extension to every AdsPower profile).
+// Returns: { text, finishReason, source: 'gemini-vps' }.
+//
+// Light per-IP rate-limit to prevent runaway loops if the extension goes
+// crazy on a profile (the shared token is essentially public to anyone
+// with the unpacked ext, so we keep this small as defence-in-depth).
+const extensionGenerateRate = new Map(); // ip -> { count, resetAt }
+const EXT_GEN_RATE_WINDOW_MS = 60_000;
+const EXT_GEN_RATE_MAX = 30; // 30 generations / minute / IP
+
+function checkExtensionGenerateRate(ip) {
+  const now = Date.now();
+  const entry = extensionGenerateRate.get(ip);
+  if (!entry || now > entry.resetAt) {
+    extensionGenerateRate.set(ip, { count: 1, resetAt: now + EXT_GEN_RATE_WINDOW_MS });
+    return true;
+  }
+  if (entry.count >= EXT_GEN_RATE_MAX) return false;
+  entry.count += 1;
+  return true;
+}
+
+app.post('/extension/generate', async (req, res) => {
+  const expected = process.env.EXTENSION_API_TOKEN;
+  if (!expected) {
+    return res.status(503).json({ error: 'Extension API not configured (EXTENSION_API_TOKEN missing)' });
+  }
+  const token = req.get('X-Extension-Token');
+  if (!token || token !== expected) {
+    return res.status(401).json({ error: 'Invalid or missing X-Extension-Token' });
+  }
+
+  const geminiKey = process.env.GEMINI_API_KEY;
+  if (!geminiKey) {
+    return res.status(503).json({ error: 'Gemini proxy not configured (GEMINI_API_KEY missing)' });
+  }
+
+  const ip = (req.headers['x-forwarded-for']?.split(',')[0] || req.ip || 'unknown').trim();
+  if (!checkExtensionGenerateRate(ip)) {
+    return res.status(429).json({ error: 'Rate limit exceeded (30/min/IP)' });
+  }
+
+  const prompt = typeof req.body?.prompt === 'string' ? req.body.prompt : '';
+  if (!prompt || prompt.length < 4) {
+    return res.status(400).json({ error: 'Missing or too-short prompt' });
+  }
+  // Cap prompt size so a buggy extension can't burn through tokens. The
+  // 33k-char scripts we serve via /extension/transcript already fit well
+  // under 200k chars after templating.
+  if (prompt.length > 200_000) {
+    return res.status(413).json({ error: 'Prompt too large (max 200000 chars)' });
+  }
+
+  // Model is server-controlled. Keep in sync with the model name the
+  // extension previously hardcoded so reply quality stays identical.
+  const model = 'gemini-2.5-flash';
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`;
+
+  try {
+    const upstream = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature: 0.7,
+          maxOutputTokens: 1024,
+          stopSequences: [],
+        },
+      }),
+      // 45s — well under the nginx 60s read timeout we bump alongside this.
+      signal: AbortSignal.timeout(45_000),
+    });
+
+    if (!upstream.ok) {
+      let errText = '';
+      try { errText = await upstream.text(); } catch {}
+      console.warn(`[extension/generate] gemini ${upstream.status} ip=${ip}: ${errText.slice(0, 200)}`);
+      // Surface a clean error to the extension — never leak the API key.
+      return res.status(502).json({
+        error: `Gemini upstream error ${upstream.status}`,
+        detail: errText.slice(0, 500),
+      });
+    }
+
+    const data = await upstream.json();
+    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    const finishReason = data?.candidates?.[0]?.finishReason || 'UNKNOWN';
+
+    console.log(`[extension/generate] ip=${ip} prompt=${prompt.length}c reply=${text.length}c finish=${finishReason}`);
+
+    return res.json({ source: 'gemini-vps', text, finishReason });
+  } catch (e) {
+    console.error('[extension/generate] error:', e?.message || e);
+    return res.status(500).json({ error: 'Internal error', detail: e?.message });
+  }
+});
+
 // Cancel endpoint - stops FFmpeg process and cleans up
 app.delete('/cancel/:jobId', async (req, res) => {
   const { jobId } = req.params;

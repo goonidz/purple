@@ -186,3 +186,66 @@ Each request logs a line like:
 - `ytb-ai-comments/manifest.json` — version bump (1.2.0 → 1.3.0)
 - `ytb-ai-comments.zip` — rebuilt package for AdsPower deployment
 - `docs/EXTENSION_TRANSCRIPT_API.md` — this file
+
+---
+
+## Sibling endpoint: `POST /extension/generate` (v1.4.0+)
+
+> **Endpoint:** `POST https://purpleai.duckdns.org/api/extension/generate`
+> **Auth:** same `X-Extension-Token` shared secret as `/transcript`.
+> **Body:** `{ "prompt": "<full prompt string>" }`
+> **Returns:** `{ "text": "<reply>", "finishReason": "STOP", "source": "gemini-vps" }`
+
+### Why this exists
+
+We initially put a hardcoded Gemini key directly in `background.js` (constant `HARDCODED_GEMINI_KEY`) so the extension could call `generativelanguage.googleapis.com` from the AdsPower profile without any VideoFlow login. Within minutes of pushing the commit to GitHub, Google's leak scanner detected the key in the public repo and auto-revoked it. The extension started returning:
+
+```
+403 Forbidden — Your API key was reported as leaked. Please use another API key.
+```
+
+Generating a new key would just get revoked again the next push. So **all Gemini calls now relay through the VPS**, exactly like `/extension/transcript`: the extension sends the assembled prompt and `X-Extension-Token`, the server applies its key (`GEMINI_API_KEY` env var) and forwards to Gemini.
+
+### Server-side controls
+
+- **Model** is hardcoded server-side (currently `gemini-2.5-flash`) — change without redeploying the extension.
+- **Generation config** is server-side too: `temperature 0.7`, `maxOutputTokens 1024`.
+- **Rate limit:** 30 generations / minute / IP (in-memory `extensionGenerateRate` map). Light defence against a runaway extension loop.
+- **Prompt size cap:** 200k chars (enough for a full 33k-char script + comment + template).
+- **Upstream timeout:** 45s (`AbortSignal.timeout(45_000)`), with nginx `proxy_read_timeout 60s` to leave headroom.
+
+### Setup
+
+Add to `~/purple/video-render-service/.env` on the VPS:
+
+```bash
+GEMINI_API_KEY=AIza...
+```
+
+Then `pm2 delete video-render-service && pm2 start ...` (PM2 `restart` does **not** reload `.env`).
+
+### Test
+
+```bash
+# OK
+curl -X POST https://purpleai.duckdns.org/api/extension/generate \
+  -H 'X-Extension-Token: <TOKEN>' \
+  -H 'Content-Type: application/json' \
+  -d '{"prompt":"Say hello in French in 3 words."}'
+
+# → {"source":"gemini-vps","text":"Bonjour à toi.","finishReason":"STOP"}
+
+# Bad token → 401
+# Missing GEMINI_API_KEY → 503
+# Prompt > 200k chars → 413
+# > 30 req/min/IP → 429
+```
+
+### Client path
+
+The extension's `content.js` now picks between two paths in `generateReply()`:
+
+1. **`apiKey` provided** (user is signed into VideoFlow OR set a personal key in the popup) → direct call to Google, same as before.
+2. **`apiKey` null/empty** → `chrome.runtime.sendMessage({ type: 'GENERATE_REPLY', prompt })` → `background.js#handleGenerateReply()` → `POST /api/extension/generate`.
+
+`background.js#handleGetApiKeys()` returns `{ success: true, source: 'vps-proxy', geminiKey: null }` when no per-user key is available, signaling the proxy path. **There is no hardcoded Gemini key anywhere in the extension anymore.**
