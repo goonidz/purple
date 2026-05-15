@@ -836,6 +836,8 @@ export type Database = {
           id: string
           image_model: string | null
           name: string
+          pair_preset_count: number
+          pair_preset_id: string | null
           updated_at: string
           user_id: string
         }
@@ -848,6 +850,8 @@ export type Database = {
           id?: string
           image_model?: string | null
           name: string
+          pair_preset_count?: number
+          pair_preset_id?: string | null
           updated_at?: string
           user_id: string
         }
@@ -860,10 +864,20 @@ export type Database = {
           id?: string
           image_model?: string | null
           name?: string
+          pair_preset_count?: number
+          pair_preset_id?: string | null
           updated_at?: string
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "thumbnail_presets_pair_preset_id_fkey"
+            columns: ["pair_preset_id"]
+            isOneToOne: false
+            referencedRelation: "thumbnail_presets"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       thumbnail_projects: {
         Row: {

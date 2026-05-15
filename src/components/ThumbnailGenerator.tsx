@@ -30,6 +30,8 @@ interface ThumbnailPreset {
   custom_prompt: string | null;
   image_model: string | null;
   text_model: string | null;
+  pair_preset_id: string | null;
+  pair_preset_count: number;
 }
 
 const DEFAULT_THUMBNAIL_PROMPT = `Tu es un expert en création de miniatures YouTube accrocheuses et performantes.
@@ -373,25 +375,45 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
           }
           
           // Load preset 1 if found (this populates the active fields: customPrompt, exampleUrls, etc.)
+          let presetAObj: ThumbnailPreset | undefined;
           if (presetId) {
-            const preset = presets.find(p => p.id === presetId);
-            console.log("[ThumbnailGenerator] Found preset 1:", preset?.name);
-            if (preset) {
+            presetAObj = presets.find(p => p.id === presetId);
+            console.log("[ThumbnailGenerator] Found preset 1:", presetAObj?.name);
+            if (presetAObj) {
               loadPreset(presetId);
               setSelectedPresetId(presetId);
               setHasAutoLoadedPreset(true);
-              toast.success(`Preset miniatures "${preset.name}" chargé depuis le channel`);
+              toast.success(`Preset miniatures "${presetAObj.name}" chargé depuis le channel`);
             }
           } else {
             console.log("[ThumbnailGenerator] No thumbnail preset found (project or channel)");
           }
+          // Resolve preset 2 with priority: project/channel explicit assignment > preset A's
+          // pair_preset_id default. This keeps explicit overrides winning while still
+          // letting a preset declare its preferred A/B partner.
+          let resolvedPreset2Id = preset2Id || null;
+          let resolvedPreset2Count: number | null = null;
+          if (!resolvedPreset2Id && presetAObj?.pair_preset_id) {
+            resolvedPreset2Id = presetAObj.pair_preset_id;
+            resolvedPreset2Count = presetAObj.pair_preset_count ?? 0;
+            console.log("[ThumbnailGenerator] Using preset A's pair as preset 2:", {
+              pairId: resolvedPreset2Id,
+              pairCount: resolvedPreset2Count,
+            });
+          }
           // Apply preset 2 separately — does NOT call loadPreset() (it must not overwrite
           // the active fields that are governed by preset 1)
-          if (preset2Id && preset2Id !== presetId) {
-            const preset2 = presets.find(p => p.id === preset2Id);
+          if (resolvedPreset2Id && resolvedPreset2Id !== presetId) {
+            const preset2 = presets.find(p => p.id === resolvedPreset2Id);
             if (preset2) {
-              setSelectedPreset2Id(preset2Id);
+              setSelectedPreset2Id(resolvedPreset2Id);
               prevPreset2EmptyRef.current = false; // skip the auto-default that would override
+              if (typeof resolvedPreset2Count === "number") {
+                // Use the preset-declared count, clamped to the remaining slot budget
+                // so userIdeaCount + preset2Count never exceeds 5.
+                const maxAllowed = Math.max(0, 5 - userIdeaCount);
+                setPreset2Count(Math.min(maxAllowed, Math.max(0, resolvedPreset2Count)));
+              }
               console.log("[ThumbnailGenerator] Auto-loaded preset 2:", preset2.name);
             }
           }
@@ -572,6 +594,10 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
         custom_prompt: preset.custom_prompt || null,
         image_model: (preset as any).image_model || null,
         text_model: (preset as any).text_model || null,
+        pair_preset_id: (preset as any).pair_preset_id || null,
+        pair_preset_count: typeof (preset as any).pair_preset_count === "number"
+          ? (preset as any).pair_preset_count
+          : 0,
       }));
 
       setPresets(mappedPresets);
@@ -1233,6 +1259,22 @@ export const ThumbnailGenerator = ({ projectId, videoScript, videoTitle, standal
               <Select value={selectedPresetId} onValueChange={(value) => {
                 setSelectedPresetId(value);
                 loadPreset(value);
+                // Auto-apply the preset's declared A/B pair when the user picks a preset
+                // and hasn't explicitly chosen a preset B yet. Picking a preset that has
+                // no pair, or no pair count > 0, does not clear an already-chosen B —
+                // that stays a manual action via the preset 2 select.
+                const picked = presets.find((p) => p.id === value);
+                if (picked?.pair_preset_id && !selectedPreset2Id && picked.pair_preset_id !== value) {
+                  const pair = presets.find((p) => p.id === picked.pair_preset_id);
+                  if (pair) {
+                    setSelectedPreset2Id(picked.pair_preset_id);
+                    prevPreset2EmptyRef.current = false;
+                    const count = typeof picked.pair_preset_count === "number" ? picked.pair_preset_count : 0;
+                    const maxAllowed = Math.max(0, 5 - userIdeaCount);
+                    setPreset2Count(Math.min(maxAllowed, Math.max(0, count)));
+                    toast.message(`Preset B "${pair.name}" auto-chargé (A/B)`);
+                  }
+                }
               }}>
                 <SelectTrigger className="flex-1">
                   <SelectValue placeholder="Sélectionner un preset" />

@@ -187,6 +187,8 @@ interface ThumbnailPresetRow {
   system_prompt: string | null;
   image_model: string | null;
   text_model: string | null;
+  pair_preset_id?: string | null;
+  pair_preset_count?: number | null;
 }
 
 // LoRA preset
@@ -258,6 +260,10 @@ export default function Presets() {
   const [thumbSystemPrompt, setThumbSystemPrompt] = useState("");
   const [thumbImageModel, setThumbImageModel] = useState("seedream-4.5");
   const [thumbTextModel, setThumbTextModel] = useState("claude-sonnet-4-6");
+  // A/B test pairing — optional sibling preset auto-loaded as "preset B"
+  // alongside this one, plus the default number of variations from B.
+  const [thumbPairPresetId, setThumbPairPresetId] = useState<string>("");
+  const [thumbPairPresetCount, setThumbPairPresetCount] = useState<number>(2);
   const [thumbSaving, setThumbSaving] = useState(false);
 
   // LoRA
@@ -712,6 +718,8 @@ export default function Presets() {
     setThumbSystemPrompt("");
     setThumbImageModel("seedream-4.5");
     setThumbTextModel("claude-sonnet-4-6");
+    setThumbPairPresetId("");
+    setThumbPairPresetCount(2);
     setThumbDialogOpen(true);
   };
 
@@ -724,6 +732,8 @@ export default function Presets() {
     setThumbSystemPrompt(p.system_prompt || "");
     setThumbImageModel(p.image_model || "seedream-4.5");
     setThumbTextModel(p.text_model || "claude-sonnet-4-6");
+    setThumbPairPresetId(p.pair_preset_id || "");
+    setThumbPairPresetCount(typeof p.pair_preset_count === "number" ? p.pair_preset_count : 2);
     setThumbDialogOpen(true);
   };
 
@@ -744,6 +754,12 @@ export default function Presets() {
         system_prompt: thumbSystemPrompt.trim() || null,
         image_model: thumbImageModel,
         text_model: thumbTextModel,
+        // A/B pair — only persist the count when a pair preset is actually selected,
+        // so disabling the pair cleanly resets state in the DB.
+        pair_preset_id: thumbPairPresetId || null,
+        pair_preset_count: thumbPairPresetId
+          ? Math.min(5, Math.max(0, Math.floor(thumbPairPresetCount)))
+          : 0,
       };
       if (thumbEditId) {
         const { error } = await supabase.from("thumbnail_presets").update(row).eq("id", thumbEditId);
@@ -778,6 +794,8 @@ export default function Presets() {
         image_model: p.image_model,
         text_model: p.text_model,
         example_urls: p.example_urls,
+        pair_preset_id: p.pair_preset_id || null,
+        pair_preset_count: p.pair_preset_count ?? 0,
       });
       if (error) throw error;
       toast.success("Preset miniatures dupliqué");
@@ -1489,6 +1507,54 @@ export default function Presets() {
                   <SelectItem value="gemini-3.1-flash-image-preview">Gemini 3.1 Flash Image (Google)</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+            <div className="rounded-md border border-border bg-muted/30 p-3 space-y-3">
+              <div>
+                <Label>A/B test — Preset B (optionnel)</Label>
+                <p className="text-xs text-muted-foreground mb-2">
+                  Auto-chargé sur la page Miniatures à côté de ce preset (A). Une assignation explicite sur le projet ou la chaîne reste prioritaire.
+                </p>
+                <Select
+                  value={thumbPairPresetId || "__none__"}
+                  onValueChange={(v) => setThumbPairPresetId(v === "__none__" ? "" : v)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Aucun (A/B désactivé)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">Aucun (A/B désactivé)</SelectItem>
+                    {thumbPresets
+                      .filter((p) => p.id !== thumbEditId)
+                      .map((p) => (
+                        <SelectItem key={p.id} value={p.id}>
+                          {p.name}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {thumbPairPresetId && (
+                <div>
+                  <Label>Nombre de variations du Preset B (0–5)</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={5}
+                    value={thumbPairPresetCount}
+                    onChange={(e) => {
+                      const n = parseInt(e.target.value, 10);
+                      if (Number.isNaN(n)) {
+                        setThumbPairPresetCount(0);
+                      } else {
+                        setThumbPairPresetCount(Math.min(5, Math.max(0, n)));
+                      }
+                    }}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Distribution par défaut sur 5 miniatures : {Math.max(0, 5 - thumbPairPresetCount)} de A + {thumbPairPresetCount} de B.
+                  </p>
+                </div>
+              )}
             </div>
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setThumbDialogOpen(false)}>Annuler</Button>
