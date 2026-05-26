@@ -6,7 +6,7 @@
 // Default fast text model — used for tags, titles, descriptions, summaries,
 // prompts, axes, continuity analysis, and the "describe" branch of QA.
 export const GEMINI_TEXT_MODEL =
-  Deno.env.get('GEMINI_TEXT_MODEL') || 'gemini-3.1-flash-lite-preview';
+  Deno.env.get('GEMINI_TEXT_MODEL') || 'gemini-3.1-flash-lite';
 
 // Premium vision model — used by the QA analysis branch of qa-image-gemini,
 // where we need richer visual reasoning than the lite model can offer.

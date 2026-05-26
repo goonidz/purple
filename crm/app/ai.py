@@ -5,7 +5,7 @@ All calls use the user's own Gemini key stored in Supabase Vault under
 We fetch it via the SECURITY DEFINER RPC ``get_user_api_key_for_service``
 using the service role key — no new secrets required.
 
-Model: ``gemini-3.1-flash-lite-preview`` (same default as the edge
+Model: ``gemini-3.1-flash-lite`` (same default as the edge
 functions in ``supabase/functions/_shared/gemini.ts``). Can be
 overridden via the ``GEMINI_TEXT_MODEL`` env var.
 """
@@ -26,7 +26,7 @@ from .config import SUPABASE_SERVICE_ROLE_KEY, SUPABASE_URL, _rest_headers
 
 log = logging.getLogger("crm.ai")
 
-GEMINI_MODEL = os.getenv("GEMINI_TEXT_MODEL", "gemini-3.1-flash-lite-preview")
+GEMINI_MODEL = os.getenv("GEMINI_TEXT_MODEL", "gemini-3.1-flash-lite")
 GEMINI_ENDPOINT = (
     "https://generativelanguage.googleapis.com/v1beta/models/"
     f"{GEMINI_MODEL}:generateContent"

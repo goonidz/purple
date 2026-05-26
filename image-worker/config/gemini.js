@@ -3,7 +3,7 @@
 // override at runtime via GEMINI_TEXT_MODEL / GEMINI_QA_VISION_MODEL env vars).
 
 const GEMINI_TEXT_MODEL =
-  process.env.GEMINI_TEXT_MODEL || 'gemini-3.1-flash-lite-preview';
+  process.env.GEMINI_TEXT_MODEL || 'gemini-3.1-flash-lite';
 
 const GEMINI_QA_VISION_MODEL =
   process.env.GEMINI_QA_VISION_MODEL || 'gemini-3-flash-preview';

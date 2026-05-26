@@ -1026,13 +1026,13 @@ export function AnimatorPreview({ projectId, hasCompletedScenes }: AnimatorPrevi
             const fixed = completed.filter(j => j.metadata?.fixed).length;
             const gavUp = completed.filter(j => j.metadata?.pass === false).length;
             const qaTokens = qaJob?.metadata?.tokens || { input: 0, output: 0 };
-            const qaModel = qaJob?.metadata?.model || 'gemini-3.1-flash-lite-preview';
+            const qaModel = qaJob?.metadata?.model || 'gemini-3.1-flash-lite';
             const MODEL_COSTS: Record<string, { input: number; output: number }> = {
               'gemini-2.0-flash': { input: 0.10, output: 0.40 },
               'gemini-2.5-flash-preview-04-17': { input: 0.15, output: 0.60 },
               'gemini-2.5-pro-preview-03-25': { input: 1.25, output: 10.00 },
               'gemini-3-flash-preview': { input: 0.50, output: 3.00 },
-              'gemini-3.1-flash-lite-preview': { input: 0.25, output: 1.50 },
+              'gemini-3.1-flash-lite': { input: 0.25, output: 1.50 },
               'gemini-3.1-pro': { input: 2.00, output: 12.00 },
               'claude-sonnet-4-6': { input: 3.00, output: 15.00 },
               'claude-sonnet-4-20250514': { input: 3.00, output: 15.00 },

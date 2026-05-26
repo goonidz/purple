@@ -3,7 +3,7 @@
 // optionally override at runtime via the GEMINI_TEXT_MODEL env var).
 
 const GEMINI_TEXT_MODEL =
-  process.env.GEMINI_TEXT_MODEL || 'gemini-3.1-flash-lite-preview';
+  process.env.GEMINI_TEXT_MODEL || 'gemini-3.1-flash-lite';
 
 function geminiEndpoint(model, apiKey) {
   return apiKey
