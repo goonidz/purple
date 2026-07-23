@@ -1961,9 +1961,9 @@ const Index = () => {
       return;
     }
 
-    // Validate file size (max 50MB)
-    if (file.size > 50 * 1024 * 1024) {
-      toast.error("Le fichier audio ne doit pas dépasser 50MB");
+    // Validate file size (max 400MB)
+    if (file.size > 400 * 1024 * 1024) {
+      toast.error("Le fichier audio ne doit pas dépasser 400MB");
       return;
     }
 

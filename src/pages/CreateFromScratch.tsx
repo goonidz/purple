@@ -2176,9 +2176,9 @@ Génère un script qui défend et développe cette thèse spécifique. Le script
       return;
     }
 
-    // Max size 100MB
-    if (file.size > 100 * 1024 * 1024) {
-      toast.error("Le fichier est trop volumineux (max 100MB)");
+    // Max size 400MB
+    if (file.size > 400 * 1024 * 1024) {
+      toast.error("Le fichier est trop volumineux (max 400MB)");
       return;
     }
 
