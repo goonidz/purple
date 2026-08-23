@@ -8,7 +8,9 @@ RUN apt-get update \
        ca-certificates curl libvulkan1 mesa-vulkan-drivers python3 python3-pip \
     && rm -rf /var/lib/apt/lists/* \
     && python3 -m pip install --no-cache-dir --break-system-packages \
-       'runpod>=1.7,<2' 'requests>=2.32,<3'
+       'runpod>=1.7,<2' 'requests>=2.32,<3' \
+    && ffmpeg -hide_banner -filters 2>&1 | grep -q libplacebo \
+    && ffmpeg -hide_banner -encoders 2>&1 | grep -q h264_nvenc
 
 COPY handler.py /app/handler.py
 
