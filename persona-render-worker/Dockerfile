@@ -1,4 +1,4 @@
-FROM jrottenberg/ffmpeg:8.1.2-ubuntu2404
+FROM lscr.io/linuxserver/ffmpeg:latest
 
 USER root
 WORKDIR /app
